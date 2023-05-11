@@ -2,6 +2,7 @@
 members = [
     "packages/network",
     "packages/misc/quickcheck-ext",
+    "packages/core/utils",
     "packages/core/identity",
     "packages/core/discovery",
     "packages/core/router",
@@ -11,3 +12,4 @@ members = [
 
 [workspace.dependencies]
 quickcheck = { package = "quickcheck-ext", path = "packages/misc/quickcheck-ext" }
+utils = { package = "utils", path = "packages/core/utils" }

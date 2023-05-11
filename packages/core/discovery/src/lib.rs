@@ -12,6 +12,8 @@ pub struct Discovery {
 
 impl Discovery {
     pub fn new(port: Option<u16>) -> Self {
-        
+        Self {
+
+        }
     }
 }
