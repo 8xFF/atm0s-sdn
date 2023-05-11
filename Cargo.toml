@@ -1,0 +1,13 @@
+[workspace]
+members = [
+    "packages/misc/quickcheck-ext",
+    "packages/core/identity",
+    "packages/core/transport",
+    "packages/core/discovery",
+    "packages/core/router",
+    "packages/core/service",
+    "packages/runner",
+]
+
+[workspace.dependencies]
+quickcheck = { package = "quickcheck-ext", path = "packages/misc/quickcheck-ext" }
