@@ -1,7 +1,7 @@
 use network::behaviour::ConnectionHandler;
 use network::plane::{ConnectionAgent, NetworkAgent};
 use network::transport::ConnectionEvent;
-use crate::msg::DiscoveryBehaviorEvent;
+use crate::msg::{DiscoveryBehaviorEvent, DiscoveryMsg};
 
 pub struct DiscoveryConnectionHandler {
 
@@ -15,32 +15,27 @@ impl DiscoveryConnectionHandler {
     }
 }
 
-impl<BE> ConnectionHandler<BE> for DiscoveryConnectionHandler
+impl<BE, MSG> ConnectionHandler<BE, MSG> for DiscoveryConnectionHandler
     where BE: TryInto<DiscoveryBehaviorEvent> + From<DiscoveryBehaviorEvent>,
+          MSG: TryInto<DiscoveryMsg> + From<DiscoveryMsg>,
 {
-    fn on_opened(&mut self, agent: &ConnectionAgent<BE>) {
+    fn on_opened(&mut self, agent: &ConnectionAgent<BE, MSG>) {
         todo!()
     }
 
-    fn on_tick(&mut self, agent: &ConnectionAgent<BE>, ts_ms: u64, interal_ms: u64) {
+    fn on_tick(&mut self, agent: &ConnectionAgent<BE, MSG>, ts_ms: u64, interal_ms: u64) {
         todo!()
     }
 
-    fn on_event(&mut self, agent: &ConnectionAgent<BE>, event: &ConnectionEvent) {
-        match event {
-            ConnectionEvent::Reliable { stream_id, data } => {
-
-            }
-            ConnectionEvent::Unreliable { .. } => {}
-            ConnectionEvent::Stats { .. } => {}
-        }
-    }
-
-    fn on_behavior_event(&mut self, agent: &ConnectionAgent<BE>, event: BE) {
+    fn on_event(&mut self, agent: &ConnectionAgent<BE, MSG>, event: &ConnectionEvent<MSG>) {
         todo!()
     }
 
-    fn on_closed(&mut self, agent: &ConnectionAgent<BE>) {
+    fn on_behavior_event(&mut self, agent: &ConnectionAgent<BE, MSG>, event: BE) {
+        todo!()
+    }
+
+    fn on_closed(&mut self, agent: &ConnectionAgent<BE, MSG>) {
         todo!()
     }
 }

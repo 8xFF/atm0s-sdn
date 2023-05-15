@@ -1,24 +1,22 @@
-use crate::transport::{Transport, TransportConnector, TransportEvent};
+mod connection_sender;
+mod connection_receiver;
+mod transport;
 
-pub struct MockTransportConnector {
+use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
+use async_std::channel::{bounded, Receiver, Sender};
+use parking_lot::Mutex;
+use bluesea_identity::{PeerAddr, PeerId};
+use crate::transport::{ConnectionSender, OutgoingConnectionError, Transport, TransportConnector, TransportEvent, TransportPendingOutgoing};
 
+pub enum MockInput<M> {
+    FakeIncomingConnection(PeerId, u32, PeerAddr),
+    FakeIncomingMsg(PeerId, u32, M),
 }
 
-pub struct MockTransport {
-
+pub enum MockOutput<M> {
+    ConnectTo(PeerId, PeerAddr),
+    SendTo(PeerId, u32, M),
 }
 
-impl MockTransport {
-
-}
-
-#[async_trait::async_trait]
-impl Transport for MockTransport {
-    fn connector(&self) -> Box<dyn TransportConnector> {
-        todo!()
-    }
-
-    async fn recv(&mut self) -> Result<TransportEvent, ()> {
-        todo!()
-    }
-}
+pub use transport::MockTransport;

@@ -7,14 +7,14 @@ pub struct TransportPendingOutgoing {
     pub connection_id: u32,
 }
 
-pub enum TransportEvent {
+pub enum TransportEvent<MSG> {
     Incoming(
         Arc<dyn ConnectionSender>,
-        Box<dyn ConnectionReceiver + Send>,
+        Box<dyn ConnectionReceiver<MSG> + Send>,
     ),
     Outgoing(
         Arc<dyn ConnectionSender>,
-        Box<dyn ConnectionReceiver + Send>,
+        Box<dyn ConnectionReceiver<MSG> + Send>,
     ),
     OutgoingError {
         peer_id: PeerId,
@@ -24,9 +24,9 @@ pub enum TransportEvent {
 }
 
 #[async_trait::async_trait]
-pub trait Transport {
+pub trait Transport<MSG> {
     fn connector(&self) -> Box<dyn TransportConnector>;
-    async fn recv(&mut self) -> Result<TransportEvent, ()>;
+    async fn recv(&mut self) -> Result<TransportEvent<MSG>, ()>;
 }
 
 pub trait TransportConnector: Send + Sync {
@@ -37,15 +37,19 @@ pub trait TransportConnector: Send + Sync {
     ) -> Result<TransportPendingOutgoing, OutgoingConnectionError>;
 }
 
-pub enum ConnectionEvent {
+pub enum ConnectionMsg<MSG> {
     Reliable {
         stream_id: u16,
-        data: Vec<u8>,
+        data: MSG,
     },
     Unreliable {
         stream_id: u16,
-        data: Vec<u8>,
+        data: MSG,
     },
+}
+
+pub enum ConnectionEvent<MSG> {
+    Msg(ConnectionMsg<MSG>),
     Stats {
         rtt_ms: (u16, u16),
         sending_kbps: u32,
@@ -65,10 +69,11 @@ pub trait ConnectionSender: Send + Sync {
 }
 
 #[async_trait::async_trait]
-pub trait ConnectionReceiver {
+pub trait ConnectionReceiver<MSG> {
+    fn peer_id(&self) -> PeerId;
     fn connection_id(&self) -> u32;
     fn remote_addr(&self) -> PeerAddr;
-    async fn poll(&mut self) -> Result<ConnectionEvent, ()>;
+    async fn poll(&mut self) -> Result<ConnectionEvent<MSG>, ()>;
 }
 
 #[derive(Error, Debug)]

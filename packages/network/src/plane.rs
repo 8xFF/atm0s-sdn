@@ -9,16 +9,18 @@ use async_std::stream::Interval;
 use bluesea_identity::{PeerAddr, PeerId};
 use utils::Timer;
 
-pub struct NetworkAgent<HE> {
+pub struct NetworkAgent<HE, MSG> {
     connector: Box<dyn TransportConnector>,
-    tmp: Option<HE>
+    tmp: Option<HE>,
+    tmp2: Option<MSG>,
 }
 
-impl<HE> NetworkAgent<HE> {
+impl<HE, MSG> NetworkAgent<HE, MSG> {
     pub fn new(connector: Box<dyn TransportConnector>) -> Self {
         Self {
             connector,
             tmp: None,
+            tmp2: None,
         }
     }
 
@@ -29,20 +31,30 @@ impl<HE> NetworkAgent<HE> {
     pub fn send_handler(&self, peer_id: PeerId, connection_id: Option<u32>, event: HE) {
         todo!()
     }
+
+    pub fn send_to(&self, peer_id: PeerId, connection_id: Option<u32>, stream_id: u16, msg: MSG) {
+        todo!()
+    }
 }
 
-pub struct ConnectionAgent<BE> {
+pub struct ConnectionAgent<BE, MSG> {
     tmp: Option<BE>,
+    tmp2: Option<MSG>,
 }
 
-impl<BE> ConnectionAgent<BE> {
+impl<BE, MSG> ConnectionAgent<BE, MSG> {
     pub fn new() -> Self {
         Self {
-            tmp: None
+            tmp: None,
+            tmp2: None
         }
     }
 
     pub fn send_behavior(&self, event: BE) {
+        todo!()
+    }
+
+    pub fn send_to(&self, peer_id: PeerId, connection_id: Option<u32>, msg: MSG) {
         todo!()
     }
 }
@@ -52,25 +64,26 @@ enum NetworkPlaneInternalEvent {
     OutgoingDisconnected(Arc<dyn ConnectionSender>),
 }
 
-pub struct NetworkPlaneConfig<BE, HE> {
+pub struct NetworkPlaneConfig<BE, HE, MSG> {
     tick_ms: u64,
-    behavior: Vec<Box<dyn NetworkBehavior<BE, HE>>>,
-    transport: Box<dyn Transport>,
+    behavior: Vec<Box<dyn NetworkBehavior<BE, HE, MSG>>>,
+    transport: Box<dyn Transport<MSG>>,
     timer: Arc<dyn Timer>,
 }
 
-pub struct NetworkPlane<BE, HE> {
-    agent: Arc<NetworkAgent<HE>>,
-    conf: NetworkPlaneConfig<BE, HE>,
+pub struct NetworkPlane<BE, HE, MSG> {
+    agent: Arc<NetworkAgent<HE, MSG>>,
+    conf: NetworkPlaneConfig<BE, HE, MSG>,
     internal_tx: Sender<NetworkPlaneInternalEvent>,
     internal_rx: Receiver<NetworkPlaneInternalEvent>,
     tick_interval: Interval,
 }
 
-impl<BE, HE> NetworkPlane<BE, HE>
-    where BE: Send + Sync + 'static
+impl<BE, HE, MSG> NetworkPlane<BE, HE, MSG>
+    where BE: Send + Sync + 'static,
+          MSG: Send + Sync + 'static
 {
-    pub fn new(conf: NetworkPlaneConfig<BE, HE>) -> Self {
+    pub fn new(conf: NetworkPlaneConfig<BE, HE, MSG>) -> Self {
         let (internal_tx, internal_rx) = bounded(1);
         Self {
             agent: NetworkAgent::new(conf.transport.connector()).into(),
@@ -123,7 +136,7 @@ impl<BE, HE> NetworkPlane<BE, HE>
                 let timer = self.conf.timer.clone();
                 let agent = self.agent.clone();
                 async_std::task::spawn(async move {
-                    let conn_agent = ConnectionAgent::<BE>::new();
+                    let conn_agent = ConnectionAgent::<BE, MSG>::new();
                     for handler in &mut handlers {
                         handler.on_opened(&conn_agent);
                     }
@@ -195,9 +208,11 @@ mod tests {
     use crate::plane::{ConnectionAgent, NetworkAgent, NetworkPlane, NetworkPlaneConfig};
     use crate::transport::{ConnectionEvent, ConnectionSender, OutgoingConnectionError};
 
+    enum Behavior1Msg {}
     enum Behavior1Event {}
     enum Handler1Event {}
 
+    enum Behavior2Msg {}
     enum Behavior2Event {}
     enum Handler2Event {}
 
@@ -213,6 +228,12 @@ mod tests {
         Service2(Handler2Event),
     }
 
+    #[derive(convert_enum::From, convert_enum::TryInto)]
+    enum ImplNetworkMsg {
+        Service1(Behavior1Msg),
+        Service2(Behavior2Msg),
+    }
+
     struct Test1NetworkBehavior {}
 
     struct Test1NetworkHandler {}
@@ -221,132 +242,136 @@ mod tests {
 
     struct Test2NetworkHandler {}
 
-    impl<BE, HE> NetworkBehavior<BE, HE> for Test1NetworkBehavior
+    impl<BE, HE, MSG> NetworkBehavior<BE, HE, MSG> for Test1NetworkBehavior
         where BE: From<Behavior1Event> + TryInto<Behavior1Event>,
               HE: From<Handler1Event> + TryInto<Handler1Event>,
+              MSG: From<Behavior1Msg> + TryInto<Behavior1Msg>,
     {
-        fn on_tick(&mut self, agent: &NetworkAgent<HE>, ts_ms: u64, interal_ms: u64) {
+        fn on_tick(&mut self, agent: &NetworkAgent<HE, MSG>, ts_ms: u64, interal_ms: u64) {
             todo!()
         }
 
-        fn on_incoming_connection_connected(&mut self, agent: &NetworkAgent<HE>, connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE>>> {
+        fn on_incoming_connection_connected(&mut self, agent: &NetworkAgent<HE, MSG>, connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, MSG>>> {
             Some(Box::new(Test1NetworkHandler {}))
         }
 
-        fn on_outgoing_connection_connected(&mut self, agent: &NetworkAgent<HE>, connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE>>> {
+        fn on_outgoing_connection_connected(&mut self, agent: &NetworkAgent<HE, MSG>, connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, MSG>>> {
             Some(Box::new(Test1NetworkHandler {}))
         }
 
-        fn on_incoming_connection_disconnected(&mut self, agent: &NetworkAgent<HE>, connection: Arc<dyn ConnectionSender>) {
+        fn on_incoming_connection_disconnected(&mut self, agent: &NetworkAgent<HE, MSG>, connection: Arc<dyn ConnectionSender>) {
             todo!()
         }
 
-        fn on_outgoing_connection_disconnected(&mut self, agent: &NetworkAgent<HE>, connection: Arc<dyn ConnectionSender>) {
+        fn on_outgoing_connection_disconnected(&mut self, agent: &NetworkAgent<HE, MSG>, connection: Arc<dyn ConnectionSender>) {
             todo!()
         }
 
-        fn on_outgoing_connection_error(&mut self, agent: &NetworkAgent<HE>, peer_id: PeerId, connection_id: u32, err: &OutgoingConnectionError) {
+        fn on_outgoing_connection_error(&mut self, agent: &NetworkAgent<HE, MSG>, peer_id: PeerId, connection_id: u32, err: &OutgoingConnectionError) {
             todo!()
         }
 
-        fn on_event(&mut self, agent: &NetworkAgent<HE>, event: NetworkBehaviorEvent) {
+        fn on_event(&mut self, agent: &NetworkAgent<HE, MSG>, event: NetworkBehaviorEvent) {
             todo!()
         }
 
-        fn on_handler_event(&mut self, agent: &NetworkAgent<HE>, peer_id: PeerId, connection_id: u32, event: HE) {
+        fn on_handler_event(&mut self, agent: &NetworkAgent<HE, MSG>, peer_id: PeerId, connection_id: u32, event: HE) {
             if let Ok(event) = event.try_into() {
 
             }
         }
     }
 
-    impl<BE> ConnectionHandler<BE> for Test1NetworkHandler
-        where BE: From<Behavior1Event> + TryInto<Behavior1Event>
+    impl<BE, MSG> ConnectionHandler<BE, MSG> for Test1NetworkHandler
+        where BE: From<Behavior1Event> + TryInto<Behavior1Event>,
+              MSG: From<Behavior1Msg> + TryInto<Behavior1Msg>,
     {
-        fn on_opened(&mut self, agent: &ConnectionAgent<BE>) {
+        fn on_opened(&mut self, agent: &ConnectionAgent<BE, MSG>) {
             todo!()
         }
 
-        fn on_tick(&mut self, agent: &ConnectionAgent<BE>, ts_ms: u64, interal_ms: u64) {
+        fn on_tick(&mut self, agent: &ConnectionAgent<BE, MSG>, ts_ms: u64, interal_ms: u64) {
             todo!()
         }
 
-        fn on_event(&mut self, agent: &ConnectionAgent<BE>, event: &ConnectionEvent) {
+        fn on_event(&mut self, agent: &ConnectionAgent<BE, MSG>, event: &ConnectionEvent<MSG>) {
             todo!()
         }
 
-        fn on_behavior_event(&mut self, agent: &ConnectionAgent<BE>, event: BE) {
+        fn on_behavior_event(&mut self, agent: &ConnectionAgent<BE, MSG>, event: BE) {
             if let Ok(event) = event.try_into() {
 
             }
         }
 
-        fn on_closed(&mut self, agent: &ConnectionAgent<BE>) {
+        fn on_closed(&mut self, agent: &ConnectionAgent<BE, MSG>) {
             todo!()
         }
     }
 
-    impl<BE, HE> NetworkBehavior<BE, HE> for Test2NetworkBehavior
+    impl<BE, HE, MSG> NetworkBehavior<BE, HE, MSG> for Test2NetworkBehavior
         where BE: From<Behavior2Event> + TryInto<Behavior2Event>,
               HE: From<Handler2Event> + TryInto<Handler2Event>,
+              MSG: From<Behavior2Msg> + TryInto<Behavior2Msg>,
     {
-        fn on_tick(&mut self, agent: &NetworkAgent<HE>, ts_ms: u64, interal_ms: u64) {
+        fn on_tick(&mut self, agent: &NetworkAgent<HE, MSG>, ts_ms: u64, interal_ms: u64) {
             todo!()
         }
 
-        fn on_incoming_connection_connected(&mut self, agent: &NetworkAgent<HE>, connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE>>> {
+        fn on_incoming_connection_connected(&mut self, agent: &NetworkAgent<HE, MSG>, connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, MSG>>> {
             Some(Box::new(Test2NetworkHandler {}))
         }
 
-        fn on_outgoing_connection_connected(&mut self, agent: &NetworkAgent<HE>, connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE>>> {
+        fn on_outgoing_connection_connected(&mut self, agent: &NetworkAgent<HE, MSG>, connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, MSG>>> {
             Some(Box::new(Test2NetworkHandler {}))
         }
 
-        fn on_incoming_connection_disconnected(&mut self, agent: &NetworkAgent<HE>, connection: Arc<dyn ConnectionSender>) {
+        fn on_incoming_connection_disconnected(&mut self, agent: &NetworkAgent<HE, MSG>, connection: Arc<dyn ConnectionSender>) {
             todo!()
         }
 
-        fn on_outgoing_connection_disconnected(&mut self, agent: &NetworkAgent<HE>, connection: Arc<dyn ConnectionSender>) {
+        fn on_outgoing_connection_disconnected(&mut self, agent: &NetworkAgent<HE, MSG>, connection: Arc<dyn ConnectionSender>) {
             todo!()
         }
 
-        fn on_outgoing_connection_error(&mut self, agent: &NetworkAgent<HE>, peer_id: PeerId, connection_id: u32, err: &OutgoingConnectionError) {
+        fn on_outgoing_connection_error(&mut self, agent: &NetworkAgent<HE, MSG>, peer_id: PeerId, connection_id: u32, err: &OutgoingConnectionError) {
             todo!()
         }
 
-        fn on_event(&mut self, agent: &NetworkAgent<HE>, event: NetworkBehaviorEvent) {
+        fn on_event(&mut self, agent: &NetworkAgent<HE, MSG>, event: NetworkBehaviorEvent) {
             todo!()
         }
 
-        fn on_handler_event(&mut self, agent: &NetworkAgent<HE>, peer_id: PeerId, connection_id: u32, event: HE) {
+        fn on_handler_event(&mut self, agent: &NetworkAgent<HE, MSG>, peer_id: PeerId, connection_id: u32, event: HE) {
             if let Ok(event) = event.try_into() {
 
             }
         }
     }
 
-    impl<BE> ConnectionHandler<BE> for Test2NetworkHandler
-        where BE: From<Behavior2Event> + TryInto<Behavior2Event>
+    impl<BE, MSG> ConnectionHandler<BE, MSG> for Test2NetworkHandler
+        where BE: From<Behavior2Event> + TryInto<Behavior2Event>,
+              MSG: From<Behavior2Msg> + TryInto<Behavior2Msg>,
     {
-        fn on_opened(&mut self, agent: &ConnectionAgent<BE>) {
+        fn on_opened(&mut self, agent: &ConnectionAgent<BE, MSG>) {
             todo!()
         }
 
-        fn on_tick(&mut self, agent: &ConnectionAgent<BE>, ts_ms: u64, interal_ms: u64) {
+        fn on_tick(&mut self, agent: &ConnectionAgent<BE, MSG>, ts_ms: u64, interal_ms: u64) {
             todo!()
         }
 
-        fn on_event(&mut self, agent: &ConnectionAgent<BE>, event: &ConnectionEvent) {
+        fn on_event(&mut self, agent: &ConnectionAgent<BE, MSG>, event: &ConnectionEvent<MSG>) {
             todo!()
         }
 
-        fn on_behavior_event(&mut self, agent: &ConnectionAgent<BE>, event: BE) {
+        fn on_behavior_event(&mut self, agent: &ConnectionAgent<BE, MSG>, event: BE) {
             if let Ok(event) = event.try_into() {
 
             }
         }
 
-        fn on_closed(&mut self, agent: &ConnectionAgent<BE>) {
+        fn on_closed(&mut self, agent: &ConnectionAgent<BE, MSG>) {
             todo!()
         }
     }
@@ -356,10 +381,11 @@ mod tests {
         let behavior1 = Box::new(Test1NetworkBehavior {});
         let behavior2 = Box::new(Test2NetworkBehavior {});
 
-        let transport = Box::new(MockTransport {});
+        let (mock, faker, output) = MockTransport::<ImplNetworkMsg>::new();
+        let transport = Box::new(mock);
         let timer = Arc::new(SystemTimer());
         
-        let mut plane = NetworkPlane::<ImplNetworkBehaviorEvent, ImplNetworkHandlerEvent>::new(NetworkPlaneConfig {
+        let mut plane = NetworkPlane::<ImplNetworkBehaviorEvent, ImplNetworkHandlerEvent, ImplNetworkMsg>::new(NetworkPlaneConfig {
             tick_ms: 1000,
             behavior: vec![behavior1, behavior2],
             transport,
