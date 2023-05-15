@@ -7,6 +7,7 @@ pub struct SystemTimer();
 
 impl Timer for SystemTimer {
     fn now_ms(&self) -> u64 {
-        todo!()
+        //TODO
+        0
     }
 }

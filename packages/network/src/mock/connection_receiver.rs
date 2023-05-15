@@ -3,10 +3,10 @@ use bluesea_identity::{PeerAddr, PeerId};
 use crate::transport::{ConnectionEvent, ConnectionReceiver};
 
 pub struct MockConnectionReceiver<MSG> {
-    peer_id: PeerId,
-    conn_id: u32,
-    remote_addr: PeerAddr,
-    receiver: Receiver<ConnectionEvent<MSG>>
+    pub peer_id: PeerId,
+    pub conn_id: u32,
+    pub remote_addr: PeerAddr,
+    pub receiver: Receiver<ConnectionEvent<MSG>>
 }
 
 #[async_trait::async_trait]
@@ -24,6 +24,6 @@ impl<MSG: Send + Sync> ConnectionReceiver<MSG> for MockConnectionReceiver<MSG> {
     }
 
     async fn poll(&mut self) -> Result<ConnectionEvent<MSG>, ()> {
-        todo!()
+        self.receiver.recv().await.map_err(|e| ())
     }
 }

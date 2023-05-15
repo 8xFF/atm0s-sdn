@@ -9,11 +9,11 @@ pub struct TransportPendingOutgoing {
 
 pub enum TransportEvent<MSG> {
     Incoming(
-        Arc<dyn ConnectionSender>,
+        Arc<dyn ConnectionSender<MSG>>,
         Box<dyn ConnectionReceiver<MSG> + Send>,
     ),
     Outgoing(
-        Arc<dyn ConnectionSender>,
+        Arc<dyn ConnectionSender<MSG>>,
         Box<dyn ConnectionReceiver<MSG> + Send>,
     ),
     OutgoingError {
@@ -37,6 +37,7 @@ pub trait TransportConnector: Send + Sync {
     ) -> Result<TransportPendingOutgoing, OutgoingConnectionError>;
 }
 
+#[derive(PartialEq, Debug)]
 pub enum ConnectionMsg<MSG> {
     Reliable {
         stream_id: u16,
@@ -48,23 +49,25 @@ pub enum ConnectionMsg<MSG> {
     },
 }
 
-pub enum ConnectionEvent<MSG> {
-    Msg(ConnectionMsg<MSG>),
-    Stats {
-        rtt_ms: (u16, u16),
-        sending_kbps: u32,
-        send_est_kbps: u32,
-        loss_percent: u32,
-        over_use: bool,
-    }
+#[derive(Clone)]
+pub struct ConnectionStats {
+    rtt_ms: (u16, u16),
+    sending_kbps: u32,
+    send_est_kbps: u32,
+    loss_percent: u32,
+    over_use: bool,
 }
 
-pub trait ConnectionSender: Send + Sync {
+pub enum ConnectionEvent<MSG> {
+    Msg { service_id: u8, msg: ConnectionMsg<MSG> },
+    Stats(ConnectionStats)
+}
+
+pub trait ConnectionSender<MSG>: Send + Sync {
     fn peer_id(&self) -> PeerId;
     fn connection_id(&self) -> u32;
     fn remote_addr(&self) -> PeerAddr;
-    fn send_stream_reliable(&self, stream_id: u16, data: &[u8]);
-    fn send_stream_unreliable(&self, stream_id: u16, data: &[u8]);
+    fn send(&self, service_id: u8, msg: ConnectionMsg<MSG>);
     fn close(&self);
 }
 

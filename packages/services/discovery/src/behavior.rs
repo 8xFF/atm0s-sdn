@@ -51,8 +51,12 @@ impl DiscoveryNetworkBehavior {
 impl<BE, HE, MSG> NetworkBehavior<BE, HE, MSG> for DiscoveryNetworkBehavior
     where BE: TryInto<DiscoveryBehaviorEvent> + From<DiscoveryBehaviorEvent>,
           HE: TryInto<DiscoveryHandlerEvent> + From<DiscoveryHandlerEvent>,
-          MSG: TryInto<DiscoveryMsg> + From<DiscoveryMsg>,
+          MSG: TryInto<DiscoveryMsg> + From<DiscoveryMsg> + Send + Sync + 'static,
 {
+    fn service_id(&self) -> u8 {
+        0
+    }
+
     fn on_tick(&mut self, agent: &NetworkAgent<HE, MSG>, ts_ms: u64, interal_ms: u64) {
         if let Some(bootstrap) = self.opts.bootstrap_addrs.take() {
             for (peer, addr) in bootstrap {

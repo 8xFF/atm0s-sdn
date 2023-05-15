@@ -27,7 +27,7 @@ impl<BE, MSG> ConnectionHandler<BE, MSG> for DiscoveryConnectionHandler
         todo!()
     }
 
-    fn on_event(&mut self, agent: &ConnectionAgent<BE, MSG>, event: &ConnectionEvent<MSG>) {
+    fn on_event(&mut self, agent: &ConnectionAgent<BE, MSG>, event: ConnectionEvent<MSG>) {
         todo!()
     }
 
