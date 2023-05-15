@@ -201,90 +201,16 @@ mod tests {
     enum Behavior2Event {}
     enum Handler2Event {}
 
+    #[derive(convert_enum::From, convert_enum::TryInto)]
     enum ImplNetworkBehaviorEvent {
         Service1(Behavior1Event),
         Service2(Behavior2Event)
     }
 
-    impl From<Behavior1Event> for ImplNetworkBehaviorEvent {
-        fn from(value: Behavior1Event) -> Self {
-            ImplNetworkBehaviorEvent::Service1(value)
-        }
-    }
-
-    impl TryInto<Behavior1Event> for ImplNetworkBehaviorEvent {
-        type Error = ();
-
-        fn try_into(self) -> Result<Behavior1Event, Self::Error> {
-            match self {
-                ImplNetworkBehaviorEvent::Service1(e) => {
-                    Ok(e)
-                },
-                _ => Err(())
-            }
-        }
-    }
-
-    impl From<Behavior2Event> for ImplNetworkBehaviorEvent {
-        fn from(value: Behavior2Event) -> Self {
-            ImplNetworkBehaviorEvent::Service2(value)
-        }
-    }
-
-    impl TryInto<Behavior2Event> for ImplNetworkBehaviorEvent {
-        type Error = ();
-
-        fn try_into(self) -> Result<Behavior2Event, Self::Error> {
-            match self {
-                ImplNetworkBehaviorEvent::Service2(e) => {
-                    Ok(e)
-                },
-                _ => Err(())
-            }
-        }
-    }
-
+    #[derive(convert_enum::From, convert_enum::TryInto)]
     enum ImplNetworkHandlerEvent {
         Service1(Handler1Event),
         Service2(Handler2Event),
-    }
-
-    impl From<Handler1Event> for ImplNetworkHandlerEvent {
-        fn from(value: Handler1Event) -> Self {
-            ImplNetworkHandlerEvent::Service1(value)
-        }
-    }
-
-    impl TryInto<Handler1Event> for ImplNetworkHandlerEvent {
-        type Error = ();
-
-        fn try_into(self) -> Result<Handler1Event, Self::Error> {
-            match self {
-                ImplNetworkHandlerEvent::Service1(e) => {
-                    Ok(e)
-                },
-                _ => Err(())
-            }
-        }
-    }
-
-    impl From<Handler2Event> for ImplNetworkHandlerEvent {
-        fn from(value: Handler2Event) -> Self {
-            ImplNetworkHandlerEvent::Service2(value)
-        }
-    }
-
-    impl TryInto<Handler2Event> for ImplNetworkHandlerEvent {
-        type Error = ();
-
-        fn try_into(self) -> Result<Handler2Event, Self::Error> {
-            match self {
-                ImplNetworkHandlerEvent::Service2(e) => {
-                    Ok(e)
-                },
-                _ => Err(())
-            }
-        }
     }
 
     struct Test1NetworkBehavior {}

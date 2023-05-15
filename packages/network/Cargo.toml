@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 async-std = { version = "1.12", features = ["unstable", "attributes"] }
 futures = "0.3"
+convert-enum = "0.1.0"
 async-trait = { workspace = true }
 log = { workspace = true }
 utils = { workspace = true }
