@@ -6,6 +6,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use async_std::stream::Interval;
+use bluesea_identity::PeerId;
 use utils::Timer;
 
 pub struct NetworkAgent {
@@ -19,8 +20,8 @@ impl NetworkAgent {
         }
     }
 
-    pub fn connect_to(&self, dest: TransportAddr) -> Result<TransportPendingOutgoing, OutgoingConnectionError> {
-        self.connector.connect_to(dest)
+    pub fn connect_to(&self, peer_id: PeerId, dest: TransportAddr) -> Result<TransportPendingOutgoing, OutgoingConnectionError> {
+        self.connector.connect_to(peer_id, dest)
     }
 }
 
@@ -98,6 +99,9 @@ impl NetworkPlane {
                 let timer = self.conf.timer.clone();
                 let agent = self.agent.clone();
                 async_std::task::spawn(async move {
+                    for handler in &mut handlers {
+                        handler.on_opened(&agent);
+                    }
                     let mut tick_interval = async_std::stream::interval(Duration::from_millis(tick_ms));
                     loop {
                         select! {
@@ -114,18 +118,21 @@ impl NetworkPlane {
                                     }
                                 }
                                 Err(err) => {
-                                    if outgoing {
-                                        if let Err(err) = internal_tx.send(NetworkPlaneInternalEvent::IncomingDisconnected(sender)).await {
-                                            log::error!("Sending IncomingDisconnected error {:?}", err);
-                                        }
-                                    } else {
-                                        if let Err(err) = internal_tx.send(NetworkPlaneInternalEvent::OutgoingDisconnected(sender)).await {
-                                            log::error!("Sending OutgoingDisconnected error {:?}", err);
-                                        }
-                                    }
                                     break;
                                 }
                             }
+                        }
+                    }
+                    for handler in &mut handlers {
+                        handler.on_closed(&agent);
+                    }
+                    if outgoing {
+                        if let Err(err) = internal_tx.send(NetworkPlaneInternalEvent::IncomingDisconnected(sender)).await {
+                            log::error!("Sending IncomingDisconnected error {:?}", err);
+                        }
+                    } else {
+                        if let Err(err) = internal_tx.send(NetworkPlaneInternalEvent::OutgoingDisconnected(sender)).await {
+                            log::error!("Sending OutgoingDisconnected error {:?}", err);
                         }
                     }
                 });
@@ -151,4 +158,68 @@ impl NetworkPlane {
             }
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use crate::behaviour::{ConnectionHandler, NetworkBehavior, NetworkBehaviorEvent};
+    use crate::plane::NetworkAgent;
+    use crate::transport::{ConnectionSender, OutgoingConnectionError};
+
+    enum MockNetworkEvent {
+        IncomingConnected(u32),
+        OutgoingConnected(u32),
+        IncomingDisconnected(u32),
+        OutgoingDisconnected(u32),
+    }
+
+    struct MockNetworkBehavior {
+
+    }
+
+
+    impl NetworkBehavior for MockNetworkBehavior {
+        fn on_tick(&mut self, agent: &NetworkAgent, ts_ms: u64, interal_ms: u64) {
+            todo!()
+        }
+
+        fn on_incoming_connection_connected(&mut self, agent: &NetworkAgent, connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler>> {
+            connection.close();
+            None
+        }
+
+        fn on_outgoing_connection_connected(&mut self, agent: &NetworkAgent, connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler>> {
+            connection.close();
+            None
+        }
+
+        fn on_incoming_connection_disconnected(&mut self, agent: &NetworkAgent, connection: Arc<dyn ConnectionSender>) {
+            todo!()
+        }
+
+        fn on_outgoing_connection_disconnected(&mut self, agent: &NetworkAgent, connection: Arc<dyn ConnectionSender>) {
+            todo!()
+        }
+
+        fn on_outgoing_connection_error(&mut self, agent: &NetworkAgent, connection_id: u32, err: &OutgoingConnectionError) {
+            todo!()
+        }
+
+        fn on_event(&mut self, agent: &NetworkAgent, event: NetworkBehaviorEvent) {
+            todo!()
+        }
+    }
+
+    // // Test is it correct to delivery incoming connection event
+    // #[async_std::test]
+    // async fn incoming_connection() {
+    //
+    // }
+    //
+    // // Test is it correct to delivery outgoing connection event
+    // #[async_std::test]
+    // async fn outgoing_connection() {
+    //
+    // }
 }

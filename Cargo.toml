@@ -4,12 +4,19 @@ members = [
     "packages/misc/quickcheck-ext",
     "packages/core/utils",
     "packages/core/identity",
-    "packages/core/discovery",
+    "packages/core/kademlia",
     "packages/core/router",
-    "packages/core/service",
+    "packages/services/discovery",
     "packages/runner",
 ]
 
 [workspace.dependencies]
+async-trait = "0.1"
+bluesea-identity = { path = "packages/core/identity" }
 quickcheck = { package = "quickcheck-ext", path = "packages/misc/quickcheck-ext" }
 utils = { package = "utils", path = "packages/core/utils" }
+kademlia = { package = "kademlia", path = "packages/core/kademlia" }
+network = { package = "network", path = "packages/network" }
+thiserror = "1.0"
+log = "0.4"
+parking_lot = "0.12"

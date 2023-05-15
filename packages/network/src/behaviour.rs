@@ -3,8 +3,10 @@ use std::sync::Arc;
 use crate::plane::NetworkAgent;
 
 pub trait ConnectionHandler: Send + Sync {
+    fn on_opened(&mut self, agent: &NetworkAgent);
     fn on_tick(&mut self, agent: &NetworkAgent, ts_ms: u64, interal_ms: u64);
     fn on_event(&mut self, agent: &NetworkAgent, event: &ConnectionEvent);
+    fn on_closed(&mut self, agent: &NetworkAgent);
 }
 
 pub enum NetworkBehaviorEvent {}

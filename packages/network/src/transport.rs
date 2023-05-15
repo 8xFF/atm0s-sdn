@@ -1,10 +1,13 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
+use thiserror::Error;
+use bluesea_identity::PeerId;
 
+#[derive(Clone, Debug)]
 pub struct TransportAddr {}
 
 pub struct TransportPendingOutgoing {
-    connection_id: u32,
+    pub connection_id: u32,
 }
 
 pub enum TransportEvent {
@@ -31,12 +34,12 @@ pub trait Transport {
 pub trait TransportConnector: Send + Sync {
     fn connect_to(
         &self,
+        peer_id: PeerId,
         dest: TransportAddr,
     ) -> Result<TransportPendingOutgoing, OutgoingConnectionError>;
 }
 
 pub enum ConnectionEvent {
-    Connected,
     Reliable {
         stream_id: u16,
         data: Vec<u8>,
@@ -51,11 +54,11 @@ pub enum ConnectionEvent {
         send_est_kbps: u32,
         loss_percent: u32,
         over_use: bool,
-    },
-    Disconnected,
+    }
 }
 
 pub trait ConnectionSender: Send + Sync {
+    fn peer_id(&self) -> PeerId;
     fn connection_id(&self) -> u32;
     fn remote_addr(&self) -> TransportAddr;
     fn send_stream_reliable(&self, stream_id: u16, data: &[u8]);
@@ -70,7 +73,10 @@ pub trait ConnectionReceiver {
     async fn poll(&mut self) -> Result<ConnectionEvent, ()>;
 }
 
+#[derive(Error, Debug)]
 pub enum OutgoingConnectionError {
+    #[error("Too many connection")]
     TooManyConnection,
+    #[error("Authentication Error")]
     AuthenticationError,
 }

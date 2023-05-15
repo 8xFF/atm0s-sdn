@@ -74,7 +74,7 @@ impl<TKey: AsRef<KeyBytes>, TVal> AsRef<KeyBytes> for EntryView<TKey, TVal> {
 
 /// A reference into a single entry of a `KBucketsTable`.
 #[derive(Debug)]
-pub(crate) enum Entry<'a, TPeerId, TVal> {
+pub enum Entry<'a, TPeerId, TVal> {
     /// The entry is present in a bucket.
     Present(PresentEntry<'a, TPeerId, TVal>, NodeStatus),
     /// The entry is pending insertion in a bucket.
@@ -99,7 +99,7 @@ impl<'a, TKey, TVal> Entry<'a, TKey, TVal>
         TVal: Clone,
 {
     /// Creates a new `Entry` for a `Key`, encapsulating access to a bucket.
-    pub(super) fn new(bucket: &'a mut KBucket<TKey, TVal>, key: &'a TKey) -> Self {
+    pub fn new(bucket: &'a mut KBucket<TKey, TVal>, key: &'a TKey) -> Self {
         if let Some(pos) = bucket.position(key) {
             let status = bucket.status(pos);
             Entry::Present(PresentEntry::new(bucket, key), status)
@@ -115,7 +115,7 @@ impl<'a, TKey, TVal> Entry<'a, TKey, TVal>
     ///
     /// Returns `None` if the entry is neither present in a bucket nor
     /// pending insertion into a bucket.
-    pub(crate) fn view(&'a mut self) -> Option<EntryRefView<'a, TKey, TVal>> {
+    pub fn view(&'a mut self) -> Option<EntryRefView<'a, TKey, TVal>> {
         match self {
             Entry::Present(entry, status) => Some(EntryRefView {
                 node: NodeRefView {
@@ -140,7 +140,7 @@ impl<'a, TKey, TVal> Entry<'a, TKey, TVal>
     /// Returns `None` if the `Key` used to construct this `Entry` is not a valid
     /// key for an entry in a bucket, which is the case for the `local_key` of
     /// the `KBucketsTable` referring to the local node.
-    pub(crate) fn key(&self) -> Option<&TKey> {
+    pub fn key(&self) -> Option<&TKey> {
         match self {
             Entry::Present(entry, _) => Some(entry.key()),
             Entry::Pending(entry, _) => Some(entry.key()),
@@ -153,7 +153,7 @@ impl<'a, TKey, TVal> Entry<'a, TKey, TVal>
     ///
     /// Returns `None` if the entry is absent from any bucket or refers to the
     /// local node.
-    pub(crate) fn value(&mut self) -> Option<&mut TVal> {
+    pub fn value(&mut self) -> Option<&mut TVal> {
         match self {
             Entry::Present(entry, _) => Some(entry.value()),
             Entry::Pending(entry, _) => Some(entry.value()),
@@ -165,7 +165,7 @@ impl<'a, TKey, TVal> Entry<'a, TKey, TVal>
 
 /// An entry present in a bucket.
 #[derive(Debug)]
-pub(crate) struct PresentEntry<'a, TKey, TVal>(EntryRef<'a, TKey, TVal>);
+pub struct PresentEntry<'a, TKey, TVal>(EntryRef<'a, TKey, TVal>);
 impl<'a, TKey, TVal> PresentEntry<'a, TKey, TVal>
     where
         TKey: Clone + AsRef<KeyBytes>,
@@ -176,12 +176,12 @@ impl<'a, TKey, TVal> PresentEntry<'a, TKey, TVal>
     }
 
     /// Returns the key of the entry.
-    pub(crate) fn key(&self) -> &TKey {
+    pub fn key(&self) -> &TKey {
         self.0.key
     }
 
     /// Returns the value associated with the key.
-    pub(crate) fn value(&mut self) -> &mut TVal {
+    pub fn value(&mut self) -> &mut TVal {
         &mut self
             .0
             .bucket
@@ -191,12 +191,12 @@ impl<'a, TKey, TVal> PresentEntry<'a, TKey, TVal>
     }
 
     /// Sets the status of the entry to the provided [`NodeStatus`].
-    pub(crate) fn update(&mut self, status: NodeStatus) {
+    pub fn update(&mut self, status: NodeStatus) {
         self.0.bucket.update(self.0.key, status);
     }
 
     /// Removes the entry from the bucket.
-    pub(crate) fn remove(self) -> EntryView<TKey, TVal> {
+    pub fn remove(self) -> EntryView<TKey, TVal> {
         let (node, status, _pos) = self
             .0
             .bucket
@@ -208,7 +208,7 @@ impl<'a, TKey, TVal> PresentEntry<'a, TKey, TVal>
 
 /// An entry waiting for a slot to be available in a bucket.
 #[derive(Debug)]
-pub(crate) struct PendingEntry<'a, TKey, TVal>(EntryRef<'a, TKey, TVal>);
+pub struct PendingEntry<'a, TKey, TVal>(EntryRef<'a, TKey, TVal>);
 impl<'a, TKey, TVal> PendingEntry<'a, TKey, TVal>
     where
         TKey: Clone + AsRef<KeyBytes>,
@@ -219,12 +219,12 @@ impl<'a, TKey, TVal> PendingEntry<'a, TKey, TVal>
     }
 
     /// Returns the key of the entry.
-    pub(crate) fn key(&self) -> &TKey {
+    pub fn key(&self) -> &TKey {
         self.0.key
     }
 
     /// Returns the value associated with the key.
-    pub(crate) fn value(&mut self) -> &mut TVal {
+    pub fn value(&mut self) -> &mut TVal {
         self.0
             .bucket
             .pending_mut()
@@ -233,13 +233,13 @@ impl<'a, TKey, TVal> PendingEntry<'a, TKey, TVal>
     }
 
     /// Updates the status of the pending entry.
-    pub(crate) fn update(self, status: NodeStatus) -> PendingEntry<'a, TKey, TVal> {
+    pub fn update(self, status: NodeStatus) -> PendingEntry<'a, TKey, TVal> {
         self.0.bucket.update_pending(status);
         PendingEntry::new(self.0.bucket, self.0.key)
     }
 
     /// Removes the pending entry from the bucket.
-    pub(crate) fn remove(self) -> EntryView<TKey, TVal> {
+    pub fn remove(self) -> EntryView<TKey, TVal> {
         let pending = self.0.bucket.remove_pending().expect(
             "We can only build a PendingEntry if the entry is pending insertion
                     into the bucket; QED",
@@ -252,7 +252,7 @@ impl<'a, TKey, TVal> PendingEntry<'a, TKey, TVal>
 
 /// An entry that is not present in any bucket.
 #[derive(Debug)]
-pub(crate) struct AbsentEntry<'a, TKey, TVal>(EntryRef<'a, TKey, TVal>);
+pub struct AbsentEntry<'a, TKey, TVal>(EntryRef<'a, TKey, TVal>);
 impl<'a, TKey, TVal> AbsentEntry<'a, TKey, TVal>
     where
         TKey: Clone + AsRef<KeyBytes>,
@@ -263,12 +263,12 @@ impl<'a, TKey, TVal> AbsentEntry<'a, TKey, TVal>
     }
 
     /// Returns the key of the entry.
-    pub(crate) fn key(&self) -> &TKey {
+    pub fn key(&self) -> &TKey {
         self.0.key
     }
 
     /// Attempts to insert the entry into a bucket.
-    pub(crate) fn insert(self, value: TVal, status: NodeStatus) -> InsertResult<TKey> {
+    pub fn insert(self, value: TVal, status: NodeStatus) -> InsertResult<TKey> {
         self.0.bucket.insert(
             Node {
                 key: self.0.key.clone(),
