@@ -7,6 +7,7 @@ members = [
     "packages/core/kademlia",
     "packages/core/router",
     "packages/services/discovery",
+    "packages/transports/vnet",
     "packages/runner",
 ]
 
@@ -17,6 +18,7 @@ quickcheck = { package = "quickcheck-ext", path = "packages/misc/quickcheck-ext"
 utils = { package = "utils", path = "packages/core/utils" }
 kademlia = { package = "kademlia", path = "packages/core/kademlia" }
 network = { package = "network", path = "packages/network" }
+transport-mock = { package = "mock", path = "packages/transports/vnet" }
 thiserror = "1.0"
 log = "0.4"
 parking_lot = "0.12"

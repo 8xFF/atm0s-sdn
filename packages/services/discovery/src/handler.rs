@@ -1,6 +1,7 @@
 use network::behaviour::ConnectionHandler;
-use network::plane::NetworkAgent;
+use network::plane::{ConnectionAgent, NetworkAgent};
 use network::transport::ConnectionEvent;
+use crate::msg::DiscoveryBehaviorEvent;
 
 pub struct DiscoveryConnectionHandler {
 
@@ -14,16 +15,18 @@ impl DiscoveryConnectionHandler {
     }
 }
 
-impl ConnectionHandler for DiscoveryConnectionHandler {
-    fn on_opened(&mut self, agent: &NetworkAgent) {
+impl<BE> ConnectionHandler<BE> for DiscoveryConnectionHandler
+    where BE: TryInto<DiscoveryBehaviorEvent> + From<DiscoveryBehaviorEvent>,
+{
+    fn on_opened(&mut self, agent: &ConnectionAgent<BE>) {
         todo!()
     }
 
-    fn on_tick(&mut self, agent: &NetworkAgent, ts_ms: u64, interal_ms: u64) {
+    fn on_tick(&mut self, agent: &ConnectionAgent<BE>, ts_ms: u64, interal_ms: u64) {
         todo!()
     }
 
-    fn on_event(&mut self, agent: &NetworkAgent, event: &ConnectionEvent) {
+    fn on_event(&mut self, agent: &ConnectionAgent<BE>, event: &ConnectionEvent) {
         match event {
             ConnectionEvent::Reliable { stream_id, data } => {
 
@@ -33,7 +36,11 @@ impl ConnectionHandler for DiscoveryConnectionHandler {
         }
     }
 
-    fn on_closed(&mut self, agent: &NetworkAgent) {
+    fn on_behavior_event(&mut self, agent: &ConnectionAgent<BE>, event: BE) {
+        todo!()
+    }
+
+    fn on_closed(&mut self, agent: &ConnectionAgent<BE>) {
         todo!()
     }
 }
