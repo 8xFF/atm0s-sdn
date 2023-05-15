@@ -1,12 +1,12 @@
 use crate::behaviour::NetworkBehavior;
-use crate::transport::{ConnectionSender, OutgoingConnectionError, Transport, TransportAddr, TransportConnector, TransportEvent, TransportPendingOutgoing};
+use crate::transport::{ConnectionSender, OutgoingConnectionError, Transport, TransportConnector, TransportEvent, TransportPendingOutgoing};
 use async_std::channel::{bounded, Receiver, Sender};
 use futures::{select, FutureExt, SinkExt, StreamExt};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use async_std::stream::Interval;
-use bluesea_identity::PeerId;
+use bluesea_identity::{PeerAddr, PeerId};
 use utils::Timer;
 
 pub struct NetworkAgent {
@@ -20,7 +20,7 @@ impl NetworkAgent {
         }
     }
 
-    pub fn connect_to(&self, peer_id: PeerId, dest: TransportAddr) -> Result<TransportPendingOutgoing, OutgoingConnectionError> {
+    pub fn connect_to(&self, peer_id: PeerId, dest: PeerAddr) -> Result<TransportPendingOutgoing, OutgoingConnectionError> {
         self.connector.connect_to(peer_id, dest)
     }
 }
@@ -80,15 +80,15 @@ impl NetworkPlane {
                     TransportEvent::Outgoing(sender, receiver) => {
                         let mut handlers = vec![];
                         for behaviour in &mut self.conf.behavior {
-                            if let Some(handler) = behaviour.on_incoming_connection_connected(&self.agent, sender.clone()) {
+                            if let Some(handler) = behaviour.on_outgoing_connection_connected(&self.agent, sender.clone()) {
                                 handlers.push(handler);
                             }
                         }
                         (true, sender, receiver, handlers)
                     }
-                    TransportEvent::OutgoingError { connection_id, err } => {
+                    TransportEvent::OutgoingError { peer_id, connection_id, err } => {
                         for behaviour in &mut self.conf.behavior {
-                            behaviour.on_outgoing_connection_error(&self.agent, connection_id, &err);
+                            behaviour.on_outgoing_connection_error(&self.agent, peer_id, connection_id, &err);
                         }
                         return Ok(());
                     }
@@ -163,6 +163,7 @@ impl NetworkPlane {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+    use bluesea_identity::PeerId;
     use crate::behaviour::{ConnectionHandler, NetworkBehavior, NetworkBehaviorEvent};
     use crate::plane::NetworkAgent;
     use crate::transport::{ConnectionSender, OutgoingConnectionError};
@@ -202,7 +203,7 @@ mod tests {
             todo!()
         }
 
-        fn on_outgoing_connection_error(&mut self, agent: &NetworkAgent, connection_id: u32, err: &OutgoingConnectionError) {
+        fn on_outgoing_connection_error(&mut self, agent: &NetworkAgent, peer_id: PeerId, connection_id: u32, err: &OutgoingConnectionError) {
             todo!()
         }
 

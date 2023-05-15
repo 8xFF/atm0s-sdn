@@ -24,17 +24,13 @@ impl ConnectionHandler for DiscoveryConnectionHandler {
     }
 
     fn on_event(&mut self, agent: &NetworkAgent, event: &ConnectionEvent) {
-        // match event {
-        //     ConnectionEvent::Reliable { stream_id, data } => {
-        //         //check if is FIND_NODE_RESPONSE
-        //         let closest_peer_ids = vec![];
-        //         for id in closest_peer_ids {
-        //             agent.connect_to(id);
-        //         }
-        //     }
-        //     ConnectionEvent::Unreliable { .. } => {}
-        //     ConnectionEvent::Stats { .. } => {}
-        // }
+        match event {
+            ConnectionEvent::Reliable { stream_id, data } => {
+
+            }
+            ConnectionEvent::Unreliable { .. } => {}
+            ConnectionEvent::Stats { .. } => {}
+        }
     }
 
     fn on_closed(&mut self, agent: &NetworkAgent) {

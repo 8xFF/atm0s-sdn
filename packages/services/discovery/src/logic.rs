@@ -26,20 +26,19 @@ pub enum Input {
 
 pub enum Action {
     ConnectTo(PeerId, PeerAddr),
-    DisconnectFrom(PeerId),
     SendTo(PeerId, Message)
 }
 
 pub struct DiscoveryLogicConf {
-    local_node_id: PeerId,
-    timer: Box<dyn Timer>,
+    pub local_node_id: PeerId,
+    pub timer: Arc<dyn Timer>,
 }
 
 pub struct DiscoveryLogic {
     req_id: u32,
     local_node_id: PeerId,
     local_key: Key<PeerId>,
-    timer: Box<dyn Timer>,
+    timer: Arc<dyn Timer>,
     table: KBucketsTable<Key<PeerId>, PeerAddr>,
     connecting_peers: HashMap<PeerId, u64>,
     action_queues: VecDeque<Action>,

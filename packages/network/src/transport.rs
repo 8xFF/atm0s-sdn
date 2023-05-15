@@ -1,10 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 use thiserror::Error;
-use bluesea_identity::PeerId;
-
-#[derive(Clone, Debug)]
-pub struct TransportAddr {}
+use bluesea_identity::{PeerAddr, PeerId};
 
 pub struct TransportPendingOutgoing {
     pub connection_id: u32,
@@ -20,6 +17,7 @@ pub enum TransportEvent {
         Box<dyn ConnectionReceiver + Send>,
     ),
     OutgoingError {
+        peer_id: PeerId,
         connection_id: u32,
         err: OutgoingConnectionError,
     },
@@ -35,7 +33,7 @@ pub trait TransportConnector: Send + Sync {
     fn connect_to(
         &self,
         peer_id: PeerId,
-        dest: TransportAddr,
+        dest: PeerAddr,
     ) -> Result<TransportPendingOutgoing, OutgoingConnectionError>;
 }
 
@@ -60,7 +58,7 @@ pub enum ConnectionEvent {
 pub trait ConnectionSender: Send + Sync {
     fn peer_id(&self) -> PeerId;
     fn connection_id(&self) -> u32;
-    fn remote_addr(&self) -> TransportAddr;
+    fn remote_addr(&self) -> PeerAddr;
     fn send_stream_reliable(&self, stream_id: u16, data: &[u8]);
     fn send_stream_unreliable(&self, stream_id: u16, data: &[u8]);
     fn close(&self);
@@ -69,7 +67,7 @@ pub trait ConnectionSender: Send + Sync {
 #[async_trait::async_trait]
 pub trait ConnectionReceiver {
     fn connection_id(&self) -> u32;
-    fn remote_addr(&self) -> TransportAddr;
+    fn remote_addr(&self) -> PeerAddr;
     async fn poll(&mut self) -> Result<ConnectionEvent, ()>;
 }
 

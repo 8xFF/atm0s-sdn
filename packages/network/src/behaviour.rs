@@ -1,5 +1,6 @@
 use crate::transport::{ConnectionEvent, ConnectionSender, OutgoingConnectionError};
 use std::sync::Arc;
+use bluesea_identity::PeerId;
 use crate::plane::NetworkAgent;
 
 pub trait ConnectionHandler: Send + Sync {
@@ -25,6 +26,6 @@ pub trait NetworkBehavior {
     ) -> Option<Box<dyn ConnectionHandler>>;
     fn on_incoming_connection_disconnected(&mut self, agent: &NetworkAgent, connection: Arc<dyn ConnectionSender>);
     fn on_outgoing_connection_disconnected(&mut self, agent: &NetworkAgent, connection: Arc<dyn ConnectionSender>);
-    fn on_outgoing_connection_error(&mut self, agent: &NetworkAgent, connection_id: u32, err: &OutgoingConnectionError);
+    fn on_outgoing_connection_error(&mut self, agent: &NetworkAgent, peer_id: PeerId, connection_id: u32, err: &OutgoingConnectionError);
     fn on_event(&mut self, agent: &NetworkAgent, event: NetworkBehaviorEvent);
 }
