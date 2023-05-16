@@ -1,10 +1,10 @@
-use std::collections::VecDeque;
-use std::sync::Arc;
-use async_std::channel::Sender;
-use parking_lot::Mutex;
-use bluesea_identity::{PeerAddr, PeerId};
 use crate::mock::MockOutput;
 use crate::transport::{ConnectionEvent, ConnectionMsg, ConnectionSender};
+use async_std::channel::Sender;
+use bluesea_identity::{PeerAddr, PeerId};
+use parking_lot::Mutex;
+use std::collections::VecDeque;
+use std::sync::Arc;
 
 pub struct MockConnectionSender<MSG> {
     pub(crate) remote_peer_id: PeerId,
@@ -14,7 +14,10 @@ pub struct MockConnectionSender<MSG> {
     pub(crate) internal_sender: Sender<Option<ConnectionEvent<MSG>>>,
 }
 
-impl<MSG> ConnectionSender<MSG> for MockConnectionSender<MSG> where MSG: Send + Sync {
+impl<MSG> ConnectionSender<MSG> for MockConnectionSender<MSG>
+where
+    MSG: Send + Sync,
+{
     fn remote_peer_id(&self) -> PeerId {
         self.remote_peer_id
     }
@@ -28,7 +31,12 @@ impl<MSG> ConnectionSender<MSG> for MockConnectionSender<MSG> where MSG: Send + 
     }
 
     fn send(&self, service_id: u8, msg: ConnectionMsg<MSG>) {
-        self.output.lock().push_back(MockOutput::SendTo(service_id, self.remote_peer_id, self.conn_id, msg));
+        self.output.lock().push_back(MockOutput::SendTo(
+            service_id,
+            self.remote_peer_id,
+            self.conn_id,
+            msg,
+        ));
     }
 
     fn close(&self) {

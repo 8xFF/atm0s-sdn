@@ -1,7 +1,3 @@
-pub struct MockTransport {
+pub struct MockTransport {}
 
-}
-
-impl MockTransport {
-
-}
+impl MockTransport {}

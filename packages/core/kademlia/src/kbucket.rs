@@ -72,8 +72,8 @@ pub mod entry;
 #[allow(clippy::assign_op_pattern)]
 pub mod key;
 
-pub use entry::*;
 pub use bucket::*;
+pub use entry::*;
 
 use arrayvec::{self, ArrayVec};
 use bucket::KBucket;
@@ -162,9 +162,9 @@ impl BucketIndex {
 }
 
 impl<TKey, TVal> KBucketsTable<TKey, TVal>
-    where
-        TKey: Clone + AsRef<KeyBytes>,
-        TVal: Clone,
+where
+    TKey: Clone + AsRef<KeyBytes>,
+    TVal: Clone,
 {
     /// Creates a new, empty Kademlia routing table with entries partitioned
     /// into buckets as per the Kademlia protocol.
@@ -223,8 +223,8 @@ impl<TKey, TVal> KBucketsTable<TKey, TVal>
     ///
     /// Returns `None` if the given key refers to the local key.
     pub fn bucket<K>(&mut self, key: &K) -> Option<KBucketRef<'_, TKey, TVal>>
-        where
-            K: AsRef<KeyBytes>,
+    where
+        K: AsRef<KeyBytes>,
     {
         let d = self.local_key.as_ref().distance(key);
         if let Some(index) = BucketIndex::new(&d) {
@@ -256,12 +256,9 @@ impl<TKey, TVal> KBucketsTable<TKey, TVal>
 
     /// Returns an iterator over the keys closest to `target`, ordered by
     /// increasing distance.
-    pub fn closest_keys<'a, T>(
-        &'a mut self,
-        target: &'a T,
-    ) -> impl Iterator<Item = TKey> + 'a
-        where
-            T: AsRef<KeyBytes>,
+    pub fn closest_keys<'a, T>(&'a mut self, target: &'a T) -> impl Iterator<Item = TKey> + 'a
+    where
+        T: AsRef<KeyBytes>,
     {
         let distance = self.local_key.as_ref().distance(target);
         ClosestIter {
@@ -281,9 +278,9 @@ impl<TKey, TVal> KBucketsTable<TKey, TVal>
         &'a mut self,
         target: &'a T,
     ) -> impl Iterator<Item = EntryView<TKey, TVal>> + 'a
-        where
-            T: Clone + AsRef<KeyBytes>,
-            TVal: Clone,
+    where
+        T: Clone + AsRef<KeyBytes>,
+        TVal: Clone,
     {
         let distance = self.local_key.as_ref().distance(target);
         ClosestIter {
@@ -308,8 +305,8 @@ impl<TKey, TVal> KBucketsTable<TKey, TVal>
     /// The number of nodes between the local node and the target are
     /// calculated by backtracking from the target towards the local key.
     pub fn count_nodes_between<T>(&mut self, target: &T) -> usize
-        where
-            T: AsRef<KeyBytes>,
+    where
+        T: AsRef<KeyBytes>,
     {
         let local_key = self.local_key.clone();
         let distance = target.as_ref().distance(&local_key);
@@ -342,9 +339,9 @@ struct ClosestIter<'a, TTarget, TKey, TVal, TMap, TOut> {
     buckets_iter: ClosestBucketsIter,
     /// The iterator over the entries in the currently traversed bucket.
     iter: Option<arrayvec::IntoIter<TOut, { K_VALUE.get() }>>,
-        /// The projection function / mapping applied on each bucket as
-        /// it is encountered, producing the next `iter`ator.
-        fmap: TMap,
+    /// The projection function / mapping applied on each bucket as
+    /// it is encountered, producing the next `iter`ator.
+    fmap: TMap,
 }
 
 /// An iterator over the bucket indices, in the order determined by the `Distance` of
@@ -442,12 +439,12 @@ impl Iterator for ClosestBucketsIter {
 }
 
 impl<TTarget, TKey, TVal, TMap, TOut> Iterator for ClosestIter<'_, TTarget, TKey, TVal, TMap, TOut>
-    where
-        TTarget: AsRef<KeyBytes>,
-        TKey: Clone + AsRef<KeyBytes>,
-        TVal: Clone,
-        TMap: Fn(&KBucket<TKey, TVal>) -> ArrayVec<TOut, { K_VALUE.get() }>,
-        TOut: AsRef<KeyBytes>,
+where
+    TTarget: AsRef<KeyBytes>,
+    TKey: Clone + AsRef<KeyBytes>,
+    TVal: Clone,
+    TMap: Fn(&KBucket<TKey, TVal>) -> ArrayVec<TOut, { K_VALUE.get() }>,
+    TOut: AsRef<KeyBytes>,
 {
     type Item = TOut;
 
@@ -488,9 +485,9 @@ pub struct KBucketRef<'a, TKey, TVal> {
 }
 
 impl<'a, TKey, TVal> KBucketRef<'a, TKey, TVal>
-    where
-        TKey: Clone + AsRef<KeyBytes>,
-        TVal: Clone,
+where
+    TKey: Clone + AsRef<KeyBytes>,
+    TVal: Clone,
 {
     /// Returns the minimum inclusive and maximum inclusive distance for
     /// this bucket.
@@ -542,8 +539,8 @@ impl<'a, TKey, TVal> KBucketRef<'a, TKey, TVal>
 
 #[cfg(test)]
 mod tests {
-    use bluesea_identity::{PeerId, PeerIdType};
     use super::*;
+    use bluesea_identity::{PeerId, PeerIdType};
     use quickcheck::*;
 
     type TestTable = KBucketsTable<KeyBytes, ()>;

@@ -1,23 +1,20 @@
-use network::behaviour::ConnectionHandler;
-use network::plane::{ConnectionAgent, BehaviorAgent};
-use network::transport::ConnectionEvent;
 use crate::msg::{DiscoveryBehaviorEvent, DiscoveryMsg};
+use network::behaviour::ConnectionHandler;
+use network::plane::{BehaviorAgent, ConnectionAgent};
+use network::transport::ConnectionEvent;
 
-pub struct DiscoveryConnectionHandler {
-
-}
+pub struct DiscoveryConnectionHandler {}
 
 impl DiscoveryConnectionHandler {
     pub fn new() -> Self {
-        Self {
-
-        }
+        Self {}
     }
 }
 
 impl<BE, MSG> ConnectionHandler<BE, MSG> for DiscoveryConnectionHandler
-    where BE: TryInto<DiscoveryBehaviorEvent> + From<DiscoveryBehaviorEvent>,
-          MSG: TryInto<DiscoveryMsg> + From<DiscoveryMsg>,
+where
+    BE: TryInto<DiscoveryBehaviorEvent> + From<DiscoveryBehaviorEvent>,
+    MSG: TryInto<DiscoveryMsg> + From<DiscoveryMsg>,
 {
     fn on_opened(&mut self, agent: &ConnectionAgent<BE, MSG>) {
         todo!()

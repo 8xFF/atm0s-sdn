@@ -1,16 +1,20 @@
 #[cfg(test)]
 mod tests {
-    use std::collections::VecDeque;
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-    use std::time::Duration;
-    use parking_lot::Mutex;
-    use bluesea_identity::PeerId;
-    use utils::SystemTimer;
     use crate::behaviour::{ConnectionHandler, NetworkBehavior, NetworkBehaviorEvent};
     use crate::mock::{MockInput, MockOutput, MockTransport};
-    use crate::plane::{ConnectionAgent, BehaviorAgent, NetworkPlane, NetworkPlaneConfig, CrossHandlerRoute};
-    use crate::transport::{ConnectionEvent, ConnectionMsg, ConnectionSender, OutgoingConnectionError};
+    use crate::plane::{
+        BehaviorAgent, ConnectionAgent, CrossHandlerRoute, NetworkPlane, NetworkPlaneConfig,
+    };
+    use crate::transport::{
+        ConnectionEvent, ConnectionMsg, ConnectionSender, OutgoingConnectionError,
+    };
+    use bluesea_identity::PeerId;
+    use parking_lot::Mutex;
+    use std::collections::VecDeque;
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+    use utils::SystemTimer;
 
     enum TestCrossNetworkMsg {
         PingToPeer(PeerId),
@@ -37,68 +41,121 @@ mod tests {
         Test(TestCrossNetworkMsg),
     }
 
-    struct TestCrossNetworkBehavior { flag: Arc<AtomicBool> }
-    struct TestCrossNetworkHandler { flag: Arc<AtomicBool> }
+    struct TestCrossNetworkBehavior {
+        flag: Arc<AtomicBool>,
+    }
+    struct TestCrossNetworkHandler {
+        flag: Arc<AtomicBool>,
+    }
 
     impl<BE, HE, MSG> NetworkBehavior<BE, HE, MSG> for TestCrossNetworkBehavior
-        where BE: From<TestCrossBehaviorEvent> + TryInto<TestCrossBehaviorEvent> + Send + Sync + 'static,
-              HE: From<TestCrossHandleEvent> + TryInto<TestCrossHandleEvent> + Send + Sync + 'static,
-              MSG: From<TestCrossNetworkMsg> + TryInto<TestCrossNetworkMsg> + Send + Sync + 'static,
+    where
+        BE: From<TestCrossBehaviorEvent> + TryInto<TestCrossBehaviorEvent> + Send + Sync + 'static,
+        HE: From<TestCrossHandleEvent> + TryInto<TestCrossHandleEvent> + Send + Sync + 'static,
+        MSG: From<TestCrossNetworkMsg> + TryInto<TestCrossNetworkMsg> + Send + Sync + 'static,
     {
         fn service_id(&self) -> u8 {
             0
         }
         fn on_tick(&mut self, agent: &BehaviorAgent<HE, MSG>, ts_ms: u64, interal_ms: u64) {}
-        fn on_incoming_connection_connected(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender<MSG>>) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
-            Some(Box::new(TestCrossNetworkHandler { flag: self.flag.clone() }))
+        fn on_incoming_connection_connected(
+            &mut self,
+            agent: &BehaviorAgent<HE, MSG>,
+            connection: Arc<dyn ConnectionSender<MSG>>,
+        ) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
+            Some(Box::new(TestCrossNetworkHandler {
+                flag: self.flag.clone(),
+            }))
         }
-        fn on_outgoing_connection_connected(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender<MSG>>) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
-            Some(Box::new(TestCrossNetworkHandler { flag: self.flag.clone() }))
+        fn on_outgoing_connection_connected(
+            &mut self,
+            agent: &BehaviorAgent<HE, MSG>,
+            connection: Arc<dyn ConnectionSender<MSG>>,
+        ) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
+            Some(Box::new(TestCrossNetworkHandler {
+                flag: self.flag.clone(),
+            }))
         }
-        fn on_incoming_connection_disconnected(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender<MSG>>) {}
-        fn on_outgoing_connection_disconnected(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender<MSG>>) {}
-        fn on_outgoing_connection_error(&mut self, agent: &BehaviorAgent<HE, MSG>, peer_id: PeerId, connection_id: u32, err: &OutgoingConnectionError) {}
+        fn on_incoming_connection_disconnected(
+            &mut self,
+            agent: &BehaviorAgent<HE, MSG>,
+            connection: Arc<dyn ConnectionSender<MSG>>,
+        ) {
+        }
+        fn on_outgoing_connection_disconnected(
+            &mut self,
+            agent: &BehaviorAgent<HE, MSG>,
+            connection: Arc<dyn ConnectionSender<MSG>>,
+        ) {
+        }
+        fn on_outgoing_connection_error(
+            &mut self,
+            agent: &BehaviorAgent<HE, MSG>,
+            peer_id: PeerId,
+            connection_id: u32,
+            err: &OutgoingConnectionError,
+        ) {
+        }
         fn on_event(&mut self, agent: &BehaviorAgent<HE, MSG>, event: NetworkBehaviorEvent) {}
-        fn on_handler_event(&mut self, agent: &BehaviorAgent<HE, MSG>, peer_id: PeerId, connection_id: u32, event: BE) {}
+        fn on_handler_event(
+            &mut self,
+            agent: &BehaviorAgent<HE, MSG>,
+            peer_id: PeerId,
+            connection_id: u32,
+            event: BE,
+        ) {
+        }
     }
 
     impl<BE, HE, MSG> ConnectionHandler<BE, HE, MSG> for TestCrossNetworkHandler
-        where BE: From<TestCrossBehaviorEvent> + TryInto<TestCrossBehaviorEvent> + Send + Sync + 'static,
-              HE: From<TestCrossHandleEvent> + TryInto<TestCrossHandleEvent> + Send + Sync + 'static,
-              MSG: From<TestCrossNetworkMsg> + TryInto<TestCrossNetworkMsg> + Send + Sync + 'static,
+    where
+        BE: From<TestCrossBehaviorEvent> + TryInto<TestCrossBehaviorEvent> + Send + Sync + 'static,
+        HE: From<TestCrossHandleEvent> + TryInto<TestCrossHandleEvent> + Send + Sync + 'static,
+        MSG: From<TestCrossNetworkMsg> + TryInto<TestCrossNetworkMsg> + Send + Sync + 'static,
     {
-        fn on_opened(&mut self, agent: &ConnectionAgent<BE, HE, MSG>) {
-
-        }
+        fn on_opened(&mut self, agent: &ConnectionAgent<BE, HE, MSG>) {}
         fn on_tick(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, ts_ms: u64, interal_ms: u64) {}
         fn on_event(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, event: ConnectionEvent<MSG>) {
             match event {
-                ConnectionEvent::Msg { service_id, msg } => {
-                    match msg {
-                        ConnectionMsg::Reliable { data, .. } => {
-                            if let Ok(e) = data.try_into() {
-                                match e {
-                                    TestCrossNetworkMsg::PingToPeer(peer) => {
-                                        agent.send_to_handler(CrossHandlerRoute::PeerFirst(peer), TestCrossHandleEvent::Ping.into());
-                                    }
-                                    TestCrossNetworkMsg::PingToConn(conn) => {
-                                        agent.send_to_handler(CrossHandlerRoute::Conn(conn), TestCrossHandleEvent::Ping.into());
-                                    }
+                ConnectionEvent::Msg { service_id, msg } => match msg {
+                    ConnectionMsg::Reliable { data, .. } => {
+                        if let Ok(e) = data.try_into() {
+                            match e {
+                                TestCrossNetworkMsg::PingToPeer(peer) => {
+                                    agent.send_to_handler(
+                                        CrossHandlerRoute::PeerFirst(peer),
+                                        TestCrossHandleEvent::Ping.into(),
+                                    );
+                                }
+                                TestCrossNetworkMsg::PingToConn(conn) => {
+                                    agent.send_to_handler(
+                                        CrossHandlerRoute::Conn(conn),
+                                        TestCrossHandleEvent::Ping.into(),
+                                    );
                                 }
                             }
                         }
-                        ConnectionMsg::Unreliable { .. } => {}
                     }
-                }
+                    ConnectionMsg::Unreliable { .. } => {}
+                },
                 ConnectionEvent::Stats(_) => {}
             }
         }
 
-        fn on_other_handler_event(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, from_peer: PeerId, from_conn: u32, event: HE) {
+        fn on_other_handler_event(
+            &mut self,
+            agent: &ConnectionAgent<BE, HE, MSG>,
+            from_peer: PeerId,
+            from_conn: u32,
+            event: HE,
+        ) {
             if let Ok(event) = event.try_into() {
                 match event {
                     TestCrossHandleEvent::Ping => {
-                        agent.send_to_handler(CrossHandlerRoute::Conn(from_conn), TestCrossHandleEvent::Pong.into());
+                        agent.send_to_handler(
+                            CrossHandlerRoute::Conn(from_conn),
+                            TestCrossHandleEvent::Pong.into(),
+                        );
                     }
                     TestCrossHandleEvent::Pong => {
                         self.flag.store(true, Ordering::Relaxed);
@@ -107,9 +164,7 @@ mod tests {
             }
         }
 
-        fn on_behavior_event(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, event: HE) {
-
-        }
+        fn on_behavior_event(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, event: HE) {}
         fn on_closed(&mut self, agent: &ConnectionAgent<BE, HE, MSG>) {}
     }
 
@@ -122,7 +177,11 @@ mod tests {
         let transport = Box::new(mock);
         let timer = Arc::new(SystemTimer());
 
-        let mut plane = NetworkPlane::<ImplTestCrossNetworkBehaviorEvent, ImplTestCrossNetworkHandlerEvent, ImplTestCrossNetworkMsg>::new(NetworkPlaneConfig {
+        let mut plane = NetworkPlane::<
+            ImplTestCrossNetworkBehaviorEvent,
+            ImplTestCrossNetworkHandlerEvent,
+            ImplTestCrossNetworkMsg,
+        >::new(NetworkPlaneConfig {
             local_peer_id: 0,
             tick_ms: 1000,
             behavior: vec![behavior],
@@ -130,18 +189,27 @@ mod tests {
             timer,
         });
 
-        let join = async_std::task::spawn(async move {
-            while let Ok(_) = plane.run().await {
+        let join = async_std::task::spawn(async move { while let Ok(_) = plane.run().await {} });
 
-            }
-        });
-
-        faker.send(MockInput::FakeIncomingConnection(1, 1, "addr1".to_string())).await.unwrap();
-        faker.send(MockInput::FakeIncomingConnection(2, 2, "addr2".to_string())).await.unwrap();
-        faker.send(MockInput::FakeIncomingMsg(0, 1, ConnectionMsg::Reliable {
-            stream_id: 0,
-            data: TestCrossNetworkMsg::PingToConn(2).into(),
-        })).await.unwrap();
+        faker
+            .send(MockInput::FakeIncomingConnection(1, 1, "addr1".to_string()))
+            .await
+            .unwrap();
+        faker
+            .send(MockInput::FakeIncomingConnection(2, 2, "addr2".to_string()))
+            .await
+            .unwrap();
+        faker
+            .send(MockInput::FakeIncomingMsg(
+                0,
+                1,
+                ConnectionMsg::Reliable {
+                    stream_id: 0,
+                    data: TestCrossNetworkMsg::PingToConn(2).into(),
+                },
+            ))
+            .await
+            .unwrap();
         async_std::task::sleep(Duration::from_millis(1000)).await;
         assert_eq!(flag.load(Ordering::Relaxed), true);
         join.cancel();
@@ -156,7 +224,11 @@ mod tests {
         let transport = Box::new(mock);
         let timer = Arc::new(SystemTimer());
 
-        let mut plane = NetworkPlane::<ImplTestCrossNetworkBehaviorEvent, ImplTestCrossNetworkHandlerEvent, ImplTestCrossNetworkMsg>::new(NetworkPlaneConfig {
+        let mut plane = NetworkPlane::<
+            ImplTestCrossNetworkBehaviorEvent,
+            ImplTestCrossNetworkHandlerEvent,
+            ImplTestCrossNetworkMsg,
+        >::new(NetworkPlaneConfig {
             local_peer_id: 0,
             tick_ms: 1000,
             behavior: vec![behavior],
@@ -164,18 +236,27 @@ mod tests {
             timer,
         });
 
-        let join = async_std::task::spawn(async move {
-            while let Ok(_) = plane.run().await {
+        let join = async_std::task::spawn(async move { while let Ok(_) = plane.run().await {} });
 
-            }
-        });
-
-        faker.send(MockInput::FakeIncomingConnection(1, 1, "addr1".to_string())).await.unwrap();
-        faker.send(MockInput::FakeIncomingConnection(2, 2, "addr1".to_string())).await.unwrap();
-        faker.send(MockInput::FakeIncomingMsg(0, 1, ConnectionMsg::Reliable {
-            stream_id: 0,
-            data: TestCrossNetworkMsg::PingToPeer(2).into(),
-        })).await.unwrap();
+        faker
+            .send(MockInput::FakeIncomingConnection(1, 1, "addr1".to_string()))
+            .await
+            .unwrap();
+        faker
+            .send(MockInput::FakeIncomingConnection(2, 2, "addr1".to_string()))
+            .await
+            .unwrap();
+        faker
+            .send(MockInput::FakeIncomingMsg(
+                0,
+                1,
+                ConnectionMsg::Reliable {
+                    stream_id: 0,
+                    data: TestCrossNetworkMsg::PingToPeer(2).into(),
+                },
+            ))
+            .await
+            .unwrap();
         async_std::task::sleep(Duration::from_millis(1000)).await;
         assert_eq!(flag.load(Ordering::Relaxed), true);
         join.cancel();

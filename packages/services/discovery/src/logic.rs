@@ -1,13 +1,13 @@
+use crate::closest_list::ClosestList;
+use bluesea_identity::{PeerAddr, PeerId, PeerIdType};
+use kademlia::kbucket::key::Key;
+use kademlia::kbucket::{AppliedPending, Entry, KBucketsTable, NodeStatus};
+use network::plane::BehaviorAgent;
+use network::transport::ConnectionSender;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
-use bluesea_identity::{PeerAddr, PeerId, PeerIdType};
-use kademlia::kbucket::{Entry, NodeStatus, KBucketsTable, AppliedPending};
-use kademlia::kbucket::key::Key;
-use network::plane::BehaviorAgent;
-use network::transport::ConnectionSender;
 use utils::Timer;
-use crate::closest_list::ClosestList;
 
 pub enum Message {
     FindKey(u32, PeerId),
@@ -26,7 +26,7 @@ pub enum Input {
 
 pub enum Action {
     ConnectTo(PeerId, PeerAddr),
-    SendTo(PeerId, Message)
+    SendTo(PeerId, Message),
 }
 
 pub struct DiscoveryLogicConf {
@@ -73,7 +73,9 @@ impl DiscoveryLogic {
     fn locate_value(&mut self, value: PeerId) {
         let req_id = self.req_id;
         self.req_id = self.req_id.wrapping_add(1);
-        let request = self.request_memory.entry(req_id)
+        let request = self
+            .request_memory
+            .entry(req_id)
             .or_insert_with(|| Default::default());
 
         let key = value.into();
@@ -141,24 +143,23 @@ impl DiscoveryLogic {
                     }
                 }
             }
-            Input::OnData(from_peer, data) => {
-                match data {
-                    Message::FindKey(req_id, peer) => {
-                        let mut res = vec![];
-                        let key = peer.into();
-                        let iter = self.table.closest::<Key<PeerId>>(&key);
-                        for entry in iter {
-                            res.push((*entry.node.key.preimage(), entry.node.value));
-                        }
-                        self.action_queues.push_back(Action::SendTo(from_peer, Message::FindKeyRes(req_id, res)));
+            Input::OnData(from_peer, data) => match data {
+                Message::FindKey(req_id, peer) => {
+                    let mut res = vec![];
+                    let key = peer.into();
+                    let iter = self.table.closest::<Key<PeerId>>(&key);
+                    for entry in iter {
+                        res.push((*entry.node.key.preimage(), entry.node.value));
                     }
-                    Message::FindKeyRes(req_id, peers) => {
-                        for (peer, addr) in peers {
-                            self.process_add_peer(peer, addr);
-                        }
+                    self.action_queues
+                        .push_back(Action::SendTo(from_peer, Message::FindKeyRes(req_id, res)));
+                }
+                Message::FindKeyRes(req_id, peers) => {
+                    for (peer, addr) in peers {
+                        self.process_add_peer(peer, addr);
                     }
                 }
-            }
+            },
             Input::OnConnected(peer, address) => {
                 self.connecting_peers.remove(&peer);
                 let key = peer.into();
@@ -181,18 +182,16 @@ impl DiscoveryLogic {
             Input::OnConnectError(peer) => {
                 self.connecting_peers.remove(&peer);
             }
-            Input::OnDisconnected(peer) => {
-                match self.table.entry(&peer.into()) {
-                    Entry::Present(mut entry, _) => {
-                        entry.update(NodeStatus::Disconnected);
-                    }
-                    Entry::Pending(mut entry, _) => {
-                        entry.update(NodeStatus::Disconnected);
-                    }
-                    Entry::Absent(_) => {}
-                    Entry::SelfEntry => {}
+            Input::OnDisconnected(peer) => match self.table.entry(&peer.into()) {
+                Entry::Present(mut entry, _) => {
+                    entry.update(NodeStatus::Disconnected);
                 }
-            }
+                Entry::Pending(mut entry, _) => {
+                    entry.update(NodeStatus::Disconnected);
+                }
+                Entry::Absent(_) => {}
+                Entry::SelfEntry => {}
+            },
         }
     }
 }

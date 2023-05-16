@@ -1,14 +1,17 @@
-use std::collections::HashMap;
-use crate::behaviour::{NetworkBehavior, ConnectionHandler};
-use crate::transport::{ConnectionEvent, ConnectionMsg, ConnectionSender, OutgoingConnectionError, Transport, TransportConnector, TransportEvent, TransportPendingOutgoing};
-use async_std::channel::{bounded, Receiver, Sender, SendError, unbounded};
+use crate::behaviour::{ConnectionHandler, NetworkBehavior};
+use crate::transport::{
+    ConnectionEvent, ConnectionMsg, ConnectionSender, OutgoingConnectionError, Transport,
+    TransportConnector, TransportEvent, TransportPendingOutgoing,
+};
+use async_std::channel::{bounded, unbounded, Receiver, SendError, Sender};
+use async_std::stream::Interval;
+use bluesea_identity::{PeerAddr, PeerId};
 use futures::{select, FutureExt, SinkExt, StreamExt};
+use parking_lot::RwLock;
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use async_std::stream::Interval;
-use parking_lot::RwLock;
-use bluesea_identity::{PeerAddr, PeerId};
 use utils::Timer;
 
 fn init_vec<T>(size: usize, builder: fn() -> T) -> Vec<T> {
@@ -30,29 +33,51 @@ pub enum CrossHandlerRoute {
 }
 
 struct CrossHandlerGate<HE, MSG> {
-    peers: HashMap<PeerId, HashMap<u32, (Sender<(u8, CrossHandlerEvent<HE>)>, Arc<dyn ConnectionSender<MSG>>)>>,
-    conns: HashMap<u32, (Sender<(u8, CrossHandlerEvent<HE>)>, Arc<dyn ConnectionSender<MSG>>)>,
+    peers: HashMap<
+        PeerId,
+        HashMap<
+            u32,
+            (
+                Sender<(u8, CrossHandlerEvent<HE>)>,
+                Arc<dyn ConnectionSender<MSG>>,
+            ),
+        >,
+    >,
+    conns: HashMap<
+        u32,
+        (
+            Sender<(u8, CrossHandlerEvent<HE>)>,
+            Arc<dyn ConnectionSender<MSG>>,
+        ),
+    >,
 }
 
 impl<HE, MSG> Default for CrossHandlerGate<HE, MSG> {
     fn default() -> Self {
         Self {
             peers: Default::default(),
-            conns: Default::default()
+            conns: Default::default(),
         }
     }
 }
 
 impl<HE, MSG> CrossHandlerGate<HE, MSG>
-    where HE: Send + Sync + 'static,
-          MSG: Send + Sync + 'static,
+where
+    HE: Send + Sync + 'static,
+    MSG: Send + Sync + 'static,
 {
-    fn add_conn(&mut self, net_sender: Arc<dyn ConnectionSender<MSG>>) -> Option<Receiver<(u8, CrossHandlerEvent<HE>)>> {
+    fn add_conn(
+        &mut self,
+        net_sender: Arc<dyn ConnectionSender<MSG>>,
+    ) -> Option<Receiver<(u8, CrossHandlerEvent<HE>)>> {
         if !self.conns.contains_key(&net_sender.connection_id()) {
             let (tx, rx) = unbounded();
-            let entry = self.peers.entry(net_sender.remote_peer_id())
+            let entry = self
+                .peers
+                .entry(net_sender.remote_peer_id())
                 .or_insert_with(|| HashMap::new());
-            self.conns.insert(net_sender.connection_id(), (tx.clone(), net_sender.clone()));
+            self.conns
+                .insert(net_sender.connection_id(), (tx.clone(), net_sender.clone()));
             entry.insert(net_sender.connection_id(), (tx.clone(), net_sender.clone()));
             Some(rx)
         } else {
@@ -64,8 +89,7 @@ impl<HE, MSG> CrossHandlerGate<HE, MSG>
     fn remove_conn(&mut self, peer: PeerId, conn: u32) -> Option<()> {
         if self.conns.contains_key(&conn) {
             self.conns.remove(&conn);
-            let entry = self.peers.entry(peer)
-                .or_insert_with(|| HashMap::new());
+            let entry = self.peers.entry(peer).or_insert_with(|| HashMap::new());
             entry.remove(&conn);
             if entry.is_empty() {
                 self.peers.remove(&peer);
@@ -91,7 +115,12 @@ impl<HE, MSG> CrossHandlerGate<HE, MSG>
         }
     }
 
-    fn send_to_handler(&self, service_id: u8, route: CrossHandlerRoute, event: CrossHandlerEvent<HE>) -> Option<()> {
+    fn send_to_handler(
+        &self,
+        service_id: u8,
+        route: CrossHandlerRoute,
+        event: CrossHandlerEvent<HE>,
+    ) -> Option<()> {
         match route {
             CrossHandlerRoute::PeerFirst(peer) => {
                 if let Some(peer) = self.peers.get(&peer) {
@@ -117,7 +146,12 @@ impl<HE, MSG> CrossHandlerGate<HE, MSG>
         None
     }
 
-    fn send_to_net(&self, service_id: u8, route: CrossHandlerRoute, msg: ConnectionMsg<MSG>) -> Option<()> {
+    fn send_to_net(
+        &self,
+        service_id: u8,
+        route: CrossHandlerRoute,
+        msg: ConnectionMsg<MSG>,
+    ) -> Option<()> {
         match route {
             CrossHandlerRoute::PeerFirst(peer) => {
                 if let Some(peer) = self.peers.get(&peer) {
@@ -146,8 +180,9 @@ pub struct BehaviorAgent<HE, MSG> {
 }
 
 impl<HE, MSG> BehaviorAgent<HE, MSG>
-    where HE: Send + Sync + 'static,
-          MSG: Send + Sync + 'static
+where
+    HE: Send + Sync + 'static,
+    MSG: Send + Sync + 'static,
 {
     fn new(
         service_id: u8,
@@ -167,16 +202,26 @@ impl<HE, MSG> BehaviorAgent<HE, MSG>
         self.local_peer_id
     }
 
-    pub fn connect_to(&self, peer_id: PeerId, dest: PeerAddr) -> Result<TransportPendingOutgoing, OutgoingConnectionError> {
+    pub fn connect_to(
+        &self,
+        peer_id: PeerId,
+        dest: PeerAddr,
+    ) -> Result<TransportPendingOutgoing, OutgoingConnectionError> {
         self.connector.connect_to(peer_id, dest)
     }
 
     pub fn send_to_handler(&self, route: CrossHandlerRoute, event: HE) {
-        self.cross_gate.read().send_to_handler(self.service_id, route, CrossHandlerEvent::FromBehavior(event));
+        self.cross_gate.read().send_to_handler(
+            self.service_id,
+            route,
+            CrossHandlerEvent::FromBehavior(event),
+        );
     }
 
     pub fn send_to_net(&self, route: CrossHandlerRoute, msg: ConnectionMsg<MSG>) {
-        self.cross_gate.read().send_to_net(self.service_id, route, msg);
+        self.cross_gate
+            .read()
+            .send_to_net(self.service_id, route, msg);
     }
 
     pub fn close_conn(&self, conn: u32) {
@@ -199,9 +244,10 @@ pub struct ConnectionAgent<BE, HE, MSG> {
 }
 
 impl<BE, HE, MSG> ConnectionAgent<BE, HE, MSG>
-    where BE: Send + Sync + 'static,
-          HE: Send + Sync + 'static,
-          MSG: Send + Sync + 'static
+where
+    BE: Send + Sync + 'static,
+    HE: Send + Sync + 'static,
+    MSG: Send + Sync + 'static,
 {
     fn new(
         service_id: u8,
@@ -236,12 +282,14 @@ impl<BE, HE, MSG> ConnectionAgent<BE, HE, MSG>
     }
 
     pub fn send_behavior(&self, event: BE) {
-        match self.internal_tx.send_blocking(NetworkPlaneInternalEvent::ToBehaviour {
-            service_id: self.service_id,
-            peer_id: self.remote_peer_id,
-            conn_id: self.conn_id,
-            event,
-        }) {
+        match self
+            .internal_tx
+            .send_blocking(NetworkPlaneInternalEvent::ToBehaviour {
+                service_id: self.service_id,
+                peer_id: self.remote_peer_id,
+                conn_id: self.conn_id,
+                event,
+            }) {
             Ok(_) => {}
             Err(err) => {
                 log::error!("send event to Behavior error {:?}", err);
@@ -254,11 +302,17 @@ impl<BE, HE, MSG> ConnectionAgent<BE, HE, MSG>
     }
 
     pub fn send_to_handler(&self, route: CrossHandlerRoute, event: HE) {
-        self.cross_gate.read().send_to_handler(self.service_id, route, CrossHandlerEvent::FromHandler(self.remote_peer_id, self.conn_id, event));
+        self.cross_gate.read().send_to_handler(
+            self.service_id,
+            route,
+            CrossHandlerEvent::FromHandler(self.remote_peer_id, self.conn_id, event),
+        );
     }
 
     pub fn send_to_net(&self, route: CrossHandlerRoute, msg: ConnectionMsg<MSG>) {
-        self.cross_gate.read().send_to_net(self.service_id, route, msg);
+        self.cross_gate
+            .read()
+            .send_to_net(self.service_id, route, msg);
     }
 
     pub fn close_conn(&self) {
@@ -267,7 +321,12 @@ impl<BE, HE, MSG> ConnectionAgent<BE, HE, MSG>
 }
 
 enum NetworkPlaneInternalEvent<BE, MSG> {
-    ToBehaviour { service_id: u8, peer_id: PeerId, conn_id: u32, event: BE },
+    ToBehaviour {
+        service_id: u8,
+        peer_id: PeerId,
+        conn_id: u32,
+        event: BE,
+    },
     IncomingDisconnected(Arc<dyn ConnectionSender<MSG>>),
     OutgoingDisconnected(Arc<dyn ConnectionSender<MSG>>),
 }
@@ -283,7 +342,12 @@ pub struct NetworkPlaneConfig<BE, HE, MSG> {
 pub struct NetworkPlane<BE, HE, MSG> {
     local_peer_id: PeerId,
     tick_ms: u64,
-    behaviors: Vec<Option<(Box<dyn NetworkBehavior<BE, HE, MSG> + Send + Sync>, BehaviorAgent<HE, MSG>)>>,
+    behaviors: Vec<
+        Option<(
+            Box<dyn NetworkBehavior<BE, HE, MSG> + Send + Sync>,
+            BehaviorAgent<HE, MSG>,
+        )>,
+    >,
     transport: Box<dyn Transport<MSG> + Send + Sync>,
     timer: Arc<dyn Timer>,
     internal_tx: Sender<NetworkPlaneInternalEvent<BE, MSG>>,
@@ -293,15 +357,21 @@ pub struct NetworkPlane<BE, HE, MSG> {
 }
 
 impl<BE, HE, MSG> NetworkPlane<BE, HE, MSG>
-    where BE: Send + Sync + 'static,
-          HE: Send + Sync + 'static,
-          MSG: Send + Sync + 'static
+where
+    BE: Send + Sync + 'static,
+    HE: Send + Sync + 'static,
+    MSG: Send + Sync + 'static,
 {
     pub fn new(conf: NetworkPlaneConfig<BE, HE, MSG>) -> Self {
         let cross_gate: Arc<RwLock<CrossHandlerGate<HE, MSG>>> = Default::default();
 
         let (internal_tx, internal_rx) = unbounded();
-        let mut behaviors: Vec<Option<(Box<dyn NetworkBehavior<BE, HE, MSG> + Send + Sync>, BehaviorAgent<HE, MSG>)>> = init_vec(256, || None);
+        let mut behaviors: Vec<
+            Option<(
+                Box<dyn NetworkBehavior<BE, HE, MSG> + Send + Sync>,
+                BehaviorAgent<HE, MSG>,
+            )>,
+        > = init_vec(256, || None);
 
         for behavior in conf.behavior {
             let service_id = behavior.service_id() as usize;
@@ -312,8 +382,8 @@ impl<BE, HE, MSG> NetworkPlane<BE, HE, MSG>
                         service_id as u8,
                         conf.local_peer_id,
                         conf.transport.connector(),
-                        cross_gate.clone()
-                    )
+                        cross_gate.clone(),
+                    ),
                 ));
             } else {
                 panic!("Duplicate service {}", behavior.service_id())

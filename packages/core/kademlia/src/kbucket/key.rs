@@ -18,9 +18,9 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use std::hash::{Hash, Hasher};
-use std::borrow::Borrow;
 use bluesea_identity::PeerId;
+use std::borrow::Borrow;
+use std::hash::{Hash, Hasher};
 
 /// A `Key` in the DHT keyspace with preserved preimage.
 ///
@@ -42,8 +42,8 @@ impl<T> Key<T> {
     /// The preimage of type `T` is preserved. See [`Key::preimage`] and
     /// [`Key::into_preimage`].
     pub fn new(preimage: T) -> Key<T>
-        where
-            T: Borrow<u32>,
+    where
+        T: Borrow<u32>,
     {
         let bytes = KeyBytes::new(preimage.borrow());
         Key { preimage, bytes }
@@ -61,8 +61,8 @@ impl<T> Key<T> {
 
     /// Computes the distance of the keys according to the XOR metric.
     pub fn distance<U>(&self, other: &U) -> Distance
-        where
-            U: AsRef<KeyBytes>,
+    where
+        U: AsRef<KeyBytes>,
     {
         self.bytes.distance(other)
     }
@@ -112,16 +112,16 @@ impl KeyBytes {
     /// Creates a new key in the DHT keyspace by running the given
     /// value through a random oracle.
     pub fn new<T>(value: T) -> Self
-        where
-            T: Borrow<u32>,
+    where
+        T: Borrow<u32>,
     {
         KeyBytes(*value.borrow())
     }
 
     /// Computes the distance of the keys according to the XOR metric.
     pub fn distance<U>(&self, other: &U) -> Distance
-        where
-            U: AsRef<KeyBytes>,
+    where
+        U: AsRef<KeyBytes>,
     {
         let a = self.0;
         let b = other.as_ref().0;
@@ -164,8 +164,8 @@ impl Distance {
 
 #[cfg(test)]
 mod tests {
-    use bluesea_identity::PeerIdType;
     use super::*;
+    use bluesea_identity::PeerIdType;
     use quickcheck::*;
 
     impl Arbitrary for Key<PeerId> {

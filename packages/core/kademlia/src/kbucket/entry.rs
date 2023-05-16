@@ -42,9 +42,9 @@ pub struct NodeRefView<'a, TKey, TVal> {
 
 impl<TKey, TVal> EntryRefView<'_, TKey, TVal> {
     pub fn to_owned(&self) -> EntryView<TKey, TVal>
-        where
-            TKey: Clone,
-            TVal: Clone,
+    where
+        TKey: Clone,
+        TVal: Clone,
     {
         EntryView {
             node: Node {
@@ -94,9 +94,9 @@ struct EntryRef<'a, TKey, TVal> {
 }
 
 impl<'a, TKey, TVal> Entry<'a, TKey, TVal>
-    where
-        TKey: Clone + AsRef<KeyBytes>,
-        TVal: Clone,
+where
+    TKey: Clone + AsRef<KeyBytes>,
+    TVal: Clone,
 {
     /// Creates a new `Entry` for a `Key`, encapsulating access to a bucket.
     pub fn new(bucket: &'a mut KBucket<TKey, TVal>, key: &'a TKey) -> Self {
@@ -167,9 +167,9 @@ impl<'a, TKey, TVal> Entry<'a, TKey, TVal>
 #[derive(Debug)]
 pub struct PresentEntry<'a, TKey, TVal>(EntryRef<'a, TKey, TVal>);
 impl<'a, TKey, TVal> PresentEntry<'a, TKey, TVal>
-    where
-        TKey: Clone + AsRef<KeyBytes>,
-        TVal: Clone,
+where
+    TKey: Clone + AsRef<KeyBytes>,
+    TVal: Clone,
 {
     fn new(bucket: &'a mut KBucket<TKey, TVal>, key: &'a TKey) -> Self {
         PresentEntry(EntryRef { bucket, key })
@@ -210,9 +210,9 @@ impl<'a, TKey, TVal> PresentEntry<'a, TKey, TVal>
 #[derive(Debug)]
 pub struct PendingEntry<'a, TKey, TVal>(EntryRef<'a, TKey, TVal>);
 impl<'a, TKey, TVal> PendingEntry<'a, TKey, TVal>
-    where
-        TKey: Clone + AsRef<KeyBytes>,
-        TVal: Clone,
+where
+    TKey: Clone + AsRef<KeyBytes>,
+    TVal: Clone,
 {
     fn new(bucket: &'a mut KBucket<TKey, TVal>, key: &'a TKey) -> Self {
         PendingEntry(EntryRef { bucket, key })
@@ -254,9 +254,9 @@ impl<'a, TKey, TVal> PendingEntry<'a, TKey, TVal>
 #[derive(Debug)]
 pub struct AbsentEntry<'a, TKey, TVal>(EntryRef<'a, TKey, TVal>);
 impl<'a, TKey, TVal> AbsentEntry<'a, TKey, TVal>
-    where
-        TKey: Clone + AsRef<KeyBytes>,
-        TVal: Clone,
+where
+    TKey: Clone + AsRef<KeyBytes>,
+    TVal: Clone,
 {
     fn new(bucket: &'a mut KBucket<TKey, TVal>, key: &'a TKey) -> Self {
         AbsentEntry(EntryRef { bucket, key })

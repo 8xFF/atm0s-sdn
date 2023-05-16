@@ -25,8 +25,8 @@
 //! > buckets in a `KBucketsTable` and hence is enforced by the public API
 //! > of the `KBucketsTable` and in particular the public `Entry` API.
 
-use super::*;
 pub use super::K_VALUE;
+use super::*;
 /// A `PendingNode` is a `Node` that is pending insertion into a `KBucket`.
 #[derive(Debug, Clone)]
 pub struct PendingNode<TKey, TVal> {
@@ -160,9 +160,9 @@ pub struct AppliedPending<TKey, TVal> {
 }
 
 impl<TKey, TVal> KBucket<TKey, TVal>
-    where
-        TKey: Clone + AsRef<KeyBytes>,
-        TVal: Clone,
+where
+    TKey: Clone + AsRef<KeyBytes>,
+    TVal: Clone,
 {
     /// Creates a new `KBucket` with the given timeout for pending entries.
     pub fn new(pending_timeout: Duration) -> Self {
@@ -219,7 +219,7 @@ impl<TKey, TVal> KBucket<TKey, TVal>
                         return None;
                     }
                     debug_assert!(self.first_connected_pos.map_or(true, |p| p > 0)); // (*)
-                    // The pending node will be inserted.
+                                                                                     // The pending node will be inserted.
                     let inserted = pending.node.clone();
                     // A connected pending node goes at the end of the list for
                     // the connected peers, removing the least-recently connected.
@@ -317,11 +317,7 @@ impl<TKey, TVal> KBucket<TKey, TVal>
     ///     i.e. as the most-recently disconnected node. If there are no connected nodes,
     ///     the new node is added as the last element of the bucket.
     ///
-    pub fn insert(
-        &mut self,
-        node: Node<TKey, TVal>,
-        status: NodeStatus,
-    ) -> InsertResult<TKey> {
+    pub fn insert(&mut self, node: Node<TKey, TVal>, status: NodeStatus) -> InsertResult<TKey> {
         match status {
             NodeStatus::Connected => {
                 if self.nodes.is_full() {
@@ -359,10 +355,7 @@ impl<TKey, TVal> KBucket<TKey, TVal>
     }
 
     /// Removes the node with the given key from the bucket, if it exists.
-    pub fn remove(
-        &mut self,
-        key: &TKey,
-    ) -> Option<(Node<TKey, TVal>, NodeStatus, Position)> {
+    pub fn remove(&mut self, key: &TKey) -> Option<(Node<TKey, TVal>, NodeStatus, Position)> {
         if let Some(pos) = self.position(key) {
             // Remove the node from its current position.
             let status = self.status(pos);
@@ -440,9 +433,9 @@ impl<TKey, TVal> KBucket<TKey, TVal>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bluesea_identity::{PeerId, PeerIdType};
     use quickcheck::*;
     use std::collections::VecDeque;
-    use bluesea_identity::{PeerId, PeerIdType};
 
     impl Arbitrary for KBucket<Key<PeerId>, ()> {
         fn arbitrary(g: &mut Gen) -> KBucket<Key<PeerId>, ()> {

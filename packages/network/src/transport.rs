@@ -1,7 +1,7 @@
+use bluesea_identity::{PeerAddr, PeerId};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use thiserror::Error;
-use bluesea_identity::{PeerAddr, PeerId};
 
 pub struct TransportPendingOutgoing {
     pub connection_id: u32,
@@ -39,14 +39,8 @@ pub trait TransportConnector: Send + Sync {
 
 #[derive(PartialEq, Debug)]
 pub enum ConnectionMsg<MSG> {
-    Reliable {
-        stream_id: u16,
-        data: MSG,
-    },
-    Unreliable {
-        stream_id: u16,
-        data: MSG,
-    },
+    Reliable { stream_id: u16, data: MSG },
+    Unreliable { stream_id: u16, data: MSG },
 }
 
 #[derive(Clone)]
@@ -59,8 +53,11 @@ pub struct ConnectionStats {
 }
 
 pub enum ConnectionEvent<MSG> {
-    Msg { service_id: u8, msg: ConnectionMsg<MSG> },
-    Stats(ConnectionStats)
+    Msg {
+        service_id: u8,
+        msg: ConnectionMsg<MSG>,
+    },
+    Stats(ConnectionStats),
 }
 
 pub trait ConnectionSender<MSG>: Send + Sync {

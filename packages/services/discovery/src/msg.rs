@@ -1,11 +1,5 @@
-pub enum DiscoveryBehaviorEvent {
+pub enum DiscoveryBehaviorEvent {}
 
-}
+pub enum DiscoveryHandlerEvent {}
 
-pub enum DiscoveryHandlerEvent {
-
-}
-
-pub enum DiscoveryMsg {
-
-}
+pub enum DiscoveryMsg {}

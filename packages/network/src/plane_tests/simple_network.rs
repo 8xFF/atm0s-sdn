@@ -1,21 +1,25 @@
 #[cfg(test)]
 mod tests {
-    use std::collections::VecDeque;
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-    use std::time::Duration;
-    use parking_lot::Mutex;
-    use bluesea_identity::PeerId;
-    use utils::SystemTimer;
     use crate::behaviour::{ConnectionHandler, NetworkBehavior, NetworkBehaviorEvent};
     use crate::mock::{MockInput, MockOutput, MockTransport};
-    use crate::plane::{ConnectionAgent, BehaviorAgent, NetworkPlane, NetworkPlaneConfig, CrossHandlerRoute};
-    use crate::transport::{ConnectionEvent, ConnectionMsg, ConnectionSender, OutgoingConnectionError};
+    use crate::plane::{
+        BehaviorAgent, ConnectionAgent, CrossHandlerRoute, NetworkPlane, NetworkPlaneConfig,
+    };
+    use crate::transport::{
+        ConnectionEvent, ConnectionMsg, ConnectionSender, OutgoingConnectionError,
+    };
+    use bluesea_identity::PeerId;
+    use parking_lot::Mutex;
+    use std::collections::VecDeque;
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+    use utils::SystemTimer;
 
     #[derive(PartialEq, Debug)]
     enum Behavior1Msg {
         Ping,
-        Pong
+        Pong,
     }
     enum Behavior1Event {}
     enum Handler1Event {}
@@ -23,7 +27,7 @@ mod tests {
     #[derive(PartialEq, Debug)]
     enum Behavior2Msg {
         Ping,
-        Pong
+        Pong,
     }
 
     #[derive(PartialEq, Debug)]
@@ -39,7 +43,7 @@ mod tests {
     #[derive(convert_enum::From, convert_enum::TryInto)]
     enum ImplNetworkBehaviorEvent {
         Service1(Behavior1Event),
-        Service2(Behavior2Event)
+        Service2(Behavior2Event),
     }
 
     #[derive(convert_enum::From, convert_enum::TryInto)]
@@ -68,141 +72,203 @@ mod tests {
     struct Test2NetworkHandler {}
 
     impl<BE, HE, MSG> NetworkBehavior<BE, HE, MSG> for Test1NetworkBehavior<MSG>
-        where BE: From<Behavior1Event> + TryInto<Behavior1Event> + Send + Sync + 'static,
-              HE: From<Handler1Event> + TryInto<Handler1Event> + Send + Sync + 'static,
-              MSG: From<Behavior1Msg> + TryInto<Behavior1Msg> + Send + Sync + 'static,
+    where
+        BE: From<Behavior1Event> + TryInto<Behavior1Event> + Send + Sync + 'static,
+        HE: From<Handler1Event> + TryInto<Handler1Event> + Send + Sync + 'static,
+        MSG: From<Behavior1Msg> + TryInto<Behavior1Msg> + Send + Sync + 'static,
     {
         fn service_id(&self) -> u8 {
             0
         }
         fn on_tick(&mut self, agent: &BehaviorAgent<HE, MSG>, ts_ms: u64, interal_ms: u64) {}
-        fn on_incoming_connection_connected(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender<MSG>>) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
+        fn on_incoming_connection_connected(
+            &mut self,
+            agent: &BehaviorAgent<HE, MSG>,
+            connection: Arc<dyn ConnectionSender<MSG>>,
+        ) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
             self.conn_counter.fetch_add(1, Ordering::Relaxed);
             Some(Box::new(Test1NetworkHandler {
                 input: self.input.clone(),
             }))
         }
-        fn on_outgoing_connection_connected(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender<MSG>>) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
+        fn on_outgoing_connection_connected(
+            &mut self,
+            agent: &BehaviorAgent<HE, MSG>,
+            connection: Arc<dyn ConnectionSender<MSG>>,
+        ) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
             self.conn_counter.fetch_add(1, Ordering::Relaxed);
             Some(Box::new(Test1NetworkHandler {
                 input: self.input.clone(),
             }))
         }
-        fn on_incoming_connection_disconnected(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender<MSG>>) {
+        fn on_incoming_connection_disconnected(
+            &mut self,
+            agent: &BehaviorAgent<HE, MSG>,
+            connection: Arc<dyn ConnectionSender<MSG>>,
+        ) {
             self.conn_counter.fetch_sub(1, Ordering::Relaxed);
         }
-        fn on_outgoing_connection_disconnected(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender<MSG>>) {
+        fn on_outgoing_connection_disconnected(
+            &mut self,
+            agent: &BehaviorAgent<HE, MSG>,
+            connection: Arc<dyn ConnectionSender<MSG>>,
+        ) {
             self.conn_counter.fetch_sub(1, Ordering::Relaxed);
         }
-        fn on_outgoing_connection_error(&mut self, agent: &BehaviorAgent<HE, MSG>, peer_id: PeerId, connection_id: u32, err: &OutgoingConnectionError) {}
+        fn on_outgoing_connection_error(
+            &mut self,
+            agent: &BehaviorAgent<HE, MSG>,
+            peer_id: PeerId,
+            connection_id: u32,
+            err: &OutgoingConnectionError,
+        ) {
+        }
         fn on_event(&mut self, agent: &BehaviorAgent<HE, MSG>, event: NetworkBehaviorEvent) {}
-        fn on_handler_event(&mut self, agent: &BehaviorAgent<HE, MSG>, peer_id: PeerId, connection_id: u32, event: BE) {}
+        fn on_handler_event(
+            &mut self,
+            agent: &BehaviorAgent<HE, MSG>,
+            peer_id: PeerId,
+            connection_id: u32,
+            event: BE,
+        ) {
+        }
     }
 
     impl<BE, HE, MSG> ConnectionHandler<BE, HE, MSG> for Test1NetworkHandler<MSG>
-        where BE: From<Behavior1Event> + TryInto<Behavior1Event> + Send + Sync + 'static,
-              HE: From<Handler1Event> + TryInto<Handler1Event> + Send + Sync + 'static,
-              MSG: From<Behavior1Msg> + TryInto<Behavior1Msg> + Send + Sync + 'static,
+    where
+        BE: From<Behavior1Event> + TryInto<Behavior1Event> + Send + Sync + 'static,
+        HE: From<Handler1Event> + TryInto<Handler1Event> + Send + Sync + 'static,
+        MSG: From<Behavior1Msg> + TryInto<Behavior1Msg> + Send + Sync + 'static,
     {
         fn on_opened(&mut self, agent: &ConnectionAgent<BE, HE, MSG>) {
-            self.input.lock().push_back(
-                DebugInput::Opened(
-                    agent.remote_peer_id(),
-                    agent.conn_id(),
-                )
-            );
+            self.input
+                .lock()
+                .push_back(DebugInput::Opened(agent.remote_peer_id(), agent.conn_id()));
         }
         fn on_tick(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, ts_ms: u64, interal_ms: u64) {}
         fn on_event(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, event: ConnectionEvent<MSG>) {
             match event {
-                ConnectionEvent::Msg { msg, .. } => {
-                    match msg {
-                        ConnectionMsg::Reliable { data, stream_id } => {
-                            if let Ok(msg) = data.try_into() {
-                                match msg {
-                                    Behavior1Msg::Ping => {
-                                        agent.send_net(ConnectionMsg::Reliable {
-                                            stream_id,
-                                            data: Behavior1Msg::Pong.into(),
-                                        });
-                                        self.input.lock().push_back(
-                                            DebugInput::Msg(
-                                                agent.remote_peer_id(),
-                                                agent.conn_id(),
-                                                Behavior1Msg::Ping.into()
-                                            )
-                                        );
-                                    }
-                                    Behavior1Msg::Pong => {
-                                        self.input.lock().push_back(
-                                            DebugInput::Msg(
-                                                agent.remote_peer_id(),
-                                                agent.conn_id(),
-                                                Behavior1Msg::Pong.into()
-                                            )
-                                        );
-                                    }
+                ConnectionEvent::Msg { msg, .. } => match msg {
+                    ConnectionMsg::Reliable { data, stream_id } => {
+                        if let Ok(msg) = data.try_into() {
+                            match msg {
+                                Behavior1Msg::Ping => {
+                                    agent.send_net(ConnectionMsg::Reliable {
+                                        stream_id,
+                                        data: Behavior1Msg::Pong.into(),
+                                    });
+                                    self.input.lock().push_back(DebugInput::Msg(
+                                        agent.remote_peer_id(),
+                                        agent.conn_id(),
+                                        Behavior1Msg::Ping.into(),
+                                    ));
+                                }
+                                Behavior1Msg::Pong => {
+                                    self.input.lock().push_back(DebugInput::Msg(
+                                        agent.remote_peer_id(),
+                                        agent.conn_id(),
+                                        Behavior1Msg::Pong.into(),
+                                    ));
                                 }
                             }
                         }
-                        ConnectionMsg::Unreliable { data, .. } => {
-                            if let Ok(msg) = data.try_into() {
-
-                            }
-                        }
                     }
-                }
+                    ConnectionMsg::Unreliable { data, .. } => if let Ok(msg) = data.try_into() {},
+                },
                 ConnectionEvent::Stats(_) => {}
             }
         }
 
-        fn on_other_handler_event(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, from_peer: PeerId, from_conn: u32, event: HE) {
-
+        fn on_other_handler_event(
+            &mut self,
+            agent: &ConnectionAgent<BE, HE, MSG>,
+            from_peer: PeerId,
+            from_conn: u32,
+            event: HE,
+        ) {
         }
 
         fn on_behavior_event(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, event: HE) {}
 
         fn on_closed(&mut self, agent: &ConnectionAgent<BE, HE, MSG>) {
-            self.input.lock().push_back(
-                DebugInput::Closed(
-                    agent.remote_peer_id(),
-                    agent.conn_id(),
-                )
-            );
+            self.input
+                .lock()
+                .push_back(DebugInput::Closed(agent.remote_peer_id(), agent.conn_id()));
         }
     }
 
     impl<BE, HE, MSG> NetworkBehavior<BE, HE, MSG> for Test2NetworkBehavior
-        where BE: From<Behavior2Event> + TryInto<Behavior2Event>,
-              HE: From<Handler2Event> + TryInto<Handler2Event>,
-              MSG: From<Behavior2Msg> + TryInto<Behavior2Msg> + Send + Sync,
+    where
+        BE: From<Behavior2Event> + TryInto<Behavior2Event>,
+        HE: From<Handler2Event> + TryInto<Handler2Event>,
+        MSG: From<Behavior2Msg> + TryInto<Behavior2Msg> + Send + Sync,
     {
         fn service_id(&self) -> u8 {
             1
         }
         fn on_tick(&mut self, agent: &BehaviorAgent<HE, MSG>, ts_ms: u64, interal_ms: u64) {}
-        fn on_incoming_connection_connected(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender<MSG>>) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
+        fn on_incoming_connection_connected(
+            &mut self,
+            agent: &BehaviorAgent<HE, MSG>,
+            connection: Arc<dyn ConnectionSender<MSG>>,
+        ) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
             Some(Box::new(Test2NetworkHandler {}))
         }
-        fn on_outgoing_connection_connected(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender<MSG>>) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
+        fn on_outgoing_connection_connected(
+            &mut self,
+            agent: &BehaviorAgent<HE, MSG>,
+            connection: Arc<dyn ConnectionSender<MSG>>,
+        ) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
             Some(Box::new(Test2NetworkHandler {}))
         }
-        fn on_incoming_connection_disconnected(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender<MSG>>) {}
-        fn on_outgoing_connection_disconnected(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender<MSG>>) {}
-        fn on_outgoing_connection_error(&mut self, agent: &BehaviorAgent<HE, MSG>, peer_id: PeerId, connection_id: u32, err: &OutgoingConnectionError) {}
+        fn on_incoming_connection_disconnected(
+            &mut self,
+            agent: &BehaviorAgent<HE, MSG>,
+            connection: Arc<dyn ConnectionSender<MSG>>,
+        ) {
+        }
+        fn on_outgoing_connection_disconnected(
+            &mut self,
+            agent: &BehaviorAgent<HE, MSG>,
+            connection: Arc<dyn ConnectionSender<MSG>>,
+        ) {
+        }
+        fn on_outgoing_connection_error(
+            &mut self,
+            agent: &BehaviorAgent<HE, MSG>,
+            peer_id: PeerId,
+            connection_id: u32,
+            err: &OutgoingConnectionError,
+        ) {
+        }
         fn on_event(&mut self, agent: &BehaviorAgent<HE, MSG>, event: NetworkBehaviorEvent) {}
-        fn on_handler_event(&mut self, agent: &BehaviorAgent<HE, MSG>, peer_id: PeerId, connection_id: u32, event: BE) {}
+        fn on_handler_event(
+            &mut self,
+            agent: &BehaviorAgent<HE, MSG>,
+            peer_id: PeerId,
+            connection_id: u32,
+            event: BE,
+        ) {
+        }
     }
 
     impl<BE, HE, MSG> ConnectionHandler<BE, HE, MSG> for Test2NetworkHandler
-        where BE: From<Behavior2Event> + TryInto<Behavior2Event>,
-              HE: From<Handler2Event> + TryInto<Handler2Event>,
-              MSG: From<Behavior2Msg> + TryInto<Behavior2Msg>,
+    where
+        BE: From<Behavior2Event> + TryInto<Behavior2Event>,
+        HE: From<Handler2Event> + TryInto<Handler2Event>,
+        MSG: From<Behavior2Msg> + TryInto<Behavior2Msg>,
     {
         fn on_opened(&mut self, agent: &ConnectionAgent<BE, HE, MSG>) {}
         fn on_tick(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, ts_ms: u64, interal_ms: u64) {}
         fn on_event(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, event: ConnectionEvent<MSG>) {}
-        fn on_other_handler_event(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, from_peer: PeerId, from_conn: u32, event: HE) {}
+        fn on_other_handler_event(
+            &mut self,
+            agent: &ConnectionAgent<BE, HE, MSG>,
+            from_peer: PeerId,
+            from_conn: u32,
+            event: HE,
+        ) {
+        }
         fn on_behavior_event(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, event: HE) {}
         fn on_closed(&mut self, agent: &ConnectionAgent<BE, HE, MSG>) {}
     }
@@ -222,34 +288,61 @@ mod tests {
         let transport = Box::new(mock);
         let timer = Arc::new(SystemTimer());
 
-        let mut plane = NetworkPlane::<ImplNetworkBehaviorEvent, ImplNetworkHandlerEvent, ImplNetworkMsg>::new(NetworkPlaneConfig {
-            local_peer_id: 0,
-            tick_ms: 1000,
-            behavior: vec![behavior1, behavior2],
-            transport,
-            timer,
-        });
+        let mut plane =
+            NetworkPlane::<ImplNetworkBehaviorEvent, ImplNetworkHandlerEvent, ImplNetworkMsg>::new(
+                NetworkPlaneConfig {
+                    local_peer_id: 0,
+                    tick_ms: 1000,
+                    behavior: vec![behavior1, behavior2],
+                    transport,
+                    timer,
+                },
+            );
 
-        async_std::task::spawn(async move {
-            while let Ok(_) = plane.run().await {
+        async_std::task::spawn(async move { while let Ok(_) = plane.run().await {} });
 
-            }
-        });
-
-        faker.send(MockInput::FakeIncomingConnection(1, 1, "addr1".to_string())).await.unwrap();
-        faker.send(MockInput::FakeIncomingMsg(0, 1, ConnectionMsg::Reliable {
-            stream_id: 0,
-            data: ImplNetworkMsg::Service1(Behavior1Msg::Ping),
-        })).await.unwrap();
+        faker
+            .send(MockInput::FakeIncomingConnection(1, 1, "addr1".to_string()))
+            .await
+            .unwrap();
+        faker
+            .send(MockInput::FakeIncomingMsg(
+                0,
+                1,
+                ConnectionMsg::Reliable {
+                    stream_id: 0,
+                    data: ImplNetworkMsg::Service1(Behavior1Msg::Ping),
+                },
+            ))
+            .await
+            .unwrap();
         async_std::task::sleep(Duration::from_millis(1000)).await;
         assert_eq!(input.lock().pop_front(), Some(DebugInput::Opened(1, 1)));
-        assert_eq!(input.lock().pop_front(), Some(DebugInput::Msg(1, 1, ImplNetworkMsg::Service1(Behavior1Msg::Ping))));
+        assert_eq!(
+            input.lock().pop_front(),
+            Some(DebugInput::Msg(
+                1,
+                1,
+                ImplNetworkMsg::Service1(Behavior1Msg::Ping)
+            ))
+        );
         assert_eq!(conn_counter.load(Ordering::Relaxed), 1);
-        assert_eq!(output.lock().pop_front(), Some(MockOutput::SendTo(0, 1, 1, ConnectionMsg::Reliable {
-            stream_id: 0,
-            data: ImplNetworkMsg::Service1(Behavior1Msg::Pong),
-        })));
-        faker.send(MockInput::FakeDisconnectIncoming(1, 1)).await.unwrap();
+        assert_eq!(
+            output.lock().pop_front(),
+            Some(MockOutput::SendTo(
+                0,
+                1,
+                1,
+                ConnectionMsg::Reliable {
+                    stream_id: 0,
+                    data: ImplNetworkMsg::Service1(Behavior1Msg::Pong),
+                }
+            ))
+        );
+        faker
+            .send(MockInput::FakeDisconnectIncoming(1, 1))
+            .await
+            .unwrap();
         async_std::task::sleep(Duration::from_millis(1000)).await;
         assert_eq!(conn_counter.load(Ordering::Relaxed), 0);
     }

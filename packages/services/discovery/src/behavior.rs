@@ -1,14 +1,14 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-use parking_lot::Mutex;
+use crate::handler::DiscoveryConnectionHandler;
+use crate::logic::{Action, DiscoveryLogic, DiscoveryLogicConf, Input};
+use crate::msg::{DiscoveryBehaviorEvent, DiscoveryHandlerEvent, DiscoveryMsg};
 use bluesea_identity::{PeerAddr, PeerId};
 use network::behaviour::{ConnectionHandler, NetworkBehavior, NetworkBehaviorEvent};
 use network::plane::BehaviorAgent;
 use network::transport::{ConnectionSender, OutgoingConnectionError, TransportPendingOutgoing};
+use parking_lot::Mutex;
+use std::collections::HashMap;
+use std::sync::Arc;
 use utils::Timer;
-use crate::handler::DiscoveryConnectionHandler;
-use crate::logic::{Action, DiscoveryLogic, DiscoveryLogicConf, Input};
-use crate::msg::{DiscoveryBehaviorEvent, DiscoveryHandlerEvent, DiscoveryMsg};
 
 pub struct DiscoveryNetworkBehaviorOpts {
     pub local_node_id: PeerId,
@@ -27,10 +27,10 @@ impl DiscoveryNetworkBehavior {
             local_node_id: opts.local_node_id,
             timer: opts.timer.clone(),
         };
-        
+
         Self {
             logic: Arc::new(Mutex::new(DiscoveryLogic::new(logic_conf))),
-            opts
+            opts,
         }
     }
 
@@ -49,9 +49,10 @@ impl DiscoveryNetworkBehavior {
 }
 
 impl<BE, HE, MSG> NetworkBehavior<BE, HE, MSG> for DiscoveryNetworkBehavior
-    where BE: TryInto<DiscoveryBehaviorEvent> + From<DiscoveryBehaviorEvent>,
-          HE: TryInto<DiscoveryHandlerEvent> + From<DiscoveryHandlerEvent>,
-          MSG: TryInto<DiscoveryMsg> + From<DiscoveryMsg> + Send + Sync + 'static,
+where
+    BE: TryInto<DiscoveryBehaviorEvent> + From<DiscoveryBehaviorEvent>,
+    HE: TryInto<DiscoveryHandlerEvent> + From<DiscoveryHandlerEvent>,
+    MSG: TryInto<DiscoveryMsg> + From<DiscoveryMsg> + Send + Sync + 'static,
 {
     fn service_id(&self) -> u8 {
         0
@@ -66,26 +67,55 @@ impl<BE, HE, MSG> NetworkBehavior<BE, HE, MSG> for DiscoveryNetworkBehavior
         self.process_logic_actions(agent);
     }
 
-    fn on_incoming_connection_connected(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, MSG>>> {
-        self.logic.lock().on_input(Input::OnConnected(connection.peer_id(), connection.remote_addr()));
+    fn on_incoming_connection_connected(
+        &mut self,
+        agent: &BehaviorAgent<HE, MSG>,
+        connection: Arc<dyn ConnectionSender>,
+    ) -> Option<Box<dyn ConnectionHandler<BE, MSG>>> {
+        self.logic.lock().on_input(Input::OnConnected(
+            connection.peer_id(),
+            connection.remote_addr(),
+        ));
         Some(Box::new(DiscoveryConnectionHandler::new()))
     }
 
-    fn on_outgoing_connection_connected(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, MSG>>> {
+    fn on_outgoing_connection_connected(
+        &mut self,
+        agent: &BehaviorAgent<HE, MSG>,
+        connection: Arc<dyn ConnectionSender>,
+    ) -> Option<Box<dyn ConnectionHandler<BE, MSG>>> {
         todo!()
         // self.logic.lock().on_input(Input::OnConnected(connection.peer_id(), connection.remote_addr()));
         // Some(Box::new(DiscoveryConnectionHandler::new()))
     }
 
-    fn on_incoming_connection_disconnected(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender>) {
-        self.logic.lock().on_input(Input::OnDisconnected(connection.peer_id()));
+    fn on_incoming_connection_disconnected(
+        &mut self,
+        agent: &BehaviorAgent<HE, MSG>,
+        connection: Arc<dyn ConnectionSender>,
+    ) {
+        self.logic
+            .lock()
+            .on_input(Input::OnDisconnected(connection.peer_id()));
     }
 
-    fn on_outgoing_connection_disconnected(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender>) {
-        self.logic.lock().on_input(Input::OnDisconnected(connection.peer_id()));
+    fn on_outgoing_connection_disconnected(
+        &mut self,
+        agent: &BehaviorAgent<HE, MSG>,
+        connection: Arc<dyn ConnectionSender>,
+    ) {
+        self.logic
+            .lock()
+            .on_input(Input::OnDisconnected(connection.peer_id()));
     }
 
-    fn on_outgoing_connection_error(&mut self, agent: &BehaviorAgent<HE, MSG>, peer_id: PeerId, connection_id: u32, err: &OutgoingConnectionError) {
+    fn on_outgoing_connection_error(
+        &mut self,
+        agent: &BehaviorAgent<HE, MSG>,
+        peer_id: PeerId,
+        connection_id: u32,
+        err: &OutgoingConnectionError,
+    ) {
         self.logic.lock().on_input(Input::OnConnectError(peer_id));
     }
 
@@ -93,7 +123,13 @@ impl<BE, HE, MSG> NetworkBehavior<BE, HE, MSG> for DiscoveryNetworkBehavior
         todo!()
     }
 
-    fn on_handler_event(&mut self, agent: &BehaviorAgent<HE, MSG>, peer_id: PeerId, connection_id: u32, event: HE) {
+    fn on_handler_event(
+        &mut self,
+        agent: &BehaviorAgent<HE, MSG>,
+        peer_id: PeerId,
+        connection_id: u32,
+        event: HE,
+    ) {
         todo!()
     }
 }

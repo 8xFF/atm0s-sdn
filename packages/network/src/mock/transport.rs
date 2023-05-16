@@ -1,13 +1,16 @@
-use std::collections::{HashMap, VecDeque};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
-use async_std::channel::{bounded, Receiver, Sender, unbounded};
-use parking_lot::Mutex;
-use bluesea_identity::{PeerAddr, PeerId};
-use crate::mock::{MockInput, MockOutput};
 use crate::mock::connection_receiver::MockConnectionReceiver;
 use crate::mock::connection_sender::MockConnectionSender;
-use crate::transport::{ConnectionEvent, ConnectionMsg, ConnectionSender, OutgoingConnectionError, Transport, TransportConnector, TransportEvent, TransportPendingOutgoing};
+use crate::mock::{MockInput, MockOutput};
+use crate::transport::{
+    ConnectionEvent, ConnectionMsg, ConnectionSender, OutgoingConnectionError, Transport,
+    TransportConnector, TransportEvent, TransportPendingOutgoing,
+};
+use async_std::channel::{bounded, unbounded, Receiver, Sender};
+use bluesea_identity::{PeerAddr, PeerId};
+use parking_lot::Mutex;
+use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 
 pub struct MockTransportConnector<M: Send + Sync> {
     output: Arc<Mutex<VecDeque<MockOutput<M>>>>,
@@ -15,11 +18,17 @@ pub struct MockTransportConnector<M: Send + Sync> {
 }
 
 impl<M: Send + Sync> TransportConnector for MockTransportConnector<M> {
-    fn connect_to(&self, peer_id: PeerId, dest: PeerAddr) -> Result<TransportPendingOutgoing, OutgoingConnectionError> {
+    fn connect_to(
+        &self,
+        peer_id: PeerId,
+        dest: PeerAddr,
+    ) -> Result<TransportPendingOutgoing, OutgoingConnectionError> {
         let conn_id = self.conn_id.fetch_add(1, Ordering::Relaxed);
-        self.output.lock().push_back(MockOutput::ConnectTo(peer_id, dest));
+        self.output
+            .lock()
+            .push_back(MockOutput::ConnectTo(peer_id, dest));
         Ok(TransportPendingOutgoing {
-            connection_id: conn_id
+            connection_id: conn_id,
         })
     }
 }
@@ -32,7 +41,11 @@ pub struct MockTransport<M> {
 }
 
 impl<M> MockTransport<M> {
-    pub fn new() -> (Self, Sender<MockInput<M>>, Arc<Mutex<VecDeque<MockOutput<M>>>>) {
+    pub fn new() -> (
+        Self,
+        Sender<MockInput<M>>,
+        Arc<Mutex<VecDeque<MockOutput<M>>>>,
+    ) {
         let (sender, receiver) = bounded(1);
         let output = Arc::new(Mutex::new(VecDeque::new()));
         (
@@ -43,7 +56,7 @@ impl<M> MockTransport<M> {
                 conn_id: Default::default(),
             },
             sender,
-            output
+            output,
         )
     }
 }
@@ -79,14 +92,16 @@ impl<M: Send + Sync + 'static> Transport<M> for MockTransport<M> {
                     };
 
                     self.conns.insert(conn, sender);
-                    break Ok(TransportEvent::Incoming(Arc::new(conn_sender), Box::new(conn_recv)));
+                    break Ok(TransportEvent::Incoming(
+                        Arc::new(conn_sender),
+                        Box::new(conn_recv),
+                    ));
                 }
                 MockInput::FakeIncomingMsg(service_id, conn, msg) => {
                     if let Some(sender) = self.conns.get(&conn) {
-                        sender.send_blocking(Some(ConnectionEvent::Msg {
-                            service_id,
-                            msg
-                        })).unwrap();
+                        sender
+                            .send_blocking(Some(ConnectionEvent::Msg { service_id, msg }))
+                            .unwrap();
                     }
                 }
                 MockInput::FakeDisconnectIncoming(peer_id, conn) => {

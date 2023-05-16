@@ -1,13 +1,16 @@
-mod connection_sender;
 mod connection_receiver;
+mod connection_sender;
 mod transport;
 
+use crate::transport::{
+    ConnectionMsg, ConnectionSender, OutgoingConnectionError, Transport, TransportConnector,
+    TransportEvent, TransportPendingOutgoing,
+};
+use async_std::channel::{bounded, Receiver, Sender};
+use bluesea_identity::{PeerAddr, PeerId};
+use parking_lot::Mutex;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
-use async_std::channel::{bounded, Receiver, Sender};
-use parking_lot::Mutex;
-use bluesea_identity::{PeerAddr, PeerId};
-use crate::transport::{ConnectionMsg, ConnectionSender, OutgoingConnectionError, Transport, TransportConnector, TransportEvent, TransportPendingOutgoing};
 
 pub enum MockInput<M> {
     FakeIncomingConnection(PeerId, u32, PeerAddr),
