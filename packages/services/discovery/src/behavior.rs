@@ -34,7 +34,11 @@ impl DiscoveryNetworkBehavior {
         }
     }
 
-    fn process_logic_actions<BE, MSG>(&mut self, agent: &BehaviorAgent<BE, MSG>) {
+    fn process_logic_actions<BE, MSG>(&mut self, agent: &BehaviorAgent<BE, MSG>)
+    where
+        BE: Send + Sync + 'static,
+        MSG: Send + Sync + 'static,
+    {
         while let Some(action) = self.logic.lock().poll_action() {
             match action {
                 Action::ConnectTo(peer_id, addr) => {
@@ -50,8 +54,8 @@ impl DiscoveryNetworkBehavior {
 
 impl<BE, HE, MSG> NetworkBehavior<BE, HE, MSG> for DiscoveryNetworkBehavior
 where
-    BE: TryInto<DiscoveryBehaviorEvent> + From<DiscoveryBehaviorEvent>,
-    HE: TryInto<DiscoveryHandlerEvent> + From<DiscoveryHandlerEvent>,
+    BE: TryInto<DiscoveryBehaviorEvent> + From<DiscoveryBehaviorEvent> + Send + Sync + 'static,
+    HE: TryInto<DiscoveryHandlerEvent> + From<DiscoveryHandlerEvent> + Send + Sync + 'static,
     MSG: TryInto<DiscoveryMsg> + From<DiscoveryMsg> + Send + Sync + 'static,
 {
     fn service_id(&self) -> u8 {
@@ -70,10 +74,10 @@ where
     fn on_incoming_connection_connected(
         &mut self,
         agent: &BehaviorAgent<HE, MSG>,
-        connection: Arc<dyn ConnectionSender>,
-    ) -> Option<Box<dyn ConnectionHandler<BE, MSG>>> {
+        connection: Arc<dyn ConnectionSender<MSG>>,
+    ) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
         self.logic.lock().on_input(Input::OnConnected(
-            connection.peer_id(),
+            connection.remote_peer_id(),
             connection.remote_addr(),
         ));
         Some(Box::new(DiscoveryConnectionHandler::new()))
@@ -82,8 +86,8 @@ where
     fn on_outgoing_connection_connected(
         &mut self,
         agent: &BehaviorAgent<HE, MSG>,
-        connection: Arc<dyn ConnectionSender>,
-    ) -> Option<Box<dyn ConnectionHandler<BE, MSG>>> {
+        connection: Arc<dyn ConnectionSender<MSG>>,
+    ) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
         todo!()
         // self.logic.lock().on_input(Input::OnConnected(connection.peer_id(), connection.remote_addr()));
         // Some(Box::new(DiscoveryConnectionHandler::new()))
@@ -92,21 +96,21 @@ where
     fn on_incoming_connection_disconnected(
         &mut self,
         agent: &BehaviorAgent<HE, MSG>,
-        connection: Arc<dyn ConnectionSender>,
+        connection: Arc<dyn ConnectionSender<MSG>>,
     ) {
         self.logic
             .lock()
-            .on_input(Input::OnDisconnected(connection.peer_id()));
+            .on_input(Input::OnDisconnected(connection.remote_peer_id()));
     }
 
     fn on_outgoing_connection_disconnected(
         &mut self,
         agent: &BehaviorAgent<HE, MSG>,
-        connection: Arc<dyn ConnectionSender>,
+        connection: Arc<dyn ConnectionSender<MSG>>,
     ) {
         self.logic
             .lock()
-            .on_input(Input::OnDisconnected(connection.peer_id()));
+            .on_input(Input::OnDisconnected(connection.remote_peer_id()));
     }
 
     fn on_outgoing_connection_error(
@@ -128,7 +132,7 @@ where
         agent: &BehaviorAgent<HE, MSG>,
         peer_id: PeerId,
         connection_id: u32,
-        event: HE,
+        event: BE,
     ) {
         todo!()
     }
