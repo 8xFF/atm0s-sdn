@@ -12,6 +12,7 @@ use crate::transport::{ConnectionMsg, ConnectionSender, OutgoingConnectionError,
 pub enum MockInput<M> {
     FakeIncomingConnection(PeerId, u32, PeerAddr),
     FakeIncomingMsg(u8, u32, ConnectionMsg<M>),
+    FakeDisconnectIncoming(PeerId, u32),
 }
 
 #[derive(PartialEq, Debug)]

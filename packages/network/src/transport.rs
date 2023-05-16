@@ -64,7 +64,7 @@ pub enum ConnectionEvent<MSG> {
 }
 
 pub trait ConnectionSender<MSG>: Send + Sync {
-    fn peer_id(&self) -> PeerId;
+    fn remote_peer_id(&self) -> PeerId;
     fn connection_id(&self) -> u32;
     fn remote_addr(&self) -> PeerAddr;
     fn send(&self, service_id: u8, msg: ConnectionMsg<MSG>);
@@ -73,7 +73,7 @@ pub trait ConnectionSender<MSG>: Send + Sync {
 
 #[async_trait::async_trait]
 pub trait ConnectionReceiver<MSG> {
-    fn peer_id(&self) -> PeerId;
+    fn remote_peer_id(&self) -> PeerId;
     fn connection_id(&self) -> u32;
     fn remote_addr(&self) -> PeerAddr;
     async fn poll(&mut self) -> Result<ConnectionEvent<MSG>, ()>;

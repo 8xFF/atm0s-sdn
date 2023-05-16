@@ -7,15 +7,15 @@ use crate::mock::MockOutput;
 use crate::transport::{ConnectionEvent, ConnectionMsg, ConnectionSender};
 
 pub struct MockConnectionSender<MSG> {
-    pub peer_id: PeerId,
+    pub remote_peer_id: PeerId,
     pub conn_id: u32,
     pub remote_addr: PeerAddr,
     pub output: Arc<Mutex<VecDeque<MockOutput<MSG>>>>,
 }
 
 impl<MSG> ConnectionSender<MSG> for MockConnectionSender<MSG> where MSG: Send + Sync {
-    fn peer_id(&self) -> PeerId {
-        self.peer_id
+    fn remote_peer_id(&self) -> PeerId {
+        self.remote_peer_id
     }
 
     fn connection_id(&self) -> u32 {
@@ -27,7 +27,7 @@ impl<MSG> ConnectionSender<MSG> for MockConnectionSender<MSG> where MSG: Send + 
     }
 
     fn send(&self, service_id: u8, msg: ConnectionMsg<MSG>) {
-        self.output.lock().push_back(MockOutput::SendTo(service_id, self.peer_id, self.conn_id, msg));
+        self.output.lock().push_back(MockOutput::SendTo(service_id, self.remote_peer_id, self.conn_id, msg));
     }
 
     fn close(&self) {

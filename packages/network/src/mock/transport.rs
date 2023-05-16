@@ -27,7 +27,7 @@ impl<M: Send + Sync> TransportConnector for MockTransportConnector<M> {
 pub struct MockTransport<M> {
     receiver: Receiver<MockInput<M>>,
     output: Arc<Mutex<VecDeque<MockOutput<M>>>>,
-    conns: HashMap<u32, Sender<ConnectionEvent<M>>>,
+    conns: HashMap<u32, Sender<Option<ConnectionEvent<M>>>>,
     conn_id: Arc<AtomicU32>,
 }
 
@@ -64,14 +64,14 @@ impl<M: Send + Sync + 'static> Transport<M> for MockTransport<M> {
                 MockInput::FakeIncomingConnection(peer, conn, addr) => {
                     let (sender, receiver) = unbounded();
                     let conn_sender: MockConnectionSender<M> = MockConnectionSender {
-                        peer_id: peer,
+                        remote_peer_id: peer,
                         conn_id: conn,
                         remote_addr: addr.clone(),
                         output: self.output.clone(),
                     };
 
                     let conn_recv: MockConnectionReceiver<M> = MockConnectionReceiver {
-                        peer_id: peer,
+                        remote_peer_id: peer,
                         conn_id: conn,
                         remote_addr: addr.clone(),
                         receiver,
@@ -82,10 +82,15 @@ impl<M: Send + Sync + 'static> Transport<M> for MockTransport<M> {
                 }
                 MockInput::FakeIncomingMsg(service_id, conn, msg) => {
                     if let Some(sender) = self.conns.get(&conn) {
-                        sender.send_blocking(ConnectionEvent::Msg {
+                        sender.send_blocking(Some(ConnectionEvent::Msg {
                             service_id,
                             msg
-                        }).unwrap();
+                        })).unwrap();
+                    }
+                }
+                MockInput::FakeDisconnectIncoming(peer_id, conn) => {
+                    if let Some(sender) = self.conns.get(&conn) {
+                        sender.send_blocking(None).unwrap();
                     }
                 }
             }
