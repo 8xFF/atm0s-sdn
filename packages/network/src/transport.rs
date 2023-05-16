@@ -25,7 +25,7 @@ pub enum TransportEvent<MSG> {
 
 #[async_trait::async_trait]
 pub trait Transport<MSG> {
-    fn connector(&self) -> Box<dyn TransportConnector>;
+    fn connector(&self) -> Arc<dyn TransportConnector>;
     async fn recv(&mut self) -> Result<TransportEvent<MSG>, ()>;
 }
 
@@ -51,7 +51,7 @@ pub enum ConnectionMsg<MSG> {
 
 #[derive(Clone)]
 pub struct ConnectionStats {
-    rtt_ms: (u16, u16),
+    rtt_ms: u16,
     sending_kbps: u32,
     send_est_kbps: u32,
     loss_percent: u32,

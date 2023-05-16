@@ -50,8 +50,8 @@ impl<M> MockTransport<M> {
 
 #[async_trait::async_trait]
 impl<M: Send + Sync + 'static> Transport<M> for MockTransport<M> {
-    fn connector(&self) -> Box<dyn TransportConnector> {
-        Box::new(MockTransportConnector {
+    fn connector(&self) -> Arc<dyn TransportConnector> {
+        Arc::new(MockTransportConnector {
             output: self.output.clone(),
             conn_id: self.conn_id.clone(),
         })
@@ -62,12 +62,13 @@ impl<M: Send + Sync + 'static> Transport<M> for MockTransport<M> {
             let input = self.receiver.recv().await.map_err(|e| ())?;
             match input {
                 MockInput::FakeIncomingConnection(peer, conn, addr) => {
-                    let (sender, receiver) = unbounded();
+                    let (sender, receiver) = bounded(10);
                     let conn_sender: MockConnectionSender<M> = MockConnectionSender {
                         remote_peer_id: peer,
                         conn_id: conn,
                         remote_addr: addr.clone(),
                         output: self.output.clone(),
+                        internal_sender: sender.clone(),
                     };
 
                     let conn_recv: MockConnectionReceiver<M> = MockConnectionReceiver {

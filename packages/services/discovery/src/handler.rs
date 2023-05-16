@@ -1,5 +1,5 @@
 use network::behaviour::ConnectionHandler;
-use network::plane::{ConnectionAgent, NetworkAgent};
+use network::plane::{ConnectionAgent, BehaviorAgent};
 use network::transport::ConnectionEvent;
 use crate::msg::{DiscoveryBehaviorEvent, DiscoveryMsg};
 

@@ -4,7 +4,7 @@ use std::time::Duration;
 use bluesea_identity::{PeerAddr, PeerId, PeerIdType};
 use kademlia::kbucket::{Entry, NodeStatus, KBucketsTable, AppliedPending};
 use kademlia::kbucket::key::Key;
-use network::plane::NetworkAgent;
+use network::plane::BehaviorAgent;
 use network::transport::ConnectionSender;
 use utils::Timer;
 use crate::closest_list::ClosestList;
