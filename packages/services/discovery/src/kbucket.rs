@@ -1,6 +1,6 @@
-use bluesea_identity::{PeerAddr, PeerId, PeerIdType};
 use crate::kbucket::bucket::KBucket;
 use crate::kbucket::entry::EntryState;
+use bluesea_identity::{PeerAddr, PeerId, PeerIdType};
 
 pub mod bucket;
 pub mod entry;
@@ -9,31 +9,47 @@ pub(crate) const KEY_BITS: usize = 32;
 pub(crate) const K_BUCKET: usize = 4;
 
 struct KBucketTable {
-    buckets: [KBucket; KEY_BITS + 1]
+    buckets: [KBucket; KEY_BITS + 1],
 }
 
 impl KBucketTable {
     pub fn new() -> Self {
         Self {
             buckets: [
-                KBucket::new(0), KBucket::new(1),
-                KBucket::new(2), KBucket::new(3),
-                KBucket::new(4), KBucket::new(5),
-                KBucket::new(6), KBucket::new(7),
-                KBucket::new(8), KBucket::new(9),
-                KBucket::new(10), KBucket::new(11),
-                KBucket::new(12), KBucket::new(13),
-                KBucket::new(14), KBucket::new(15),
-                KBucket::new(16), KBucket::new(17),
-                KBucket::new(18), KBucket::new(19),
-                KBucket::new(20), KBucket::new(21),
-                KBucket::new(22), KBucket::new(23),
-                KBucket::new(24), KBucket::new(25),
-                KBucket::new(26), KBucket::new(27),
-                KBucket::new(28), KBucket::new(29),
-                KBucket::new(30), KBucket::new(31),
-                KBucket::new(32)
-            ]
+                KBucket::new(0),
+                KBucket::new(1),
+                KBucket::new(2),
+                KBucket::new(3),
+                KBucket::new(4),
+                KBucket::new(5),
+                KBucket::new(6),
+                KBucket::new(7),
+                KBucket::new(8),
+                KBucket::new(9),
+                KBucket::new(10),
+                KBucket::new(11),
+                KBucket::new(12),
+                KBucket::new(13),
+                KBucket::new(14),
+                KBucket::new(15),
+                KBucket::new(16),
+                KBucket::new(17),
+                KBucket::new(18),
+                KBucket::new(19),
+                KBucket::new(20),
+                KBucket::new(21),
+                KBucket::new(22),
+                KBucket::new(23),
+                KBucket::new(24),
+                KBucket::new(25),
+                KBucket::new(26),
+                KBucket::new(27),
+                KBucket::new(28),
+                KBucket::new(29),
+                KBucket::new(30),
+                KBucket::new(31),
+                KBucket::new(32),
+            ],
         }
     }
 
@@ -83,11 +99,13 @@ impl KBucketTable {
     pub fn closest_peers(&self, distance: PeerId) -> Vec<(PeerId, PeerAddr, bool)> {
         let bucket_index = distance.bucket_index();
         assert!(bucket_index <= KEY_BITS as u8);
-        let mut closest_peer: Vec<(PeerId, PeerAddr, bool)> = self.buckets[bucket_index as usize].peers();
+        let mut closest_peer: Vec<(PeerId, PeerAddr, bool)> =
+            self.buckets[bucket_index as usize].peers();
         if bucket_index > 1 {
             let mut more_bucket_index = bucket_index - 1;
             while closest_peer.len() < K_BUCKET && more_bucket_index > 0 {
-                let new_list: Vec<(PeerId, PeerAddr, bool)> = self.buckets[more_bucket_index as usize].peers();
+                let new_list: Vec<(PeerId, PeerAddr, bool)> =
+                    self.buckets[more_bucket_index as usize].peers();
                 for part in new_list {
                     closest_peer.push(part);
                 }
@@ -97,7 +115,8 @@ impl KBucketTable {
         if bucket_index < KEY_BITS as u8 {
             let mut more_bucket_index = bucket_index + 1;
             while closest_peer.len() < K_BUCKET && more_bucket_index <= KEY_BITS as u8 {
-                let new_list: Vec<(PeerId, PeerAddr, bool)> = self.buckets[more_bucket_index as usize].peers();
+                let new_list: Vec<(PeerId, PeerAddr, bool)> =
+                    self.buckets[more_bucket_index as usize].peers();
                 for part in new_list {
                     closest_peer.push(part);
                 }
@@ -128,11 +147,13 @@ impl KBucketTableWrap {
     }
 
     pub fn add_peer_connecting(&mut self, peer: PeerId, addr: PeerAddr) -> bool {
-        self.table.add_peer_connecting(peer ^ self.local_peer_id, addr)
+        self.table
+            .add_peer_connecting(peer ^ self.local_peer_id, addr)
     }
 
     pub fn add_peer_connected(&mut self, peer: PeerId, addr: PeerAddr) -> bool {
-        self.table.add_peer_connected(peer ^ self.local_peer_id, addr)
+        self.table
+            .add_peer_connected(peer ^ self.local_peer_id, addr)
     }
 
     pub fn remove_connecting_peer(&mut self, peer: PeerId) -> bool {
@@ -172,28 +193,40 @@ mod tests {
         assert_eq!(table.add_peer_connecting(40, "peer40".to_string()), true);
         assert_eq!(table.add_peer_connecting(100, "peer100".to_string()), true);
         assert_eq!(table.add_peer_connecting(120, "peer120".to_string()), true);
-        assert_eq!(table.add_peer_connecting(u32::MAX, "peerMAX".to_string()), true);
+        assert_eq!(
+            table.add_peer_connecting(u32::MAX, "peerMAX".to_string()),
+            true
+        );
 
-        assert_eq!(table.closest_peers(100), vec![
+        assert_eq!(
+            table.closest_peers(100),
+            vec![
                 (100, "peer100".to_string(), false),
                 (120, "peer120".to_string(), false),
                 (40, "peer40".to_string(), false),
                 (10, "peer10".to_string(), false)
-        ]);
+            ]
+        );
 
-        assert_eq!(table.closest_peers(10), vec![
-            (10, "peer10".to_string(), false),
-            (1, "peer1".to_string(), false),
-            (40, "peer40".to_string(), false),
-            (100, "peer100".to_string(), false),
-        ]);
+        assert_eq!(
+            table.closest_peers(10),
+            vec![
+                (10, "peer10".to_string(), false),
+                (1, "peer1".to_string(), false),
+                (40, "peer40".to_string(), false),
+                (100, "peer100".to_string(), false),
+            ]
+        );
 
-        assert_eq!(table.closest_peers(u32::MAX), vec![
-            (u32::MAX, "peerMAX".to_string(), false),
-            (120, "peer120".to_string(), false),
-            (100, "peer100".to_string(), false),
-            (40, "peer40".to_string(), false),
-        ]);
+        assert_eq!(
+            table.closest_peers(u32::MAX),
+            vec![
+                (u32::MAX, "peerMAX".to_string(), false),
+                (120, "peer120".to_string(), false),
+                (100, "peer100".to_string(), false),
+                (40, "peer40".to_string(), false),
+            ]
+        );
     }
 
     fn random_insert(table_size: usize, test_count: usize) {

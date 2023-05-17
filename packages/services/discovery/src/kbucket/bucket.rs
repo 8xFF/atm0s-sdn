@@ -1,6 +1,6 @@
-use bluesea_identity::{PeerAddr, PeerId};
 use crate::kbucket::entry::{Entry, EntryState};
 use crate::kbucket::K_BUCKET;
+use bluesea_identity::{PeerAddr, PeerId};
 
 pub struct KBucket {
     distance_bits: usize,
@@ -11,17 +11,15 @@ impl KBucket {
     pub(crate) fn new(distance_bits: usize) -> Self {
         Self {
             distance_bits,
-            slots: [Entry::new(), Entry::new(), Entry::new(), Entry::new()]
+            slots: [Entry::new(), Entry::new(), Entry::new(), Entry::new()],
         }
     }
 
     fn sort(&mut self) {
-        self.slots.sort_by_key(|e| {
-            match e.state() {
-                EntryState::Empty => u32::MAX,
-                EntryState::Connecting { distance, .. } => *distance,
-                EntryState::Connected { distance, .. } => *distance,
-            }
+        self.slots.sort_by_key(|e| match e.state() {
+            EntryState::Empty => u32::MAX,
+            EntryState::Connecting { distance, .. } => *distance,
+            EntryState::Connected { distance, .. } => *distance,
         })
     }
 
@@ -72,18 +70,22 @@ impl KBucket {
                     if *distance == new_distance {
                         return false;
                     }
-                },
+                }
                 EntryState::Connected { distance, .. } => {
                     if *distance == new_distance {
                         return false;
                     }
-                },
+                }
                 _ => {}
             }
         }
         if let Some(slot) = self.has_empty() {
             //TODO fill timestamp
-            self.slots[slot].switch_state(EntryState::Connecting { distance: new_distance, addr, started_at: 0 });
+            self.slots[slot].switch_state(EntryState::Connecting {
+                distance: new_distance,
+                addr,
+                started_at: 0,
+            });
             self.sort();
             true
         } else {
@@ -96,22 +98,30 @@ impl KBucket {
             match slot.state() {
                 EntryState::Connecting { distance, .. } => {
                     if *distance == new_distance {
-                        slot.switch_state(EntryState::Connected { distance: new_distance, addr, started_at: 0 });
+                        slot.switch_state(EntryState::Connected {
+                            distance: new_distance,
+                            addr,
+                            started_at: 0,
+                        });
                         self.sort();
                         return true;
                     }
-                },
+                }
                 EntryState::Connected { distance, .. } => {
                     if *distance == new_distance {
                         return false;
                     }
-                },
+                }
                 _ => {}
             }
         }
         if let Some(slot) = self.has_empty() {
             //TODO fill timestamp
-            self.slots[slot].switch_state(EntryState::Connected { distance: new_distance, addr, started_at: 0 });
+            self.slots[slot].switch_state(EntryState::Connected {
+                distance: new_distance,
+                addr,
+                started_at: 0,
+            });
             self.sort();
             true
         } else {
@@ -127,7 +137,7 @@ impl KBucket {
                         slot.switch_state(EntryState::Empty);
                         return true;
                     }
-                },
+                }
                 _ => {}
             }
         }
@@ -142,7 +152,7 @@ impl KBucket {
                         slot.switch_state(EntryState::Empty);
                         return true;
                     }
-                },
+                }
                 _ => {}
             }
         }
@@ -160,10 +170,10 @@ impl KBucket {
             match slot.state() {
                 EntryState::Connected { distance, addr, .. } => {
                     res.push((*distance, addr.clone(), true));
-                },
+                }
                 EntryState::Connecting { distance, addr, .. } => {
                     res.push((*distance, addr.clone(), false));
-                },
+                }
                 _ => {}
             }
         }
@@ -185,7 +195,13 @@ mod tests {
         assert_eq!(bucket.size(), 1);
 
         assert_eq!(bucket.add_peer_connecting(2, "peer2".to_string()), true);
-        assert_eq!(bucket.peers(), vec![(1, "peer1".to_string(), true), (2, "peer2".to_string(), false)]);
+        assert_eq!(
+            bucket.peers(),
+            vec![
+                (1, "peer1".to_string(), true),
+                (2, "peer2".to_string(), false)
+            ]
+        );
     }
 
     #[test]

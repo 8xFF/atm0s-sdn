@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use bluesea_identity::PeerId;
+use std::collections::HashMap;
 
 #[derive(Default)]
 pub struct ConnectionGrouping {

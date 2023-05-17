@@ -1,4 +1,6 @@
 use crate::closest_list::ClosestList;
+use crate::kbucket::entry::EntryState;
+use crate::kbucket::KBucketTableWrap;
 use bluesea_identity::{PeerAddr, PeerId, PeerIdType};
 use network::plane::BehaviorAgent;
 use network::transport::ConnectionSender;
@@ -6,8 +8,6 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 use utils::Timer;
-use crate::kbucket::entry::EntryState;
-use crate::kbucket::KBucketTableWrap;
 
 #[derive(PartialEq, Debug)]
 pub enum Message {
@@ -58,11 +58,17 @@ impl DiscoveryLogic {
     }
 
     fn check_connected(&self, peer: PeerId) -> bool {
-        matches!(self.table.get_peer(peer), Some(EntryState::Connected { .. }))
+        matches!(
+            self.table.get_peer(peer),
+            Some(EntryState::Connected { .. })
+        )
     }
 
     fn check_connecting(&self, peer: PeerId) -> bool {
-        matches!(self.table.get_peer(peer), Some(EntryState::Connecting { .. }))
+        matches!(
+            self.table.get_peer(peer),
+            Some(EntryState::Connecting { .. })
+        )
     }
 
     fn locate_key(&mut self, key: PeerId) {
@@ -80,7 +86,8 @@ impl DiscoveryLogic {
             for (peer, addr, connected) in need_contact_peers {
                 request.add_peer(peer, addr, connected);
                 if connected {
-                    self.action_queues.push_back(Action::SendTo(peer, Message::FindKey(req_id, key)));
+                    self.action_queues
+                        .push_back(Action::SendTo(peer, Message::FindKey(req_id, key)));
                 } else {
                     request.add_pending_msg(peer, Message::FindKey(req_id, key));
                 }
@@ -143,7 +150,8 @@ impl DiscoveryLogic {
                     if let Some(key) = key {
                         for (peer, addr) in need_contact_list {
                             if self.check_connected(peer) {
-                                self.action_queues.push_back(Action::SendTo(peer, Message::FindKey(req_id, key)));
+                                self.action_queues
+                                    .push_back(Action::SendTo(peer, Message::FindKey(req_id, key)));
                             } else if self.check_connecting(peer) {
                                 if let Some(request) = self.request_memory.get_mut(&req_id) {
                                     request.add_pending_msg(peer, Message::FindKey(req_id, key));
@@ -171,20 +179,16 @@ impl DiscoveryLogic {
                     }
                 }
             }
-            Input::OnDisconnected(peer) => {
-                if self.table.remove_connected_peer(peer) {
-
-                }
-            },
+            Input::OnDisconnected(peer) => if self.table.remove_connected_peer(peer) {},
         }
     }
 }
 
 #[cfg(test)]
 mod test {
+    use crate::logic::{Action, DiscoveryLogic, DiscoveryLogicConf, Input, Message};
     use std::sync::Arc;
     use utils::SystemTimer;
-    use crate::logic::{Action, DiscoveryLogic, DiscoveryLogicConf, Input, Message};
 
     #[test]
     fn init_bootstrap() {
@@ -198,13 +202,25 @@ mod test {
 
         logic.on_input(Input::RefreshKey(0)); //create request 0
 
-        assert_eq!(logic.poll_action(), Some(Action::ConnectTo(1000, "peer1000".to_string())));
-        assert_eq!(logic.poll_action(), Some(Action::ConnectTo(2000, "peer2000".to_string())));
+        assert_eq!(
+            logic.poll_action(),
+            Some(Action::ConnectTo(1000, "peer1000".to_string()))
+        );
+        assert_eq!(
+            logic.poll_action(),
+            Some(Action::ConnectTo(2000, "peer2000".to_string()))
+        );
 
         logic.on_input(Input::OnConnected(2000, "peer2000".to_string()));
         logic.on_input(Input::OnConnected(1000, "peer1000".to_string()));
 
-        assert_eq!(logic.poll_action(), Some(Action::SendTo(2000, Message::FindKey(0, 0))));
-        assert_eq!(logic.poll_action(), Some(Action::SendTo(1000, Message::FindKey(0, 0))));
+        assert_eq!(
+            logic.poll_action(),
+            Some(Action::SendTo(2000, Message::FindKey(0, 0)))
+        );
+        assert_eq!(
+            logic.poll_action(),
+            Some(Action::SendTo(1000, Message::FindKey(0, 0)))
+        );
     }
 }

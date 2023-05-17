@@ -1,19 +1,27 @@
 use bluesea_identity::{PeerAddr, PeerId};
 
 pub enum EntryState {
-    Connecting { distance: PeerId, addr: PeerAddr, started_at: u64 },
-    Connected { distance: PeerId, addr: PeerAddr, started_at: u64 },
-    Empty
+    Connecting {
+        distance: PeerId,
+        addr: PeerAddr,
+        started_at: u64,
+    },
+    Connected {
+        distance: PeerId,
+        addr: PeerAddr,
+        started_at: u64,
+    },
+    Empty,
 }
 
 pub struct Entry {
-    state: EntryState
+    state: EntryState,
 }
 
 impl Entry {
     pub(crate) fn new() -> Self {
         Self {
-            state: EntryState::Empty
+            state: EntryState::Empty,
         }
     }
 

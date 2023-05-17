@@ -1,6 +1,6 @@
-use std::collections::{HashMap, VecDeque};
-use bluesea_identity::{PeerAddr, PeerId};
 use crate::kbucket::K_BUCKET;
+use bluesea_identity::{PeerAddr, PeerId};
+use std::collections::{HashMap, VecDeque};
 
 enum PeerState {
     Waiting,
@@ -84,7 +84,7 @@ mod tests {
 
     #[derive(PartialEq, Debug)]
     enum Msg {
-        Test
+        Test,
     }
 
     #[test]
