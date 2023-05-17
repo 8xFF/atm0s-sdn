@@ -12,12 +12,14 @@ members = [
 
 [workspace.dependencies]
 async-trait = "0.1"
+async-std = { version = "1.12", features = ["unstable", "attributes"] }
 bluesea-identity = { path = "packages/core/identity" }
 quickcheck = { package = "quickcheck-ext", path = "packages/misc/quickcheck-ext" }
 utils = { package = "utils", path = "packages/core/utils" }
 kademlia = { package = "kademlia", path = "packages/core/kademlia" }
 network = { package = "network", path = "packages/network" }
-transport-mock = { package = "mock", path = "packages/transports/vnet" }
+transport-vnet = { package = "mock", path = "packages/transports/vnet" }
+scc = "1.7.2"
 kanal = "0.1.0-pre8"
 thiserror = "1.0"
 log = "0.4"

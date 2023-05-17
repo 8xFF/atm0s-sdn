@@ -43,7 +43,7 @@ pub enum ConnectionMsg<MSG> {
     Unreliable { stream_id: u16, data: MSG },
 }
 
-#[derive(Clone)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct ConnectionStats {
     rtt_ms: u16,
     sending_kbps: u32,
@@ -52,6 +52,7 @@ pub struct ConnectionStats {
     over_use: bool,
 }
 
+#[derive(PartialEq, Debug)]
 pub enum ConnectionEvent<MSG> {
     Msg {
         service_id: u8,
@@ -76,10 +77,14 @@ pub trait ConnectionReceiver<MSG> {
     async fn poll(&mut self) -> Result<ConnectionEvent<MSG>, ()>;
 }
 
-#[derive(Error, Debug)]
+#[derive(PartialEq, Error, Debug)]
 pub enum OutgoingConnectionError {
     #[error("Too many connection")]
     TooManyConnection,
     #[error("Authentication Error")]
     AuthenticationError,
+    #[error("Unsupported Protocol")]
+    UnsupportedProtocol,
+    #[error("Destination Not Found")]
+    DestinationNotFound,
 }
