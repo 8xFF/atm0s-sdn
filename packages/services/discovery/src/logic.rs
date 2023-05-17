@@ -188,6 +188,8 @@ impl DiscoveryLogic {
 mod test {
     use crate::logic::{Action, DiscoveryLogic, DiscoveryLogicConf, Input, Message};
     use std::sync::Arc;
+    use bluesea_identity::multiaddr::Protocol;
+    use bluesea_identity::PeerAddr;
     use utils::SystemTimer;
 
     #[test]
@@ -197,22 +199,22 @@ mod test {
             timer: Arc::new(SystemTimer()),
         });
 
-        logic.on_input(Input::AddPeer(1000, "peer1000".to_string()));
-        logic.on_input(Input::AddPeer(2000, "peer2000".to_string()));
+        logic.on_input(Input::AddPeer(1000, PeerAddr::from(Protocol::Udp(1000))));
+        logic.on_input(Input::AddPeer(2000, PeerAddr::from(Protocol::Udp(2000))));
 
         logic.on_input(Input::RefreshKey(0)); //create request 0
 
         assert_eq!(
             logic.poll_action(),
-            Some(Action::ConnectTo(1000, "peer1000".to_string()))
+            Some(Action::ConnectTo(1000, PeerAddr::from(Protocol::Udp(1000))))
         );
         assert_eq!(
             logic.poll_action(),
-            Some(Action::ConnectTo(2000, "peer2000".to_string()))
+            Some(Action::ConnectTo(2000, PeerAddr::from(Protocol::Udp(2000))))
         );
 
-        logic.on_input(Input::OnConnected(2000, "peer2000".to_string()));
-        logic.on_input(Input::OnConnected(1000, "peer1000".to_string()));
+        logic.on_input(Input::OnConnected(2000, PeerAddr::from(Protocol::Udp(2000))));
+        logic.on_input(Input::OnConnected(1000, PeerAddr::from(Protocol::Udp(1000))));
 
         assert_eq!(
             logic.poll_action(),

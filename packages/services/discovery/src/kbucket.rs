@@ -183,48 +183,50 @@ impl KBucketTableWrap {
 
 #[cfg(test)]
 mod tests {
+    use bluesea_identity::multiaddr::Protocol;
+    use bluesea_identity::PeerAddr;
     use crate::kbucket::KBucketTable;
 
     #[test]
     fn simple_table() {
         let mut table = KBucketTable::new();
-        assert_eq!(table.add_peer_connecting(1, "peer1".to_string()), true);
-        assert_eq!(table.add_peer_connecting(10, "peer10".to_string()), true);
-        assert_eq!(table.add_peer_connecting(40, "peer40".to_string()), true);
-        assert_eq!(table.add_peer_connecting(100, "peer100".to_string()), true);
-        assert_eq!(table.add_peer_connecting(120, "peer120".to_string()), true);
+        assert_eq!(table.add_peer_connecting(1, PeerAddr::from(Protocol::Udp(1))), true);
+        assert_eq!(table.add_peer_connecting(10, PeerAddr::from(Protocol::Udp(10))), true);
+        assert_eq!(table.add_peer_connecting(40, PeerAddr::from(Protocol::Udp(40))), true);
+        assert_eq!(table.add_peer_connecting(100, PeerAddr::from(Protocol::Udp(100))), true);
+        assert_eq!(table.add_peer_connecting(120, PeerAddr::from(Protocol::Udp(120))), true);
         assert_eq!(
-            table.add_peer_connecting(u32::MAX, "peerMAX".to_string()),
+            table.add_peer_connecting(u32::MAX, PeerAddr::from(Protocol::Udp(5000))),
             true
         );
 
         assert_eq!(
             table.closest_peers(100),
             vec![
-                (100, "peer100".to_string(), false),
-                (120, "peer120".to_string(), false),
-                (40, "peer40".to_string(), false),
-                (10, "peer10".to_string(), false)
+                (100, PeerAddr::from(Protocol::Udp(100)), false),
+                (120, PeerAddr::from(Protocol::Udp(120)), false),
+                (40, PeerAddr::from(Protocol::Udp(40)), false),
+                (10, PeerAddr::from(Protocol::Udp(10)), false)
             ]
         );
 
         assert_eq!(
             table.closest_peers(10),
             vec![
-                (10, "peer10".to_string(), false),
-                (1, "peer1".to_string(), false),
-                (40, "peer40".to_string(), false),
-                (100, "peer100".to_string(), false),
+                (10, PeerAddr::from(Protocol::Udp(10)), false),
+                (1, PeerAddr::from(Protocol::Udp(1)), false),
+                (40, PeerAddr::from(Protocol::Udp(40)), false),
+                (100, PeerAddr::from(Protocol::Udp(100)), false),
             ]
         );
 
         assert_eq!(
             table.closest_peers(u32::MAX),
             vec![
-                (u32::MAX, "peerMAX".to_string(), false),
-                (120, "peer120".to_string(), false),
-                (100, "peer100".to_string(), false),
-                (40, "peer40".to_string(), false),
+                (u32::MAX, PeerAddr::from(Protocol::Udp(5000)), false),
+                (120, PeerAddr::from(Protocol::Udp(120)), false),
+                (100, PeerAddr::from(Protocol::Udp(100)), false),
+                (40, PeerAddr::from(Protocol::Udp(40)), false),
             ]
         );
     }
@@ -234,7 +236,7 @@ mod tests {
         let mut table = KBucketTable::new();
         for _ in 0..table_size {
             let dis: u32 = rand::random();
-            let addr = format!("peer{}", dis);
+            let addr = PeerAddr::from(Protocol::Udp(dis as u16));
             if table.add_peer_connected(dis, addr.clone()) {
                 list.push((dis, addr, true));
             }
@@ -246,6 +248,29 @@ mod tests {
             list.sort_by_key(|(dist, _, _)| *dist ^ key);
             assert_eq!(closest_peers, list[0..closest_peers.len()]);
         }
+
+        //299570928
+
+    }
+
+    fn test_manual(peers: Vec<u32>, key: u32) {
+        let mut list = vec![];
+        let mut table = KBucketTable::new();
+        for dis in peers {
+            let addr = PeerAddr::from(Protocol::Udp(dis as u16));
+            if table.add_peer_connected(dis, addr.clone()) {
+                list.push((dis, addr, true));
+            }
+        }
+
+        let closest_peers = table.closest_peers(key);
+        list.sort_by_key(|(dist, _, _)| *dist ^ key);
+        assert_eq!(closest_peers, list[0..closest_peers.len()]);
+    }
+
+    #[test]
+    fn failed_1() {
+        test_manual(vec![483704965, 473524180, 526503063, 190210392, 27511667], 299570928);
     }
 
     #[test]

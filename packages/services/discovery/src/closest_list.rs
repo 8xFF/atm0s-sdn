@@ -80,6 +80,8 @@ impl<M> ClosestList<M> {
 
 #[cfg(test)]
 mod tests {
+    use bluesea_identity::multiaddr::Protocol;
+    use bluesea_identity::PeerAddr;
     use crate::closest_list::ClosestList;
 
     #[derive(PartialEq, Debug)]
@@ -90,50 +92,50 @@ mod tests {
     #[test]
     fn simple_test() {
         let mut list = ClosestList::<Msg>::new(0, 0, 0);
-        list.add_peer(1, "peer1".to_string(), false);
-        list.add_peer(2, "peer2".to_string(), false);
-        list.add_peer(3, "peer3".to_string(), false);
+        list.add_peer(1, PeerAddr::from(Protocol::Udp(1)), false);
+        list.add_peer(2, PeerAddr::from(Protocol::Udp(2)), false);
+        list.add_peer(3, PeerAddr::from(Protocol::Udp(3)), false);
 
-        assert_eq!(list.pop_need_connect(), Some((1, "peer1".to_string())));
-        assert_eq!(list.pop_need_connect(), Some((2, "peer2".to_string())));
-        assert_eq!(list.pop_need_connect(), Some((3, "peer3".to_string())));
+        assert_eq!(list.pop_need_connect(), Some((1, PeerAddr::from(Protocol::Udp(1)))));
+        assert_eq!(list.pop_need_connect(), Some((2, PeerAddr::from(Protocol::Udp(2)))));
+        assert_eq!(list.pop_need_connect(), Some((3, PeerAddr::from(Protocol::Udp(3)))));
         assert_eq!(list.pop_need_connect(), None);
     }
 
     #[test]
     fn test_unordered() {
         let mut list = ClosestList::<Msg>::new(0, 0, 0);
-        list.add_peer(2, "peer2".to_string(), false);
-        list.add_peer(1, "peer1".to_string(), false);
-        list.add_peer(3, "peer3".to_string(), false);
+        list.add_peer(2, PeerAddr::from(Protocol::Udp(2)), false);
+        list.add_peer(1, PeerAddr::from(Protocol::Udp(1)), false);
+        list.add_peer(3, PeerAddr::from(Protocol::Udp(3)), false);
 
-        assert_eq!(list.pop_need_connect(), Some((1, "peer1".to_string())));
-        assert_eq!(list.pop_need_connect(), Some((2, "peer2".to_string())));
-        assert_eq!(list.pop_need_connect(), Some((3, "peer3".to_string())));
+        assert_eq!(list.pop_need_connect(), Some((1, PeerAddr::from(Protocol::Udp(1)))));
+        assert_eq!(list.pop_need_connect(), Some((2, PeerAddr::from(Protocol::Udp(2)))));
+        assert_eq!(list.pop_need_connect(), Some((3, PeerAddr::from(Protocol::Udp(3)))));
         assert_eq!(list.pop_need_connect(), None);
     }
 
     #[test]
     fn test_duplicate() {
         let mut list = ClosestList::<Msg>::new(0, 0, 0);
-        list.add_peer(2, "peer2".to_string(), false);
-        list.add_peer(1, "peer1".to_string(), false);
-        list.add_peer(1, "peer1".to_string(), false);
-        list.add_peer(3, "peer3".to_string(), false);
+        list.add_peer(2, PeerAddr::from(Protocol::Udp(2)), false);
+        list.add_peer(1, PeerAddr::from(Protocol::Udp(1)), false);
+        list.add_peer(1, PeerAddr::from(Protocol::Udp(1)), false);
+        list.add_peer(3, PeerAddr::from(Protocol::Udp(3)), false);
 
-        assert_eq!(list.pop_need_connect(), Some((1, "peer1".to_string())));
-        assert_eq!(list.pop_need_connect(), Some((2, "peer2".to_string())));
-        assert_eq!(list.pop_need_connect(), Some((3, "peer3".to_string())));
+        assert_eq!(list.pop_need_connect(), Some((1, PeerAddr::from(Protocol::Udp(1)))));
+        assert_eq!(list.pop_need_connect(), Some((2, PeerAddr::from(Protocol::Udp(2)))));
+        assert_eq!(list.pop_need_connect(), Some((3, PeerAddr::from(Protocol::Udp(3)))));
         assert_eq!(list.pop_need_connect(), None);
     }
 
     #[test]
     fn test_requested() {
         let mut list = ClosestList::<Msg>::new(0, 0, 0);
-        list.add_peer(2, "peer2".to_string(), true);
-        list.add_peer(1, "peer1".to_string(), true);
-        list.add_peer(1, "peer1".to_string(), true);
-        list.add_peer(3, "peer3".to_string(), true);
+        list.add_peer(2, PeerAddr::from(Protocol::Udp(2)), true);
+        list.add_peer(1, PeerAddr::from(Protocol::Udp(1)), true);
+        list.add_peer(1, PeerAddr::from(Protocol::Udp(1)), true);
+        list.add_peer(3, PeerAddr::from(Protocol::Udp(3)), true);
 
         assert_eq!(list.pop_need_connect(), None);
     }

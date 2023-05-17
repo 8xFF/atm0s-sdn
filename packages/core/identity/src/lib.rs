@@ -1,5 +1,6 @@
 pub type PeerId = u32;
-pub type PeerAddr = String;
+pub type PeerAddr = multiaddr::Multiaddr;
+pub use multiaddr;
 
 pub enum PeerSegment {
     Public,
