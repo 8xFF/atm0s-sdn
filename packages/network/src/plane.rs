@@ -3,7 +3,6 @@ use crate::transport::{
     ConnectionEvent, ConnectionMsg, ConnectionSender, OutgoingConnectionError, Transport,
     TransportConnector, TransportEvent, TransportPendingOutgoing,
 };
-use async_std::channel::{bounded, unbounded, Receiver, SendError, Sender};
 use async_std::stream::Interval;
 use bluesea_identity::{PeerAddr, PeerId};
 use futures::{select, FutureExt, SinkExt, StreamExt};
@@ -12,6 +11,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
+use kanal::{AsyncReceiver, AsyncSender, Sender, unbounded_async, bounded_async};
 use utils::Timer;
 
 fn init_vec<T>(size: usize, builder: fn() -> T) -> Vec<T> {
@@ -69,16 +69,16 @@ where
     fn add_conn(
         &mut self,
         net_sender: Arc<dyn ConnectionSender<MSG>>,
-    ) -> Option<Receiver<(u8, CrossHandlerEvent<HE>)>> {
+    ) -> Option<AsyncReceiver<(u8, CrossHandlerEvent<HE>)>> {
         if !self.conns.contains_key(&net_sender.connection_id()) {
-            let (tx, rx) = unbounded();
+            let (tx, rx) = unbounded_async();
             let entry = self
                 .peers
                 .entry(net_sender.remote_peer_id())
                 .or_insert_with(|| HashMap::new());
             self.conns
-                .insert(net_sender.connection_id(), (tx.clone(), net_sender.clone()));
-            entry.insert(net_sender.connection_id(), (tx.clone(), net_sender.clone()));
+                .insert(net_sender.connection_id(), (tx.clone_sync(), net_sender.clone()));
+            entry.insert(net_sender.connection_id(), (tx.clone_sync(), net_sender.clone()));
             Some(rx)
         } else {
             log::error!("duplicate connection_id {}", net_sender.connection_id());
@@ -125,7 +125,7 @@ where
             CrossHandlerRoute::PeerFirst(peer) => {
                 if let Some(peer) = self.peers.get(&peer) {
                     if let Some((s, c_s)) = peer.values().next() {
-                        if let Err(e) = s.send_blocking((service_id, event)) {
+                        if let Err(e) = s.send((service_id, event)) {
                             log::error!("send to handle error {:?}", e);
                         } else {
                             return Some(());
@@ -135,7 +135,7 @@ where
             }
             CrossHandlerRoute::Conn(conn) => {
                 if let Some((s, c_s)) = self.conns.get(&conn) {
-                    if let Err(e) = s.send_blocking((service_id, event)) {
+                    if let Err(e) = s.send((service_id, event)) {
                         log::error!("send to handle error {:?}", e);
                     } else {
                         return Some(());
@@ -284,7 +284,7 @@ where
     pub fn send_behavior(&self, event: BE) {
         match self
             .internal_tx
-            .send_blocking(NetworkPlaneInternalEvent::ToBehaviour {
+            .send(NetworkPlaneInternalEvent::ToBehaviour {
                 service_id: self.service_id,
                 peer_id: self.remote_peer_id,
                 conn_id: self.conn_id,
@@ -355,8 +355,8 @@ pub struct NetworkPlane<BE, HE, MSG> {
     >,
     transport: Box<dyn Transport<MSG> + Send + Sync>,
     timer: Arc<dyn Timer>,
-    internal_tx: Sender<NetworkPlaneInternalEvent<BE, MSG>>,
-    internal_rx: Receiver<NetworkPlaneInternalEvent<BE, MSG>>,
+    internal_tx: AsyncSender<NetworkPlaneInternalEvent<BE, MSG>>,
+    internal_rx: AsyncReceiver<NetworkPlaneInternalEvent<BE, MSG>>,
     cross_gate: Arc<RwLock<CrossHandlerGate<HE, MSG>>>,
     tick_interval: Interval,
 }
@@ -372,7 +372,7 @@ where
     pub fn new(conf: NetworkPlaneConfig<BE, HE, MSG>) -> Self {
         let cross_gate: Arc<RwLock<CrossHandlerGate<HE, MSG>>> = Default::default();
 
-        let (internal_tx, internal_rx) = unbounded();
+        let (internal_tx, internal_rx) = unbounded_async();
         let mut behaviors: Vec<
             Option<(
                 Box<dyn NetworkBehavior<BE, HE, MSG> + Send + Sync>,
@@ -435,7 +435,7 @@ where
                                         receiver.remote_peer_id(),
                                         receiver.connection_id(),
                                         sender.clone(),
-                                        self.internal_tx.clone(),
+                                        self.internal_tx.clone_sync(),
                                         self.cross_gate.clone(),
                                     );
                                     handlers[behaviour.service_id() as usize] = behaviour.on_incoming_connection_connected(agent, sender.clone()).map(|h| (h, conn_agent));
@@ -457,7 +457,7 @@ where
                                         receiver.remote_peer_id(),
                                         receiver.connection_id(),
                                         sender.clone(),
-                                        self.internal_tx.clone(),
+                                        self.internal_tx.clone_sync(),
                                         self.cross_gate.clone(),
                                     );
                                     handlers[behaviour.service_id() as usize] = behaviour.on_incoming_connection_connected(agent, sender.clone()).map(|h| (h, conn_agent));
@@ -562,8 +562,8 @@ where
 
                 Ok(())
             }
-            e =  self.internal_rx.next().fuse() => match e {
-                Some(NetworkPlaneInternalEvent::IncomingDisconnected(sender)) => {
+            e =  self.internal_rx.recv().fuse() => match e {
+                Ok(NetworkPlaneInternalEvent::IncomingDisconnected(sender)) => {
                     for behaviour in &mut self.behaviors {
                         if let Some((behaviour, agent)) = behaviour {
                             behaviour.on_incoming_connection_disconnected(agent, sender.clone());
@@ -571,7 +571,7 @@ where
                     }
                     Ok(())
                 },
-                Some(NetworkPlaneInternalEvent::OutgoingDisconnected(sender)) => {
+                Ok(NetworkPlaneInternalEvent::OutgoingDisconnected(sender)) => {
                     for behaviour in &mut self.behaviors {
                         if let Some((behaviour, agent)) = behaviour {
                             behaviour.on_outgoing_connection_disconnected(agent, sender.clone());
@@ -579,7 +579,7 @@ where
                     }
                     Ok(())
                 },
-                Some(NetworkPlaneInternalEvent::ToBehaviour { service_id, peer_id, conn_id, event }) => {
+                Ok(NetworkPlaneInternalEvent::ToBehaviour { service_id, peer_id, conn_id, event }) => {
                     if let Some((behaviour, agent)) = &mut self.behaviors[service_id as usize] {
                         behaviour.on_handler_event(agent, peer_id, conn_id, event);
                     } else {
@@ -587,7 +587,7 @@ where
                     }
                     Ok(())
                 },
-                None => {
+                Err(_) => {
                     Err(())
                 }
             }

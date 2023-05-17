@@ -9,6 +9,7 @@ edition = "2021"
 async-std = { version = "1.12", features = ["unstable", "attributes"] }
 futures = "0.3"
 convert-enum = "0.1.0"
+kanal = { workspace = true }
 parking_lot = { workspace = true }
 async-trait = { workspace = true }
 log = { workspace = true }

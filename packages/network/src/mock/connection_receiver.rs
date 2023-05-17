@@ -1,12 +1,12 @@
 use crate::transport::{ConnectionEvent, ConnectionReceiver};
-use async_std::channel::Receiver;
+use kanal::AsyncReceiver;
 use bluesea_identity::{PeerAddr, PeerId};
 
 pub struct MockConnectionReceiver<MSG> {
     pub remote_peer_id: PeerId,
     pub conn_id: u32,
     pub remote_addr: PeerAddr,
-    pub receiver: Receiver<Option<ConnectionEvent<MSG>>>,
+    pub receiver: AsyncReceiver<Option<ConnectionEvent<MSG>>>,
 }
 
 #[async_trait::async_trait]

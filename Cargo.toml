@@ -18,6 +18,7 @@ utils = { package = "utils", path = "packages/core/utils" }
 kademlia = { package = "kademlia", path = "packages/core/kademlia" }
 network = { package = "network", path = "packages/network" }
 transport-mock = { package = "mock", path = "packages/transports/vnet" }
+kanal = "0.1.0-pre8"
 thiserror = "1.0"
 log = "0.4"
 parking_lot = "0.12"
