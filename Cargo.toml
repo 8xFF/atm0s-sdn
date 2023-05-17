@@ -6,6 +6,7 @@ members = [
     "packages/core/router",
     "packages/services/discovery",
     "packages/transports/vnet",
+    "packages/transports/tcp",
     "packages/runner",
 ]
 

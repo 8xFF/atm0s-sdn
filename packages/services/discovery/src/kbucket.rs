@@ -101,9 +101,11 @@ impl KBucketTable {
         assert!(bucket_index <= KEY_BITS as u8);
         let mut closest_peer: Vec<(PeerId, PeerAddr, bool)> =
             self.buckets[bucket_index as usize].peers();
-        if bucket_index > 1 {
+        let need_more = closest_peer.len() < K_BUCKET;
+        if need_more && bucket_index > 1 {
             let mut more_bucket_index = bucket_index - 1;
-            while closest_peer.len() < K_BUCKET && more_bucket_index > 0 {
+            //TODO reduce number of loop, maybe iter with 1 in key binary
+            while more_bucket_index > 0 {
                 let new_list: Vec<(PeerId, PeerAddr, bool)> =
                     self.buckets[more_bucket_index as usize].peers();
                 for part in new_list {
@@ -112,9 +114,10 @@ impl KBucketTable {
                 more_bucket_index -= 1;
             }
         }
-        if bucket_index < KEY_BITS as u8 {
+        if need_more && bucket_index < KEY_BITS as u8 {
             let mut more_bucket_index = bucket_index + 1;
-            while closest_peer.len() < K_BUCKET && more_bucket_index <= KEY_BITS as u8 {
+            //TODO reduce number of loop, maybe iter with 1 in key binary
+            while more_bucket_index <= KEY_BITS as u8 {
                 let new_list: Vec<(PeerId, PeerAddr, bool)> =
                     self.buckets[more_bucket_index as usize].peers();
                 for part in new_list {
@@ -206,7 +209,7 @@ mod tests {
                 (100, PeerAddr::from(Protocol::Udp(100)), false),
                 (120, PeerAddr::from(Protocol::Udp(120)), false),
                 (40, PeerAddr::from(Protocol::Udp(40)), false),
-                (10, PeerAddr::from(Protocol::Udp(10)), false)
+                (1, PeerAddr::from(Protocol::Udp(1)), false)
             ]
         );
 
