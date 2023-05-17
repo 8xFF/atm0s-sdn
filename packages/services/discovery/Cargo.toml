@@ -10,7 +10,9 @@ async-trait = { workspace = true }
 bluesea-identity = { workspace = true }
 utils = { workspace = true }
 network = { workspace = true }
-kademlia = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
 parking_lot = { workspace = true }
+
+[dev-dependencies]
+rand = "0.8"

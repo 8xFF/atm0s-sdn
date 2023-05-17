@@ -1,10 +1,8 @@
 [workspace]
 members = [
     "packages/network",
-    "packages/misc/quickcheck-ext",
     "packages/core/utils",
     "packages/core/identity",
-    "packages/core/kademlia",
     "packages/core/router",
     "packages/services/discovery",
     "packages/transports/vnet",

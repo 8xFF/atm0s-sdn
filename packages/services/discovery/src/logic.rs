@@ -1,14 +1,15 @@
 use crate::closest_list::ClosestList;
 use bluesea_identity::{PeerAddr, PeerId, PeerIdType};
-use kademlia::kbucket::key::Key;
-use kademlia::kbucket::{AppliedPending, Entry, KBucketsTable, NodeStatus};
 use network::plane::BehaviorAgent;
 use network::transport::ConnectionSender;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 use utils::Timer;
+use crate::kbucket::entry::EntryState;
+use crate::kbucket::KBucketTableWrap;
 
+#[derive(PartialEq, Debug)]
 pub enum Message {
     FindKey(u32, PeerId),
     FindKeyRes(u32, Vec<(PeerId, PeerAddr)>),
@@ -24,6 +25,7 @@ pub enum Input {
     OnDisconnected(PeerId),
 }
 
+#[derive(PartialEq, Debug)]
 pub enum Action {
     ConnectTo(PeerId, PeerAddr),
     SendTo(PeerId, Message),
@@ -37,83 +39,62 @@ pub struct DiscoveryLogicConf {
 pub struct DiscoveryLogic {
     req_id: u32,
     local_node_id: PeerId,
-    local_key: Key<PeerId>,
     timer: Arc<dyn Timer>,
-    table: KBucketsTable<Key<PeerId>, PeerAddr>,
-    connecting_peers: HashMap<PeerId, u64>,
+    table: KBucketTableWrap,
     action_queues: VecDeque<Action>,
     request_memory: HashMap<u32, ClosestList<Message>>,
 }
 
 impl DiscoveryLogic {
     pub fn new(conf: DiscoveryLogicConf) -> Self {
-        let local_key: Key<PeerId> = conf.local_node_id.into();
         Self {
             req_id: 0,
             local_node_id: conf.local_node_id,
-            local_key: local_key.clone(),
             timer: conf.timer,
-            connecting_peers: Default::default(),
-            table: KBucketsTable::new(local_key, Duration::from_secs(30)),
+            table: KBucketTableWrap::new(conf.local_node_id),
             action_queues: Default::default(),
             request_memory: Default::default(),
         }
     }
 
-    fn is_connected(&self, peer: PeerId) -> bool {
-        todo!()
-        // if let Some(bucket) = self.table.bucket::<Key<PeerId>>(&peer.into()) {
-        //     if bucket.contains(&self.local_key.distance::<Key<PeerId>>(&peer.into())) {
-        //         return true;
-        //     }
-        // }
-        // false
+    fn check_connected(&self, peer: PeerId) -> bool {
+        matches!(self.table.get_peer(peer), Some(EntryState::Connected { .. }))
     }
 
-    fn locate_value(&mut self, value: PeerId) {
+    fn check_connecting(&self, peer: PeerId) -> bool {
+        matches!(self.table.get_peer(peer), Some(EntryState::Connecting { .. }))
+    }
+
+    fn locate_key(&mut self, key: PeerId) {
         let req_id = self.req_id;
-        self.req_id = self.req_id.wrapping_add(1);
-        let request = self
-            .request_memory
-            .entry(req_id)
-            .or_insert_with(|| Default::default());
+        let need_contact_peers = self.table.closest_peers(key);
+        let local_peer_id = self.local_node_id;
+        let now_ms = self.timer.now_ms();
+        {
+            self.req_id = self.req_id.wrapping_add(1);
+            let request = self
+                .request_memory
+                .entry(req_id)
+                .or_insert_with(|| ClosestList::new(key, local_peer_id, now_ms));
 
-        let key = value.into();
-        let iter = self.table.closest::<Key<PeerId>>(&key);
-        for entry in iter {
-            request.add_peer(*entry.node.key.preimage(), entry.node.value, true);
-        }
-
-        while let Some((peer, addr)) = request.pop_need_connect() {
-            todo!()
-            // if self.is_connected(peer) {
-            //     self.action_queues.push_back(Action::SendTo(peer, Message::FindKey(req_id, value)));
-            // } else {
-            //     self.action_queues.push_back(Action::ConnectTo(peer, addr));
-            //     request.add_pending_msg(peer, Message::FindKey(req_id, value));
-            // }
+            for (peer, addr, connected) in need_contact_peers {
+                request.add_peer(peer, addr, connected);
+                if connected {
+                    self.action_queues.push_back(Action::SendTo(peer, Message::FindKey(req_id, key)));
+                } else {
+                    request.add_pending_msg(peer, Message::FindKey(req_id, key));
+                }
+            }
         }
     }
 
-    /// add peer to table, if it already connected => return true
+    /// add peer to table, if it need connect => return true
     fn process_add_peer(&mut self, peer: PeerId, addr: PeerAddr) -> bool {
-        if !self.connecting_peers.contains_key(&peer) {
-            if let Some(bucket) = self.table.bucket::<Key<PeerId>>(&peer.into()) {
-                if bucket.contains(&self.local_key.distance::<Key<PeerId>>(&peer.into())) {
-                    //Already has connection => don't need connect
-                    true
-                } else {
-                    self.connecting_peers.insert(peer, self.timer.now_ms());
-                    self.action_queues.push_back(Action::ConnectTo(peer, addr));
-                    false
-                }
-            } else {
-                self.connecting_peers.insert(peer, self.timer.now_ms());
-                self.action_queues.push_back(Action::ConnectTo(peer, addr));
-                false
-            }
-        } else {
+        if self.table.add_peer_connecting(peer, addr.clone()) {
+            self.action_queues.push_back(Action::ConnectTo(peer, addr));
             true
+        } else {
+            false
         }
     }
 
@@ -124,74 +105,106 @@ impl DiscoveryLogic {
     pub fn on_input(&mut self, input: Input) {
         match input {
             Input::AddPeer(peer, addr) => {
-                if !self.process_add_peer(peer, addr) {
-                    self.locate_value(self.local_node_id);
-                }
+                self.process_add_peer(peer, addr);
             }
             Input::RefreshKey(peer) => {
-                self.locate_value(peer);
+                self.locate_key(peer);
             }
             Input::OnTick(_) => {
-                let iter = self.table.iter();
-                //loop for apply pending
-                for _ in iter {}
-                while let Some(pending) = self.table.take_applied_pending() {
-                    match pending {
-                        AppliedPending { inserted, evicted } => {
-                            //TODO
-                        }
-                    }
+                let removed_peers = self.table.remove_timeout_peers();
+                for removed_peer in removed_peers {
+                    todo!()
                 }
             }
             Input::OnData(from_peer, data) => match data {
-                Message::FindKey(req_id, peer) => {
+                Message::FindKey(req_id, key) => {
                     let mut res = vec![];
-                    let key = peer.into();
-                    let iter = self.table.closest::<Key<PeerId>>(&key);
-                    for entry in iter {
-                        res.push((*entry.node.key.preimage(), entry.node.value));
+                    let closest_peers = self.table.closest_peers(key);
+                    for (peer, addr, connected) in closest_peers {
+                        res.push((peer, addr));
                     }
                     self.action_queues
                         .push_back(Action::SendTo(from_peer, Message::FindKeyRes(req_id, res)));
                 }
                 Message::FindKeyRes(req_id, peers) => {
-                    for (peer, addr) in peers {
-                        self.process_add_peer(peer, addr);
+                    let mut key = None;
+                    let mut need_contact_list = vec![];
+                    {
+                        if let Some(request) = self.request_memory.get_mut(&req_id) {
+                            key = Some(request.get_key());
+                            for (peer, addr) in &peers {
+                                request.add_peer(*peer, addr.clone(), false);
+                            }
+                            while let Some(dest) = request.pop_need_connect() {
+                                need_contact_list.push(dest);
+                            }
+                        }
+                    }
+                    if let Some(key) = key {
+                        for (peer, addr) in need_contact_list {
+                            if self.check_connected(peer) {
+                                self.action_queues.push_back(Action::SendTo(peer, Message::FindKey(req_id, key)));
+                            } else if self.check_connecting(peer) {
+                                if let Some(request) = self.request_memory.get_mut(&req_id) {
+                                    request.add_pending_msg(peer, Message::FindKey(req_id, key));
+                                }
+                            } else {
+                                self.action_queues.push_back(Action::ConnectTo(peer, addr));
+                            }
+                        }
                     }
                 }
             },
             Input::OnConnected(peer, address) => {
-                self.connecting_peers.remove(&peer);
-                let key = peer.into();
-                let mut entry = self.table.entry(&key);
-                match entry {
-                    Entry::Present(mut entry, _) => {
-                        *entry.value() = address;
-                        entry.update(NodeStatus::Connected);
+                if self.table.add_peer_connected(peer, address) {
+                    for (_req_id, req) in &mut self.request_memory {
+                        while let Some(msg) = req.pop_pending_msg(peer) {
+                            self.action_queues.push_back(Action::SendTo(peer, msg));
+                        }
                     }
-                    Entry::Pending(mut entry, _) => {
-                        *entry.value() = address;
-                        entry.update(NodeStatus::Connected);
-                    }
-                    Entry::Absent(mut entry) => {
-                        entry.insert(address, NodeStatus::Connected);
-                    }
-                    Entry::SelfEntry => {}
                 }
             }
             Input::OnConnectError(peer) => {
-                self.connecting_peers.remove(&peer);
+                if self.table.remove_connecting_peer(peer) {
+                    for (_req_id, req) in &mut self.request_memory {
+                        while let Some(_) = req.pop_pending_msg(peer) {}
+                    }
+                }
             }
-            Input::OnDisconnected(peer) => match self.table.entry(&peer.into()) {
-                Entry::Present(mut entry, _) => {
-                    entry.update(NodeStatus::Disconnected);
+            Input::OnDisconnected(peer) => {
+                if self.table.remove_connected_peer(peer) {
+
                 }
-                Entry::Pending(mut entry, _) => {
-                    entry.update(NodeStatus::Disconnected);
-                }
-                Entry::Absent(_) => {}
-                Entry::SelfEntry => {}
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+    use utils::SystemTimer;
+    use crate::logic::{Action, DiscoveryLogic, DiscoveryLogicConf, Input, Message};
+
+    #[test]
+    fn init_bootstrap() {
+        let mut logic = DiscoveryLogic::new(DiscoveryLogicConf {
+            local_node_id: 0,
+            timer: Arc::new(SystemTimer()),
+        });
+
+        logic.on_input(Input::AddPeer(1000, "peer1000".to_string()));
+        logic.on_input(Input::AddPeer(2000, "peer2000".to_string()));
+
+        logic.on_input(Input::RefreshKey(0)); //create request 0
+
+        assert_eq!(logic.poll_action(), Some(Action::ConnectTo(1000, "peer1000".to_string())));
+        assert_eq!(logic.poll_action(), Some(Action::ConnectTo(2000, "peer2000".to_string())));
+
+        logic.on_input(Input::OnConnected(2000, "peer2000".to_string()));
+        logic.on_input(Input::OnConnected(1000, "peer1000".to_string()));
+
+        assert_eq!(logic.poll_action(), Some(Action::SendTo(2000, Message::FindKey(0, 0))));
+        assert_eq!(logic.poll_action(), Some(Action::SendTo(1000, Message::FindKey(0, 0))));
     }
 }

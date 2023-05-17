@@ -332,10 +332,15 @@ enum NetworkPlaneInternalEvent<BE, MSG> {
 }
 
 pub struct NetworkPlaneConfig<BE, HE, MSG> {
+    /// Local node peer_id, which is u32 value
     pub local_peer_id: PeerId,
+    /// Tick_ms, each tick_ms miliseconds, network will call tick function on both behavior and handler
     pub tick_ms: u64,
+    /// List of behavior
     pub behavior: Vec<Box<dyn NetworkBehavior<BE, HE, MSG> + Send + Sync>>,
+    /// Transport which is used
     pub transport: Box<dyn Transport<MSG> + Send + Sync>,
+    /// Timer for getting timestamp miliseconds
     pub timer: Arc<dyn Timer>,
 }
 
@@ -362,6 +367,8 @@ where
     HE: Send + Sync + 'static,
     MSG: Send + Sync + 'static,
 {
+    /// Creating new network plane, after create need to run
+    /// `while let Some(_) = plane.run().await {}`
     pub fn new(conf: NetworkPlaneConfig<BE, HE, MSG>) -> Self {
         let cross_gate: Arc<RwLock<CrossHandlerGate<HE, MSG>>> = Default::default();
 
@@ -403,6 +410,7 @@ where
         }
     }
 
+    /// Run loop for plane which handle tick and connection
     pub async fn run(&mut self) -> Result<(), ()> {
         select! {
             e = self.tick_interval.next().fuse() => {
