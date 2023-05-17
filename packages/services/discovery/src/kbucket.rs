@@ -234,26 +234,25 @@ mod tests {
         );
     }
 
-    fn random_insert(table_size: usize, test_count: usize) {
-        let mut list = vec![];
-        let mut table = KBucketTable::new();
-        for _ in 0..table_size {
-            let dis: u32 = rand::random();
-            let addr = PeerAddr::from(Protocol::Udp(dis as u16));
-            if table.add_peer_connected(dis, addr.clone()) {
-                list.push((dis, addr, true));
+    fn random_insert(loop_count: usize, table_size: usize, test_count: usize) {
+        for _ in 0..loop_count {
+            let mut list = vec![];
+            let mut table = KBucketTable::new();
+            for _ in 0..table_size {
+                let dis: u32 = rand::random();
+                let addr = PeerAddr::from(Protocol::Udp(dis as u16));
+                if table.add_peer_connected(dis, addr.clone()) {
+                    list.push((dis, addr, true));
+                }
+            }
+
+            for _ in 0..test_count {
+                let key: u32 = rand::random();
+                let closest_peers = table.closest_peers(key);
+                list.sort_by_key(|(dist, _, _)| *dist ^ key);
+                assert_eq!(closest_peers, list[0..closest_peers.len()]);
             }
         }
-
-        for _ in 0..test_count {
-            let key: u32 = rand::random();
-            let closest_peers = table.closest_peers(key);
-            list.sort_by_key(|(dist, _, _)| *dist ^ key);
-            assert_eq!(closest_peers, list[0..closest_peers.len()]);
-        }
-
-        //299570928
-
     }
 
     fn test_manual(peers: Vec<u32>, key: u32) {
@@ -277,17 +276,22 @@ mod tests {
     }
 
     #[test]
+    fn random_10() {
+        random_insert(100, 10, 100);
+    }
+
+    #[test]
+    fn random_50() {
+        random_insert(100, 50, 500);
+    }
+
+    #[test]
     fn random_100() {
-        random_insert(100, 100);
+        random_insert(100, 100, 1000);
     }
 
     #[test]
-    fn random_1000() {
-        random_insert(1000, 100);
-    }
-
-    #[test]
-    fn random_10000() {
-        random_insert(10000, 100);
+    fn random_200() {
+        random_insert(100, 200, 2000);
     }
 }
