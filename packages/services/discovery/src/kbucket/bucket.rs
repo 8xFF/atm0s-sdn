@@ -43,6 +43,16 @@ impl KBucket {
         size
     }
 
+    pub fn connected_size(&self) -> u8 {
+        let mut size = 0;
+        for i in 0..self.slots.len() {
+            if !self.slots[i].is_connected() {
+                size += 1;
+            }
+        }
+        size
+    }
+
     pub fn get_peer(&self, new_distance: PeerId) -> Option<&EntryState> {
         for slot in &self.slots {
             let state = slot.state();

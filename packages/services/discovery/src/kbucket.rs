@@ -53,6 +53,22 @@ impl KBucketTable {
         }
     }
 
+    pub fn size(&self) -> usize {
+        let mut sum = 0;
+        for b in &self.buckets {
+            sum += b.size() as usize;
+        }
+        sum
+    }
+
+    pub fn connected_size(&self) -> usize {
+        let mut sum = 0;
+        for b in &self.buckets {
+            sum += b.connected_size() as usize;
+        }
+        sum
+    }
+
     pub fn get_peer(&self, distance: PeerId) -> Option<&EntryState> {
         let bucket_index = distance.bucket_index();
         assert!(bucket_index <= KEY_BITS as u8);
@@ -143,6 +159,14 @@ impl KBucketTableWrap {
             local_peer_id,
             table: KBucketTable::new(),
         }
+    }
+
+    pub fn size(&self) -> usize {
+        self.table.size()
+    }
+
+    pub fn connected_size(&self) -> usize {
+        self.table.connected_size()
     }
 
     pub fn get_peer(&self, peer: PeerId) -> Option<&EntryState> {

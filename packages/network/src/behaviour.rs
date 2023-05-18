@@ -18,8 +18,6 @@ pub trait ConnectionHandler<BE, HE, MSG>: Send + Sync {
     fn on_closed(&mut self, agent: &ConnectionAgent<BE, HE, MSG>);
 }
 
-pub enum NetworkBehaviorEvent {}
-
 pub trait NetworkBehavior<BE, HE, MSG>
 where
     MSG: Send + Sync,
@@ -53,7 +51,6 @@ where
         connection_id: u32,
         err: &OutgoingConnectionError,
     );
-    fn on_event(&mut self, agent: &BehaviorAgent<HE, MSG>, event: NetworkBehaviorEvent);
     fn on_handler_event(
         &mut self,
         agent: &BehaviorAgent<HE, MSG>,

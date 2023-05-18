@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::behaviour::{ConnectionHandler, NetworkBehavior, NetworkBehaviorEvent};
+    use crate::behaviour::{ConnectionHandler, NetworkBehavior};
     use crate::mock::{MockInput, MockOutput, MockTransport};
     use crate::plane::{
         BehaviorAgent, ConnectionAgent, CrossHandlerRoute, NetworkPlane, NetworkPlaneConfig,
@@ -100,9 +100,7 @@ mod tests {
             peer_id: PeerId,
             connection_id: u32,
             err: &OutgoingConnectionError,
-        ) {
-        }
-        fn on_event(&mut self, agent: &BehaviorAgent<HE, MSG>, event: NetworkBehaviorEvent) {}
+        ) {}
         fn on_handler_event(
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
