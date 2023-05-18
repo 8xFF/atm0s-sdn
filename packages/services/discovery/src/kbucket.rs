@@ -212,7 +212,7 @@ impl KBucketTableWrap {
 mod tests {
     use bluesea_identity::multiaddr::Protocol;
     use bluesea_identity::PeerAddr;
-    use crate::kbucket::KBucketTable;
+    use crate::kbucket::{KBucketTable, KBucketTableWrap};
 
     #[test]
     fn simple_table() {
@@ -317,5 +317,47 @@ mod tests {
     #[test]
     fn random_200() {
         random_insert(100, 200, 2000);
+    }
+
+    fn random_insert_wrap(loop_count: usize, table_size: usize, test_count: usize) {
+        for _ in 0..loop_count {
+            let local_peer_id = rand::random();
+            let mut list = vec![];
+            let mut table = KBucketTableWrap::new(local_peer_id);
+            for _ in 0..table_size {
+                let dis: u32 = rand::random();
+                let addr = PeerAddr::from(Protocol::Udp(dis as u16));
+                if table.add_peer_connected(dis, addr.clone()) {
+                    list.push((dis, addr, true));
+                }
+            }
+
+            for _ in 0..test_count {
+                let key: u32 = rand::random();
+                let closest_peers = table.closest_peers(key);
+                list.sort_by_key(|(dist, _, _)| *dist ^ key);
+                assert_eq!(closest_peers, list[0..closest_peers.len()]);
+            }
+        }
+    }
+
+    #[test]
+    fn random_10_wrap() {
+        random_insert_wrap(100, 10, 100);
+    }
+
+    #[test]
+    fn random_50_wrap() {
+        random_insert_wrap(100, 50, 500);
+    }
+
+    #[test]
+    fn random_100_wrap() {
+        random_insert_wrap(100, 100, 1000);
+    }
+
+    #[test]
+    fn random_200_wrap() {
+        random_insert_wrap(100, 200, 2000);
     }
 }
