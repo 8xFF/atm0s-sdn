@@ -104,12 +104,12 @@ impl KBucketTable {
         bucket.remove_connected_peer(distance)
     }
 
-    pub fn remove_timeout_peers(&mut self) -> Option<Vec<PeerId>> {
+    pub fn remove_timeout_peers(&mut self) -> Vec<PeerId> {
         //TODO concat results
         for bucket in &mut self.buckets {
             bucket.remove_timeout_peers();
         }
-        None
+        vec![]
     }
 
     pub fn closest_peers(&self, distance: PeerId) -> Vec<(PeerId, PeerAddr, bool)> {
@@ -192,7 +192,7 @@ impl KBucketTableWrap {
     }
 
     pub fn remove_timeout_peers(&mut self) -> Vec<PeerId> {
-        let mut removed = self.remove_timeout_peers();
+        let mut removed = self.table.remove_timeout_peers();
         for key in &mut removed {
             *key = *key ^ self.local_peer_id
         }

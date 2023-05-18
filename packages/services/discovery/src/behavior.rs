@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use utils::Timer;
 use crate::connection_group::ConnectionGrouping;
+use crate::DISCOVERY_SERVICE_ID;
 
 pub struct DiscoveryNetworkBehaviorOpts {
     pub local_node_id: PeerId,
@@ -94,12 +95,12 @@ impl DiscoveryNetworkBehavior {
 
 impl<BE, HE, MSG> NetworkBehavior<BE, HE, MSG> for DiscoveryNetworkBehavior
 where
-    BE: TryInto<DiscoveryBehaviorEvent<MSG>> + From<DiscoveryBehaviorEvent<MSG>> + Send + Sync + 'static,
+    BE: TryInto<DiscoveryBehaviorEvent> + From<DiscoveryBehaviorEvent> + Send + Sync + 'static,
     HE: TryInto<DiscoveryHandlerEvent> + From<DiscoveryHandlerEvent> + Send + Sync + 'static,
     MSG: TryInto<DiscoveryMsg> + From<DiscoveryMsg> + Send + Sync + 'static,
 {
     fn service_id(&self) -> u8 {
-        0
+        DISCOVERY_SERVICE_ID
     }
 
     fn on_tick(&mut self, agent: &BehaviorAgent<HE, MSG>, ts_ms: u64, interal_ms: u64) {
@@ -118,7 +119,7 @@ where
         agent: &BehaviorAgent<HE, MSG>,
         connection: Arc<dyn ConnectionSender<MSG>>,
     ) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
-        self.add_connection_if_need::<>(agent, connection);
+        self.add_connection_if_need(agent, connection);
         Some(Box::new(DiscoveryConnectionHandler::new()))
     }
 
@@ -167,15 +168,8 @@ where
     ) {
         match event.try_into() {
             Ok(DiscoveryBehaviorEvent::OnNetworkMessage(msg)) => {
-                match msg.try_into() {
-                    Ok(msg) => {
-                        self.logic.on_input(Input::OnData(peer_id, msg));
-                        self.process_logic_actions::<HE, MSG>(agent);
-                    },
-                    Err(e) => {
-                        log::error!("cannot convert to DiscoveryMsg");
-                    }
-                }
+                self.logic.on_input(Input::OnData(peer_id, msg));
+                self.process_logic_actions::<HE, MSG>(agent);
             }
             Err(e) => {
                 log::error!("cannot convert to DiscoveryBehaviorEvent");

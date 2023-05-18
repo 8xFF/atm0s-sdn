@@ -142,7 +142,8 @@ impl DiscoveryLogic {
                     self.request_memory.remove(&req_id);
                 }
 
-                if self.table.connected_size() > 0 {
+                //If has other request => don't refresh
+                if self.table.connected_size() > 0 && self.request_memory.len() == 0 {
                     //because of bucket_index from 1 to 32 but refresh_bucket_index from 0 to 31
                     let refresh_index = self.refresh_bucket_index + 1;
                     assert!(refresh_index >=1 && refresh_index <= 32);

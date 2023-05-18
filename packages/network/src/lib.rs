@@ -1,5 +1,5 @@
 pub mod behaviour;
-mod mock;
+pub mod mock;
 pub mod plane;
 mod plane_tests;
 pub mod transport;

@@ -14,7 +14,7 @@ impl DiscoveryConnectionHandler {
 
 impl<BE, HE, MSG> ConnectionHandler<BE, HE, MSG> for DiscoveryConnectionHandler
 where
-    BE: TryInto<DiscoveryBehaviorEvent<MSG>> + From<DiscoveryBehaviorEvent<MSG>> + Send + Sync + 'static,
+    BE: TryInto<DiscoveryBehaviorEvent> + From<DiscoveryBehaviorEvent> + Send + Sync + 'static,
     HE: TryInto<DiscoveryHandlerEvent> + From<DiscoveryHandlerEvent> + Send + Sync + 'static,
     MSG: TryInto<DiscoveryMsg> + From<DiscoveryMsg> + Send + Sync + 'static,
 {
@@ -31,7 +31,9 @@ where
             ConnectionEvent::Msg { msg, .. } => {
                 match msg {
                     ConnectionMsg::Reliable { data, .. } => {
-                        agent.send_behavior(DiscoveryBehaviorEvent::OnNetworkMessage(data).into());
+                        if let Ok(msg) = data.try_into() {
+                            agent.send_behavior(DiscoveryBehaviorEvent::OnNetworkMessage(msg).into());
+                        }
                     }
                     _ => {}
                 }

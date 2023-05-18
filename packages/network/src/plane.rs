@@ -448,7 +448,10 @@ where
                 let (outgoing, sender, mut receiver, mut handlers, mut conn_internal_rx) = match e? {
                     TransportEvent::Incoming(sender, receiver) => {
                         log::info!("[NetworkPlane] received TransportEvent::Incoming({}, {})", receiver.remote_peer_id(), receiver.connection_id());
-                        if let Some(rx) = self.cross_gate.write().add_conn(sender.clone()) {
+                        let mut cross_gate = self.cross_gate.write();
+                        let rx = cross_gate.add_conn(sender.clone());
+                        drop(cross_gate);
+                        if let Some(rx) = rx {
                             let mut handlers: Vec<Option<(Box<dyn ConnectionHandler<BE, HE, MSG>>, ConnectionAgent::<BE, HE, MSG>)>> = init_vec(256, || None);
                             for behaviour in &mut self.behaviors {
                                 if let Some((behaviour, agent)) = behaviour {
@@ -471,10 +474,14 @@ where
                     }
                     TransportEvent::Outgoing(sender, receiver) => {
                         log::info!("[NetworkPlane] received TransportEvent::Outgoing({}, {})", receiver.remote_peer_id(), receiver.connection_id());
-                        if let Some(rx) = self.cross_gate.write().add_conn(sender.clone()) {
+                        let mut cross_gate = self.cross_gate.write();
+                        let rx = cross_gate.add_conn(sender.clone());
+                        drop(cross_gate);
+                        if let Some(rx) = rx {
                             let mut handlers: Vec<Option<(Box<dyn ConnectionHandler<BE, HE, MSG>>, ConnectionAgent::<BE, HE, MSG>)>> = init_vec(256, || None);
                             for behaviour in &mut self.behaviors {
                                 if let Some((behaviour, agent)) = behaviour {
+                                    log::info!("on behavior {}", behaviour.service_id());
                                     let conn_agent = ConnectionAgent::<BE, HE, MSG>::new(
                                         behaviour.service_id(),
                                         self.local_peer_id,
@@ -484,11 +491,12 @@ where
                                         self.internal_tx.clone(),
                                         self.cross_gate.clone(),
                                     );
-                                    handlers[behaviour.service_id() as usize] = behaviour.on_incoming_connection_connected(agent, sender.clone()).map(|h| (h, conn_agent));
+                                    handlers[behaviour.service_id() as usize] = behaviour.on_outgoing_connection_connected(agent, sender.clone()).map(|h| (h, conn_agent));
                                 }
                             }
                             (true, sender, receiver, handlers, rx)
                         } else {
+                            log::warn!("[NetworkPlane] received TransportEvent::Outgoing but cannot add to cross_gate");
                             return Ok(());
                         }
                     }
