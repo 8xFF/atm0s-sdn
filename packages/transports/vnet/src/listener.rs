@@ -1,12 +1,12 @@
+use crate::connection::VnetConnection;
 use async_std::channel::Receiver;
 use bluesea_identity::PeerId;
 use network::transport::OutgoingConnectionError;
-use crate::connection::VnetConnection;
 
 pub enum VnetListenerEvent<MSG> {
     Incoming(VnetConnection<MSG>),
     Outgoing(VnetConnection<MSG>),
-    OutgoingErr(u32, PeerId, OutgoingConnectionError)
+    OutgoingErr(u32, PeerId, OutgoingConnectionError),
 }
 
 pub struct VnetListener<MSG> {

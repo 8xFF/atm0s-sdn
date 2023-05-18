@@ -210,18 +210,33 @@ impl KBucketTableWrap {
 
 #[cfg(test)]
 mod tests {
+    use crate::kbucket::{KBucketTable, KBucketTableWrap};
     use bluesea_identity::multiaddr::Protocol;
     use bluesea_identity::PeerAddr;
-    use crate::kbucket::{KBucketTable, KBucketTableWrap};
 
     #[test]
     fn simple_table() {
         let mut table = KBucketTable::new();
-        assert_eq!(table.add_peer_connecting(1, PeerAddr::from(Protocol::Udp(1))), true);
-        assert_eq!(table.add_peer_connecting(10, PeerAddr::from(Protocol::Udp(10))), true);
-        assert_eq!(table.add_peer_connecting(40, PeerAddr::from(Protocol::Udp(40))), true);
-        assert_eq!(table.add_peer_connecting(100, PeerAddr::from(Protocol::Udp(100))), true);
-        assert_eq!(table.add_peer_connecting(120, PeerAddr::from(Protocol::Udp(120))), true);
+        assert_eq!(
+            table.add_peer_connecting(1, PeerAddr::from(Protocol::Udp(1))),
+            true
+        );
+        assert_eq!(
+            table.add_peer_connecting(10, PeerAddr::from(Protocol::Udp(10))),
+            true
+        );
+        assert_eq!(
+            table.add_peer_connecting(40, PeerAddr::from(Protocol::Udp(40))),
+            true
+        );
+        assert_eq!(
+            table.add_peer_connecting(100, PeerAddr::from(Protocol::Udp(100))),
+            true
+        );
+        assert_eq!(
+            table.add_peer_connecting(120, PeerAddr::from(Protocol::Udp(120))),
+            true
+        );
         assert_eq!(
             table.add_peer_connecting(u32::MAX, PeerAddr::from(Protocol::Udp(5000))),
             true
@@ -296,7 +311,10 @@ mod tests {
 
     #[test]
     fn failed_1() {
-        test_manual(vec![483704965, 473524180, 526503063, 190210392, 27511667], 299570928);
+        test_manual(
+            vec![483704965, 473524180, 526503063, 190210392, 27511667],
+            299570928,
+        );
     }
 
     #[test]

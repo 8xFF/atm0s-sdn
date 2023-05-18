@@ -1,12 +1,10 @@
 use bluesea_identity::{PeerAddr, PeerId};
 
 pub enum DiscoveryBehaviorEvent {
-    OnNetworkMessage(DiscoveryMsg)
+    OnNetworkMessage(DiscoveryMsg),
 }
 
-pub enum DiscoveryHandlerEvent {
-
-}
+pub enum DiscoveryHandlerEvent {}
 
 #[derive(PartialEq, Debug)]
 pub enum DiscoveryMsg {

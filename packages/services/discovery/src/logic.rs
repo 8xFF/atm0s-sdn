@@ -1,6 +1,7 @@
 use crate::find_key_request::{FindKeyRequest, FindKeyRequestStatus};
 use crate::kbucket::entry::EntryState;
 use crate::kbucket::KBucketTableWrap;
+use crate::msg::DiscoveryMsg;
 use bluesea_identity::{PeerAddr, PeerId, PeerIdType};
 use network::plane::BehaviorAgent;
 use network::transport::ConnectionSender;
@@ -8,7 +9,6 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 use utils::Timer;
-use crate::msg::DiscoveryMsg;
 
 pub enum Input {
     AddPeer(PeerId, PeerAddr),
@@ -50,7 +50,7 @@ impl DiscoveryLogic {
             table: KBucketTableWrap::new(conf.local_node_id),
             action_queues: Default::default(),
             request_memory: Default::default(),
-            refresh_bucket_index: 0
+            refresh_bucket_index: 0,
         }
     }
 
@@ -68,7 +68,12 @@ impl DiscoveryLogic {
         )
     }
 
-    fn process_request(ts: u64, req: &mut FindKeyRequest, table: &mut KBucketTableWrap, action_queues: &mut VecDeque<Action>) {
+    fn process_request(
+        ts: u64,
+        req: &mut FindKeyRequest,
+        table: &mut KBucketTableWrap,
+        action_queues: &mut VecDeque<Action>,
+    ) {
         while let Some((peer, addr)) = req.pop_connect(ts) {
             //Add peer to connecting, => 3 case
             // 1. To connecting state => send connect_to
@@ -82,7 +87,10 @@ impl DiscoveryLogic {
         }
 
         while let Some(peer) = req.pop_request(ts) {
-            action_queues.push_back(Action::SendTo(peer, DiscoveryMsg::FindKey(req.req_id(), req.key())));
+            action_queues.push_back(Action::SendTo(
+                peer,
+                DiscoveryMsg::FindKey(req.req_id(), req.key()),
+            ));
         }
     }
 
@@ -146,14 +154,14 @@ impl DiscoveryLogic {
                 if self.table.connected_size() > 0 && self.request_memory.len() == 0 {
                     //because of bucket_index from 1 to 32 but refresh_bucket_index from 0 to 31
                     let refresh_index = self.refresh_bucket_index + 1;
-                    assert!(refresh_index >=1 && refresh_index <= 32);
+                    assert!(refresh_index >= 1 && refresh_index <= 32);
                     let key = (u32::MAX >> (32 - refresh_index));
-                    self.locate_key(key & self.local_node_id );
+                    self.locate_key(key & self.local_node_id);
                     self.refresh_bucket_index = (self.refresh_bucket_index + 1) % 32;
                 }
 
                 let mut timeout_reqs = vec![];
-                for (req_id,req) in &self.request_memory {
+                for (req_id, req) in &self.request_memory {
                     if req.status(ts).is_timeout() {
                         timeout_reqs.push(*req_id);
                     }
@@ -169,8 +177,10 @@ impl DiscoveryLogic {
                     for (peer, addr, connected) in closest_peers {
                         res.push((peer, addr));
                     }
-                    self.action_queues
-                        .push_back(Action::SendTo(from_peer, DiscoveryMsg::FindKeyRes(req_id, res)));
+                    self.action_queues.push_back(Action::SendTo(
+                        from_peer,
+                        DiscoveryMsg::FindKeyRes(req_id, res),
+                    ));
                 }
                 DiscoveryMsg::FindKeyRes(req_id, peers) => {
                     let mut res_extended = vec![];
@@ -180,13 +190,17 @@ impl DiscoveryLogic {
                     if let Some(request) = self.request_memory.get_mut(&req_id) {
                         let now_ms = self.timer.now_ms();
                         if request.on_answered_peer(now_ms, from_peer, res_extended) {
-                            Self::process_request(now_ms, request, &mut self.table, &mut self.action_queues);
+                            Self::process_request(
+                                now_ms,
+                                request,
+                                &mut self.table,
+                                &mut self.action_queues,
+                            );
                             if request.status(now_ms) == FindKeyRequestStatus::Finished {
                                 self.request_memory.remove(&req_id);
                             }
                         }
                     } else {
-
                     }
                 }
             },
@@ -195,7 +209,12 @@ impl DiscoveryLogic {
                     let now_ms = self.timer.now_ms();
                     for (req_id, req) in &mut self.request_memory {
                         if req.on_connected_peer(now_ms, peer) {
-                            Self::process_request(now_ms,req, &mut self.table, &mut self.action_queues);
+                            Self::process_request(
+                                now_ms,
+                                req,
+                                &mut self.table,
+                                &mut self.action_queues,
+                            );
                         }
                     }
                 }
@@ -206,7 +225,12 @@ impl DiscoveryLogic {
                     let mut ended_reqs = vec![];
                     for (req_id, req) in &mut self.request_memory {
                         if req.on_connect_error_peer(now_ms, peer) {
-                            Self::process_request(now_ms,req, &mut self.table, &mut self.action_queues);
+                            Self::process_request(
+                                now_ms,
+                                req,
+                                &mut self.table,
+                                &mut self.action_queues,
+                            );
                             if req.is_ended(now_ms) {
                                 ended_reqs.push(*req_id);
                             }
@@ -224,10 +248,10 @@ impl DiscoveryLogic {
 
 #[cfg(test)]
 mod test {
-    use crate::logic::{Action, DiscoveryLogic, DiscoveryLogicConf, Input, DiscoveryMsg};
-    use std::sync::Arc;
+    use crate::logic::{Action, DiscoveryLogic, DiscoveryLogicConf, DiscoveryMsg, Input};
     use bluesea_identity::multiaddr::Protocol;
     use bluesea_identity::PeerAddr;
+    use std::sync::Arc;
     use utils::SystemTimer;
 
     #[test]
@@ -251,8 +275,14 @@ mod test {
             Some(Action::ConnectTo(2000, PeerAddr::from(Protocol::Udp(2000))))
         );
 
-        logic.on_input(Input::OnConnected(2000, PeerAddr::from(Protocol::Udp(2000))));
-        logic.on_input(Input::OnConnected(1000, PeerAddr::from(Protocol::Udp(1000))));
+        logic.on_input(Input::OnConnected(
+            2000,
+            PeerAddr::from(Protocol::Udp(2000)),
+        ));
+        logic.on_input(Input::OnConnected(
+            1000,
+            PeerAddr::from(Protocol::Udp(1000)),
+        ));
 
         assert_eq!(
             logic.poll_action(),
@@ -284,8 +314,14 @@ mod test {
             Some(Action::ConnectTo(2000, PeerAddr::from(Protocol::Udp(2000))))
         );
 
-        logic.on_input(Input::OnConnected(2000, PeerAddr::from(Protocol::Udp(2000))));
-        logic.on_input(Input::OnConnected(1000, PeerAddr::from(Protocol::Udp(1000))));
+        logic.on_input(Input::OnConnected(
+            2000,
+            PeerAddr::from(Protocol::Udp(2000)),
+        ));
+        logic.on_input(Input::OnConnected(
+            1000,
+            PeerAddr::from(Protocol::Udp(1000)),
+        ));
 
         logic.on_input(Input::OnDisconnected(1000));
 

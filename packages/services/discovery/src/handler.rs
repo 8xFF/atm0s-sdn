@@ -18,25 +18,19 @@ where
     HE: TryInto<DiscoveryHandlerEvent> + From<DiscoveryHandlerEvent> + Send + Sync + 'static,
     MSG: TryInto<DiscoveryMsg> + From<DiscoveryMsg> + Send + Sync + 'static,
 {
-    fn on_opened(&mut self, agent: &ConnectionAgent<BE, HE, MSG>) {
+    fn on_opened(&mut self, agent: &ConnectionAgent<BE, HE, MSG>) {}
 
-    }
-
-    fn on_tick(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, ts_ms: u64, interal_ms: u64) {
-
-    }
+    fn on_tick(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, ts_ms: u64, interal_ms: u64) {}
 
     fn on_event(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, event: ConnectionEvent<MSG>) {
         match event {
-            ConnectionEvent::Msg { msg, .. } => {
-                match msg {
-                    ConnectionMsg::Reliable { data, .. } => {
-                        if let Ok(msg) = data.try_into() {
-                            agent.send_behavior(DiscoveryBehaviorEvent::OnNetworkMessage(msg).into());
-                        }
+            ConnectionEvent::Msg { msg, .. } => match msg {
+                ConnectionMsg::Reliable { data, .. } => {
+                    if let Ok(msg) = data.try_into() {
+                        agent.send_behavior(DiscoveryBehaviorEvent::OnNetworkMessage(msg).into());
                     }
-                    _ => {}
                 }
+                _ => {}
             },
             ConnectionEvent::Stats(stats) => {}
         }
@@ -49,14 +43,9 @@ where
         from_conn: u32,
         event: HE,
     ) {
-
     }
 
-    fn on_behavior_event(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, event: HE) {
+    fn on_behavior_event(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, event: HE) {}
 
-    }
-
-    fn on_closed(&mut self, agent: &ConnectionAgent<BE, HE, MSG>) {
-
-    }
+    fn on_closed(&mut self, agent: &ConnectionAgent<BE, HE, MSG>) {}
 }

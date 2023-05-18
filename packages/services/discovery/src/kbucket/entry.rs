@@ -29,11 +29,11 @@ impl Entry {
         matches!(&self.state, &EntryState::Empty)
     }
 
-    pub fn is_connected(&self) ->  bool {
+    pub fn is_connected(&self) -> bool {
         matches!(&self.state, &EntryState::Connected { .. })
     }
 
-    pub fn is_connecting(&self) ->  bool {
+    pub fn is_connecting(&self) -> bool {
         matches!(&self.state, &EntryState::Connecting { .. })
     }
 

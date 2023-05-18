@@ -5,7 +5,7 @@ use crate::transport::{
     ConnectionEvent, ConnectionMsg, ConnectionSender, OutgoingConnectionError, Transport,
     TransportConnector, TransportEvent, TransportPendingOutgoing,
 };
-use async_std::channel::{Receiver, Sender, unbounded};
+use async_std::channel::{unbounded, Receiver, Sender};
 use bluesea_identity::{PeerAddr, PeerId};
 use parking_lot::Mutex;
 use std::collections::{HashMap, VecDeque};

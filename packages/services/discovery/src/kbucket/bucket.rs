@@ -193,20 +193,32 @@ impl KBucket {
 
 #[cfg(test)]
 mod tests {
+    use crate::kbucket::bucket::KBucket;
     use bluesea_identity::multiaddr::Protocol;
     use bluesea_identity::PeerAddr;
-    use crate::kbucket::bucket::KBucket;
 
     #[test]
     fn simple_add_get() {
         let mut bucket = KBucket::new(0);
-        assert_eq!(bucket.add_peer_connecting(1, PeerAddr::from(Protocol::Udp(1))), true);
-        assert_eq!(bucket.add_peer_connecting(1, PeerAddr::from(Protocol::Udp(1))), false);
-        assert_eq!(bucket.add_peer_connected(1, PeerAddr::from(Protocol::Udp(1))), true);
+        assert_eq!(
+            bucket.add_peer_connecting(1, PeerAddr::from(Protocol::Udp(1))),
+            true
+        );
+        assert_eq!(
+            bucket.add_peer_connecting(1, PeerAddr::from(Protocol::Udp(1))),
+            false
+        );
+        assert_eq!(
+            bucket.add_peer_connected(1, PeerAddr::from(Protocol::Udp(1))),
+            true
+        );
 
         assert_eq!(bucket.size(), 1);
 
-        assert_eq!(bucket.add_peer_connecting(2, PeerAddr::from(Protocol::Udp(2))), true);
+        assert_eq!(
+            bucket.add_peer_connecting(2, PeerAddr::from(Protocol::Udp(2))),
+            true
+        );
         assert_eq!(
             bucket.peers(),
             vec![
@@ -219,7 +231,10 @@ mod tests {
     #[test]
     fn remove_connecting() {
         let mut bucket = KBucket::new(0);
-        assert_eq!(bucket.add_peer_connecting(1, PeerAddr::from(Protocol::Udp(1))), true);
+        assert_eq!(
+            bucket.add_peer_connecting(1, PeerAddr::from(Protocol::Udp(1))),
+            true
+        );
         assert_eq!(bucket.size(), 1);
         assert_eq!(bucket.remove_connecting_peer(1), true);
         assert_eq!(bucket.size(), 0);
@@ -228,7 +243,10 @@ mod tests {
     #[test]
     fn remove_connected() {
         let mut bucket = KBucket::new(0);
-        assert_eq!(bucket.add_peer_connected(1, PeerAddr::from(Protocol::Udp(1))), true);
+        assert_eq!(
+            bucket.add_peer_connected(1, PeerAddr::from(Protocol::Udp(1))),
+            true
+        );
         assert_eq!(bucket.size(), 1);
         assert_eq!(bucket.remove_connected_peer(1), true);
         assert_eq!(bucket.size(), 0);
@@ -237,7 +255,10 @@ mod tests {
     #[test]
     fn remove_connecting_but_has_connected() {
         let mut bucket = KBucket::new(0);
-        assert_eq!(bucket.add_peer_connected(1, PeerAddr::from(Protocol::Udp(1))), true);
+        assert_eq!(
+            bucket.add_peer_connected(1, PeerAddr::from(Protocol::Udp(1))),
+            true
+        );
         assert_eq!(bucket.size(), 1);
         assert_eq!(bucket.remove_connecting_peer(1), false);
         assert_eq!(bucket.size(), 1);
@@ -246,7 +267,10 @@ mod tests {
     #[test]
     fn remove_connected_but_has_connecting() {
         let mut bucket = KBucket::new(0);
-        assert_eq!(bucket.add_peer_connecting(1, PeerAddr::from(Protocol::Udp(1))), true);
+        assert_eq!(
+            bucket.add_peer_connecting(1, PeerAddr::from(Protocol::Udp(1))),
+            true
+        );
         assert_eq!(bucket.size(), 1);
         assert_eq!(bucket.remove_connected_peer(1), false);
         assert_eq!(bucket.size(), 1);

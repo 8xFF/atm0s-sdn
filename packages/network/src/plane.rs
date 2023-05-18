@@ -3,6 +3,7 @@ use crate::transport::{
     ConnectionEvent, ConnectionMsg, ConnectionSender, OutgoingConnectionError, Transport,
     TransportConnector, TransportEvent, TransportPendingOutgoing,
 };
+use async_std::channel::{bounded, unbounded, Receiver, Sender};
 use async_std::stream::Interval;
 use bluesea_identity::{PeerAddr, PeerId};
 use futures::{select, FutureExt, SinkExt, StreamExt};
@@ -11,7 +12,6 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use async_std::channel::{Receiver, Sender, unbounded, bounded};
 use utils::Timer;
 
 fn init_vec<T>(size: usize, builder: fn() -> T) -> Vec<T> {
@@ -72,7 +72,11 @@ where
         net_sender: Arc<dyn ConnectionSender<MSG>>,
     ) -> Option<Receiver<(u8, CrossHandlerEvent<HE>)>> {
         if !self.conns.contains_key(&net_sender.connection_id()) {
-            log::info!("[CrossHandlerGate] add_con {} {}", net_sender.remote_peer_id(), net_sender.connection_id());
+            log::info!(
+                "[CrossHandlerGate] add_con {} {}",
+                net_sender.remote_peer_id(),
+                net_sender.connection_id()
+            );
             let (tx, rx) = unbounded();
             let entry = self
                 .peers
@@ -83,7 +87,10 @@ where
             entry.insert(net_sender.connection_id(), (tx.clone(), net_sender.clone()));
             Some(rx)
         } else {
-            log::warn!("[CrossHandlerGate] add_conn duplicate {}", net_sender.connection_id());
+            log::warn!(
+                "[CrossHandlerGate] add_conn duplicate {}",
+                net_sender.connection_id()
+            );
             None
         }
     }
@@ -106,7 +113,11 @@ where
 
     fn close_conn(&self, conn: u32) {
         if let Some((s, c_s)) = self.conns.get(&conn) {
-            log::info!("[CrossHandlerGate] close_con {} {}", c_s.remote_peer_id(), conn);
+            log::info!(
+                "[CrossHandlerGate] close_con {} {}",
+                c_s.remote_peer_id(),
+                conn
+            );
             c_s.close();
         } else {
             log::warn!("[CrossHandlerGate] close_conn not found {}", conn);
@@ -116,7 +127,11 @@ where
     fn close_peer(&self, peer: PeerId) {
         if let Some(conns) = self.peers.get(&peer) {
             for (_conn_id, (s, c_s)) in conns {
-                log::info!("[CrossHandlerGate] close_peer {} {}", peer, c_s.connection_id());
+                log::info!(
+                    "[CrossHandlerGate] close_peer {} {}",
+                    peer,
+                    c_s.connection_id()
+                );
                 c_s.close();
             }
         }
@@ -128,7 +143,11 @@ where
         route: CrossHandlerRoute,
         event: CrossHandlerEvent<HE>,
     ) -> Option<()> {
-        log::debug!("[CrossHandlerGate] send_to_handler service: {} route: {:?}", service_id, route);
+        log::debug!(
+            "[CrossHandlerGate] send_to_handler service: {} route: {:?}",
+            service_id,
+            route
+        );
         match route {
             CrossHandlerRoute::PeerFirst(peer_id) => {
                 if let Some(peer) = self.peers.get(&peer_id) {
@@ -139,10 +158,16 @@ where
                             return Some(());
                         }
                     } else {
-                        log::warn!("[CrossHandlerGate] send_to_handler conn not found for peer {}", peer_id);
+                        log::warn!(
+                            "[CrossHandlerGate] send_to_handler conn not found for peer {}",
+                            peer_id
+                        );
                     }
                 } else {
-                    log::warn!("[CrossHandlerGate] send_to_handler peer not found {}", peer_id);
+                    log::warn!(
+                        "[CrossHandlerGate] send_to_handler peer not found {}",
+                        peer_id
+                    );
                 }
             }
             CrossHandlerRoute::Conn(conn) => {
@@ -166,7 +191,11 @@ where
         route: CrossHandlerRoute,
         msg: ConnectionMsg<MSG>,
     ) -> Option<()> {
-        log::debug!("[CrossHandlerGate] send_to_net service: {} route: {:?}", service_id, route);
+        log::debug!(
+            "[CrossHandlerGate] send_to_net service: {} route: {:?}",
+            service_id,
+            route
+        );
         match route {
             CrossHandlerRoute::PeerFirst(peer_id) => {
                 if let Some(peer) = self.peers.get(&peer_id) {
@@ -174,7 +203,10 @@ where
                         c_s.send(service_id, msg);
                         return Some(());
                     } else {
-                        log::warn!("[CrossHandlerGate] send_to_handler conn not found for peer {}", peer_id);
+                        log::warn!(
+                            "[CrossHandlerGate] send_to_handler conn not found for peer {}",
+                            peer_id
+                        );
                     }
                 } else {
                     log::warn!("[CrossHandlerGate] send_to_net peer not found {}", peer_id);
@@ -481,7 +513,6 @@ where
                             let mut handlers: Vec<Option<(Box<dyn ConnectionHandler<BE, HE, MSG>>, ConnectionAgent::<BE, HE, MSG>)>> = init_vec(256, || None);
                             for behaviour in &mut self.behaviors {
                                 if let Some((behaviour, agent)) = behaviour {
-                                    log::info!("on behavior {}", behaviour.service_id());
                                     let conn_agent = ConnectionAgent::<BE, HE, MSG>::new(
                                         behaviour.service_id(),
                                         self.local_peer_id,

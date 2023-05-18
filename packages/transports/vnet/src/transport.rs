@@ -1,16 +1,16 @@
-use std::sync::Arc;
-use bluesea_identity::{PeerAddr, PeerId};
-use network::transport::{Transport, TransportConnector, TransportEvent};
 use crate::connection::VnetConnection;
 use crate::connector::VnetConnector;
 use crate::earth::VnetEarth;
 use crate::listener::{VnetListener, VnetListenerEvent};
+use bluesea_identity::{PeerAddr, PeerId};
+use network::transport::{Transport, TransportConnector, TransportEvent};
+use std::sync::Arc;
 
 pub struct VnetTransport<MSG> {
     port: u64,
     earth: Arc<VnetEarth<MSG>>,
     listener: VnetListener<MSG>,
-    connector: Arc<VnetConnector<MSG>>
+    connector: Arc<VnetConnector<MSG>>,
 }
 
 impl<MSG> VnetTransport<MSG> {
@@ -29,7 +29,8 @@ impl<MSG> VnetTransport<MSG> {
 
 #[async_trait::async_trait]
 impl<MSG> Transport<MSG> for VnetTransport<MSG>
-    where MSG: Send + Sync + 'static
+where
+    MSG: Send + Sync + 'static,
 {
     fn connector(&self) -> Arc<dyn TransportConnector> {
         self.connector.clone()
@@ -37,9 +38,7 @@ impl<MSG> Transport<MSG> for VnetTransport<MSG>
 
     async fn recv(&mut self) -> Result<TransportEvent<MSG>, ()> {
         match self.listener.recv().await {
-            None => {
-                Err(())
-            }
+            None => Err(()),
             Some(VnetListenerEvent::Incoming((sender, recv))) => {
                 Ok(TransportEvent::Incoming(sender, recv))
             }
@@ -47,7 +46,11 @@ impl<MSG> Transport<MSG> for VnetTransport<MSG>
                 Ok(TransportEvent::Outgoing(sender, recv))
             }
             Some(VnetListenerEvent::OutgoingErr(connection_id, peer_id, err)) => {
-                Ok(TransportEvent::OutgoingError { connection_id, peer_id, err })
+                Ok(TransportEvent::OutgoingError {
+                    connection_id,
+                    peer_id,
+                    err,
+                })
             }
         }
     }

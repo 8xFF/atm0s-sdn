@@ -8,13 +8,13 @@ mod tests {
     use crate::transport::{
         ConnectionEvent, ConnectionMsg, ConnectionSender, OutgoingConnectionError,
     };
+    use bluesea_identity::multiaddr::Protocol;
     use bluesea_identity::{PeerAddr, PeerId};
     use parking_lot::Mutex;
     use std::collections::VecDeque;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
-    use bluesea_identity::multiaddr::Protocol;
     use utils::SystemTimer;
 
     enum TestCrossNetworkMsg {}
@@ -93,7 +93,8 @@ mod tests {
             peer_id: PeerId,
             connection_id: u32,
             err: &OutgoingConnectionError,
-        ) {}
+        ) {
+        }
         fn on_handler_event(
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
@@ -171,7 +172,11 @@ mod tests {
         let join = async_std::task::spawn(async move { while let Ok(_) = plane.run().await {} });
 
         faker
-            .send(MockInput::FakeIncomingConnection(1, 1, PeerAddr::from(Protocol::Udp(1))))
+            .send(MockInput::FakeIncomingConnection(
+                1,
+                1,
+                PeerAddr::from(Protocol::Udp(1)),
+            ))
             .await
             .unwrap();
         async_std::task::sleep(Duration::from_millis(1000)).await;

@@ -186,7 +186,12 @@ impl FindKeyRequest {
         false
     }
 
-    pub fn on_answered_peer(&mut self, ts: u64, from_peer: PeerId, res: Vec<(PeerId, PeerAddr, bool)>) -> bool {
+    pub fn on_answered_peer(
+        &mut self,
+        ts: u64,
+        from_peer: PeerId,
+        res: Vec<(PeerId, PeerAddr, bool)>,
+    ) -> bool {
         for (peer, addr, state) in &mut self.peers {
             match state {
                 PeerState::Requesting { .. } => {
@@ -208,9 +213,9 @@ impl FindKeyRequest {
 
 #[cfg(test)]
 mod tests {
+    use super::{FindKeyRequest, FindKeyRequestStatus};
     use bluesea_identity::multiaddr::Protocol;
     use bluesea_identity::PeerAddr;
-    use super::{FindKeyRequest, FindKeyRequestStatus};
 
     #[derive(PartialEq, Debug)]
     enum Msg {
@@ -230,9 +235,18 @@ mod tests {
         list.push_peer(0, 2, PeerAddr::from(Protocol::Udp(2)), false);
         list.push_peer(0, 3, PeerAddr::from(Protocol::Udp(3)), false);
 
-        assert_eq!(list.pop_connect(0), Some((1, PeerAddr::from(Protocol::Udp(1)))));
-        assert_eq!(list.pop_connect(0), Some((2, PeerAddr::from(Protocol::Udp(2)))));
-        assert_eq!(list.pop_connect(0), Some((3, PeerAddr::from(Protocol::Udp(3)))));
+        assert_eq!(
+            list.pop_connect(0),
+            Some((1, PeerAddr::from(Protocol::Udp(1))))
+        );
+        assert_eq!(
+            list.pop_connect(0),
+            Some((2, PeerAddr::from(Protocol::Udp(2))))
+        );
+        assert_eq!(
+            list.pop_connect(0),
+            Some((3, PeerAddr::from(Protocol::Udp(3))))
+        );
         assert_eq!(list.pop_connect(0), None);
         assert_eq!(list.pop_request(0), None);
     }
@@ -244,9 +258,18 @@ mod tests {
         list.push_peer(0, 1, PeerAddr::from(Protocol::Udp(1)), false);
         list.push_peer(0, 3, PeerAddr::from(Protocol::Udp(3)), false);
 
-        assert_eq!(list.pop_connect(0), Some((1, PeerAddr::from(Protocol::Udp(1)))));
-        assert_eq!(list.pop_connect(0), Some((2, PeerAddr::from(Protocol::Udp(2)))));
-        assert_eq!(list.pop_connect(0), Some((3, PeerAddr::from(Protocol::Udp(3)))));
+        assert_eq!(
+            list.pop_connect(0),
+            Some((1, PeerAddr::from(Protocol::Udp(1))))
+        );
+        assert_eq!(
+            list.pop_connect(0),
+            Some((2, PeerAddr::from(Protocol::Udp(2))))
+        );
+        assert_eq!(
+            list.pop_connect(0),
+            Some((3, PeerAddr::from(Protocol::Udp(3))))
+        );
         assert_eq!(list.pop_connect(0), None);
         assert_eq!(list.pop_request(0), None);
     }
@@ -287,9 +310,18 @@ mod tests {
         list.push_peer(0, 2, PeerAddr::from(Protocol::Udp(2)), false);
         list.push_peer(0, 3, PeerAddr::from(Protocol::Udp(3)), false);
 
-        assert_eq!(list.pop_connect(0), Some((1, PeerAddr::from(Protocol::Udp(1)))));
-        assert_eq!(list.pop_connect(0), Some((2, PeerAddr::from(Protocol::Udp(2)))));
-        assert_eq!(list.pop_connect(0), Some((3, PeerAddr::from(Protocol::Udp(3)))));
+        assert_eq!(
+            list.pop_connect(0),
+            Some((1, PeerAddr::from(Protocol::Udp(1))))
+        );
+        assert_eq!(
+            list.pop_connect(0),
+            Some((2, PeerAddr::from(Protocol::Udp(2))))
+        );
+        assert_eq!(
+            list.pop_connect(0),
+            Some((3, PeerAddr::from(Protocol::Udp(3))))
+        );
         assert_eq!(list.pop_connect(0), None);
         assert_eq!(list.pop_request(0), None);
     }
@@ -350,7 +382,14 @@ mod tests {
 
         list.push_peer(0, 1000, PeerAddr::from(Protocol::Udp(1)), true);
         assert_eq!(list.pop_request(0), Some(1000));
-        assert_eq!(list.on_answered_peer(1000, 1000, vec![(100, PeerAddr::from(Protocol::Udp(1)), true)]), true);
+        assert_eq!(
+            list.on_answered_peer(
+                1000,
+                1000,
+                vec![(100, PeerAddr::from(Protocol::Udp(1)), true)]
+            ),
+            true
+        );
         assert_eq!(list.status(1000), FindKeyRequestStatus::Requesting);
         assert_eq!(list.pop_request(1000), Some(100));
         assert_eq!(list.status(1000), FindKeyRequestStatus::Requesting);
