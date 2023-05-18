@@ -7,10 +7,7 @@ edition = "2021"
 
 [dependencies]
 network = { workspace = true }
-kanal = { workspace = true }
 async-trait = { workspace = true }
 parking_lot = { workspace = true }
 bluesea-identity = { workspace = true }
-
-[dev-dependencies]
 async-std = { workspace = true }

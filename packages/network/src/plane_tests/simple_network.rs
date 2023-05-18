@@ -87,7 +87,7 @@ mod tests {
             agent: &BehaviorAgent<HE, MSG>,
             connection: Arc<dyn ConnectionSender<MSG>>,
         ) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
-            self.conn_counter.fetch_add(1, Ordering::Relaxed);
+            self.conn_counter.fetch_add(1, Ordering::SeqCst);
             Some(Box::new(Test1NetworkHandler {
                 input: self.input.clone(),
             }))
@@ -97,7 +97,7 @@ mod tests {
             agent: &BehaviorAgent<HE, MSG>,
             connection: Arc<dyn ConnectionSender<MSG>>,
         ) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
-            self.conn_counter.fetch_add(1, Ordering::Relaxed);
+            self.conn_counter.fetch_add(1, Ordering::SeqCst);
             Some(Box::new(Test1NetworkHandler {
                 input: self.input.clone(),
             }))
@@ -107,14 +107,14 @@ mod tests {
             agent: &BehaviorAgent<HE, MSG>,
             connection: Arc<dyn ConnectionSender<MSG>>,
         ) {
-            self.conn_counter.fetch_sub(1, Ordering::Relaxed);
+            self.conn_counter.fetch_sub(1, Ordering::SeqCst);
         }
         fn on_outgoing_connection_disconnected(
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
             connection: Arc<dyn ConnectionSender<MSG>>,
         ) {
-            self.conn_counter.fetch_sub(1, Ordering::Relaxed);
+            self.conn_counter.fetch_sub(1, Ordering::SeqCst);
         }
         fn on_outgoing_connection_error(
             &mut self,
@@ -323,7 +323,7 @@ mod tests {
                 ImplNetworkMsg::Service1(Behavior1Msg::Ping)
             ))
         );
-        assert_eq!(conn_counter.load(Ordering::Relaxed), 1);
+        assert_eq!(conn_counter.load(Ordering::SeqCst), 1);
         assert_eq!(
             output.lock().pop_front(),
             Some(MockOutput::SendTo(
@@ -341,6 +341,6 @@ mod tests {
             .await
             .unwrap();
         async_std::task::sleep(Duration::from_millis(1000)).await;
-        assert_eq!(conn_counter.load(Ordering::Relaxed), 0);
+        assert_eq!(conn_counter.load(Ordering::SeqCst), 0);
     }
 }

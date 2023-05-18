@@ -9,10 +9,12 @@ edition = "2021"
 async-std = { workspace = true }
 futures = "0.3"
 convert-enum = "0.1.0"
-kanal = { workspace = true }
 parking_lot = { workspace = true }
 async-trait = { workspace = true }
 log = { workspace = true }
 utils = { workspace = true }
 thiserror = { workspace = true }
 bluesea-identity = { workspace = true }
+
+[dev-dependencies]
+env_logger = { workspace = true }

@@ -1,6 +1,6 @@
 use crate::mock::MockOutput;
 use crate::transport::{ConnectionEvent, ConnectionMsg, ConnectionSender};
-use kanal::Sender;
+use async_std::channel::Sender;
 use bluesea_identity::{PeerAddr, PeerId};
 use parking_lot::Mutex;
 use std::collections::VecDeque;
@@ -40,6 +40,6 @@ where
     }
 
     fn close(&self) {
-        self.internal_sender.send(None);
+        self.internal_sender.send_blocking(None);
     }
 }
