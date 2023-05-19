@@ -6,7 +6,8 @@ mod tests {
         BehaviorAgent, ConnectionAgent, CrossHandlerRoute, NetworkPlane, NetworkPlaneConfig,
     };
     use crate::transport::{
-        ConnectionEvent, ConnectionMsg, ConnectionSender, OutgoingConnectionError,
+        ConnectionEvent, ConnectionMsg, ConnectionRejectReason, ConnectionSender,
+        OutgoingConnectionError,
     };
     use bluesea_identity::multiaddr::Protocol;
     use bluesea_identity::{PeerAddr, PeerId};
@@ -82,6 +83,23 @@ mod tests {
             0
         }
         fn on_tick(&mut self, agent: &BehaviorAgent<HE, MSG>, ts_ms: u64, interal_ms: u64) {}
+
+        fn check_incoming_connection(
+            &mut self,
+            peer: PeerId,
+            conn_id: u32,
+        ) -> Result<(), ConnectionRejectReason> {
+            Ok(())
+        }
+
+        fn check_outgoing_connection(
+            &mut self,
+            peer: PeerId,
+            conn_id: u32,
+        ) -> Result<(), ConnectionRejectReason> {
+            Ok(())
+        }
+
         fn on_incoming_connection_connected(
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
@@ -207,6 +225,23 @@ mod tests {
             1
         }
         fn on_tick(&mut self, agent: &BehaviorAgent<HE, MSG>, ts_ms: u64, interal_ms: u64) {}
+
+        fn check_incoming_connection(
+            &mut self,
+            peer: PeerId,
+            conn_id: u32,
+        ) -> Result<(), ConnectionRejectReason> {
+            Ok(())
+        }
+
+        fn check_outgoing_connection(
+            &mut self,
+            peer: PeerId,
+            conn_id: u32,
+        ) -> Result<(), ConnectionRejectReason> {
+            Ok(())
+        }
+
         fn on_incoming_connection_connected(
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
@@ -308,6 +343,7 @@ mod tests {
             ))
             .await
             .unwrap();
+        async_std::task::sleep(Duration::from_millis(100)).await;
         faker
             .send(MockInput::FakeIncomingMsg(
                 0,
@@ -319,7 +355,7 @@ mod tests {
             ))
             .await
             .unwrap();
-        async_std::task::sleep(Duration::from_millis(1000)).await;
+        async_std::task::sleep(Duration::from_millis(100)).await;
         assert_eq!(input.lock().pop_front(), Some(DebugInput::Opened(1, 1)));
         assert_eq!(
             input.lock().pop_front(),

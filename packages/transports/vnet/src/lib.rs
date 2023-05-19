@@ -38,6 +38,28 @@ mod tests {
             .unwrap()
             .connection_id;
 
+        match tran2.recv().await.unwrap() {
+            TransportEvent::IncomingRequest(peer, conn, acceptor) => {
+                assert_eq!(peer, 1);
+                assert_eq!(conn, conn_id);
+                acceptor.accept();
+            }
+            _ => {
+                panic!("Need IncomingRequest")
+            }
+        }
+
+        match tran1.recv().await.unwrap() {
+            TransportEvent::OutgoingRequest(peer, conn, acceptor) => {
+                assert_eq!(peer, 2);
+                assert_eq!(conn, conn_id);
+                acceptor.accept();
+            }
+            _ => {
+                panic!("Need OutgoingRequest")
+            }
+        }
+
         let (tran2_sender, mut tran2_recv) = match tran2.recv().await.unwrap() {
             TransportEvent::Incoming(sender, recv) => {
                 assert_eq!(sender.remote_peer_id(), 1);
@@ -45,10 +67,7 @@ mod tests {
                 assert_eq!(sender.connection_id(), conn_id);
                 (sender, recv)
             }
-            TransportEvent::Outgoing(_, _) => {
-                panic!("Need incoming")
-            }
-            TransportEvent::OutgoingError { .. } => {
+            _ => {
                 panic!("Need incoming")
             }
         };
@@ -60,10 +79,7 @@ mod tests {
                 assert_eq!(sender.connection_id(), conn_id);
                 (sender, recv)
             }
-            TransportEvent::Incoming(_, _) => {
-                panic!("Need outgoing")
-            }
-            TransportEvent::OutgoingError { .. } => {
+            _ => {
                 panic!("Need outgoing")
             }
         };

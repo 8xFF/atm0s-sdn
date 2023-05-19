@@ -7,7 +7,8 @@ use bluesea_identity::{PeerAddr, PeerId};
 use network::behaviour::{ConnectionHandler, NetworkBehavior};
 use network::plane::{BehaviorAgent, CrossHandlerRoute};
 use network::transport::{
-    ConnectionMsg, ConnectionSender, OutgoingConnectionError, TransportPendingOutgoing,
+    ConnectionMsg, ConnectionRejectReason, ConnectionSender, OutgoingConnectionError,
+    TransportPendingOutgoing,
 };
 use parking_lot::Mutex;
 use std::collections::HashMap;
@@ -122,6 +123,22 @@ where
         }
         self.logic.on_input(Input::OnTick(ts_ms));
         self.process_logic_actions::<HE, MSG>(agent);
+    }
+
+    fn check_incoming_connection(
+        &mut self,
+        peer: PeerId,
+        conn_id: u32,
+    ) -> Result<(), ConnectionRejectReason> {
+        Ok(())
+    }
+
+    fn check_outgoing_connection(
+        &mut self,
+        peer: PeerId,
+        conn_id: u32,
+    ) -> Result<(), ConnectionRejectReason> {
+        Ok(())
     }
 
     fn on_incoming_connection_connected(

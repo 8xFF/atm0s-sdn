@@ -1,5 +1,8 @@
 use crate::plane::{BehaviorAgent, ConnectionAgent};
-use crate::transport::{ConnectionEvent, ConnectionSender, OutgoingConnectionError};
+use crate::transport::{
+    ConnectionAcceptor, ConnectionEvent, ConnectionRejectReason, ConnectionSender,
+    OutgoingConnectionError,
+};
 use bluesea_identity::PeerId;
 use std::sync::Arc;
 
@@ -24,6 +27,16 @@ where
 {
     fn service_id(&self) -> u8;
     fn on_tick(&mut self, agent: &BehaviorAgent<HE, MSG>, ts_ms: u64, interal_ms: u64);
+    fn check_incoming_connection(
+        &mut self,
+        peer: PeerId,
+        conn_id: u32,
+    ) -> Result<(), ConnectionRejectReason>;
+    fn check_outgoing_connection(
+        &mut self,
+        peer: PeerId,
+        conn_id: u32,
+    ) -> Result<(), ConnectionRejectReason>;
     fn on_incoming_connection_connected(
         &mut self,
         agent: &BehaviorAgent<HE, MSG>,

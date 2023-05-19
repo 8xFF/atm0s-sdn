@@ -465,6 +465,30 @@ where
 
     fn process_transport_event(&mut self, e: Result<TransportEvent<MSG>, ()>) -> Result<(), ()> {
         let (outgoing, sender, mut receiver, mut handlers, mut conn_internal_rx) = match e? {
+            TransportEvent::IncomingRequest(peer, conn_id, acceptor) => {
+                for behaviour in &mut self.behaviors {
+                    if let Some((behaviour, agent)) = behaviour {
+                        if let Err(err) = behaviour.check_incoming_connection(peer, conn_id) {
+                            acceptor.reject(err);
+                            return Ok(());
+                        }
+                    }
+                }
+                acceptor.accept();
+                return Ok(());
+            }
+            TransportEvent::OutgoingRequest(peer, conn_id, acceptor) => {
+                for behaviour in &mut self.behaviors {
+                    if let Some((behaviour, agent)) = behaviour {
+                        if let Err(err) = behaviour.check_outgoing_connection(peer, conn_id) {
+                            acceptor.reject(err);
+                            return Ok(());
+                        }
+                    }
+                }
+                acceptor.accept();
+                return Ok(());
+            }
             TransportEvent::Incoming(sender, receiver) => {
                 log::info!(
                     "[NetworkPlane] received TransportEvent::Incoming({}, {})",

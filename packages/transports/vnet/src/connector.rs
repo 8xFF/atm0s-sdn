@@ -10,7 +10,7 @@ pub struct VnetConnector<MSG> {
 
 impl<MSG> TransportConnector for VnetConnector<MSG>
 where
-    MSG: Send + Sync,
+    MSG: Send + Sync + 'static,
 {
     fn connect_to(
         &self,

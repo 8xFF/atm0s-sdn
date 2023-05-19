@@ -1,3 +1,4 @@
+use async_std::channel::{bounded, Receiver, Sender};
 use bluesea_identity::{PeerAddr, PeerId};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -8,6 +9,8 @@ pub struct TransportPendingOutgoing {
 }
 
 pub enum TransportEvent<MSG> {
+    IncomingRequest(PeerId, u32, Box<dyn ConnectionAcceptor>),
+    OutgoingRequest(PeerId, u32, Box<dyn ConnectionAcceptor>),
     Incoming(
         Arc<dyn ConnectionSender<MSG>>,
         Box<dyn ConnectionReceiver<MSG> + Send>,
@@ -61,6 +64,21 @@ pub enum ConnectionEvent<MSG> {
     Stats(ConnectionStats),
 }
 
+#[derive(PartialEq, Error, Debug)]
+pub enum ConnectionRejectReason {
+    #[error("Connection Limited")]
+    ConnectionLimited,
+    #[error("Validate Error")]
+    ValidateError,
+    #[error("Custom {0}")]
+    Custom(String),
+}
+
+pub trait ConnectionAcceptor: Send + Sync {
+    fn accept(&self);
+    fn reject(&self, err: ConnectionRejectReason);
+}
+
 pub trait ConnectionSender<MSG>: Send + Sync {
     fn remote_peer_id(&self) -> PeerId;
     fn connection_id(&self) -> u32;
@@ -87,4 +105,27 @@ pub enum OutgoingConnectionError {
     UnsupportedProtocol,
     #[error("Destination Not Found")]
     DestinationNotFound,
+    #[error("Behavior Rejected")]
+    BehaviorRejected(ConnectionRejectReason),
+}
+
+pub struct AsyncConnectionAcceptor {
+    sender: Sender<Result<(), ConnectionRejectReason>>,
+}
+
+impl AsyncConnectionAcceptor {
+    pub fn new() -> (Box<Self>, Receiver<Result<(), ConnectionRejectReason>>) {
+        let (sender, receiver) = bounded(1);
+        (Box::new(Self { sender }), receiver)
+    }
+}
+
+impl ConnectionAcceptor for AsyncConnectionAcceptor {
+    fn accept(&self) {
+        self.sender.send_blocking(Ok(()));
+    }
+
+    fn reject(&self, err: ConnectionRejectReason) {
+        self.sender.send_blocking(Err(err));
+    }
 }

@@ -13,7 +13,10 @@ pub struct VnetTransport<MSG> {
     connector: Arc<VnetConnector<MSG>>,
 }
 
-impl<MSG> VnetTransport<MSG> {
+impl<MSG> VnetTransport<MSG>
+where
+    MSG: Send + Sync + 'static,
+{
     pub fn new(earth: Arc<VnetEarth<MSG>>, port: u64, peer: PeerId, addr: PeerAddr) -> Self {
         Self {
             listener: earth.create_listener(port, peer, addr),
@@ -39,6 +42,12 @@ where
     async fn recv(&mut self) -> Result<TransportEvent<MSG>, ()> {
         match self.listener.recv().await {
             None => Err(()),
+            Some(VnetListenerEvent::IncomingRequest(peer, conn, acceptor)) => {
+                Ok(TransportEvent::IncomingRequest(peer, conn, acceptor))
+            }
+            Some(VnetListenerEvent::OutgoingRequest(peer, conn, acceptor)) => {
+                Ok(TransportEvent::OutgoingRequest(peer, conn, acceptor))
+            }
             Some(VnetListenerEvent::Incoming((sender, recv))) => {
                 Ok(TransportEvent::Incoming(sender, recv))
             }

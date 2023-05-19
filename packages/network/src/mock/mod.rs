@@ -12,7 +12,12 @@ use std::sync::Arc;
 
 pub enum MockInput<M> {
     FakeIncomingConnection(PeerId, u32, PeerAddr),
+    ///Dont use this manual
+    FakeIncomingConnectionForce(PeerId, u32, PeerAddr),
     FakeOutgoingConnection(PeerId, u32, PeerAddr),
+    ///Dont use this manual
+    FakeOutgoingConnectionForce(PeerId, u32, PeerAddr),
+    FakeOutgoingConnectionError(PeerId, u32, OutgoingConnectionError),
     FakeIncomingMsg(u8, u32, ConnectionMsg<M>),
     FakeDisconnectIncoming(PeerId, u32),
     FakeDisconnectOutgoing(PeerId, u32),
