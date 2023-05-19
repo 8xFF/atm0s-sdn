@@ -8,6 +8,9 @@ pub(crate) mod kbucket;
 mod logic;
 mod msg;
 
+pub use behavior::{DiscoveryNetworkBehavior, DiscoveryNetworkBehaviorOpts};
+pub use msg::*;
+
 #[cfg(test)]
 mod tests {
     use crate::behavior::{DiscoveryNetworkBehavior, DiscoveryNetworkBehaviorOpts};
