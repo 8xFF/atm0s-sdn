@@ -10,15 +10,16 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
-struct Socket<MSG> {
+pub(crate) struct Socket<MSG> {
     peer: PeerId,
     addr: PeerAddr,
     sender: Sender<VnetListenerEvent<MSG>>,
 }
 
 pub struct VnetEarth<MSG> {
-    conn_id_seed: AtomicU32,
-    ports: RwLock<HashMap<u64, Socket<MSG>>>,
+    pub(crate) conn_id_seed: AtomicU32,
+    pub(crate) ports: RwLock<HashMap<u64, Socket<MSG>>>,
+    pub(crate) connections: Arc<RwLock<HashMap<u32, (PeerId, PeerId)>>>,
 }
 
 impl<MSG> Default for VnetEarth<MSG> {
@@ -26,6 +27,7 @@ impl<MSG> Default for VnetEarth<MSG> {
         Self {
             conn_id_seed: Default::default(),
             ports: Default::default(),
+            connections: Default::default(),
         }
     }
 }
@@ -64,6 +66,10 @@ where
                 let to_socket_sender = to_socket.sender.clone();
                 let to_socket_peer = to_socket.peer;
                 let to_socket_addr = to_socket.addr.clone();
+                let connections = self.connections.clone();
+                self.connections
+                    .write()
+                    .insert(conn_id, (from_socket_peer, to_socket_peer));
                 async_std::task::spawn(async move {
                     let (from_tx, from_rx) = unbounded();
                     let (to_tx, to_rx) = unbounded();
@@ -98,6 +104,7 @@ where
                                     conn_id,
                                     remote_addr: to_socket_addr,
                                     recv: from_rx,
+                                    connections: connections.clone(),
                                 }),
                             )))
                             .unwrap();
@@ -115,6 +122,7 @@ where
                                     conn_id,
                                     remote_addr: from_socket_addr,
                                     recv: to_rx,
+                                    connections,
                                 }),
                             )))
                             .unwrap();

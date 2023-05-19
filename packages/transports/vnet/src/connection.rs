@@ -1,6 +1,8 @@
 use async_std::channel::{Receiver, Sender};
 use bluesea_identity::{PeerAddr, PeerId};
 use network::transport::{ConnectionEvent, ConnectionMsg, ConnectionReceiver, ConnectionSender};
+use parking_lot::RwLock;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 pub type VnetConnection<MSG> = (
@@ -13,6 +15,7 @@ pub struct VnetConnectionReceiver<MSG> {
     pub(crate) conn_id: u32,
     pub(crate) remote_addr: PeerAddr,
     pub(crate) recv: Receiver<Option<(u8, ConnectionMsg<MSG>)>>,
+    pub(crate) connections: Arc<RwLock<HashMap<u32, (PeerId, PeerId)>>>,
 }
 
 #[async_trait::async_trait]
@@ -37,6 +40,7 @@ where
             Ok(ConnectionEvent::Msg { msg, service_id })
         } else {
             //disconnected
+            self.connections.write().remove(&self.conn_id);
             Err(())
         }
     }

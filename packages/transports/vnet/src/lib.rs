@@ -125,6 +125,7 @@ mod tests {
         tran1_sender.close();
         assert_eq!(tran1_recv.poll().await, Err(()));
         assert_eq!(tran2_recv.poll().await, Err(()));
+        assert_eq!(vnet.connections.read().len(), 0);
     }
 
     #[async_std::test]

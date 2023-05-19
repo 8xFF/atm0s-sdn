@@ -6,7 +6,6 @@ use crate::transport::{
     OutgoingConnectionError, Transport, TransportConnector, TransportEvent,
     TransportPendingOutgoing,
 };
-use async_notify::Notify;
 use async_std::channel::{bounded, unbounded, Receiver, Sender};
 use bluesea_identity::{PeerAddr, PeerId};
 use parking_lot::Mutex;
