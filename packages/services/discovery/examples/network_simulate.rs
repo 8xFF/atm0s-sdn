@@ -1,24 +1,27 @@
-use std::sync::Arc;
 use bluesea_identity::PeerId;
-use discovery::{DiscoveryBehaviorEvent, DiscoveryHandlerEvent, DiscoveryMsg, DiscoveryNetworkBehavior, DiscoveryNetworkBehaviorOpts};
-use transport_vnet::VnetEarth;
+use discovery::{
+    DiscoveryBehaviorEvent, DiscoveryHandlerEvent, DiscoveryMsg, DiscoveryNetworkBehavior,
+    DiscoveryNetworkBehaviorOpts,
+};
 use network::convert_enum;
 use network::plane::{NetworkPlane, NetworkPlaneConfig};
+use std::sync::Arc;
+use transport_vnet::VnetEarth;
 use utils::SystemTimer;
 
 #[derive(convert_enum::From, convert_enum::TryInto)]
 enum NodeBehaviorEvent {
-    Discovery(DiscoveryBehaviorEvent)
+    Discovery(DiscoveryBehaviorEvent),
 }
 
 #[derive(convert_enum::From, convert_enum::TryInto)]
 enum NodeHandlerEvent {
-    Discovery(DiscoveryHandlerEvent)
+    Discovery(DiscoveryHandlerEvent),
 }
 
 #[derive(convert_enum::From, convert_enum::TryInto)]
 enum NodeMessage {
-    Discovery(DiscoveryMsg)
+    Discovery(DiscoveryMsg),
 }
 
 async fn start_node(node_id: PeerId, earth: Arc<VnetEarth<NodeMessage>>) {

@@ -1,6 +1,7 @@
 mod connection_receiver;
 mod connection_sender;
 mod transport;
+mod transport_rpc;
 
 use crate::transport::{
     ConnectionMsg, ConnectionSender, OutgoingConnectionError, Transport, TransportConnector,
@@ -30,3 +31,4 @@ pub enum MockOutput<M> {
 }
 
 pub use transport::MockTransport;
+pub use transport_rpc::MockTransportRpc;

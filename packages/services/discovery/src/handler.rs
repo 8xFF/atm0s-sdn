@@ -1,8 +1,8 @@
 use crate::msg::{DiscoveryBehaviorEvent, DiscoveryHandlerEvent, DiscoveryMsg};
 use bluesea_identity::PeerId;
 use network::behaviour::ConnectionHandler;
-use network::plane::{BehaviorAgent, ConnectionAgent};
 use network::transport::{ConnectionEvent, ConnectionMsg};
+use network::{BehaviorAgent, ConnectionAgent};
 
 pub struct DiscoveryConnectionHandler {}
 

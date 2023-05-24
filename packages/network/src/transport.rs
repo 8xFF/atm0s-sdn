@@ -32,6 +32,16 @@ pub trait Transport<MSG> {
     async fn recv(&mut self) -> Result<TransportEvent<MSG>, ()>;
 }
 
+pub trait RpcAnswer<Res> {
+    fn ok(&self, res: Res);
+    fn error(&self, code: u32, message: &str);
+}
+
+#[async_trait::async_trait]
+pub trait TransportRpc<Req, Res> {
+    async fn recv(&mut self) -> Result<(u8, Req, Box<dyn RpcAnswer<Res>>), ()>;
+}
+
 pub trait TransportConnector: Send + Sync {
     fn connect_to(
         &self,

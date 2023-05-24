@@ -1,7 +1,9 @@
 use crate::behaviour::{ConnectionHandler, NetworkBehavior};
+use crate::internal::agent::{BehaviorAgent, ConnectionAgent};
+use crate::internal::cross_handler_gate::{CrossHandlerEvent, CrossHandlerGate};
 use crate::transport::{
-    ConnectionEvent, ConnectionMsg, ConnectionSender, OutgoingConnectionError, Transport,
-    TransportConnector, TransportEvent, TransportPendingOutgoing,
+    ConnectionEvent, ConnectionMsg, ConnectionSender, OutgoingConnectionError, RpcAnswer,
+    Transport, TransportConnector, TransportEvent, TransportPendingOutgoing, TransportRpc,
 };
 use async_std::channel::{bounded, unbounded, Receiver, Sender};
 use async_std::stream::Interval;
@@ -22,358 +24,7 @@ fn init_vec<T>(size: usize, builder: fn() -> T) -> Vec<T> {
     vec
 }
 
-enum CrossHandlerEvent<HE> {
-    FromBehavior(HE),
-    FromHandler(PeerId, u32, HE),
-}
-
-#[derive(Debug)]
-pub enum CrossHandlerRoute {
-    PeerFirst(PeerId),
-    Conn(u32),
-}
-
-struct CrossHandlerGate<HE, MSG> {
-    peers: HashMap<
-        PeerId,
-        HashMap<
-            u32,
-            (
-                Sender<(u8, CrossHandlerEvent<HE>)>,
-                Arc<dyn ConnectionSender<MSG>>,
-            ),
-        >,
-    >,
-    conns: HashMap<
-        u32,
-        (
-            Sender<(u8, CrossHandlerEvent<HE>)>,
-            Arc<dyn ConnectionSender<MSG>>,
-        ),
-    >,
-}
-
-impl<HE, MSG> Default for CrossHandlerGate<HE, MSG> {
-    fn default() -> Self {
-        Self {
-            peers: Default::default(),
-            conns: Default::default(),
-        }
-    }
-}
-
-impl<HE, MSG> CrossHandlerGate<HE, MSG>
-where
-    HE: Send + Sync + 'static,
-    MSG: Send + Sync + 'static,
-{
-    fn add_conn(
-        &mut self,
-        net_sender: Arc<dyn ConnectionSender<MSG>>,
-    ) -> Option<Receiver<(u8, CrossHandlerEvent<HE>)>> {
-        if !self.conns.contains_key(&net_sender.connection_id()) {
-            log::info!(
-                "[CrossHandlerGate] add_con {} {}",
-                net_sender.remote_peer_id(),
-                net_sender.connection_id()
-            );
-            let (tx, rx) = unbounded();
-            let entry = self
-                .peers
-                .entry(net_sender.remote_peer_id())
-                .or_insert_with(|| HashMap::new());
-            self.conns
-                .insert(net_sender.connection_id(), (tx.clone(), net_sender.clone()));
-            entry.insert(net_sender.connection_id(), (tx.clone(), net_sender.clone()));
-            Some(rx)
-        } else {
-            log::warn!(
-                "[CrossHandlerGate] add_conn duplicate {}",
-                net_sender.connection_id()
-            );
-            None
-        }
-    }
-
-    fn remove_conn(&mut self, peer: PeerId, conn: u32) -> Option<()> {
-        if self.conns.contains_key(&conn) {
-            log::info!("[CrossHandlerGate] remove_con {} {}", peer, conn);
-            self.conns.remove(&conn);
-            let entry = self.peers.entry(peer).or_insert_with(|| HashMap::new());
-            entry.remove(&conn);
-            if entry.is_empty() {
-                self.peers.remove(&peer);
-            }
-            Some(())
-        } else {
-            log::warn!("[CrossHandlerGate] remove_conn not found {}", conn);
-            None
-        }
-    }
-
-    fn close_conn(&self, conn: u32) {
-        if let Some((s, c_s)) = self.conns.get(&conn) {
-            log::info!(
-                "[CrossHandlerGate] close_con {} {}",
-                c_s.remote_peer_id(),
-                conn
-            );
-            c_s.close();
-        } else {
-            log::warn!("[CrossHandlerGate] close_conn not found {}", conn);
-        }
-    }
-
-    fn close_peer(&self, peer: PeerId) {
-        if let Some(conns) = self.peers.get(&peer) {
-            for (_conn_id, (s, c_s)) in conns {
-                log::info!(
-                    "[CrossHandlerGate] close_peer {} {}",
-                    peer,
-                    c_s.connection_id()
-                );
-                c_s.close();
-            }
-        }
-    }
-
-    fn send_to_handler(
-        &self,
-        service_id: u8,
-        route: CrossHandlerRoute,
-        event: CrossHandlerEvent<HE>,
-    ) -> Option<()> {
-        log::debug!(
-            "[CrossHandlerGate] send_to_handler service: {} route: {:?}",
-            service_id,
-            route
-        );
-        match route {
-            CrossHandlerRoute::PeerFirst(peer_id) => {
-                if let Some(peer) = self.peers.get(&peer_id) {
-                    if let Some((s, c_s)) = peer.values().next() {
-                        if let Err(e) = s.send_blocking((service_id, event)) {
-                            log::error!("[CrossHandlerGate] send to handle error {:?}", e);
-                        } else {
-                            return Some(());
-                        }
-                    } else {
-                        log::warn!(
-                            "[CrossHandlerGate] send_to_handler conn not found for peer {}",
-                            peer_id
-                        );
-                    }
-                } else {
-                    log::warn!(
-                        "[CrossHandlerGate] send_to_handler peer not found {}",
-                        peer_id
-                    );
-                }
-            }
-            CrossHandlerRoute::Conn(conn) => {
-                if let Some((s, c_s)) = self.conns.get(&conn) {
-                    if let Err(e) = s.send_blocking((service_id, event)) {
-                        log::error!("[CrossHandlerGate] send to handle error {:?}", e);
-                    } else {
-                        return Some(());
-                    }
-                } else {
-                    log::warn!("[CrossHandlerGate] send_to_handler conn not found {}", conn);
-                }
-            }
-        };
-        None
-    }
-
-    fn send_to_net(
-        &self,
-        service_id: u8,
-        route: CrossHandlerRoute,
-        msg: ConnectionMsg<MSG>,
-    ) -> Option<()> {
-        log::debug!(
-            "[CrossHandlerGate] send_to_net service: {} route: {:?}",
-            service_id,
-            route
-        );
-        match route {
-            CrossHandlerRoute::PeerFirst(peer_id) => {
-                if let Some(peer) = self.peers.get(&peer_id) {
-                    if let Some((s, c_s)) = peer.values().next() {
-                        c_s.send(service_id, msg);
-                        return Some(());
-                    } else {
-                        log::warn!(
-                            "[CrossHandlerGate] send_to_handler conn not found for peer {}",
-                            peer_id
-                        );
-                    }
-                } else {
-                    log::warn!("[CrossHandlerGate] send_to_net peer not found {}", peer_id);
-                }
-            }
-            CrossHandlerRoute::Conn(conn) => {
-                if let Some((s, c_s)) = self.conns.get(&conn) {
-                    c_s.send(service_id, msg);
-                    return Some(());
-                } else {
-                    log::warn!("[CrossHandlerGate] send_to_net conn not found {}", conn);
-                }
-            }
-        };
-        None
-    }
-}
-
-pub struct BehaviorAgent<HE, MSG> {
-    service_id: u8,
-    local_peer_id: PeerId,
-    connector: Arc<dyn TransportConnector>,
-    cross_gate: Arc<RwLock<CrossHandlerGate<HE, MSG>>>,
-}
-
-impl<HE, MSG> BehaviorAgent<HE, MSG>
-where
-    HE: Send + Sync + 'static,
-    MSG: Send + Sync + 'static,
-{
-    fn new(
-        service_id: u8,
-        local_peer_id: PeerId,
-        connector: Arc<dyn TransportConnector>,
-        cross_gate: Arc<RwLock<CrossHandlerGate<HE, MSG>>>,
-    ) -> Self {
-        Self {
-            service_id,
-            connector,
-            local_peer_id,
-            cross_gate,
-        }
-    }
-
-    pub fn local_peer_id(&self) -> PeerId {
-        self.local_peer_id
-    }
-
-    pub fn connect_to(
-        &self,
-        peer_id: PeerId,
-        dest: PeerAddr,
-    ) -> Result<TransportPendingOutgoing, OutgoingConnectionError> {
-        self.connector.connect_to(peer_id, dest)
-    }
-
-    pub fn send_to_handler(&self, route: CrossHandlerRoute, event: HE) {
-        self.cross_gate.read().send_to_handler(
-            self.service_id,
-            route,
-            CrossHandlerEvent::FromBehavior(event),
-        );
-    }
-
-    pub fn send_to_net(&self, route: CrossHandlerRoute, msg: ConnectionMsg<MSG>) {
-        self.cross_gate
-            .read()
-            .send_to_net(self.service_id, route, msg);
-    }
-
-    pub fn close_conn(&self, conn: u32) {
-        self.cross_gate.read().close_conn(conn);
-    }
-
-    pub fn close_peer(&self, peer: PeerId) {
-        self.cross_gate.read().close_peer(peer);
-    }
-}
-
-pub struct ConnectionAgent<BE, HE, MSG> {
-    service_id: u8,
-    local_peer_id: PeerId,
-    remote_peer_id: PeerId,
-    conn_id: u32,
-    sender: Arc<dyn ConnectionSender<MSG>>,
-    internal_tx: Sender<NetworkPlaneInternalEvent<BE, MSG>>,
-    cross_gate: Arc<RwLock<CrossHandlerGate<HE, MSG>>>,
-}
-
-impl<BE, HE, MSG> ConnectionAgent<BE, HE, MSG>
-where
-    BE: Send + Sync + 'static,
-    HE: Send + Sync + 'static,
-    MSG: Send + Sync + 'static,
-{
-    fn new(
-        service_id: u8,
-        local_peer_id: PeerId,
-        remote_peer_id: PeerId,
-        conn_id: u32,
-        sender: Arc<dyn ConnectionSender<MSG>>,
-        internal_tx: Sender<NetworkPlaneInternalEvent<BE, MSG>>,
-        cross_gate: Arc<RwLock<CrossHandlerGate<HE, MSG>>>,
-    ) -> Self {
-        Self {
-            service_id,
-            local_peer_id,
-            remote_peer_id,
-            conn_id,
-            sender,
-            internal_tx,
-            cross_gate,
-        }
-    }
-
-    pub fn conn_id(&self) -> u32 {
-        self.conn_id
-    }
-
-    pub fn local_peer_id(&self) -> PeerId {
-        self.local_peer_id
-    }
-
-    pub fn remote_peer_id(&self) -> PeerId {
-        self.remote_peer_id
-    }
-
-    pub fn send_behavior(&self, event: BE) {
-        match self
-            .internal_tx
-            .send_blocking(NetworkPlaneInternalEvent::ToBehaviour {
-                service_id: self.service_id,
-                peer_id: self.remote_peer_id,
-                conn_id: self.conn_id,
-                event,
-            }) {
-            Ok(_) => {}
-            Err(err) => {
-                log::error!("send event to Behavior error {:?}", err);
-            }
-        }
-    }
-
-    pub fn send_net(&self, msg: ConnectionMsg<MSG>) {
-        self.sender.send(self.service_id, msg);
-    }
-
-    pub fn send_to_handler(&self, route: CrossHandlerRoute, event: HE) {
-        self.cross_gate.read().send_to_handler(
-            self.service_id,
-            route,
-            CrossHandlerEvent::FromHandler(self.remote_peer_id, self.conn_id, event),
-        );
-    }
-
-    pub fn send_to_net(&self, route: CrossHandlerRoute, msg: ConnectionMsg<MSG>) {
-        self.cross_gate
-            .read()
-            .send_to_net(self.service_id, route, msg);
-    }
-
-    pub fn close_conn(&self) {
-        self.cross_gate.read().close_conn(self.conn_id);
-    }
-}
-
-enum NetworkPlaneInternalEvent<BE, MSG> {
+pub enum NetworkPlaneInternalEvent<BE, MSG> {
     ToBehaviour {
         service_id: u8,
         peer_id: PeerId,
@@ -384,29 +35,31 @@ enum NetworkPlaneInternalEvent<BE, MSG> {
     OutgoingDisconnected(Arc<dyn ConnectionSender<MSG>>),
 }
 
-pub struct NetworkPlaneConfig<BE, HE, MSG> {
+pub struct NetworkPlaneConfig<BE, HE, MSG, Req, Res> {
     /// Local node peer_id, which is u32 value
     pub local_peer_id: PeerId,
     /// Tick_ms, each tick_ms miliseconds, network will call tick function on both behavior and handler
     pub tick_ms: u64,
     /// List of behavior
-    pub behavior: Vec<Box<dyn NetworkBehavior<BE, HE, MSG> + Send + Sync>>,
+    pub behavior: Vec<Box<dyn NetworkBehavior<BE, HE, MSG, Req, Res> + Send + Sync>>,
     /// Transport which is used
     pub transport: Box<dyn Transport<MSG> + Send + Sync>,
+    pub transport_rpc: Box<dyn TransportRpc<Req, Res> + Send + Sync>,
     /// Timer for getting timestamp miliseconds
     pub timer: Arc<dyn Timer>,
 }
 
-pub struct NetworkPlane<BE, HE, MSG> {
+pub struct NetworkPlane<BE, HE, MSG, Req, Res> {
     local_peer_id: PeerId,
     tick_ms: u64,
     behaviors: Vec<
         Option<(
-            Box<dyn NetworkBehavior<BE, HE, MSG> + Send + Sync>,
+            Box<dyn NetworkBehavior<BE, HE, MSG, Req, Res> + Send + Sync>,
             BehaviorAgent<HE, MSG>,
         )>,
     >,
     transport: Box<dyn Transport<MSG> + Send + Sync>,
+    transport_rpc: Box<dyn TransportRpc<Req, Res> + Send + Sync>,
     timer: Arc<dyn Timer>,
     internal_tx: Sender<NetworkPlaneInternalEvent<BE, MSG>>,
     internal_rx: Receiver<NetworkPlaneInternalEvent<BE, MSG>>,
@@ -414,21 +67,23 @@ pub struct NetworkPlane<BE, HE, MSG> {
     tick_interval: Interval,
 }
 
-impl<BE, HE, MSG> NetworkPlane<BE, HE, MSG>
+impl<BE, HE, MSG, Req, Res> NetworkPlane<BE, HE, MSG, Req, Res>
 where
     BE: Send + Sync + 'static,
     HE: Send + Sync + 'static,
     MSG: Send + Sync + 'static,
+    Req: Send + Sync + 'static,
+    Res: Send + Sync + 'static,
 {
     /// Creating new network plane, after create need to run
     /// `while let Some(_) = plane.run().await {}`
-    pub fn new(conf: NetworkPlaneConfig<BE, HE, MSG>) -> Self {
+    pub fn new(conf: NetworkPlaneConfig<BE, HE, MSG, Req, Res>) -> Self {
         let cross_gate: Arc<RwLock<CrossHandlerGate<HE, MSG>>> = Default::default();
 
         let (internal_tx, internal_rx) = unbounded();
         let mut behaviors: Vec<
             Option<(
-                Box<dyn NetworkBehavior<BE, HE, MSG> + Send + Sync>,
+                Box<dyn NetworkBehavior<BE, HE, MSG, Req, Res> + Send + Sync>,
                 BehaviorAgent<HE, MSG>,
             )>,
         > = init_vec(256, || None);
@@ -455,6 +110,7 @@ where
             tick_ms: conf.tick_ms,
             behaviors,
             transport: conf.transport,
+            transport_rpc: conf.transport_rpc,
             tick_interval: async_std::stream::interval(Duration::from_millis(conf.tick_ms)),
             internal_tx,
             internal_rx,
@@ -688,6 +344,20 @@ where
         });
 
         Ok(())
+    }
+
+    fn process_transport_rpc_event(
+        &mut self,
+        e: Result<(u8, Req, Box<dyn RpcAnswer<Res>>), ()>,
+    ) -> Result<(), ()> {
+        let (service_id, req, res) = e?;
+        if let Some(Some((behaviour, agent))) = self.behaviors.get_mut(service_id as usize) {
+            behaviour.on_rpc(agent, req, res);
+            Ok(())
+        } else {
+            res.error(0, "SERVICE_NOT_FOUND");
+            Err(())
+        }
     }
 
     /// Run loop for plane which handle tick and connection

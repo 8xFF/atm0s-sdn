@@ -19,7 +19,7 @@ mod tests {
     use bluesea_identity::multiaddr::Protocol;
     use bluesea_identity::PeerAddr;
     use network::convert_enum;
-    use network::mock::{MockInput, MockOutput, MockTransport};
+    use network::mock::{MockInput, MockOutput, MockTransport, MockTransportRpc};
     use network::plane::{NetworkPlane, NetworkPlaneConfig};
     use network::transport::ConnectionMsg;
     use std::sync::Arc;
@@ -30,6 +30,9 @@ mod tests {
     enum ImplNetworkMsg {
         Discovery(DiscoveryMsg),
     }
+
+    enum ImplNetworkReq {}
+    enum ImplNetworkRes {}
 
     #[derive(convert_enum::From, convert_enum::TryInto)]
     enum ImplBehaviorEvent {
@@ -47,6 +50,8 @@ mod tests {
         let neighbour1_addr = PeerAddr::from(Protocol::Memory(1000));
 
         let (mock, faker, output) = MockTransport::<ImplNetworkMsg>::new();
+        let (mock_rpc, faker_rpc, output_rpc) =
+            MockTransportRpc::<ImplNetworkReq, ImplNetworkRes>::new();
         let transport = Box::new(mock);
         let timer = Arc::new(SystemTimer());
 
@@ -58,15 +63,20 @@ mod tests {
             },
         ));
 
-        let mut plane = NetworkPlane::<ImplBehaviorEvent, ImplHandlerEvent, ImplNetworkMsg>::new(
-            NetworkPlaneConfig {
-                local_peer_id: 0,
-                tick_ms: 100,
-                behavior: vec![behavior],
-                transport,
-                timer,
-            },
-        );
+        let mut plane = NetworkPlane::<
+            ImplBehaviorEvent,
+            ImplHandlerEvent,
+            ImplNetworkMsg,
+            ImplNetworkReq,
+            ImplNetworkRes,
+        >::new(NetworkPlaneConfig {
+            local_peer_id: 0,
+            tick_ms: 100,
+            behavior: vec![behavior],
+            transport,
+            transport_rpc: Box::new(mock_rpc),
+            timer,
+        });
 
         let join = async_std::task::spawn(async move { while let Ok(_) = plane.run().await {} });
         async_std::task::sleep(Duration::from_millis(1000)).await;
@@ -103,6 +113,8 @@ mod tests {
         let neighbour1_addr = PeerAddr::from(Protocol::Memory(1000));
 
         let (mock, faker, output) = MockTransport::<ImplNetworkMsg>::new();
+        let (mock_rpc, faker_rpc, output_rpc) =
+            MockTransportRpc::<ImplNetworkReq, ImplNetworkRes>::new();
         let transport = Box::new(mock);
         let timer = Arc::new(SystemTimer());
 
@@ -114,15 +126,20 @@ mod tests {
             },
         ));
 
-        let mut plane = NetworkPlane::<ImplBehaviorEvent, ImplHandlerEvent, ImplNetworkMsg>::new(
-            NetworkPlaneConfig {
-                local_peer_id: 0,
-                tick_ms: 100,
-                behavior: vec![behavior],
-                transport,
-                timer,
-            },
-        );
+        let mut plane = NetworkPlane::<
+            ImplBehaviorEvent,
+            ImplHandlerEvent,
+            ImplNetworkMsg,
+            ImplNetworkReq,
+            ImplNetworkRes,
+        >::new(NetworkPlaneConfig {
+            local_peer_id: 0,
+            tick_ms: 100,
+            behavior: vec![behavior],
+            transport,
+            transport_rpc: Box::new(mock_rpc),
+            timer,
+        });
 
         let join = async_std::task::spawn(async move { while let Ok(_) = plane.run().await {} });
         faker

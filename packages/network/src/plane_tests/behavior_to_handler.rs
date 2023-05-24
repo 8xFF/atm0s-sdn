@@ -1,14 +1,13 @@
 #[cfg(test)]
 mod tests {
     use crate::behaviour::{ConnectionHandler, NetworkBehavior};
-    use crate::mock::{MockInput, MockOutput, MockTransport};
-    use crate::plane::{
-        BehaviorAgent, ConnectionAgent, CrossHandlerRoute, NetworkPlane, NetworkPlaneConfig,
-    };
+    use crate::mock::{MockInput, MockOutput, MockTransport, MockTransportRpc};
+    use crate::plane::{NetworkPlane, NetworkPlaneConfig};
     use crate::transport::{
         ConnectionEvent, ConnectionMsg, ConnectionRejectReason, ConnectionSender,
-        OutgoingConnectionError,
+        OutgoingConnectionError, RpcAnswer,
     };
+    use crate::{BehaviorAgent, ConnectionAgent, CrossHandlerRoute};
     use bluesea_identity::multiaddr::Protocol;
     use bluesea_identity::{PeerAddr, PeerId};
     use parking_lot::Mutex;
@@ -41,6 +40,12 @@ mod tests {
         Test(TestCrossNetworkMsg),
     }
 
+    #[derive(convert_enum::From, convert_enum::TryInto)]
+    enum ImplTestCrossNetworkReq {}
+
+    #[derive(convert_enum::From, convert_enum::TryInto)]
+    enum ImplTestCrossNetworkRes {}
+
     struct TestCrossNetworkBehavior {
         flag: Arc<AtomicBool>,
     }
@@ -48,7 +53,7 @@ mod tests {
         flag: Arc<AtomicBool>,
     }
 
-    impl<BE, HE, MSG> NetworkBehavior<BE, HE, MSG> for TestCrossNetworkBehavior
+    impl<BE, HE, MSG, Req, Res> NetworkBehavior<BE, HE, MSG, Req, Res> for TestCrossNetworkBehavior
     where
         BE: From<TestCrossBehaviorEvent> + TryInto<TestCrossBehaviorEvent> + Send + Sync + 'static,
         HE: From<TestCrossHandleEvent> + TryInto<TestCrossHandleEvent> + Send + Sync + 'static,
@@ -131,6 +136,15 @@ mod tests {
                 }
             }
         }
+
+        fn on_rpc(
+            &mut self,
+            agent: &BehaviorAgent<HE, MSG>,
+            req: Req,
+            res: Box<dyn RpcAnswer<Res>>,
+        ) -> bool {
+            todo!()
+        }
     }
 
     impl<BE, HE, MSG> ConnectionHandler<BE, HE, MSG> for TestCrossNetworkHandler
@@ -172,6 +186,8 @@ mod tests {
         let behavior = Box::new(TestCrossNetworkBehavior { flag: flag.clone() });
 
         let (mock, faker, output) = MockTransport::<ImplTestCrossNetworkMsg>::new();
+        let (mock_rpc, faker_rpc, output_rpc) =
+            MockTransportRpc::<ImplTestCrossNetworkReq, ImplTestCrossNetworkRes>::new();
         let transport = Box::new(mock);
         let timer = Arc::new(SystemTimer());
 
@@ -179,11 +195,14 @@ mod tests {
             ImplTestCrossNetworkBehaviorEvent,
             ImplTestCrossNetworkHandlerEvent,
             ImplTestCrossNetworkMsg,
+            ImplTestCrossNetworkReq,
+            ImplTestCrossNetworkRes,
         >::new(NetworkPlaneConfig {
             local_peer_id: 0,
             tick_ms: 1000,
             behavior: vec![behavior],
             transport,
+            transport_rpc: Box::new(mock_rpc),
             timer,
         });
 

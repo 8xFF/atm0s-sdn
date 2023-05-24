@@ -1,14 +1,13 @@
 #[cfg(test)]
 mod tests {
     use crate::behaviour::{ConnectionHandler, NetworkBehavior};
-    use crate::mock::{MockInput, MockOutput, MockTransport};
-    use crate::plane::{
-        BehaviorAgent, ConnectionAgent, CrossHandlerRoute, NetworkPlane, NetworkPlaneConfig,
-    };
+    use crate::mock::{MockInput, MockOutput, MockTransport, MockTransportRpc};
+    use crate::plane::{NetworkPlane, NetworkPlaneConfig};
     use crate::transport::{
         ConnectionEvent, ConnectionMsg, ConnectionRejectReason, ConnectionSender,
-        OutgoingConnectionError,
+        OutgoingConnectionError, RpcAnswer,
     };
+    use crate::{BehaviorAgent, ConnectionAgent};
     use bluesea_identity::multiaddr::Protocol;
     use bluesea_identity::{PeerAddr, PeerId};
     use parking_lot::Mutex;
@@ -25,6 +24,10 @@ mod tests {
     }
     enum Behavior1Event {}
     enum Handler1Event {}
+    #[derive(PartialEq, Debug)]
+    enum Behavior1Req {}
+    #[derive(PartialEq, Debug)]
+    enum Behavior1Res {}
 
     #[derive(PartialEq, Debug)]
     enum Behavior2Msg {
@@ -41,6 +44,10 @@ mod tests {
 
     enum Behavior2Event {}
     enum Handler2Event {}
+    #[derive(PartialEq, Debug)]
+    enum Behavior2Req {}
+    #[derive(PartialEq, Debug)]
+    enum Behavior2Res {}
 
     #[derive(convert_enum::From, convert_enum::TryInto)]
     enum ImplNetworkBehaviorEvent {
@@ -60,6 +67,18 @@ mod tests {
         Service2(Behavior2Msg),
     }
 
+    #[derive(PartialEq, Debug, convert_enum::From, convert_enum::TryInto)]
+    enum ImplNetworkReq {
+        Service1(Behavior1Req),
+        Service2(Behavior2Req),
+    }
+
+    #[derive(PartialEq, Debug, convert_enum::From, convert_enum::TryInto)]
+    enum ImplNetworkRes {
+        Service1(Behavior1Res),
+        Service2(Behavior2Res),
+    }
+
     struct Test1NetworkBehavior<MSG> {
         conn_counter: Arc<AtomicU32>,
         input: Arc<Mutex<VecDeque<DebugInput<MSG>>>>,
@@ -73,7 +92,7 @@ mod tests {
 
     struct Test2NetworkHandler {}
 
-    impl<BE, HE, MSG> NetworkBehavior<BE, HE, MSG> for Test1NetworkBehavior<MSG>
+    impl<BE, HE, MSG, Req, Res> NetworkBehavior<BE, HE, MSG, Req, Res> for Test1NetworkBehavior<MSG>
     where
         BE: From<Behavior1Event> + TryInto<Behavior1Event> + Send + Sync + 'static,
         HE: From<Handler1Event> + TryInto<Handler1Event> + Send + Sync + 'static,
@@ -150,6 +169,15 @@ mod tests {
             event: BE,
         ) {
         }
+
+        fn on_rpc(
+            &mut self,
+            agent: &BehaviorAgent<HE, MSG>,
+            req: Req,
+            res: Box<dyn RpcAnswer<Res>>,
+        ) -> bool {
+            todo!()
+        }
     }
 
     impl<BE, HE, MSG> ConnectionHandler<BE, HE, MSG> for Test1NetworkHandler<MSG>
@@ -215,7 +243,7 @@ mod tests {
         }
     }
 
-    impl<BE, HE, MSG> NetworkBehavior<BE, HE, MSG> for Test2NetworkBehavior
+    impl<BE, HE, MSG, Req, Res> NetworkBehavior<BE, HE, MSG, Req, Res> for Test2NetworkBehavior
     where
         BE: From<Behavior2Event> + TryInto<Behavior2Event>,
         HE: From<Handler2Event> + TryInto<Handler2Event>,
@@ -284,6 +312,15 @@ mod tests {
             event: BE,
         ) {
         }
+
+        fn on_rpc(
+            &mut self,
+            agent: &BehaviorAgent<HE, MSG>,
+            req: Req,
+            res: Box<dyn RpcAnswer<Res>>,
+        ) -> bool {
+            todo!()
+        }
     }
 
     impl<BE, HE, MSG> ConnectionHandler<BE, HE, MSG> for Test2NetworkHandler
@@ -319,19 +356,25 @@ mod tests {
         let behavior2 = Box::new(Test2NetworkBehavior {});
 
         let (mock, faker, output) = MockTransport::<ImplNetworkMsg>::new();
+        let (mock_rpc, faker_rpc, output_rpc) =
+            MockTransportRpc::<ImplNetworkReq, ImplNetworkRes>::new();
         let transport = Box::new(mock);
         let timer = Arc::new(SystemTimer());
 
-        let mut plane =
-            NetworkPlane::<ImplNetworkBehaviorEvent, ImplNetworkHandlerEvent, ImplNetworkMsg>::new(
-                NetworkPlaneConfig {
-                    local_peer_id: 0,
-                    tick_ms: 1000,
-                    behavior: vec![behavior1, behavior2],
-                    transport,
-                    timer,
-                },
-            );
+        let mut plane = NetworkPlane::<
+            ImplNetworkBehaviorEvent,
+            ImplNetworkHandlerEvent,
+            ImplNetworkMsg,
+            ImplNetworkReq,
+            ImplNetworkRes,
+        >::new(NetworkPlaneConfig {
+            local_peer_id: 0,
+            tick_ms: 1000,
+            behavior: vec![behavior1, behavior2],
+            transport,
+            transport_rpc: Box::new(mock_rpc),
+            timer,
+        });
 
         async_std::task::spawn(async move { while let Ok(_) = plane.run().await {} });
 

@@ -5,11 +5,11 @@ use crate::msg::{DiscoveryBehaviorEvent, DiscoveryHandlerEvent, DiscoveryMsg};
 use crate::DISCOVERY_SERVICE_ID;
 use bluesea_identity::{PeerAddr, PeerId};
 use network::behaviour::{ConnectionHandler, NetworkBehavior};
-use network::plane::{BehaviorAgent, CrossHandlerRoute};
 use network::transport::{
-    ConnectionMsg, ConnectionRejectReason, ConnectionSender, OutgoingConnectionError,
+    ConnectionMsg, ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer,
     TransportPendingOutgoing,
 };
+use network::{BehaviorAgent, CrossHandlerRoute};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -103,7 +103,7 @@ impl DiscoveryNetworkBehavior {
     }
 }
 
-impl<BE, HE, MSG> NetworkBehavior<BE, HE, MSG> for DiscoveryNetworkBehavior
+impl<BE, HE, MSG, Req, Res> NetworkBehavior<BE, HE, MSG, Req, Res> for DiscoveryNetworkBehavior
 where
     BE: TryInto<DiscoveryBehaviorEvent> + From<DiscoveryBehaviorEvent> + Send + Sync + 'static,
     HE: TryInto<DiscoveryHandlerEvent> + From<DiscoveryHandlerEvent> + Send + Sync + 'static,
@@ -202,5 +202,14 @@ where
                 log::error!("cannot convert to DiscoveryBehaviorEvent");
             }
         }
+    }
+
+    fn on_rpc(
+        &mut self,
+        agent: &BehaviorAgent<HE, MSG>,
+        req: Req,
+        res: Box<dyn RpcAnswer<Res>>,
+    ) -> bool {
+        todo!()
     }
 }

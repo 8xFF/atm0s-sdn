@@ -1,7 +1,7 @@
-use crate::plane::{BehaviorAgent, ConnectionAgent};
+use crate::internal::agent::{BehaviorAgent, ConnectionAgent};
 use crate::transport::{
     ConnectionAcceptor, ConnectionEvent, ConnectionRejectReason, ConnectionSender,
-    OutgoingConnectionError,
+    OutgoingConnectionError, RpcAnswer,
 };
 use bluesea_identity::PeerId;
 use std::sync::Arc;
@@ -21,7 +21,7 @@ pub trait ConnectionHandler<BE, HE, MSG>: Send + Sync {
     fn on_closed(&mut self, agent: &ConnectionAgent<BE, HE, MSG>);
 }
 
-pub trait NetworkBehavior<BE, HE, MSG>
+pub trait NetworkBehavior<BE, HE, MSG, Req, Res>
 where
     MSG: Send + Sync,
 {
@@ -71,4 +71,10 @@ where
         connection_id: u32,
         event: BE,
     );
+    fn on_rpc(
+        &mut self,
+        agent: &BehaviorAgent<HE, MSG>,
+        req: Req,
+        res: Box<dyn RpcAnswer<Res>>,
+    ) -> bool;
 }
