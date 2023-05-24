@@ -3,8 +3,10 @@ members = [
     "packages/network",
     "packages/core/utils",
     "packages/core/identity",
+    "packages/core/multiaddr",
     "packages/core/router",
     "packages/services/discovery",
+    "packages/services/manual",
     "packages/transports/vnet",
     "packages/transports/tcp",
     "packages/runner",
@@ -14,9 +16,9 @@ members = [
 async-trait = "0.1"
 async-std = { version = "1.12", features = ["unstable", "attributes"] }
 bluesea-identity = { path = "packages/core/identity" }
+multiaddr = { path = "packages/core/multiaddr" }
 quickcheck = { package = "quickcheck-ext", path = "packages/misc/quickcheck-ext" }
 utils = { package = "utils", path = "packages/core/utils" }
-kademlia = { package = "kademlia", path = "packages/core/kademlia" }
 network = { package = "network", path = "packages/network" }
 transport-vnet = { package = "vnet", path = "packages/transports/vnet" }
 thiserror = "1.0"

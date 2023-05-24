@@ -74,7 +74,7 @@ pub enum ConnectionEvent<MSG> {
     Stats(ConnectionStats),
 }
 
-#[derive(PartialEq, Error, Debug)]
+#[derive(PartialEq, Error, Clone, Debug)]
 pub enum ConnectionRejectReason {
     #[error("Connection Limited")]
     ConnectionLimited,
@@ -105,7 +105,7 @@ pub trait ConnectionReceiver<MSG> {
     async fn poll(&mut self) -> Result<ConnectionEvent<MSG>, ()>;
 }
 
-#[derive(PartialEq, Error, Debug)]
+#[derive(PartialEq, Error, Clone, Debug)]
 pub enum OutgoingConnectionError {
     #[error("Too many connection")]
     TooManyConnection,

@@ -1,5 +1,6 @@
 pub type PeerId = u32;
 pub type PeerAddr = multiaddr::Multiaddr;
+use crate::multiaddr::Protocol;
 pub use multiaddr;
 
 pub enum PeerSegment {
@@ -13,6 +14,10 @@ pub trait PeerIdType: Clone {
     fn distance(&self, other: &PeerId) -> u32;
     fn distance_bits(&self, other: &PeerId) -> u8;
     fn bucket_index(&self) -> u8;
+}
+
+pub trait PeerAddrType {
+    fn peer_id(&self) -> Option<PeerId>;
 }
 
 impl PeerIdType for PeerId {
@@ -35,6 +40,18 @@ impl PeerIdType for PeerId {
 
     fn bucket_index(&self) -> u8 {
         (32 - self.leading_zeros()) as u8
+    }
+}
+
+impl PeerAddrType for PeerAddr {
+    fn peer_id(&self) -> Option<PeerId> {
+        for protocol in self.iter() {
+            match protocol {
+                Protocol::P2p(node_id) => return Some(node_id),
+                _ => {}
+            }
+        }
+        None
     }
 }
 

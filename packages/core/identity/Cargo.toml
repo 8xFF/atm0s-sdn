@@ -7,4 +7,4 @@ edition = "2021"
 
 [dependencies]
 rand = "0.8"
-multiaddr = "0.16"
+multiaddr = { workspace = true }
