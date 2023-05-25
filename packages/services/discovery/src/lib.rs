@@ -16,8 +16,7 @@ mod tests {
     use crate::behavior::{DiscoveryNetworkBehavior, DiscoveryNetworkBehaviorOpts};
     use crate::msg::{DiscoveryBehaviorEvent, DiscoveryHandlerEvent, DiscoveryMsg};
     use crate::DISCOVERY_SERVICE_ID;
-    use bluesea_identity::multiaddr::Protocol;
-    use bluesea_identity::PeerAddr;
+    use bluesea_identity::{PeerAddr, Protocol};
     use network::convert_enum;
     use network::mock::{MockInput, MockOutput, MockTransport, MockTransportRpc};
     use network::plane::{NetworkPlane, NetworkPlaneConfig};

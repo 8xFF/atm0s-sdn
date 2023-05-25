@@ -8,8 +8,7 @@ mod tests {
         OutgoingConnectionError, RpcAnswer,
     };
     use crate::{BehaviorAgent, ConnectionAgent};
-    use bluesea_identity::multiaddr::Protocol;
-    use bluesea_identity::{PeerAddr, PeerId};
+    use bluesea_identity::{PeerAddr, PeerId, Protocol};
     use parking_lot::Mutex;
     use std::collections::VecDeque;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};

@@ -1,5 +1,6 @@
 use async_std::channel::{bounded, Receiver, Sender};
 use bluesea_identity::{PeerAddr, PeerId};
+use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use thiserror::Error;
@@ -50,7 +51,7 @@ pub trait TransportConnector: Send + Sync {
     ) -> Result<TransportPendingOutgoing, OutgoingConnectionError>;
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Serialize, Deserialize)]
 pub enum ConnectionMsg<MSG> {
     Reliable { stream_id: u16, data: MSG },
     Unreliable { stream_id: u16, data: MSG },

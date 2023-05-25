@@ -211,8 +211,7 @@ impl KBucketTableWrap {
 #[cfg(test)]
 mod tests {
     use crate::kbucket::{KBucketTable, KBucketTableWrap};
-    use bluesea_identity::multiaddr::Protocol;
-    use bluesea_identity::PeerAddr;
+    use bluesea_identity::{PeerAddr, Protocol};
 
     #[test]
     fn simple_table() {

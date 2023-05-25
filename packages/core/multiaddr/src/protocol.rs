@@ -270,7 +270,7 @@ impl<'a> Protocol<'a> {
                 Ok((Protocol::Memory(num), rest))
             }
             P2P => {
-                let (data, rest) = split_at(2, input)?;
+                let (data, rest) = split_at(4, input)?;
                 let mut rdr = Cursor::new(data);
                 let num = rdr.read_u32::<BigEndian>()?;
                 Ok((Protocol::P2p(num), rest))

@@ -1,5 +1,5 @@
 use crate::earth::VnetEarth;
-use bluesea_identity::multiaddr::Protocol;
+use bluesea_identity::Protocol;
 use network::transport::{OutgoingConnectionError, TransportConnector, TransportPendingOutgoing};
 use std::sync::Arc;
 

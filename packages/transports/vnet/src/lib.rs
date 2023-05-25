@@ -10,8 +10,7 @@ pub use transport::VnetTransport;
 #[cfg(test)]
 mod tests {
     use crate::{VnetEarth, VnetTransport};
-    use bluesea_identity::multiaddr::Protocol;
-    use bluesea_identity::PeerAddr;
+    use bluesea_identity::{PeerAddr, Protocol};
     use network::transport::{
         ConnectionEvent, ConnectionMsg, OutgoingConnectionError, Transport, TransportEvent,
     };

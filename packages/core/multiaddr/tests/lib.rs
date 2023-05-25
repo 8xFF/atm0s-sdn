@@ -102,8 +102,11 @@ impl Arbitrary for Proto {
             9 => Proto(P2pWebRtcDirect),
             10 => Proto(P2pWebRtcStar),
             11 => Proto(WebRTCDirect),
+            12 => Proto(WebRTCDirect),
             13 => Proto(P2pWebSocketStar),
             14 => Proto(Memory(Arbitrary::arbitrary(g))),
+            15 => Proto(Memory(Arbitrary::arbitrary(g))),
+            16 => Proto(Memory(Arbitrary::arbitrary(g))),
             17 => Proto(P2p(Arbitrary::arbitrary(g))),
             18 => Proto(P2pCircuit),
             19 => Proto(Quic),
@@ -195,11 +198,7 @@ fn construct_success() {
     ma_valid("/sctp/1234", "840104D2", vec![Sctp(1234)]);
     ma_valid("/udp/65535", "9102FFFF", vec![Udp(65535)]);
     ma_valid("/tcp/65535", "06FFFF", vec![Tcp(65535)]);
-    ma_valid(
-        "/p2p/1234",
-        "A503221220D52EBB89D85B02A284948203A62FF28389C57C9F42BEEC4EC20DB76A68911C0B",
-        vec![P2p(1234)],
-    );
+    ma_valid("/p2p/1234", "A503000004D2", vec![P2p(1234)]);
     ma_valid(
         "/udp/1234/sctp/1234",
         "910204D2840104D2",
@@ -216,7 +215,7 @@ fn construct_success() {
     ma_valid("/tcp/1234/https", "0604D2BB03", vec![Tcp(1234), Https]);
     ma_valid(
         "/p2p/1000/tcp/1234",
-        "A503221220D52EBB89D85B02A284948203A62FF28389C57C9F42BEEC4EC20DB76A68911C0B0604D2",
+        "A503000003E80604D2",
         vec![P2p(1000), Tcp(1234)],
     );
     ma_valid(
@@ -236,30 +235,44 @@ fn construct_success() {
     );
     ma_valid(
         "/ip4/127.0.0.1/p2p/1000",
-        "047F000001A503221220D52EBB89D85B02A284948203A62FF28389C57C9F42BEEC4EC20DB76A68911C0B",
+        "047F000001A503000003E8",
         vec![Ip4(local), P2p(1000)],
     );
-    ma_valid("/ip4/127.0.0.1/p2p/1000/tcp/1234",
-             "047F000001A503221220D52EBB89D85B02A284948203A62FF28389C57C9F42BEEC4EC20DB76A68911C0B0604D2",
-             vec![Ip4(local), P2p(1000), Tcp(1234)]);
+    ma_valid(
+        "/ip4/127.0.0.1/p2p/1000/tcp/1234",
+        "047F000001A503000003E80604D2",
+        vec![Ip4(local), P2p(1000), Tcp(1234)],
+    );
     // /unix/a/b/c/d/e,
     // /unix/stdio,
     // /ip4/1.2.3.4/tcp/80/unix/a/b/c/d/e/f,
     // /ip4/127.0.0.1/p2p/QmcgpsyWgH8Y8ajJz1Cu72KnS5uo2Aa2LpzU7kinSupNKC/tcp/1234/unix/stdio
-    ma_valid("/ip6/2001:8a0:7ac5:4201:3ac9:86ff:fe31:7095/tcp/8000/ws/p2p/1000",
-             "29200108A07AC542013AC986FFFE317095061F40DD03A503221220D52EBB89D85B02A284948203A62FF28389C57C9F42BEEC4EC20DB76A68911C0B",
-             vec![Ip6(addr6), Tcp(8000), Ws("/".into()), P2p(1000)
-             ]);
-    ma_valid("/p2p-webrtc-star/ip4/127.0.0.1/tcp/9090/ws/p2p/1000",
-             "9302047F000001062382DD03A503221220D52EBB89D85B02A284948203A62FF28389C57C9F42BEEC4EC20DB76A68911C0B",
-             vec![P2pWebRtcStar, Ip4(local), Tcp(9090), Ws("/".into()), P2p(1000)
-             ]);
-    ma_valid("/ip6/2001:8a0:7ac5:4201:3ac9:86ff:fe31:7095/tcp/8000/wss/p2p/1000",
-             "29200108A07AC542013AC986FFFE317095061F40DE03A503221220D52EBB89D85B02A284948203A62FF28389C57C9F42BEEC4EC20DB76A68911C0B",
-             vec![Ip6(addr6), Tcp(8000), Wss("/".into()), P2p(1000)]);
-    ma_valid("/ip4/127.0.0.1/tcp/9090/p2p-circuit/p2p/1000",
-             "047F000001062382A202A503221220D52EBB89D85B02A284948203A62FF28389C57C9F42BEEC4EC20DB76A68911C0B",
-             vec![Ip4(local), Tcp(9090), P2pCircuit, P2p(1000)]);
+    ma_valid(
+        "/ip6/2001:8a0:7ac5:4201:3ac9:86ff:fe31:7095/tcp/8000/ws/p2p/1000",
+        "29200108A07AC542013AC986FFFE317095061F40DD03A503000003E8",
+        vec![Ip6(addr6), Tcp(8000), Ws("/".into()), P2p(1000)],
+    );
+    ma_valid(
+        "/p2p-webrtc-star/ip4/127.0.0.1/tcp/9090/ws/p2p/1000",
+        "9302047F000001062382DD03A503000003E8",
+        vec![
+            P2pWebRtcStar,
+            Ip4(local),
+            Tcp(9090),
+            Ws("/".into()),
+            P2p(1000),
+        ],
+    );
+    ma_valid(
+        "/ip6/2001:8a0:7ac5:4201:3ac9:86ff:fe31:7095/tcp/8000/wss/p2p/1000",
+        "29200108A07AC542013AC986FFFE317095061F40DE03A503000003E8",
+        vec![Ip6(addr6), Tcp(8000), Wss("/".into()), P2p(1000)],
+    );
+    ma_valid(
+        "/ip4/127.0.0.1/tcp/9090/p2p-circuit/p2p/1000",
+        "047F000001062382A202A503000003E8",
+        vec![Ip4(local), Tcp(9090), P2pCircuit, P2p(1000)],
+    );
     ma_valid(
         "/dnsaddr/sjc-1.bootstrap.libp2p.io",
         "3819736A632D312E626F6F7473747261702E6C69627032702E696F",
@@ -267,8 +280,12 @@ fn construct_success() {
     );
     ma_valid(
         "/dnsaddr/sjc-1.bootstrap.libp2p.io/tcp/1234/p2p/1000",
-        "3819736A632D312E626F6F7473747261702E6C69627032702E696F0604D2A50322122006B3608AA000274049EB28AD8E793A26FF6FAB281A7D3BD77CD18EB745DFAABB",
-        vec![Dnsaddr(Cow::Borrowed("sjc-1.bootstrap.libp2p.io")), Tcp(1234), P2p(1000)]
+        "3819736A632D312E626F6F7473747261702E6C69627032702E696F0604D2A503000003E8",
+        vec![
+            Dnsaddr(Cow::Borrowed("sjc-1.bootstrap.libp2p.io")),
+            Tcp(1234),
+            P2p(1000),
+        ],
     );
     ma_valid(
         "/ip4/127.0.0.1/tcp/127/ws",
@@ -487,26 +504,25 @@ fn protocol_stack() {
         "/sctp/1234",
         "/udp/65535",
         "/tcp/65535",
-        "/p2p/QmcgpsyWgH8Y8ajJz1Cu72KnS5uo2Aa2LpzU7kinSupNKC",
+        "/p2p/1000",
         "/udp/1234/sctp/1234",
         "/udp/1234/udt",
         "/udp/1234/utp",
         "/tcp/1234/http",
         "/tcp/1234/tls/http",
         "/tcp/1234/https",
-        "/p2p/QmcgpsyWgH8Y8ajJz1Cu72KnS5uo2Aa2LpzU7kinSupNKC/tcp/1234",
+        "/p2p/1000/tcp/1234",
         "/ip4/127.0.0.1/udp/1234",
         "/ip4/127.0.0.1/udp/0",
         "/ip4/127.0.0.1/tcp/1234",
-        "/ip4/127.0.0.1/p2p/QmcgpsyWgH8Y8ajJz1Cu72KnS5uo2Aa2LpzU7kinSupNKC",
-        "/ip4/127.0.0.1/p2p/QmcgpsyWgH8Y8ajJz1Cu72KnS5uo2Aa2LpzU7kinSupNKC/tcp/1234",
-        "/ip6/2001:8a0:7ac5:4201:3ac9:86ff:fe31:7095/tcp/8000/ws/p2p/QmcgpsyWgH8Y8ajJz1Cu72KnS5uo2Aa2LpzU7kinSupNKC",
-        "/p2p-webrtc-star/ip4/127.0.0.1/tcp/9090/ws/p2p/QmcgpsyWgH8Y8ajJz1Cu72KnS5uo2Aa2LpzU7kinSupNKC",
-        "/ip6/2001:8a0:7ac5:4201:3ac9:86ff:fe31:7095/tcp/8000/wss/p2p/QmcgpsyWgH8Y8ajJz1Cu72KnS5uo2Aa2LpzU7kinSupNKC",
-        "/ip4/127.0.0.1/tcp/9090/p2p-circuit/p2p/QmcgpsyWgH8Y8ajJz1Cu72KnS5uo2Aa2LpzU7kinSupNKC",
-        "/onion/aaimaq4ygg2iegci:80",
+        "/ip4/127.0.0.1/p2p/1000",
+        "/ip4/127.0.0.1/p2p/1000/tcp/1234",
+        "/ip6/2001:8a0:7ac5:4201:3ac9:86ff:fe31:7095/tcp/8000/ws/p2p/1000",
+        "/p2p-webrtc-star/ip4/127.0.0.1/tcp/9090/ws/p2p/1000",
+        "/ip6/2001:8a0:7ac5:4201:3ac9:86ff:fe31:7095/tcp/8000/wss/p2p/1000",
+        "/ip4/127.0.0.1/tcp/9090/p2p-circuit/p2p/1000",
         "/dnsaddr/sjc-1.bootstrap.libp2p.io",
-        "/dnsaddr/sjc-1.bootstrap.libp2p.io/tcp/1234/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
+        "/dnsaddr/sjc-1.bootstrap.libp2p.io/tcp/1234/p2p/1000",
         "/ip4/127.0.0.1/tcp/127/ws",
         "/ip4/127.0.0.1/tcp/127/tls",
         "/ip4/127.0.0.1/tcp/127/tls/ws",

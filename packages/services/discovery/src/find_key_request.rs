@@ -214,8 +214,7 @@ impl FindKeyRequest {
 #[cfg(test)]
 mod tests {
     use super::{FindKeyRequest, FindKeyRequestStatus};
-    use bluesea_identity::multiaddr::Protocol;
-    use bluesea_identity::PeerAddr;
+    use bluesea_identity::{PeerAddr, Protocol};
 
     #[derive(PartialEq, Debug)]
     enum Msg {

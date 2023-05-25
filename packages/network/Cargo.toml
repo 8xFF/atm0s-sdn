@@ -15,6 +15,7 @@ log = { workspace = true }
 utils = { workspace = true }
 thiserror = { workspace = true }
 bluesea-identity = { workspace = true }
+serde = { workspace = true }
 
 [dev-dependencies]
 env_logger = { workspace = true }

@@ -249,8 +249,7 @@ impl DiscoveryLogic {
 #[cfg(test)]
 mod test {
     use crate::logic::{Action, DiscoveryLogic, DiscoveryLogicConf, DiscoveryMsg, Input};
-    use bluesea_identity::multiaddr::Protocol;
-    use bluesea_identity::PeerAddr;
+    use bluesea_identity::{PeerAddr, Protocol};
     use std::sync::Arc;
     use utils::SystemTimer;
 

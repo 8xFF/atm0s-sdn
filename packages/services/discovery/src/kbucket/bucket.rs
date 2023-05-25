@@ -194,8 +194,7 @@ impl KBucket {
 #[cfg(test)]
 mod tests {
     use crate::kbucket::bucket::KBucket;
-    use bluesea_identity::multiaddr::Protocol;
-    use bluesea_identity::PeerAddr;
+    use bluesea_identity::{PeerAddr, Protocol};
 
     #[test]
     fn simple_add_get() {
