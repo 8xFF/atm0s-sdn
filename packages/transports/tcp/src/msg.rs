@@ -6,5 +6,7 @@ use serde::{Deserialize, Serialize};
 pub enum TcpMsg<MSG> {
     ConnectRequest(PeerId, PeerId, PeerAddr),
     ConnectResponse(Result<(PeerId, PeerAddr), String>),
+    Ping(u64),
+    Pong(u64),
     Msg(u8, ConnectionMsg<MSG>),
 }

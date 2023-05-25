@@ -59,11 +59,11 @@ pub enum ConnectionMsg<MSG> {
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct ConnectionStats {
-    rtt_ms: u16,
-    sending_kbps: u32,
-    send_est_kbps: u32,
-    loss_percent: u32,
-    over_use: bool,
+    pub rtt_ms: u16,
+    pub sending_kbps: u32,
+    pub send_est_kbps: u32,
+    pub loss_percent: u32,
+    pub over_use: bool,
 }
 
 #[derive(PartialEq, Debug)]

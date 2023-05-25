@@ -12,7 +12,8 @@ mod tests {
     use crate::transport::TcpTransport;
     use bluesea_identity::{PeerAddr, PeerAddrBuilder, Protocol};
     use network::transport::{
-        ConnectionEvent, ConnectionMsg, OutgoingConnectionError, Transport, TransportEvent,
+        ConnectionEvent, ConnectionMsg, ConnectionStats, OutgoingConnectionError, Transport,
+        TransportEvent,
     };
     use serde::{Deserialize, Serialize};
     use std::net::Ipv4Addr;
@@ -82,32 +83,37 @@ mod tests {
             }
         };
 
-        tran1_sender.send(
-            0,
-            ConnectionMsg::Reliable {
-                stream_id: 0,
-                data: Msg::Ping,
-            },
-        );
-        let received_event = tran2_recv.poll().await.unwrap();
-        assert_eq!(
-            received_event,
-            ConnectionEvent::Msg {
-                service_id: 0,
-                msg: ConnectionMsg::Reliable {
-                    stream_id: 0,
-                    data: Msg::Ping
-                }
+        let task = async_std::task::spawn(async move {
+            match tran2_recv.poll().await.unwrap() {
+                ConnectionEvent::Stats(stats) => {}
+                e => panic!("Should received stats {:?}", e),
             }
-        );
+            tran2_sender.send(
+                1,
+                ConnectionMsg::Reliable {
+                    stream_id: 0,
+                    data: Msg::Ping,
+                },
+            );
+            let received_event = tran2_recv.poll().await.unwrap();
+            assert_eq!(
+                received_event,
+                ConnectionEvent::Msg {
+                    service_id: 0,
+                    msg: ConnectionMsg::Reliable {
+                        stream_id: 0,
+                        data: Msg::Ping
+                    }
+                }
+            );
+            assert_eq!(tran2_recv.poll().await, Err(()));
+        });
 
-        tran2_sender.send(
-            1,
-            ConnectionMsg::Reliable {
-                stream_id: 0,
-                data: Msg::Ping,
-            },
-        );
+        match tran1_recv.poll().await.unwrap() {
+            ConnectionEvent::Stats(stats) => {}
+            e => panic!("Should received stats {:?}", e),
+        }
+
         let received_event = tran1_recv.poll().await.unwrap();
         assert_eq!(
             received_event,
@@ -120,9 +126,17 @@ mod tests {
             }
         );
 
+        tran1_sender.send(
+            0,
+            ConnectionMsg::Reliable {
+                stream_id: 0,
+                data: Msg::Ping,
+            },
+        );
+
         tran1_sender.close();
-        assert_eq!(tran2_recv.poll().await, Err(()));
         assert_eq!(tran1_recv.poll().await, Err(()));
+        task.cancel();
     }
 
     #[async_std::test]

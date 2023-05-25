@@ -13,6 +13,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
 use std::time::Duration;
+use utils::{SystemTimer, Timer};
 
 pub struct TcpTransport<MSG> {
     peer_id: PeerId,
@@ -22,6 +23,7 @@ pub struct TcpTransport<MSG> {
     internal_rx: Receiver<TransportEvent<MSG>>,
     seed: u32,
     connector: Arc<TcpConnector<MSG>>,
+    timer: Arc<dyn Timer>,
 }
 
 impl<MSG> TcpTransport<MSG> {
@@ -47,7 +49,9 @@ impl<MSG> TcpTransport<MSG> {
                 peer_id,
                 peer_addr_builder,
                 internal_tx,
+                timer: Arc::new(SystemTimer()),
             }),
+            timer: Arc::new(SystemTimer()),
         }
     }
 }
@@ -68,6 +72,7 @@ where
                     Ok((mut socket, addr)) => {
                         log::info!("[TcpTransport] incoming connect from {}", addr);
                         let internal_tx = self.internal_tx.clone();
+                        let timer = self.timer.clone();
                         let peer_id = self.peer_id;
                         let peer_addr = self.peer_addr_builder.addr();
                         let conn_id = self.seed * 100 + INCOMING_POSTFIX;
@@ -76,22 +81,27 @@ where
                         async_std::task::spawn(async move {
                             match incoming_handshake::<MSG>(peer_id, peer_addr, &mut socket, conn_id, &internal_tx).await {
                                 Ok((remote_peer_id, remote_addr)) => {
-                                    let connection_sender = Arc::new(TcpConnectionSender::new(
+                                    let (connection_sender, reliable_sender) = TcpConnectionSender::new(
+                                        peer_id,
                                         remote_peer_id,
                                         remote_addr.clone(),
                                         conn_id,
                                         1000,
                                         socket.clone(),
-                                    ));
+                                        timer.clone(),
+                                    );
                                     let connection_receiver = Box::new(TcpConnectionReceiver {
+                                        peer_id,
                                         remote_peer_id,
                                         remote_addr,
                                         conn_id,
                                         socket,
                                         buf: [0; BUFFER_LEN],
+                                        timer,
+                                        reliable_sender,
                                     });
                                     internal_tx.send(TransportEvent::Incoming(
-                                        connection_sender,
+                                        Arc::new(connection_sender),
                                         connection_receiver,
                                     )).await;
                                 }

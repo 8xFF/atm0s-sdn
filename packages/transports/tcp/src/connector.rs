@@ -13,12 +13,14 @@ use serde::{de::DeserializeOwned, Serialize};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use utils::Timer;
 
 pub struct TcpConnector<MSG> {
     pub(crate) seed: AtomicU32,
     pub(crate) peer_id: PeerId,
     pub(crate) peer_addr_builder: Arc<PeerAddrBuilder>,
     pub(crate) internal_tx: Sender<TransportEvent<MSG>>,
+    pub(crate) timer: Arc<dyn Timer>,
 }
 
 impl<MSG> TcpConnector<MSG> {
@@ -92,6 +94,7 @@ where
         remote_peer_addr: PeerAddr,
     ) -> Result<TransportPendingOutgoing, OutgoingConnectionError> {
         log::info!("[TcpConnector] connect to peer {}", remote_peer_addr);
+        let timer = self.timer.clone();
         let peer_id = self.peer_id;
         let peer_addr = self.peer_addr_builder.addr();
         let remote_addr = Self::multiaddr_to_socketaddr(remote_peer_addr.clone())
@@ -126,23 +129,28 @@ where
                     .await
                     {
                         Ok(_) => {
-                            let connection_sender = Arc::new(TcpConnectionSender::new(
+                            let (connection_sender, reliable_sender) = TcpConnectionSender::new(
+                                peer_id,
                                 remote_peer_id,
                                 remote_peer_addr.clone(),
                                 conn_id,
                                 1000,
                                 socket.clone(),
-                            ));
+                                timer.clone(),
+                            );
                             let connection_receiver = Box::new(TcpConnectionReceiver {
+                                peer_id,
                                 remote_peer_id,
                                 remote_addr: remote_peer_addr,
                                 conn_id,
                                 socket,
                                 buf: [0; BUFFER_LEN],
+                                timer,
+                                reliable_sender,
                             });
                             internal_tx
                                 .send(TransportEvent::Outgoing(
-                                    connection_sender,
+                                    Arc::new(connection_sender),
                                     connection_receiver,
                                 ))
                                 .await;
