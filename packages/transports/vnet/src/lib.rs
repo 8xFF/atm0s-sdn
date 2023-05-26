@@ -35,7 +35,7 @@ mod tests {
         let conn_id = connector1
             .connect_to(2, NodeAddr::from(Protocol::Memory(2)))
             .unwrap()
-            .connection_id;
+            .conn_id;
 
         match tran2.recv().await.unwrap() {
             TransportEvent::IncomingRequest(node, conn, acceptor) => {
@@ -63,7 +63,7 @@ mod tests {
             TransportEvent::Incoming(sender, recv) => {
                 assert_eq!(sender.remote_node_id(), 1);
                 assert_eq!(sender.remote_addr(), NodeAddr::from(Protocol::Memory(1)));
-                assert_eq!(sender.connection_id(), conn_id);
+                assert_eq!(sender.conn_id(), conn_id);
                 (sender, recv)
             }
             _ => {
@@ -75,7 +75,7 @@ mod tests {
             TransportEvent::Outgoing(sender, recv) => {
                 assert_eq!(sender.remote_node_id(), 2);
                 assert_eq!(sender.remote_addr(), NodeAddr::from(Protocol::Memory(2)));
-                assert_eq!(sender.connection_id(), conn_id);
+                assert_eq!(sender.conn_id(), conn_id);
                 (sender, recv)
             }
             _ => {
@@ -137,7 +137,7 @@ mod tests {
         let conn_id = connector1
             .connect_to(2, NodeAddr::from(Protocol::Memory(2)))
             .unwrap()
-            .connection_id;
+            .conn_id;
         match tran1.recv().await.unwrap() {
             TransportEvent::OutgoingError { err, .. } => {
                 assert_eq!(err, OutgoingConnectionError::DestinationNotFound);
@@ -160,7 +160,7 @@ mod tests {
         let conn_id = connector1
             .connect_to(3, NodeAddr::from(Protocol::Memory(2)))
             .unwrap()
-            .connection_id;
+            .conn_id;
         match tran1.recv().await.unwrap() {
             TransportEvent::OutgoingError { err, .. } => {
                 assert_eq!(err, OutgoingConnectionError::AuthenticationError);

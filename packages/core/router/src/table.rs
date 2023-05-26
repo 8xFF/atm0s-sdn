@@ -252,9 +252,9 @@ mod tests {
         let node2: NodeId = 0x2;
         let node3: NodeId = 0x3;
 
-        let conn1: ConnId = 0x1;
-        let conn2: ConnId = 0x2;
-        let conn3: ConnId = 0x3;
+        let conn1: ConnId = ConnId::from_out(0, 0x1);
+        let conn2: ConnId = ConnId::from_out(0, 0x2);
+        let conn3: ConnId = ConnId::from_out(0, 0x3);
 
         table.add_direct(conn1, node1, Metric::new(1, vec![1, 0], 1));
         table.add_direct(conn2, node2, Metric::new(2, vec![2, 4, 0], 1));
@@ -312,9 +312,9 @@ mod tests {
         let node2: NodeId = 0x2;
         let node3: NodeId = 0x3;
 
-        let conn1: ConnId = 0x1;
-        let conn2: ConnId = 0x2;
-        let conn3: ConnId = 0x3;
+        let conn1: ConnId = ConnId::from_out(0, 0x1);
+        let conn2: ConnId = ConnId::from_out(0, 0x2);
+        let conn3: ConnId = ConnId::from_out(0, 0x3);
 
         table.add_direct(conn1, node1, Metric::new(1, vec![1, 0], 1));
 
@@ -359,9 +359,9 @@ mod tests {
         let node_c: NodeId = 0x2;
         let node_d: NodeId = 0x3;
 
-        let conn_b: ConnId = 0x1;
-        let conn_c: ConnId = 0x2;
-        let conn_d: ConnId = 0x3;
+        let conn_b: ConnId = ConnId::from_out(0, 0x1);
+        let conn_c: ConnId = ConnId::from_out(0, 0x2);
+        let conn_d: ConnId = ConnId::from_out(0, 0x3);
 
         let mut table_a = Table::new(node_a, 0);
 

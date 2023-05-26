@@ -2,10 +2,9 @@ use crate::connection::{recv_tcp_stream, TcpConnectionReceiver, TcpConnectionSen
 use crate::connector::TcpConnector;
 use crate::handshake::{incoming_handshake, IncomingHandshakeError};
 use crate::msg::TcpMsg;
-use crate::INCOMING_POSTFIX;
 use async_std::channel::{bounded, unbounded, Receiver, Sender};
 use async_std::net::{Shutdown, TcpListener};
-use bluesea_identity::{NodeAddrBuilder, NodeId, Protocol};
+use bluesea_identity::{ConnDirection, ConnId, NodeAddrBuilder, NodeId, Protocol};
 use futures_util::{select, AsyncReadExt, AsyncWriteExt, FutureExt};
 use network::transport::{AsyncConnectionAcceptor, Transport, TransportConnector, TransportEvent};
 use serde::{de::DeserializeOwned, Serialize};
@@ -21,7 +20,7 @@ pub struct TcpTransport<MSG> {
     listener: TcpListener,
     internal_tx: Sender<TransportEvent<MSG>>,
     internal_rx: Receiver<TransportEvent<MSG>>,
-    seed: u32,
+    seed: u64,
     connector: Arc<TcpConnector<MSG>>,
     timer: Arc<dyn Timer>,
 }
@@ -81,7 +80,7 @@ where
                         let timer = self.timer.clone();
                         let node_id = self.node_id;
                         let node_addr = self.node_addr_builder.addr();
-                        let conn_id = self.seed * 100 + INCOMING_POSTFIX;
+                        let conn_id = ConnId::from_in(1, self.seed);
                         self.seed += 1;
 
                         async_std::task::spawn(async move {

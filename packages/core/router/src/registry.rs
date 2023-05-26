@@ -155,7 +155,7 @@ mod tests {
     use crate::registry::{Registry, RegistrySync, REGISTRY_LOCAL_BW};
     use crate::table::Metric;
     use crate::ServiceDestination;
-    use bluesea_identity::{ConnId, NodeId};
+    use bluesea_identity::{ConnDirection, ConnId, NodeId};
 
     #[test]
     fn create_manual() {
@@ -179,10 +179,10 @@ mod tests {
 
     #[test]
     fn del_direct() {
-        let conn0: ConnId = 0x0;
+        let conn0: ConnId = ConnId::from_out(0, 0x0);
         let node0: NodeId = 0x0;
 
-        let conn1: ConnId = 0x1;
+        let conn1: ConnId = ConnId::from_out(0, 0x1);
         let node1: NodeId = 0x1;
 
         let mut registry = Registry::new(node0);
@@ -208,7 +208,7 @@ mod tests {
         let node0: NodeId = 0x0;
         let mut registry = Registry::new(node0);
 
-        let conn1: ConnId = 0x1;
+        let conn1: ConnId = ConnId::from_out(0, 0x1);
         let node1: NodeId = 0x1;
         let _node2: NodeId = 0x2;
         let _node3: NodeId = 0x3;
@@ -253,7 +253,7 @@ mod tests {
     fn remove_from_sync() {
         let node0: NodeId = 0x0;
         let mut registry = Registry::new(node0);
-        let conn1: ConnId = 0x1;
+        let conn1: ConnId = ConnId::from_out(0, 0x1);
         let node1: NodeId = 0x1;
         let node2: NodeId = 0x2;
         let node3: NodeId = 0x3;

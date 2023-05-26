@@ -1,5 +1,5 @@
 use async_std::channel::{Receiver, Sender};
-use bluesea_identity::{NodeAddr, NodeId};
+use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use network::transport::{ConnectionEvent, ConnectionMsg, ConnectionReceiver, ConnectionSender};
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -12,10 +12,10 @@ pub type VnetConnection<MSG> = (
 
 pub struct VnetConnectionReceiver<MSG> {
     pub(crate) remote_node_id: NodeId,
-    pub(crate) conn_id: u32,
+    pub(crate) conn_id: ConnId,
     pub(crate) remote_addr: NodeAddr,
     pub(crate) recv: Receiver<Option<(u8, ConnectionMsg<MSG>)>>,
-    pub(crate) connections: Arc<RwLock<HashMap<u32, (NodeId, NodeId)>>>,
+    pub(crate) connections: Arc<RwLock<HashMap<ConnId, (NodeId, NodeId)>>>,
 }
 
 #[async_trait::async_trait]
@@ -27,7 +27,7 @@ where
         self.remote_node_id
     }
 
-    fn connection_id(&self) -> u32 {
+    fn conn_id(&self) -> ConnId {
         self.conn_id
     }
 
@@ -48,7 +48,7 @@ where
 
 pub struct VnetConnectionSender<MSG> {
     pub(crate) remote_node_id: NodeId,
-    pub(crate) conn_id: u32,
+    pub(crate) conn_id: ConnId,
     pub(crate) remote_addr: NodeAddr,
     pub(crate) sender: Sender<Option<(u8, ConnectionMsg<MSG>)>>,
     pub(crate) remote_sender: Sender<Option<(u8, ConnectionMsg<MSG>)>>,
@@ -63,7 +63,7 @@ where
         self.remote_node_id
     }
 
-    fn connection_id(&self) -> u32 {
+    fn conn_id(&self) -> ConnId {
         self.conn_id
     }
 

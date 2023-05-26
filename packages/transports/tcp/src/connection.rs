@@ -2,7 +2,7 @@ use crate::msg::TcpMsg;
 use async_std::channel::{bounded, unbounded, Receiver, RecvError, Sender};
 use async_std::net::{Shutdown, TcpStream};
 use async_std::task::JoinHandle;
-use bluesea_identity::{NodeAddr, NodeId};
+use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use futures_util::io::{ReadHalf, WriteHalf};
 use futures_util::{select, AsyncReadExt, AsyncWriteExt, FutureExt, StreamExt};
 use network::transport::{
@@ -43,7 +43,7 @@ pub enum OutgoingEvent<MSG> {
 pub struct TcpConnectionSender<MSG> {
     remote_node_id: NodeId,
     remote_addr: NodeAddr,
-    conn_id: u32,
+    conn_id: ConnId,
     reliable_sender: Sender<OutgoingEvent<MSG>>,
     unreliable_sender: Sender<OutgoingEvent<MSG>>,
     task: Option<JoinHandle<()>>,
@@ -57,7 +57,7 @@ where
         node_id: NodeId,
         remote_node_id: NodeId,
         remote_addr: NodeAddr,
-        conn_id: u32,
+        conn_id: ConnId,
         unreliable_queue_size: usize,
         mut socket: TcpStream,
         timer: Arc<dyn Timer>,
@@ -154,7 +154,7 @@ where
         self.remote_node_id
     }
 
-    fn connection_id(&self) -> u32 {
+    fn conn_id(&self) -> ConnId {
         self.conn_id
     }
 
@@ -170,6 +170,8 @@ where
                     .send_blocking(OutgoingEvent::Msg(TcpMsg::Msg(service_id, msg)))
                 {
                     log::error!("[ConnectionSender] send reliable msg error {:?}", e);
+                } else {
+                    log::debug!("[ConnectionSender] send reliable msg");
                 }
             }
             ConnectionMsg::Unreliable { .. } => {
@@ -178,6 +180,8 @@ where
                     .try_send(OutgoingEvent::Msg(TcpMsg::Msg(service_id, msg)))
                 {
                     log::error!("[ConnectionSender] send unreliable msg error {:?}", e);
+                } else {
+                    log::debug!("[ConnectionSender] send unreliable msg");
                 }
             }
         }
@@ -215,7 +219,7 @@ pub struct TcpConnectionReceiver<MSG> {
     pub(crate) node_id: NodeId,
     pub(crate) remote_node_id: NodeId,
     pub(crate) remote_addr: NodeAddr,
-    pub(crate) conn_id: u32,
+    pub(crate) conn_id: ConnId,
     pub(crate) socket: TcpStream,
     pub(crate) buf: [u8; BUFFER_LEN],
     pub(crate) timer: Arc<dyn Timer>,
@@ -231,7 +235,7 @@ where
         self.remote_node_id
     }
 
-    fn connection_id(&self) -> u32 {
+    fn conn_id(&self) -> ConnId {
         self.conn_id
     }
 

@@ -7,15 +7,15 @@ use crate::transport::{
     TransportPendingOutgoing,
 };
 use async_std::channel::{bounded, unbounded, Receiver, Sender};
-use bluesea_identity::{NodeAddr, NodeId};
+use bluesea_identity::{ConnDirection, ConnId, NodeAddr, NodeId};
 use parking_lot::Mutex;
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
 pub struct MockTransportConnector<M: Send + Sync> {
     output: Arc<Mutex<VecDeque<MockOutput<M>>>>,
-    conn_id: Arc<AtomicU32>,
+    conn_id: Arc<AtomicU64>,
 }
 
 impl<M: Send + Sync> TransportConnector for MockTransportConnector<M> {
@@ -24,13 +24,12 @@ impl<M: Send + Sync> TransportConnector for MockTransportConnector<M> {
         node_id: NodeId,
         dest: NodeAddr,
     ) -> Result<TransportPendingOutgoing, OutgoingConnectionError> {
-        let conn_id = self.conn_id.fetch_add(1, Ordering::Relaxed);
+        let conn_seed = self.conn_id.fetch_add(1, Ordering::Relaxed);
+        let conn_id = ConnId::from_out(0, conn_seed);
         self.output
             .lock()
             .push_back(MockOutput::ConnectTo(node_id, dest));
-        Ok(TransportPendingOutgoing {
-            connection_id: conn_id,
-        })
+        Ok(TransportPendingOutgoing { conn_id })
     }
 }
 
@@ -38,9 +37,9 @@ pub struct MockTransport<M> {
     sender: Sender<MockInput<M>>,
     receiver: Receiver<MockInput<M>>,
     output: Arc<Mutex<VecDeque<MockOutput<M>>>>,
-    in_conns: HashMap<u32, Sender<Option<ConnectionEvent<M>>>>,
-    out_conns: HashMap<u32, Sender<Option<ConnectionEvent<M>>>>,
-    conn_id: Arc<AtomicU32>,
+    in_conns: HashMap<ConnId, Sender<Option<ConnectionEvent<M>>>>,
+    out_conns: HashMap<ConnId, Sender<Option<ConnectionEvent<M>>>>,
+    conn_id: Arc<AtomicU64>,
 }
 
 impl<M> MockTransport<M> {
@@ -177,7 +176,7 @@ impl<M: Send + Sync + 'static> Transport<M> for MockTransport<M> {
                     self.out_conns.remove(&connection_id);
                     break Ok(TransportEvent::OutgoingError {
                         node_id: node_id,
-                        connection_id,
+                        conn_id: connection_id,
                         err,
                     });
                 }

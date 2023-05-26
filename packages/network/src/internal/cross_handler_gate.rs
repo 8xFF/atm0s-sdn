@@ -1,25 +1,25 @@
 use crate::transport::{ConnectionMsg, ConnectionSender};
 use async_std::channel::{unbounded, Receiver, Sender};
-use bluesea_identity::NodeId;
+use bluesea_identity::{ConnId, NodeId};
 use std::collections::HashMap;
 use std::sync::Arc;
 
 pub(crate) enum CrossHandlerEvent<HE> {
     FromBehavior(HE),
-    FromHandler(NodeId, u32, HE),
+    FromHandler(NodeId, ConnId, HE),
 }
 
 #[derive(Debug)]
 pub enum CrossHandlerRoute {
     NodeFirst(NodeId),
-    Conn(u32),
+    Conn(ConnId),
 }
 
 pub(crate) struct CrossHandlerGate<HE, MSG> {
     nodes: HashMap<
         NodeId,
         HashMap<
-            u32,
+            ConnId,
             (
                 Sender<(u8, CrossHandlerEvent<HE>)>,
                 Arc<dyn ConnectionSender<MSG>>,
@@ -27,7 +27,7 @@ pub(crate) struct CrossHandlerGate<HE, MSG> {
         >,
     >,
     conns: HashMap<
-        u32,
+        ConnId,
         (
             Sender<(u8, CrossHandlerEvent<HE>)>,
             Arc<dyn ConnectionSender<MSG>>,
@@ -53,11 +53,11 @@ where
         &mut self,
         net_sender: Arc<dyn ConnectionSender<MSG>>,
     ) -> Option<Receiver<(u8, CrossHandlerEvent<HE>)>> {
-        if !self.conns.contains_key(&net_sender.connection_id()) {
+        if !self.conns.contains_key(&net_sender.conn_id()) {
             log::info!(
                 "[CrossHandlerGate] add_con {} {}",
                 net_sender.remote_node_id(),
-                net_sender.connection_id()
+                net_sender.conn_id()
             );
             let (tx, rx) = unbounded();
             let entry = self
@@ -65,19 +65,19 @@ where
                 .entry(net_sender.remote_node_id())
                 .or_insert_with(|| HashMap::new());
             self.conns
-                .insert(net_sender.connection_id(), (tx.clone(), net_sender.clone()));
-            entry.insert(net_sender.connection_id(), (tx.clone(), net_sender.clone()));
+                .insert(net_sender.conn_id(), (tx.clone(), net_sender.clone()));
+            entry.insert(net_sender.conn_id(), (tx.clone(), net_sender.clone()));
             Some(rx)
         } else {
             log::warn!(
                 "[CrossHandlerGate] add_conn duplicate {}",
-                net_sender.connection_id()
+                net_sender.conn_id()
             );
             None
         }
     }
 
-    pub(crate) fn remove_conn(&mut self, node: NodeId, conn: u32) -> Option<()> {
+    pub(crate) fn remove_conn(&mut self, node: NodeId, conn: ConnId) -> Option<()> {
         if self.conns.contains_key(&conn) {
             log::info!("[CrossHandlerGate] remove_con {} {}", node, conn);
             self.conns.remove(&conn);
@@ -93,7 +93,7 @@ where
         }
     }
 
-    pub(crate) fn close_conn(&self, conn: u32) {
+    pub(crate) fn close_conn(&self, conn: ConnId) {
         if let Some((s, c_s)) = self.conns.get(&conn) {
             log::info!(
                 "[CrossHandlerGate] close_con {} {}",
@@ -109,11 +109,7 @@ where
     pub(crate) fn close_node(&self, node: NodeId) {
         if let Some(conns) = self.nodes.get(&node) {
             for (_conn_id, (s, c_s)) in conns {
-                log::info!(
-                    "[CrossHandlerGate] close_node {} {}",
-                    node,
-                    c_s.connection_id()
-                );
+                log::info!("[CrossHandlerGate] close_node {} {}", node, c_s.conn_id());
                 c_s.close();
             }
         }

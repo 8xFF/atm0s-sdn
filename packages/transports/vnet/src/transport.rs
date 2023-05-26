@@ -54,10 +54,10 @@ where
             Some(VnetListenerEvent::Outgoing((sender, recv))) => {
                 Ok(TransportEvent::Outgoing(sender, recv))
             }
-            Some(VnetListenerEvent::OutgoingErr(connection_id, node_id, err)) => {
+            Some(VnetListenerEvent::OutgoingErr(node_id, conn_id, err)) => {
                 Ok(TransportEvent::OutgoingError {
-                    connection_id,
-                    node_id: node_id,
+                    node_id,
+                    conn_id,
                     err,
                 })
             }

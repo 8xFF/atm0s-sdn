@@ -96,17 +96,17 @@ impl Dest {
 #[cfg(test)]
 mod tests {
     use crate::table::{Dest, Metric, Path};
-    use bluesea_identity::{ConnId, NodeId};
+    use bluesea_identity::{ConnDirection, ConnId, NodeId};
 
     #[test]
     fn push_sort() {
-        let conn1: ConnId = 0x1;
+        let conn1: ConnId = ConnId::from_out(0, 0x1);
         let node1: NodeId = 0x1;
 
-        let conn2: ConnId = 0x2;
+        let conn2: ConnId = ConnId::from_out(0, 0x2);
         let node2: NodeId = 0x2;
 
-        let conn3: ConnId = 0x3;
+        let conn3: ConnId = ConnId::from_out(0, 0x3);
         let node3: NodeId = 0x3;
 
         let mut dest = Dest::default();
@@ -132,13 +132,13 @@ mod tests {
 
     #[test]
     fn delete_sort() {
-        let conn1: ConnId = 0x1;
+        let conn1: ConnId = ConnId::from_out(0, 0x1);
         let node1: NodeId = 0x1;
 
-        let conn2: ConnId = 0x2;
+        let conn2: ConnId = ConnId::from_out(0, 0x2);
         let node2: NodeId = 0x2;
 
-        let conn3: ConnId = 0x3;
+        let conn3: ConnId = ConnId::from_out(0, 0x3);
         let node3: NodeId = 0x3;
 
         let mut dest = Dest::default();
@@ -165,16 +165,16 @@ mod tests {
 
     #[test]
     fn with_hops() {
-        let conn1: ConnId = 0x1;
+        let conn1: ConnId = ConnId::from_out(0, 0x1);
         let node1: NodeId = 0x1;
 
-        let conn2: ConnId = 0x2;
+        let conn2: ConnId = ConnId::from_out(0, 0x2);
         let node2: NodeId = 0x2;
 
-        let conn3: ConnId = 0x3;
+        let conn3: ConnId = ConnId::from_out(0, 0x3);
         let node3: NodeId = 0x3;
 
-        let conn4: ConnId = 0x4;
+        let conn4: ConnId = ConnId::from_out(0, 0x4);
         let node4: NodeId = 0x4;
 
         let mut dest = Dest::default();

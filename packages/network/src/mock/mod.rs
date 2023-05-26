@@ -7,27 +7,27 @@ use crate::transport::{
     ConnectionMsg, ConnectionSender, OutgoingConnectionError, Transport, TransportConnector,
     TransportEvent, TransportPendingOutgoing,
 };
-use bluesea_identity::{NodeAddr, NodeId};
+use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
 pub enum MockInput<M> {
-    FakeIncomingConnection(NodeId, u32, NodeAddr),
+    FakeIncomingConnection(NodeId, ConnId, NodeAddr),
     ///Dont use this manual
-    FakeIncomingConnectionForce(NodeId, u32, NodeAddr),
-    FakeOutgoingConnection(NodeId, u32, NodeAddr),
+    FakeIncomingConnectionForce(NodeId, ConnId, NodeAddr),
+    FakeOutgoingConnection(NodeId, ConnId, NodeAddr),
     ///Dont use this manual
-    FakeOutgoingConnectionForce(NodeId, u32, NodeAddr),
-    FakeOutgoingConnectionError(NodeId, u32, OutgoingConnectionError),
-    FakeIncomingMsg(u8, u32, ConnectionMsg<M>),
-    FakeDisconnectIncoming(NodeId, u32),
-    FakeDisconnectOutgoing(NodeId, u32),
+    FakeOutgoingConnectionForce(NodeId, ConnId, NodeAddr),
+    FakeOutgoingConnectionError(NodeId, ConnId, OutgoingConnectionError),
+    FakeIncomingMsg(u8, ConnId, ConnectionMsg<M>),
+    FakeDisconnectIncoming(NodeId, ConnId),
+    FakeDisconnectOutgoing(NodeId, ConnId),
 }
 
 #[derive(PartialEq, Debug)]
 pub enum MockOutput<M> {
     ConnectTo(NodeId, NodeAddr),
-    SendTo(u8, NodeId, u32, ConnectionMsg<M>),
+    SendTo(u8, NodeId, ConnId, ConnectionMsg<M>),
 }
 
 pub use transport::MockTransport;

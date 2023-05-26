@@ -3,7 +3,7 @@ use crate::handler::DiscoveryConnectionHandler;
 use crate::logic::{Action, DiscoveryLogic, DiscoveryLogicConf, Input};
 use crate::msg::{DiscoveryBehaviorEvent, DiscoveryHandlerEvent, DiscoveryMsg};
 use crate::DISCOVERY_SERVICE_ID;
-use bluesea_identity::{NodeAddr, NodeId};
+use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use network::behaviour::{ConnectionHandler, NetworkBehavior};
 use network::transport::{
     ConnectionMsg, ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer,
@@ -74,7 +74,7 @@ impl DiscoveryNetworkBehavior {
     {
         if self
             .connection_group
-            .add(connection.remote_node_id(), connection.connection_id())
+            .add(connection.remote_node_id(), connection.conn_id())
         {
             self.logic.on_input(Input::OnConnected(
                 connection.remote_node_id(),
@@ -94,7 +94,7 @@ impl DiscoveryNetworkBehavior {
     {
         if self
             .connection_group
-            .remove(connection.remote_node_id(), connection.connection_id())
+            .remove(connection.remote_node_id(), connection.conn_id())
         {
             self.logic
                 .on_input(Input::OnDisconnected(connection.remote_node_id()));
@@ -128,7 +128,7 @@ where
     fn check_incoming_connection(
         &mut self,
         node: NodeId,
-        conn_id: u32,
+        conn_id: ConnId,
     ) -> Result<(), ConnectionRejectReason> {
         Ok(())
     }
@@ -136,7 +136,7 @@ where
     fn check_outgoing_connection(
         &mut self,
         node: NodeId,
-        conn_id: u32,
+        conn_id: ConnId,
     ) -> Result<(), ConnectionRejectReason> {
         Ok(())
     }
@@ -179,7 +179,7 @@ where
         &mut self,
         agent: &BehaviorAgent<HE, MSG>,
         node_id: NodeId,
-        connection_id: u32,
+        connection_id: ConnId,
         err: &OutgoingConnectionError,
     ) {
         self.logic.on_input(Input::OnConnectError(node_id));
@@ -190,7 +190,7 @@ where
         &mut self,
         agent: &BehaviorAgent<HE, MSG>,
         node_id: NodeId,
-        _connection_id: u32,
+        _connection_id: ConnId,
         event: BE,
     ) {
         match event.try_into() {

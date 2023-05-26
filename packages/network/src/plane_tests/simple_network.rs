@@ -8,7 +8,7 @@ mod tests {
         OutgoingConnectionError, RpcAnswer,
     };
     use crate::{BehaviorAgent, ConnectionAgent};
-    use bluesea_identity::{NodeAddr, NodeId, Protocol};
+    use bluesea_identity::{ConnId, NodeAddr, NodeId, Protocol};
     use parking_lot::Mutex;
     use std::collections::VecDeque;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -36,9 +36,9 @@ mod tests {
 
     #[derive(PartialEq, Debug)]
     enum DebugInput<MSG> {
-        Opened(NodeId, u32),
-        Msg(NodeId, u32, MSG),
-        Closed(NodeId, u32),
+        Opened(NodeId, ConnId),
+        Msg(NodeId, ConnId, MSG),
+        Closed(NodeId, ConnId),
     }
 
     enum Behavior2Event {}
@@ -105,7 +105,7 @@ mod tests {
         fn check_incoming_connection(
             &mut self,
             node: NodeId,
-            conn_id: u32,
+            conn_id: ConnId,
         ) -> Result<(), ConnectionRejectReason> {
             Ok(())
         }
@@ -113,7 +113,7 @@ mod tests {
         fn check_outgoing_connection(
             &mut self,
             node: NodeId,
-            conn_id: u32,
+            conn_id: ConnId,
         ) -> Result<(), ConnectionRejectReason> {
             Ok(())
         }
@@ -141,14 +141,14 @@ mod tests {
         fn on_incoming_connection_disconnected(
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
-            connection: Arc<dyn ConnectionSender<MSG>>,
+            conn: Arc<dyn ConnectionSender<MSG>>,
         ) {
             self.conn_counter.fetch_sub(1, Ordering::SeqCst);
         }
         fn on_outgoing_connection_disconnected(
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
-            connection: Arc<dyn ConnectionSender<MSG>>,
+            conn: Arc<dyn ConnectionSender<MSG>>,
         ) {
             self.conn_counter.fetch_sub(1, Ordering::SeqCst);
         }
@@ -156,7 +156,7 @@ mod tests {
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
             node_id: NodeId,
-            connection_id: u32,
+            conn_id: ConnId,
             err: &OutgoingConnectionError,
         ) {
         }
@@ -164,7 +164,7 @@ mod tests {
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
             node_id: NodeId,
-            connection_id: u32,
+            conn_id: ConnId,
             event: BE,
         ) {
         }
@@ -228,7 +228,7 @@ mod tests {
             &mut self,
             agent: &ConnectionAgent<BE, HE, MSG>,
             from_node: NodeId,
-            from_conn: u32,
+            from_conn: ConnId,
             event: HE,
         ) {
         }
@@ -256,7 +256,7 @@ mod tests {
         fn check_incoming_connection(
             &mut self,
             node: NodeId,
-            conn_id: u32,
+            conn_id: ConnId,
         ) -> Result<(), ConnectionRejectReason> {
             Ok(())
         }
@@ -264,7 +264,7 @@ mod tests {
         fn check_outgoing_connection(
             &mut self,
             node: NodeId,
-            conn_id: u32,
+            conn_id: ConnId,
         ) -> Result<(), ConnectionRejectReason> {
             Ok(())
         }
@@ -272,34 +272,34 @@ mod tests {
         fn on_incoming_connection_connected(
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
-            connection: Arc<dyn ConnectionSender<MSG>>,
+            conn: Arc<dyn ConnectionSender<MSG>>,
         ) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
             Some(Box::new(Test2NetworkHandler {}))
         }
         fn on_outgoing_connection_connected(
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
-            connection: Arc<dyn ConnectionSender<MSG>>,
+            conn: Arc<dyn ConnectionSender<MSG>>,
         ) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
             Some(Box::new(Test2NetworkHandler {}))
         }
         fn on_incoming_connection_disconnected(
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
-            connection: Arc<dyn ConnectionSender<MSG>>,
+            conn: Arc<dyn ConnectionSender<MSG>>,
         ) {
         }
         fn on_outgoing_connection_disconnected(
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
-            connection: Arc<dyn ConnectionSender<MSG>>,
+            conn: Arc<dyn ConnectionSender<MSG>>,
         ) {
         }
         fn on_outgoing_connection_error(
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
             node_id: NodeId,
-            connection_id: u32,
+            conn_id: ConnId,
             err: &OutgoingConnectionError,
         ) {
         }
@@ -307,7 +307,7 @@ mod tests {
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
             node_id: NodeId,
-            connection_id: u32,
+            conn_id: ConnId,
             event: BE,
         ) {
         }
@@ -335,7 +335,7 @@ mod tests {
             &mut self,
             agent: &ConnectionAgent<BE, HE, MSG>,
             from_node: NodeId,
-            from_conn: u32,
+            from_conn: ConnId,
             event: HE,
         ) {
         }
@@ -380,7 +380,7 @@ mod tests {
         faker
             .send(MockInput::FakeIncomingConnection(
                 1,
-                1,
+                ConnId::from_in(0, 1),
                 NodeAddr::from(Protocol::Udp(1)),
             ))
             .await
@@ -389,7 +389,7 @@ mod tests {
         faker
             .send(MockInput::FakeIncomingMsg(
                 0,
-                1,
+                ConnId::from_in(0, 1),
                 ConnectionMsg::Reliable {
                     stream_id: 0,
                     data: ImplNetworkMsg::Service1(Behavior1Msg::Ping),
@@ -398,12 +398,15 @@ mod tests {
             .await
             .unwrap();
         async_std::task::sleep(Duration::from_millis(100)).await;
-        assert_eq!(input.lock().pop_front(), Some(DebugInput::Opened(1, 1)));
+        assert_eq!(
+            input.lock().pop_front(),
+            Some(DebugInput::Opened(1, ConnId::from_in(0, 1)))
+        );
         assert_eq!(
             input.lock().pop_front(),
             Some(DebugInput::Msg(
                 1,
-                1,
+                ConnId::from_in(0, 1),
                 ImplNetworkMsg::Service1(Behavior1Msg::Ping)
             ))
         );
@@ -413,7 +416,7 @@ mod tests {
             Some(MockOutput::SendTo(
                 0,
                 1,
-                1,
+                ConnId::from_in(0, 1),
                 ConnectionMsg::Reliable {
                     stream_id: 0,
                     data: ImplNetworkMsg::Service1(Behavior1Msg::Pong),
@@ -421,7 +424,7 @@ mod tests {
             ))
         );
         faker
-            .send(MockInput::FakeDisconnectIncoming(1, 1))
+            .send(MockInput::FakeDisconnectIncoming(1, ConnId::from_in(0, 1)))
             .await
             .unwrap();
         async_std::task::sleep(Duration::from_millis(1000)).await;

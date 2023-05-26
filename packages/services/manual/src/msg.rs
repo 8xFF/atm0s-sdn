@@ -1,4 +1,4 @@
-use bluesea_identity::NodeAddr;
+use bluesea_identity::{ConnId, NodeAddr};
 use serde::{Deserialize, Serialize};
 
 #[derive(PartialEq, Debug)]
@@ -29,5 +29,5 @@ pub enum ConnectionState {
 pub enum ManualRes {
     AddNeighborsRes(usize),
     GetNeighborsRes(Vec<NodeAddr>),
-    GetConnectionsRes(Vec<(u32, NodeAddr, ConnectionState)>),
+    GetConnectionsRes(Vec<(ConnId, NodeAddr, ConnectionState)>),
 }

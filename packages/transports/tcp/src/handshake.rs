@@ -2,7 +2,7 @@ use crate::connection::{recv_tcp_stream, send_tcp_stream, BUFFER_LEN};
 use crate::msg::TcpMsg;
 use async_std::channel::{RecvError, Sender};
 use async_std::net::TcpStream;
-use bluesea_identity::{NodeAddr, NodeId};
+use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use futures_util::io::{ReadHalf, WriteHalf};
 use futures_util::AsyncWriteExt;
 use network::transport::{
@@ -25,7 +25,7 @@ pub async fn incoming_handshake<MSG: Serialize + DeserializeOwned>(
     my_node: NodeId,
     my_addr: NodeAddr,
     socket: &mut TcpStream,
-    conn_id: u32,
+    conn_id: ConnId,
     internal_tx: &Sender<TransportEvent<MSG>>,
 ) -> Result<(NodeId, NodeAddr), IncomingHandshakeError> {
     log::info!("[TcpTransport] handshake wait ConnectRequest");
@@ -107,7 +107,7 @@ pub async fn outgoing_handshake<MSG: Serialize + DeserializeOwned>(
     my_node: NodeId,
     my_node_addr: NodeAddr,
     socket: &mut TcpStream,
-    conn_id: u32,
+    conn_id: ConnId,
     internal_tx: &Sender<TransportEvent<MSG>>,
 ) -> Result<(), OutgoingHandshakeError> {
     let mut buf = [0; BUFFER_LEN];

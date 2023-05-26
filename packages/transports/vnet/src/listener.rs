@@ -1,14 +1,14 @@
 use crate::connection::VnetConnection;
 use async_std::channel::Receiver;
-use bluesea_identity::NodeId;
+use bluesea_identity::{ConnId, NodeId};
 use network::transport::{ConnectionAcceptor, OutgoingConnectionError};
 
 pub enum VnetListenerEvent<MSG> {
-    IncomingRequest(NodeId, u32, Box<dyn ConnectionAcceptor>),
-    OutgoingRequest(NodeId, u32, Box<dyn ConnectionAcceptor>),
+    IncomingRequest(NodeId, ConnId, Box<dyn ConnectionAcceptor>),
+    OutgoingRequest(NodeId, ConnId, Box<dyn ConnectionAcceptor>),
     Incoming(VnetConnection<MSG>),
     Outgoing(VnetConnection<MSG>),
-    OutgoingErr(u32, NodeId, OutgoingConnectionError),
+    OutgoingErr(NodeId, ConnId, OutgoingConnectionError),
 }
 
 pub struct VnetListener<MSG> {

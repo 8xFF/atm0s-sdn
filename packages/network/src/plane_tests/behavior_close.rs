@@ -8,7 +8,7 @@ mod tests {
         OutgoingConnectionError, RpcAnswer,
     };
     use crate::{BehaviorAgent, ConnectionAgent};
-    use bluesea_identity::{NodeAddr, NodeId, Protocol};
+    use bluesea_identity::{ConnId, NodeAddr, NodeId, Protocol};
     use parking_lot::Mutex;
     use std::collections::VecDeque;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -22,7 +22,7 @@ mod tests {
         CloseInBehaviorNode,
     }
     enum TestCrossBehaviorEvent {
-        CloseConn(u32),
+        CloseConn(ConnId),
         CloseNode(NodeId),
     }
     enum TestCrossHandleEvent {}
@@ -75,7 +75,7 @@ mod tests {
         fn check_incoming_connection(
             &mut self,
             node: NodeId,
-            conn_id: u32,
+            conn_id: ConnId,
         ) -> Result<(), ConnectionRejectReason> {
             Ok(())
         }
@@ -83,7 +83,7 @@ mod tests {
         fn check_outgoing_connection(
             &mut self,
             node: NodeId,
-            conn_id: u32,
+            conn_id: ConnId,
         ) -> Result<(), ConnectionRejectReason> {
             Ok(())
         }
@@ -111,7 +111,7 @@ mod tests {
         fn on_incoming_connection_disconnected(
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
-            connection: Arc<dyn ConnectionSender<MSG>>,
+            conn: Arc<dyn ConnectionSender<MSG>>,
         ) {
             self.conn_counter.fetch_sub(1, Ordering::Relaxed);
         }
@@ -126,7 +126,7 @@ mod tests {
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
             node_id: NodeId,
-            connection_id: u32,
+            conn_id: ConnId,
             err: &OutgoingConnectionError,
         ) {
         }
@@ -134,7 +134,7 @@ mod tests {
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
             node_id: NodeId,
-            connection_id: u32,
+            conn_id: ConnId,
             event: BE,
         ) {
             if let Ok(event) = event.try_into() {
@@ -200,7 +200,7 @@ mod tests {
             &mut self,
             agent: &ConnectionAgent<BE, HE, MSG>,
             from_node: NodeId,
-            from_conn: u32,
+            from_conn: ConnId,
             event: HE,
         ) {
         }
@@ -242,7 +242,7 @@ mod tests {
         faker
             .send(MockInput::FakeIncomingConnection(
                 1,
-                1,
+                ConnId::from_in(0, 1),
                 NodeAddr::from(Protocol::Udp(1)),
             ))
             .await
@@ -252,7 +252,7 @@ mod tests {
         faker
             .send(MockInput::FakeIncomingMsg(
                 0,
-                1,
+                ConnId::from_in(0, 1),
                 ConnectionMsg::Reliable {
                     stream_id: 0,
                     data: TestCrossNetworkMsg::CloseInHandle.into(),
@@ -266,7 +266,7 @@ mod tests {
         faker
             .send(MockInput::FakeIncomingConnection(
                 1,
-                2,
+                ConnId::from_in(0, 2),
                 NodeAddr::from(Protocol::Udp(1)),
             ))
             .await
@@ -276,7 +276,7 @@ mod tests {
         faker
             .send(MockInput::FakeIncomingMsg(
                 0,
-                2,
+                ConnId::from_in(0, 2),
                 ConnectionMsg::Reliable {
                     stream_id: 0,
                     data: TestCrossNetworkMsg::CloseInBehaviorConn.into(),
@@ -290,7 +290,7 @@ mod tests {
         faker
             .send(MockInput::FakeIncomingConnection(
                 1,
-                3,
+                ConnId::from_in(0, 3),
                 NodeAddr::from(Protocol::Udp(1)),
             ))
             .await
@@ -300,7 +300,7 @@ mod tests {
         faker
             .send(MockInput::FakeIncomingMsg(
                 0,
-                3,
+                ConnId::from_in(0, 3),
                 ConnectionMsg::Reliable {
                     stream_id: 0,
                     data: TestCrossNetworkMsg::CloseInBehaviorNode.into(),

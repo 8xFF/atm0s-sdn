@@ -1,4 +1,4 @@
-use bluesea_identity::NodeId;
+use bluesea_identity::{ConnId, NodeId};
 use network::behaviour::ConnectionHandler;
 use network::transport::ConnectionEvent;
 use network::ConnectionAgent;
@@ -21,7 +21,7 @@ where
         &mut self,
         agent: &ConnectionAgent<BE, HE, MSG>,
         from_node: NodeId,
-        from_conn: u32,
+        from_conn: ConnId,
         event: HE,
     ) {
     }

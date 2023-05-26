@@ -1,5 +1,5 @@
 use crate::msg::{DiscoveryBehaviorEvent, DiscoveryHandlerEvent, DiscoveryMsg};
-use bluesea_identity::NodeId;
+use bluesea_identity::{ConnId, NodeId};
 use network::behaviour::ConnectionHandler;
 use network::transport::{ConnectionEvent, ConnectionMsg};
 use network::{BehaviorAgent, ConnectionAgent};
@@ -40,7 +40,7 @@ where
         &mut self,
         agent: &ConnectionAgent<BE, HE, MSG>,
         from_node: NodeId,
-        from_conn: u32,
+        from_conn: ConnId,
         event: HE,
     ) {
     }

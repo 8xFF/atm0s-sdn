@@ -16,7 +16,7 @@ mod tests {
     use crate::behavior::{DiscoveryNetworkBehavior, DiscoveryNetworkBehaviorOpts};
     use crate::msg::{DiscoveryBehaviorEvent, DiscoveryHandlerEvent, DiscoveryMsg};
     use crate::DISCOVERY_SERVICE_ID;
-    use bluesea_identity::{NodeAddr, Protocol};
+    use bluesea_identity::{ConnId, NodeAddr, Protocol};
     use network::convert_enum;
     use network::mock::{MockInput, MockOutput, MockTransport, MockTransportRpc};
     use network::plane::{NetworkPlane, NetworkPlaneConfig};
@@ -86,7 +86,7 @@ mod tests {
         faker
             .send_blocking(MockInput::FakeOutgoingConnection(
                 neighbour1,
-                0,
+                ConnId::from_out(0, 0),
                 neighbour1_addr.clone(),
             ))
             .unwrap();
@@ -96,7 +96,7 @@ mod tests {
             Some(MockOutput::SendTo(
                 DISCOVERY_SERVICE_ID,
                 neighbour1,
-                0,
+                ConnId::from_out(0, 0),
                 ConnectionMsg::Reliable {
                     stream_id: 0,
                     data: DiscoveryMsg::FindKey(0, 0).into(),
@@ -144,7 +144,7 @@ mod tests {
         faker
             .send_blocking(MockInput::FakeIncomingConnection(
                 neighbour1,
-                0,
+                ConnId::from_in(0, 0),
                 neighbour1_addr.clone(),
             ))
             .unwrap();
@@ -154,7 +154,7 @@ mod tests {
             Some(MockOutput::SendTo(
                 DISCOVERY_SERVICE_ID,
                 neighbour1,
-                0,
+                ConnId::from_in(0, 0),
                 ConnectionMsg::Reliable {
                     stream_id: 0,
                     data: DiscoveryMsg::FindKey(0, 0).into(),

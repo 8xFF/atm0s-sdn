@@ -1,7 +1,7 @@
 use crate::handler::ManualHandler;
 use crate::msg::*;
 use crate::MANUAL_SERVICE_ID;
-use bluesea_identity::{NodeAddr, NodeAddrType, NodeId};
+use bluesea_identity::{ConnId, NodeAddr, NodeAddrType, NodeId};
 use network::behaviour::{ConnectionHandler, NetworkBehavior};
 use network::transport::{
     ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer,
@@ -17,14 +17,14 @@ const CONNECT_WAIT_MAX: u64 = 30000;
 
 enum OutgoingState {
     New,
-    Connecting(u64, u32, usize),
-    Connected(u64, u32),
-    ConnectError(u64, Option<u32>, OutgoingConnectionError, usize),
+    Connecting(u64, ConnId, usize),
+    Connected(u64, ConnId),
+    ConnectError(u64, Option<ConnId>, OutgoingConnectionError, usize),
 }
 
 struct NodeSlot {
     addr: NodeAddr,
-    incoming: Option<u32>,
+    incoming: Option<ConnId>,
     outgoing: OutgoingState,
 }
 
@@ -82,9 +82,9 @@ where
                                 "[ManualBehavior] connect to {} with addr {} => conn: {}",
                                 node_id,
                                 slot.addr,
-                                conn.connection_id
+                                conn.conn_id
                             );
-                            slot.outgoing = OutgoingState::Connecting(ts_ms, conn.connection_id, 0);
+                            slot.outgoing = OutgoingState::Connecting(ts_ms, conn.conn_id, 0);
                         }
                         Err(err) => {
                             log::error!(
@@ -106,13 +106,10 @@ where
                                         "[ManualBehavior] reconnect to {} with addr {} => conn: {}",
                                         node_id,
                                         slot.addr,
-                                        conn.connection_id
+                                        conn.conn_id
                                     );
-                                    slot.outgoing = OutgoingState::Connecting(
-                                        ts_ms,
-                                        conn.connection_id,
-                                        count + 1,
-                                    );
+                                    slot.outgoing =
+                                        OutgoingState::Connecting(ts_ms, conn.conn_id, count + 1);
                                 }
                                 Err(err) => {
                                     log::error!("[ManualBehavior] reconnect to {} with addr {} => error {:?}", node_id, slot.addr, err);
@@ -131,7 +128,7 @@ where
     fn check_incoming_connection(
         &mut self,
         node: NodeId,
-        conn_id: u32,
+        conn_id: ConnId,
     ) -> Result<(), ConnectionRejectReason> {
         Ok(())
     }
@@ -139,7 +136,7 @@ where
     fn check_outgoing_connection(
         &mut self,
         node: NodeId,
-        conn_id: u32,
+        conn_id: ConnId,
     ) -> Result<(), ConnectionRejectReason> {
         Ok(())
     }
@@ -147,17 +144,17 @@ where
     fn on_incoming_connection_connected(
         &mut self,
         agent: &BehaviorAgent<HE, MSG>,
-        connection: Arc<dyn ConnectionSender<MSG>>,
+        conn: Arc<dyn ConnectionSender<MSG>>,
     ) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
         let entry = self
             .neighbours
-            .entry(connection.remote_node_id())
+            .entry(conn.remote_node_id())
             .or_insert_with(|| NodeSlot {
-                addr: connection.remote_addr(),
+                addr: conn.remote_addr(),
                 incoming: None,
                 outgoing: OutgoingState::New,
             });
-        entry.incoming = Some(connection.connection_id());
+        entry.incoming = Some(conn.conn_id());
         Some(Box::new(ManualHandler {}))
     }
 
@@ -174,7 +171,7 @@ where
                 incoming: None,
                 outgoing: OutgoingState::New,
             });
-        entry.outgoing = OutgoingState::Connected(self.timer.now_ms(), connection.connection_id());
+        entry.outgoing = OutgoingState::Connected(self.timer.now_ms(), connection.conn_id());
         Some(Box::new(ManualHandler {}))
     }
 
@@ -202,7 +199,7 @@ where
         &mut self,
         agent: &BehaviorAgent<HE, MSG>,
         node_id: NodeId,
-        connection_id: u32,
+        conn_id: ConnId,
         err: &OutgoingConnectionError,
     ) {
         if let Some(slot) = self.neighbours.get_mut(&node_id) {
@@ -210,7 +207,7 @@ where
                 OutgoingState::Connecting(_, _, count) => {
                     slot.outgoing = OutgoingState::ConnectError(
                         self.timer.now_ms(),
-                        Some(connection_id),
+                        Some(conn_id),
                         err.clone(),
                         count,
                     )
@@ -224,7 +221,7 @@ where
         &mut self,
         agent: &BehaviorAgent<HE, MSG>,
         node_id: NodeId,
-        connection_id: u32,
+        connection_id: ConnId,
         event: BE,
     ) {
     }

@@ -5,7 +5,7 @@ use crate::transport::{
     TransportPendingOutgoing,
 };
 use async_std::channel::Sender;
-use bluesea_identity::{NodeAddr, NodeId};
+use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use parking_lot::RwLock;
 use std::sync::Arc;
 
@@ -61,7 +61,7 @@ where
             .send_to_net(self.service_id, route, msg);
     }
 
-    pub fn close_conn(&self, conn: u32) {
+    pub fn close_conn(&self, conn: ConnId) {
         self.cross_gate.read().close_conn(conn);
     }
 
@@ -74,7 +74,7 @@ pub struct ConnectionAgent<BE, HE, MSG> {
     service_id: u8,
     local_node_id: NodeId,
     remote_node_id: NodeId,
-    conn_id: u32,
+    conn_id: ConnId,
     sender: Arc<dyn ConnectionSender<MSG>>,
     internal_tx: Sender<NetworkPlaneInternalEvent<BE, MSG>>,
     cross_gate: Arc<RwLock<CrossHandlerGate<HE, MSG>>>,
@@ -90,7 +90,7 @@ where
         service_id: u8,
         local_node_id: NodeId,
         remote_node_id: NodeId,
-        conn_id: u32,
+        conn_id: ConnId,
         sender: Arc<dyn ConnectionSender<MSG>>,
         internal_tx: Sender<NetworkPlaneInternalEvent<BE, MSG>>,
         cross_gate: Arc<RwLock<CrossHandlerGate<HE, MSG>>>,
@@ -106,7 +106,7 @@ where
         }
     }
 
-    pub fn conn_id(&self) -> u32 {
+    pub fn conn_id(&self) -> ConnId {
         self.conn_id
     }
 

@@ -8,7 +8,7 @@ mod tests {
         OutgoingConnectionError, RpcAnswer,
     };
     use crate::{BehaviorAgent, ConnectionAgent, CrossHandlerRoute};
-    use bluesea_identity::{NodeAddr, NodeId, Protocol};
+    use bluesea_identity::{ConnId, NodeAddr, NodeId, Protocol};
     use parking_lot::Mutex;
     use std::collections::VecDeque;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -18,7 +18,7 @@ mod tests {
 
     enum TestCrossNetworkMsg {
         PingToNode(NodeId),
-        PingToConn(u32),
+        PingToConn(ConnId),
     }
     enum TestCrossBehaviorEvent {}
     enum TestCrossHandleEvent {
@@ -74,7 +74,7 @@ mod tests {
         fn check_incoming_connection(
             &mut self,
             node: NodeId,
-            conn_id: u32,
+            conn_id: ConnId,
         ) -> Result<(), ConnectionRejectReason> {
             Ok(())
         }
@@ -82,7 +82,7 @@ mod tests {
         fn check_outgoing_connection(
             &mut self,
             node: NodeId,
-            conn_id: u32,
+            conn_id: ConnId,
         ) -> Result<(), ConnectionRejectReason> {
             Ok(())
         }
@@ -121,7 +121,7 @@ mod tests {
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
             node_id: NodeId,
-            connection_id: u32,
+            conn_id: ConnId,
             err: &OutgoingConnectionError,
         ) {
         }
@@ -129,7 +129,7 @@ mod tests {
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
             node_id: NodeId,
-            connection_id: u32,
+            conn_id: ConnId,
             event: BE,
         ) {
         }
@@ -183,7 +183,7 @@ mod tests {
             &mut self,
             agent: &ConnectionAgent<BE, HE, MSG>,
             from_node: NodeId,
-            from_conn: u32,
+            from_conn: ConnId,
             event: HE,
         ) {
             if let Ok(event) = event.try_into() {
@@ -236,7 +236,7 @@ mod tests {
         faker
             .send(MockInput::FakeIncomingConnection(
                 1,
-                1,
+                ConnId::from_in(0, 1),
                 NodeAddr::from(Protocol::Udp(1)),
             ))
             .await
@@ -244,7 +244,7 @@ mod tests {
         faker
             .send(MockInput::FakeIncomingConnection(
                 2,
-                2,
+                ConnId::from_in(0, 2),
                 NodeAddr::from(Protocol::Udp(2)),
             ))
             .await
@@ -253,10 +253,10 @@ mod tests {
         faker
             .send(MockInput::FakeIncomingMsg(
                 0,
-                1,
+                ConnId::from_in(0, 1),
                 ConnectionMsg::Reliable {
                     stream_id: 0,
-                    data: TestCrossNetworkMsg::PingToConn(2).into(),
+                    data: TestCrossNetworkMsg::PingToConn(ConnId::from_in(0, 2)).into(),
                 },
             ))
             .await
@@ -297,7 +297,7 @@ mod tests {
         faker
             .send(MockInput::FakeIncomingConnection(
                 1,
-                1,
+                ConnId::from_in(0, 1),
                 NodeAddr::from(Protocol::Udp(1)),
             ))
             .await
@@ -305,7 +305,7 @@ mod tests {
         faker
             .send(MockInput::FakeIncomingConnection(
                 2,
-                2,
+                ConnId::from_in(0, 2),
                 NodeAddr::from(Protocol::Udp(2)),
             ))
             .await
@@ -314,7 +314,7 @@ mod tests {
         faker
             .send(MockInput::FakeIncomingMsg(
                 0,
-                1,
+                ConnId::from_in(0, 1),
                 ConnectionMsg::Reliable {
                     stream_id: 0,
                     data: TestCrossNetworkMsg::PingToNode(2).into(),

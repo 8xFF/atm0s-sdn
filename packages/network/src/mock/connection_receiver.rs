@@ -1,10 +1,10 @@
 use crate::transport::{ConnectionEvent, ConnectionReceiver};
 use async_std::channel::Receiver;
-use bluesea_identity::{NodeAddr, NodeId};
+use bluesea_identity::{ConnId, NodeAddr, NodeId};
 
 pub struct MockConnectionReceiver<MSG> {
     pub remote_node_id: NodeId,
-    pub conn_id: u32,
+    pub conn_id: ConnId,
     pub remote_addr: NodeAddr,
     pub receiver: Receiver<Option<ConnectionEvent<MSG>>>,
 }
@@ -15,7 +15,7 @@ impl<MSG: Send + Sync> ConnectionReceiver<MSG> for MockConnectionReceiver<MSG> {
         self.remote_node_id
     }
 
-    fn connection_id(&self) -> u32 {
+    fn conn_id(&self) -> ConnId {
         self.conn_id
     }
 

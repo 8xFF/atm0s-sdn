@@ -20,10 +20,8 @@ where
         for protocol in &addr {
             match protocol {
                 Protocol::Memory(port) => {
-                    if let Some(connection_id) =
-                        self.earth.create_outgoing(self.port, node_id, port)
-                    {
-                        return Ok(TransportPendingOutgoing { connection_id });
+                    if let Some(conn_id) = self.earth.create_outgoing(self.port, node_id, port) {
+                        return Ok(TransportPendingOutgoing { conn_id });
                     } else {
                         return Err(OutgoingConnectionError::DestinationNotFound);
                     }

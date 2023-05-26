@@ -1,6 +1,3 @@
-pub const INCOMING_POSTFIX: u32 = 10;
-pub const OUTGOING_POSTFIX: u32 = 11;
-
 mod connection;
 mod connector;
 mod handshake;
@@ -39,7 +36,7 @@ mod tests {
         let conn_id = connector1
             .connect_to(2, node_addr_builder2.addr())
             .unwrap()
-            .connection_id;
+            .conn_id;
 
         match tran1.recv().await.unwrap() {
             TransportEvent::OutgoingRequest(node, conn, acceptor) => {
@@ -77,7 +74,7 @@ mod tests {
             TransportEvent::Outgoing(sender, recv) => {
                 assert_eq!(sender.remote_node_id(), 2);
                 assert_eq!(sender.remote_addr(), node_addr_builder2.addr());
-                assert_eq!(sender.connection_id(), conn_id);
+                assert_eq!(sender.conn_id(), conn_id);
                 (sender, recv)
             }
             _ => {
@@ -155,7 +152,7 @@ mod tests {
                 ]),
             )
             .unwrap()
-            .connection_id;
+            .conn_id;
 
         match tran1.recv().await.unwrap() {
             TransportEvent::OutgoingRequest(node, conn, acceptor) => {
@@ -188,7 +185,7 @@ mod tests {
         let conn_id = connector1
             .connect_to(3, node_addr_builder2.addr())
             .unwrap()
-            .connection_id;
+            .conn_id;
 
         let join = async_std::task::spawn(async move { while tran2.recv().await.is_ok() {} });
 

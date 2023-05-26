@@ -166,17 +166,17 @@ mod tests {
     use crate::router::{Router, RouterSync};
     use crate::table::{Metric, Path, TableSync};
     use crate::{NodeDestination, NodeDestinationPath, ServiceDestination};
-    use bluesea_identity::{ConnId, NodeId, NodeIdType};
+    use bluesea_identity::{ConnDirection, ConnId, NodeId, NodeIdType};
 
     #[test]
     fn create_manual_multi_layers() {
         let node0: NodeId = 0x0;
         let node1: NodeId = 0x1;
-        let node1_conn: ConnId = 0x1;
+        let node1_conn: ConnId = ConnId::from_out(0, 0x1);
         let node2: NodeId = 0x2;
         let _node3: NodeId = 0x3;
         let z_node1: NodeId = 0x01000001;
-        let z_node1_conn: ConnId = 0x01000001;
+        let z_node1_conn: ConnId = ConnId::from_out(0, 0x01000001);
         let z_node2: NodeId = 0x01000002;
 
         let mut router = Router::new(node0);
@@ -203,7 +203,11 @@ mod tests {
     }
 
     fn create_router(node_id: NodeId) -> (NodeId, ConnId, Router) {
-        (node_id, node_id as ConnId, Router::new(node_id))
+        (
+            node_id,
+            ConnId::from_out(0, node_id as u64),
+            Router::new(node_id),
+        )
     }
 
     #[test]

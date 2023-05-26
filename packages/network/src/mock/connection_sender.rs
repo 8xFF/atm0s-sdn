@@ -1,14 +1,14 @@
 use crate::mock::MockOutput;
 use crate::transport::{ConnectionEvent, ConnectionMsg, ConnectionSender};
 use async_std::channel::Sender;
-use bluesea_identity::{NodeAddr, NodeId};
+use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use parking_lot::Mutex;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
 pub struct MockConnectionSender<MSG> {
     pub(crate) remote_node_id: NodeId,
-    pub(crate) conn_id: u32,
+    pub(crate) conn_id: ConnId,
     pub(crate) remote_addr: NodeAddr,
     pub(crate) output: Arc<Mutex<VecDeque<MockOutput<MSG>>>>,
     pub(crate) internal_sender: Sender<Option<ConnectionEvent<MSG>>>,
@@ -22,7 +22,7 @@ where
         self.remote_node_id
     }
 
-    fn connection_id(&self) -> u32 {
+    fn conn_id(&self) -> ConnId {
         self.conn_id
     }
 
