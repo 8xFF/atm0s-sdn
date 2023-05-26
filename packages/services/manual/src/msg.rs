@@ -1,4 +1,5 @@
 use bluesea_identity::PeerAddr;
+use serde::{Deserialize, Serialize};
 
 #[derive(PartialEq, Debug)]
 pub enum ManualBehaviorEvent {}
@@ -6,7 +7,7 @@ pub enum ManualBehaviorEvent {}
 #[derive(PartialEq, Debug)]
 pub enum ManualHandlerEvent {}
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Serialize, Deserialize)]
 pub enum ManualMsg {}
 
 #[derive(PartialEq, Debug)]

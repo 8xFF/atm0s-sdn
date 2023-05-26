@@ -35,7 +35,13 @@ impl<MSG> TcpTransport<MSG> {
 
         //TODO get dynamic ip address
         peer_addr_builder.add_protocol(Protocol::Ip4(Ipv4Addr::new(127, 0, 0, 1)));
-        peer_addr_builder.add_protocol(Protocol::Tcp(port));
+        if port != 0 {
+            peer_addr_builder.add_protocol(Protocol::Tcp(port));
+        } else {
+            if let Ok(addr) = listener.local_addr() {
+                peer_addr_builder.add_protocol(Protocol::Tcp(addr.port()));
+            }
+        }
 
         Self {
             peer_id,

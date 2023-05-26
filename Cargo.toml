@@ -10,6 +10,7 @@ members = [
     "packages/transports/vnet",
     "packages/transports/tcp",
     "packages/runner",
+    "examples",
 ]
 
 [workspace.dependencies]
@@ -23,7 +24,10 @@ quickcheck = { package = "quickcheck-ext", path = "packages/misc/quickcheck-ext"
 utils = { package = "utils", path = "packages/core/utils" }
 network = { package = "network", path = "packages/network" }
 transport-vnet = { package = "vnet", path = "packages/transports/vnet" }
+transport-tcp = { package = "tcp", path = "packages/transports/tcp" }
 thiserror = "1.0"
 log = "0.4"
+rand = "0.8"
 parking_lot = "0.12"
 env_logger = "0.10"
+clap = { version = "4.3.0", features = ["derive", "env"] }

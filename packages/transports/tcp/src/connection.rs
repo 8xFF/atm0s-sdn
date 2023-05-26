@@ -36,7 +36,8 @@ pub async fn send_tcp_stream<MSG: Serialize>(
 
 pub enum OutgoingEvent<MSG> {
     Msg(TcpMsg<MSG>),
-    Close,
+    CloseRequest,
+    ClosedNotify,
 }
 
 pub struct TcpConnectionSender<MSG> {
@@ -87,7 +88,7 @@ where
                     Ok(OutgoingEvent::Msg(msg)) => {
                         if let Err(e) = send_tcp_stream(&mut socket, msg).await {}
                     }
-                    Ok(OutgoingEvent::Close) => {
+                    Ok(OutgoingEvent::CloseRequest) => {
                         if let Err(e) = socket.shutdown(Shutdown::Both) {
                             log::error!(
                                 "[TcpConnectionSender {} => {}] close sender error {}",
@@ -102,6 +103,14 @@ where
                                 remote_peer_id
                             );
                         }
+                        break;
+                    }
+                    Ok(OutgoingEvent::ClosedNotify) => {
+                        log::info!(
+                            "[TcpConnectionSender {} => {}] socket closed",
+                            peer_id,
+                            remote_peer_id
+                        );
                         break;
                     }
                     Err(err) => {
@@ -175,7 +184,10 @@ where
     }
 
     fn close(&self) {
-        if let Err(e) = self.unreliable_sender.send_blocking(OutgoingEvent::Close) {
+        if let Err(e) = self
+            .unreliable_sender
+            .send_blocking(OutgoingEvent::CloseRequest)
+        {
             log::error!("[ConnectionSender] send Close request error {:?}", e);
         } else {
             log::info!("[ConnectionSender] sent close request");
@@ -275,6 +287,8 @@ where
                         self.peer_id,
                         self.remote_peer_id
                     );
+                    self.reliable_sender
+                        .send_blocking(OutgoingEvent::ClosedNotify);
                     break Err(());
                 }
             }

@@ -29,8 +29,8 @@ struct PeerSlot {
 }
 
 pub struct ManualBehaviorConf {
-    neighbours: Vec<PeerAddr>,
-    timer: Arc<dyn Timer>,
+    pub neighbours: Vec<PeerAddr>,
+    pub timer: Arc<dyn Timer>,
 }
 
 pub struct ManualBehavior {

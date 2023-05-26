@@ -7,6 +7,8 @@ mod handshake;
 mod msg;
 mod transport;
 
+pub use transport::TcpTransport;
+
 #[cfg(test)]
 mod tests {
     use crate::transport::TcpTransport;
