@@ -14,15 +14,8 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
+use utils::init_vec::init_vec;
 use utils::Timer;
-
-fn init_vec<T>(size: usize, builder: fn() -> T) -> Vec<T> {
-    let mut vec = vec![];
-    for _ in 0..size {
-        vec.push(builder());
-    }
-    vec
-}
 
 pub enum NetworkPlaneInternalEvent<BE, MSG> {
     ToBehaviour {

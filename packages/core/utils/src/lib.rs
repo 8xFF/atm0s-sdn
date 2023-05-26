@@ -1,3 +1,6 @@
+pub mod init_vec;
+pub mod init_array;
+
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub trait Timer: Send + Sync {
