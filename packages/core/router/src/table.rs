@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use bluesea_identity::{NodeId, NodeIdType};
+use bluesea_identity::{ConnId, NodeId, NodeIdType};
 use serde::{Deserialize, Serialize};
 use utils::init_array::init_array;
 
@@ -26,7 +26,6 @@ impl Table {
     pub fn new(node_id: NodeId, layer: u8) -> Self {
         let node_index = node_id.layer(layer);
         let mut dests = init_array!(Dest, 256, Default::default());
-        dests[node_index as usize].set_path(node_id, Metric::new(0, vec![node_id], 100000000));
 
         Table {
             node_id,
@@ -50,35 +49,36 @@ impl Table {
         size
     }
 
-    pub fn add_direct(&mut self, src: NodeId, src_send_metric: Metric) {
+    pub fn add_direct(&mut self, src_conn: ConnId, src: NodeId, src_send_metric: Metric) {
         debug_assert_eq!(src_send_metric.hops.first(), Some(&src));
         let index = src.layer(self.layer);
         if self.dests[index as usize].is_empty() {
             log::info!(
-                "[Table {}/{}] added index {} from dest {}/{:?}",
+                "[Table {}/{}] added index {} from dest {}/{}/{:?}",
                 self.node_id,
                 self.layer,
                 index,
+                src_conn,
                 src,
                 src_send_metric
             );
             self.slots.push(index);
             self.slots.sort();
         }
-        self.dests[index as usize].set_path(src, src_send_metric);
+        self.dests[index as usize].set_path(src_conn, src, src_send_metric);
     }
 
-    pub fn del_direct(&mut self, src: NodeId) {
+    pub fn del_direct(&mut self, src_conn: ConnId) {
         for i in 0..=255 {
             let pre_empty = self.dests[i as usize].is_empty();
-            self.dests[i as usize].del_path(src);
+            self.dests[i as usize].del_path(src_conn);
             if !pre_empty && self.dests[i as usize].is_empty() {
                 log::info!(
                     "[Table {}/{}] removed index {} from dest {}",
                     self.node_id,
                     self.layer,
                     i,
-                    src
+                    src_conn
                 );
 
                 if let Ok(index) = self.slots.binary_search(&i) {
@@ -88,7 +88,7 @@ impl Table {
         }
     }
 
-    pub fn next(&self, dest: NodeId, excepts: &Vec<NodeId>) -> Option<NodeId> {
+    pub fn next(&self, dest: NodeId, excepts: &Vec<NodeId>) -> Option<(ConnId, NodeId)> {
         let index = dest.layer(self.layer);
         self.dests[index as usize].next(excepts)
     }
@@ -132,12 +132,19 @@ impl Table {
     //     }
     // }
 
-    pub fn apply_sync(&mut self, src: NodeId, src_send_metric: Metric, sync: TableSync) {
+    pub fn apply_sync(
+        &mut self,
+        src_conn: ConnId,
+        src: NodeId,
+        src_send_metric: Metric,
+        sync: TableSync,
+    ) {
         debug_assert_eq!(src_send_metric.hops.first(), Some(&src));
         log::debug!(
-            "[Table {}/{}] apply sync from {} -> {}, sync {:?}",
+            "[Table {}/{}] apply sync from {}/{} -> {}, sync {:?}",
             self.node_id,
             self.layer,
+            src_conn,
             src,
             self.node_id,
             sync.0
@@ -160,7 +167,7 @@ impl Table {
                     if !dest.is_empty() && src.layer(self.layer) != i {
                         // log::debug!("remove {} over {}", i, src);
                         let pre_empty = dest.is_empty();
-                        dest.del_path(src);
+                        dest.del_path(src_conn);
                         if !pre_empty && dest.is_empty() {
                             log::info!(
                                 "[Table {}/{}] sync => removed index {} from dest {}",
@@ -178,17 +185,18 @@ impl Table {
                 Some(metric) => {
                     if dest.is_empty() {
                         log::info!(
-                            "[Table {}/{}] sync => added index {} from dest {}/{:?}",
+                            "[Table {}/{}] sync => added index {} from dest {}/{}/{:?}",
                             self.node_id,
                             self.layer,
                             i,
+                            src_conn,
                             src,
                             src_send_metric
                         );
                         self.slots.push(i);
                         self.slots.sort();
                     }
-                    dest.set_path(src, metric);
+                    dest.set_path(src_conn, src, metric);
                 }
             }
         }
@@ -204,7 +212,7 @@ impl Table {
         for i in 0..=255 {
             let dest = &self.dests[i as usize];
             if !dest.is_empty() && i != self.node_id.layer(self.layer) {
-                if let Some(Path(_over, metric)) = dest.best_for(node) {
+                if let Some(Path(_over, _over_node, metric)) = dest.best_for(node) {
                     res.push((i, metric));
                 }
             }
@@ -234,7 +242,7 @@ impl Table {
 #[cfg(test)]
 mod tests {
     use crate::table::{Metric, Path, Table, TableSync};
-    use bluesea_identity::{NodeId, NodeIdType};
+    use bluesea_identity::{ConnId, NodeId, NodeIdType};
 
     #[test]
     fn create_manual() {
@@ -244,14 +252,18 @@ mod tests {
         let node2: NodeId = 0x2;
         let node3: NodeId = 0x3;
 
-        table.add_direct(node1, Metric::new(1, vec![1, 0], 1));
-        table.add_direct(node2, Metric::new(2, vec![2, 4, 0], 1));
+        let conn1: ConnId = 0x1;
+        let conn2: ConnId = 0x2;
+        let conn3: ConnId = 0x3;
+
+        table.add_direct(conn1, node1, Metric::new(1, vec![1, 0], 1));
+        table.add_direct(conn2, node2, Metric::new(2, vec![2, 4, 0], 1));
         ///fake
-        table.add_direct(node3, Metric::new(1, vec![3, 0], 1));
+        table.add_direct(conn3, node3, Metric::new(1, vec![3, 0], 1));
 
         assert_eq!(table.slots(), vec![0, 1, 2, 3]);
 
-        assert_eq!(table.next(node1, &vec![node2]), Some(node1));
+        assert_eq!(table.next(node1, &vec![node2]), Some((conn1, node1)));
 
         assert_eq!(
             table.sync_for(node1),
@@ -268,7 +280,7 @@ mod tests {
             ]))
         );
 
-        table.del_direct(node1);
+        table.del_direct(conn1);
         assert_eq!(table.next(node1, &vec![node2]), None);
     }
 
@@ -279,17 +291,18 @@ mod tests {
         assert_eq!(table.sync_for(0x10000000), None);
     }
 
-    #[test]
-    fn apply_sync_me() {
-        let node0: NodeId = 0x0;
-        let mut table = Table::new(node0, 0);
-
-        let sync = vec![(0, Metric::new(1, vec![0], 1))];
-        table.apply_sync(node0, Metric::new(1, vec![0], 1), TableSync(sync));
-
-        assert_eq!(table.slots(), vec![0]);
-        assert_eq!(table.next(node0, &vec![node0]), None);
-    }
+    // we dont sync with self, because it don't has connection_id
+    // #[test]
+    // fn apply_sync_me() {
+    //     let node0: NodeId = 0x0;
+    //     let mut table = Table::new(node0, 0);
+    //
+    //     let sync = vec![(0, Metric::new(1, vec![0], 1))];
+    //     table.apply_sync(node0, Metric::new(1, vec![0], 1), TableSync(sync));
+    //
+    //     assert_eq!(table.slots(), vec![0]);
+    //     assert_eq!(table.next(node0, &vec![node0]), None);
+    // }
 
     #[test]
     fn apply_sync() {
@@ -299,33 +312,37 @@ mod tests {
         let node2: NodeId = 0x2;
         let node3: NodeId = 0x3;
 
-        table.add_direct(node1, Metric::new(1, vec![1, 0], 1));
+        let conn1: ConnId = 0x1;
+        let conn2: ConnId = 0x2;
+        let conn3: ConnId = 0x3;
+
+        table.add_direct(conn1, node1, Metric::new(1, vec![1, 0], 1));
 
         let sync = vec![
             (2, Metric::new(1, vec![2, 1], 1)),
             (3, Metric::new(1, vec![3, 1], 1)),
         ];
-        table.apply_sync(node1, Metric::new(1, vec![1, 0], 2), TableSync(sync));
+        table.apply_sync(conn1, node1, Metric::new(1, vec![1, 0], 2), TableSync(sync));
 
         assert_eq!(table.slots(), vec![0, 1, 2, 3]);
         assert_eq!(
             table.next_path(node1, &vec![node2]),
-            Some(Path(node1, Metric::new(1, vec![1, 0], 1)))
+            Some(Path(conn1, node1, Metric::new(1, vec![1, 0], 1)))
         );
         assert_eq!(
             table.next_path(node2, &vec![node2]),
-            Some(Path(node1, Metric::new(2, vec![2, 1, 0], 1)))
+            Some(Path(conn1, node1, Metric::new(2, vec![2, 1, 0], 1)))
         );
         assert_eq!(
             table.next_path(node3, &vec![node2]),
-            Some(Path(node1, Metric::new(2, vec![3, 1, 0], 1)))
+            Some(Path(conn1, node1, Metric::new(2, vec![3, 1, 0], 1)))
         );
 
         let sync = vec![(3, Metric::new(1, vec![3, 1], 1))];
-        table.apply_sync(node1, Metric::new(1, vec![1, 0], 1), TableSync(sync));
-        assert_eq!(table.next(node1, &vec![node2]), Some(node1));
+        table.apply_sync(conn1, node1, Metric::new(1, vec![1, 0], 1), TableSync(sync));
+        assert_eq!(table.next(node1, &vec![node2]), Some((conn1, node1)));
         assert_eq!(table.next(node2, &vec![node2]), None);
-        assert_eq!(table.next(node3, &vec![node2]), Some(node1));
+        assert_eq!(table.next(node3, &vec![node2]), Some((conn1, node1)));
     }
 
     #[test]
@@ -337,42 +354,52 @@ mod tests {
         |     |    |
         | --- C --
         **/
-        let nodeA: NodeId = 0x0;
-        let nodeB: NodeId = 0x1;
-        let nodeC: NodeId = 0x2;
-        let nodeD: NodeId = 0x3;
+        let node_a: NodeId = 0x0;
+        let node_b: NodeId = 0x1;
+        let node_c: NodeId = 0x2;
+        let node_d: NodeId = 0x3;
 
-        let mut tableA = Table::new(nodeA, 0);
+        let conn_b: ConnId = 0x1;
+        let conn_c: ConnId = 0x2;
+        let conn_d: ConnId = 0x3;
 
-        tableA.add_direct(nodeB, Metric::new(1, vec![nodeB, nodeA], 1));
-        tableA.add_direct(nodeC, Metric::new(1, vec![nodeC, nodeA], 1));
+        let mut table_a = Table::new(node_a, 0);
+
+        table_a.add_direct(conn_b, node_b, Metric::new(1, vec![node_b, node_a], 1));
+        table_a.add_direct(conn_c, node_c, Metric::new(1, vec![node_c, node_a], 1));
 
         let sync1 = vec![
-            (nodeC.layer(0), Metric::new(1, vec![nodeC, nodeB], 1)),
-            (nodeD.layer(0), Metric::new(2, vec![nodeD, nodeB], 1)),
+            (node_c.layer(0), Metric::new(1, vec![node_c, node_b], 1)),
+            (node_d.layer(0), Metric::new(2, vec![node_d, node_b], 1)),
         ];
-        tableA.apply_sync(
-            nodeB,
-            Metric::new(1, vec![nodeB, nodeA], 1),
+        table_a.apply_sync(
+            conn_b,
+            node_b,
+            Metric::new(1, vec![node_b, node_a], 1),
             TableSync(sync1),
         );
 
         let sync2 = vec![
-            (nodeB.layer(0), Metric::new(2, vec![nodeB, nodeC], 2)),
-            (nodeD.layer(0), Metric::new(1, vec![nodeD, nodeC], 1)),
+            (node_b.layer(0), Metric::new(2, vec![node_b, node_c], 2)),
+            (node_d.layer(0), Metric::new(1, vec![node_d, node_c], 1)),
         ];
-        tableA.apply_sync(
-            nodeC,
-            Metric::new(1, vec![nodeC, nodeA], 1),
+        table_a.apply_sync(
+            conn_c,
+            node_c,
+            Metric::new(1, vec![node_c, node_a], 1),
             TableSync(sync2),
         );
 
         assert_eq!(
-            tableA.next_path(nodeB, &vec![]),
-            Some(Path(nodeB, Metric::new(1, vec![nodeB, nodeA], 1)))
+            table_a.next_path(node_b, &vec![]),
+            Some(Path(
+                conn_b,
+                node_b,
+                Metric::new(1, vec![node_b, node_a], 1)
+            ))
         );
-        assert_eq!(tableA.next(nodeC, &vec![]), Some(nodeC));
-        assert_eq!(tableA.next(nodeD, &vec![]), Some(nodeC));
+        assert_eq!(table_a.next(node_c, &vec![]), Some((conn_c, node_c)));
+        assert_eq!(table_a.next(node_d, &vec![]), Some((conn_c, node_c)));
 
         /**
         A --- B -2- D
@@ -381,16 +408,17 @@ mod tests {
         |     |
         | --- C
         **/
-        let sync2 = vec![(nodeB.layer(0), Metric::new(2, vec![nodeB, nodeC], 1))];
-        tableA.apply_sync(
-            nodeC,
-            Metric::new(1, vec![nodeC, nodeA], 1),
+        let sync2 = vec![(node_b.layer(0), Metric::new(2, vec![node_b, node_c], 1))];
+        table_a.apply_sync(
+            conn_c,
+            node_c,
+            Metric::new(1, vec![node_c, node_a], 1),
             TableSync(sync2),
         );
 
-        assert_eq!(tableA.next(nodeB, &vec![]), Some(nodeB));
-        assert_eq!(tableA.next(nodeC, &vec![]), Some(nodeC));
-        assert_eq!(tableA.next(nodeD, &vec![]), Some(nodeB));
+        assert_eq!(table_a.next(node_b, &vec![]), Some((conn_b, node_b)));
+        assert_eq!(table_a.next(node_c, &vec![]), Some((conn_c, node_c)));
+        assert_eq!(table_a.next(node_d, &vec![]), Some((conn_b, node_b)));
     }
 
     // #[test]

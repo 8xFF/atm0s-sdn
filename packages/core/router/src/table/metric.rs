@@ -31,6 +31,8 @@ pub struct Metric {
     pub latency: u16,      //in milliseconds
     pub hops: Vec<NodeId>, //in hops, from 1 (direct)
     pub bandwidth: u32,    //in kbps
+                           // pub lost: f32,
+                           // pub jitter: u16,
 }
 
 impl Metric {

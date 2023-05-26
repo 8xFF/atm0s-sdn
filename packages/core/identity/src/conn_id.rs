@@ -1,1 +1,1 @@
-pub type ConnId = u32;
+pub type ConnId = u64;
