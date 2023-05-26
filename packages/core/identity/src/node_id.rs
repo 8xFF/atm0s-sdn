@@ -51,7 +51,10 @@ impl NodeIdType for NodeId {
     }
 
     fn build(geo1: u8, geo2: u8, group: u8, index: u8) -> Self {
-        ((geo1 as u32) << 8 * 3) | ((geo2 as u32) << 8 * 2) | ((group as u32) << 8 * 1) | (index as u32)
+        ((geo1 as u32) << 8 * 3)
+            | ((geo2 as u32) << 8 * 2)
+            | ((group as u32) << 8 * 1)
+            | (index as u32)
     }
 
     fn build2(zone_id: u16, group: u8, index: u8) -> Self {
@@ -76,24 +79,23 @@ impl NodeIdType for NodeId {
 
     fn eq_util_layer(&self, other: &Self) -> u8 {
         if self.layer(3) != other.layer(3) {
-            return 4
+            return 4;
         }
 
         if self.layer(2) != other.layer(2) {
-            return 3
+            return 3;
         }
 
         if self.layer(1) != other.layer(1) {
-            return 2
+            return 2;
         }
 
         if self.layer(0) != other.layer(0) {
-            return 1
+            return 1;
         }
 
-        return 0
+        return 0;
     }
-
 }
 
 #[cfg(test)]

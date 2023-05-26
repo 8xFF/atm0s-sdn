@@ -1,16 +1,16 @@
-use bluesea_identity::NodeId;
 use crate::table::metric::Metric;
 use crate::table::Path;
+use bluesea_identity::NodeId;
 
 #[derive(Debug)]
 pub struct Dest {
-    paths: Vec<Path>
+    paths: Vec<Path>,
 }
 
 impl Default for Dest {
     fn default() -> Self {
         Dest {
-            paths: Default::default()
+            paths: Default::default(),
         }
     }
 }
@@ -18,14 +18,12 @@ impl Default for Dest {
 impl Dest {
     pub fn set_path(&mut self, over: NodeId, metric: Metric) {
         match self.index_of(over) {
-            Some(index) => {
-                match self.paths.get_mut(index) {
-                    Some(slot) => {
-                        slot.1 = metric;
-                    },
-                    None => {
-                        debug_assert!(false, "CANNOT_HAPPEND");
-                    }
+            Some(index) => match self.paths.get_mut(index) {
+                Some(slot) => {
+                    slot.1 = metric;
+                }
+                None => {
+                    debug_assert!(false, "CANNOT_HAPPEND");
                 }
             },
             None => {
@@ -40,8 +38,8 @@ impl Dest {
             Some(index) => {
                 self.paths.remove(index);
                 Some(())
-            },
-            None => None
+            }
+            None => None,
         }
     }
 
@@ -84,7 +82,7 @@ impl Dest {
                     if path.0 == goal {
                         return Some(index);
                     }
-                },
+                }
                 None => {
                     debug_assert!(false, "CANNOT_HAPPEND");
                 }
@@ -97,8 +95,8 @@ impl Dest {
 
 #[cfg(test)]
 mod tests {
-    use bluesea_identity::NodeId;
     use crate::table::{Dest, Metric, Path};
+    use bluesea_identity::NodeId;
 
     #[test]
     fn push_sort() {
@@ -111,9 +109,18 @@ mod tests {
         dest.set_path(node2, Metric::new(2, vec![4, 2], 1));
 
         assert_eq!(dest.next(&vec![]), Some(node1));
-        assert_eq!(dest.next_path(&vec![node1]), Some(Path(node2, Metric::new(2, vec![4, 2], 1))));
-        assert_eq!(dest.next_path(&vec![node2]), Some(Path(node1, Metric::new(1, vec![4, 1], 1))));
-        assert_eq!(dest.next_path(&vec![node3]), Some(Path(node1, Metric::new(1, vec![4, 1], 1))));
+        assert_eq!(
+            dest.next_path(&vec![node1]),
+            Some(Path(node2, Metric::new(2, vec![4, 2], 1)))
+        );
+        assert_eq!(
+            dest.next_path(&vec![node2]),
+            Some(Path(node1, Metric::new(1, vec![4, 1], 1)))
+        );
+        assert_eq!(
+            dest.next_path(&vec![node3]),
+            Some(Path(node1, Metric::new(1, vec![4, 1], 1)))
+        );
         assert_eq!(dest.next(&vec![node1, node2]), None);
         assert_eq!(dest.next_path(&vec![node1, node2]), None);
     }
@@ -132,9 +139,18 @@ mod tests {
         dest.del_path(node1);
 
         assert_eq!(dest.next(&vec![]), Some(node2));
-        assert_eq!(dest.next_path(&vec![node1]), Some(Path(node2, Metric::new(2, vec![4, 6, 2], 1))));
-        assert_eq!(dest.next_path(&vec![node2]), Some(Path(node3, Metric::new(3, vec![4, 6, 2, 3], 1))));
-        assert_eq!(dest.next_path(&vec![node3]), Some(Path(node2, Metric::new(2, vec![4, 6, 2], 1))));
+        assert_eq!(
+            dest.next_path(&vec![node1]),
+            Some(Path(node2, Metric::new(2, vec![4, 6, 2], 1)))
+        );
+        assert_eq!(
+            dest.next_path(&vec![node2]),
+            Some(Path(node3, Metric::new(3, vec![4, 6, 2, 3], 1)))
+        );
+        assert_eq!(
+            dest.next_path(&vec![node3]),
+            Some(Path(node2, Metric::new(2, vec![4, 6, 2], 1)))
+        );
     }
 
     #[test]
@@ -148,7 +164,10 @@ mod tests {
         //this path from 3 => 2 => 1
         dest.set_path(node1, Metric::new(1, vec![3, 2, 1], 1));
 
-        assert_eq!(dest.best_for(node4), Some(Path(node1, Metric::new(1, vec![3, 2, 1], 1))));
+        assert_eq!(
+            dest.best_for(node4),
+            Some(Path(node1, Metric::new(1, vec![3, 2, 1], 1)))
+        );
         assert_eq!(dest.best_for(node1), None);
         assert_eq!(dest.best_for(node2), None);
     }

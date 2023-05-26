@@ -1,5 +1,5 @@
-use std::cmp::Ordering;
 use bluesea_identity::NodeId;
+use std::cmp::Ordering;
 
 use crate::table::Metric;
 
@@ -18,9 +18,7 @@ impl PartialEq<Self> for Path {
     }
 }
 
-impl Eq for Path {
-
-}
+impl Eq for Path {}
 
 impl Ord for Path {
     fn cmp(&self, other: &Self) -> Ordering {

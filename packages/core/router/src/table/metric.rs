@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
-use serde::{Deserialize, Serialize};
 use bluesea_identity::NodeId;
+use serde::{Deserialize, Serialize};
 
 pub const BANDWIDTH_LIMIT: u32 = 10000; //10Mbps
 const HOP_PLUS_RTT: u16 = 10; //10ms each hops
@@ -28,15 +28,17 @@ pub fn concat_hops(a: &Vec<NodeId>, b: &Vec<NodeId>) -> Option<Vec<NodeId>> {
 /// Example with indirect connection : A -> B -> C => hops: [C, B, B],
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Metric {
-    pub latency: u16, //in milliseconds
+    pub latency: u16,      //in milliseconds
     pub hops: Vec<NodeId>, //in hops, from 1 (direct)
-    pub bandwidth: u32, //in kbps
+    pub bandwidth: u32,    //in kbps
 }
 
 impl Metric {
     pub fn new(latency: u16, hops: Vec<NodeId>, bandwidth: u32) -> Self {
         Metric {
-            latency, hops, bandwidth
+            latency,
+            hops,
+            bandwidth,
         }
     }
 
@@ -55,8 +57,12 @@ impl Metric {
 
 impl PartialOrd for Metric {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        if (self.bandwidth >= BANDWIDTH_LIMIT && other.bandwidth >= BANDWIDTH_LIMIT) || (self.bandwidth < BANDWIDTH_LIMIT && other.bandwidth < BANDWIDTH_LIMIT) {
-            let res = match (self.latency + (self.hops.len() as u16 * HOP_PLUS_RTT)).cmp(&(other.latency + (other.hops.len() as u16 * HOP_PLUS_RTT))) {
+        if (self.bandwidth >= BANDWIDTH_LIMIT && other.bandwidth >= BANDWIDTH_LIMIT)
+            || (self.bandwidth < BANDWIDTH_LIMIT && other.bandwidth < BANDWIDTH_LIMIT)
+        {
+            let res = match (self.latency + (self.hops.len() as u16 * HOP_PLUS_RTT))
+                .cmp(&(other.latency + (other.hops.len() as u16 * HOP_PLUS_RTT)))
+            {
                 Ordering::Less => Ordering::Less,
                 Ordering::Greater => Ordering::Greater,
                 Ordering::Equal => match self.hops.len().cmp(&other.hops.len()) {
@@ -66,8 +72,8 @@ impl PartialOrd for Metric {
                         Ordering::Less => Ordering::Greater,
                         Ordering::Greater => Ordering::Less,
                         Ordering::Equal => Ordering::Equal,
-                    }
-                }
+                    },
+                },
             };
             Some(res)
         } else if self.bandwidth >= BANDWIDTH_LIMIT {
@@ -127,7 +133,7 @@ mod tests {
         let m2 = Metric::new(2, vec![2, 3], 20000);
         let m3 = Metric::new(2, vec![3, 4], 20000);
 
-        assert_eq!(m1.add(&m2), Some(Metric::new(3, vec![1,2,3], 10000)));
+        assert_eq!(m1.add(&m2), Some(Metric::new(3, vec![1, 2, 3], 10000)));
         assert_eq!(m1.add(&m3), None);
     }
 

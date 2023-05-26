@@ -1,5 +1,5 @@
-pub mod init_vec;
 pub mod init_array;
+pub mod init_vec;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 

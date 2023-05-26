@@ -1,12 +1,10 @@
-use std::collections::HashMap;
 use bluesea_identity::NodeId;
-
+use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use utils::init_array::init_array;
 
 use crate::table::{Dest, Metric, Path};
-
 
 pub const REGISTRY_LOCAL_BW: u32 = 1000000; //1Gbps
 
@@ -30,7 +28,10 @@ impl Registry {
         if self.dests[service_id as usize].is_empty() {
             log::info!("[Registry] added service {} from self", service_id);
         }
-        self.dests[service_id as usize].set_path(self.node_id, Metric::new(0, vec![self.node_id], REGISTRY_LOCAL_BW));
+        self.dests[service_id as usize].set_path(
+            self.node_id,
+            Metric::new(0, vec![self.node_id], REGISTRY_LOCAL_BW),
+        );
     }
 
     pub fn del_direct(&mut self, src: NodeId) {
@@ -38,7 +39,11 @@ impl Registry {
             let pre_empty = self.dests[i as usize].is_empty();
             self.dests[i as usize].del_path(src);
             if !pre_empty && self.dests[i as usize].is_empty() {
-                log::info!("[Registry] removed service {} from dest {} because of direct disconnected", i, src);
+                log::info!(
+                    "[Registry] removed service {} from dest {} because of direct disconnected",
+                    i,
+                    src
+                );
             }
         }
     }
@@ -48,7 +53,12 @@ impl Registry {
     }
 
     pub fn apply_sync(&mut self, src: NodeId, src_send_metric: Metric, sync: RegistrySync) {
-        log::debug!("apply sync from {} -> {}, sync {:?}", src, self.node_id, sync.0);
+        log::debug!(
+            "apply sync from {} -> {}, sync {:?}",
+            src,
+            self.node_id,
+            sync.0
+        );
         let mut cached: HashMap<u8, Metric> = HashMap::new();
         for (index, metric) in sync.0 {
             if let Some(sum) = metric.add(&src_send_metric) {
@@ -62,7 +72,11 @@ impl Registry {
                 None => {
                     if !dest.is_empty() {
                         if let Some(_) = dest.del_path(src) {
-                            log::info!("[Registry] removed service {} from dest {} after sync", i, src);
+                            log::info!(
+                                "[Registry] removed service {} from dest {} after sync",
+                                i,
+                                src
+                            );
                         }
                     }
                 }
@@ -91,7 +105,7 @@ impl Registry {
 
     pub fn dump(&self) {
         let mut slots = vec![];
-        let mut nexts =  vec![];
+        let mut nexts = vec![];
         let mut index = 0;
         for dest in &self.dests {
             if !dest.is_empty() {
@@ -100,15 +114,20 @@ impl Registry {
             }
             index += 1;
         }
-        log::info!("[Registry {}] services: {:?}, nexts {:?}", self.node_id, slots, nexts);
+        log::info!(
+            "[Registry {}] services: {:?}, nexts {:?}",
+            self.node_id,
+            slots,
+            nexts
+        );
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::registry::{Registry, RegistrySync, REGISTRY_LOCAL_BW};
+    use crate::table::Metric;
     use bluesea_identity::NodeId;
-    use crate::registry::{Registry, REGISTRY_LOCAL_BW, RegistrySync};
-    use crate::table::{Metric};
 
     #[test]
     fn create_manual() {
@@ -124,7 +143,10 @@ mod tests {
         assert_eq!(registry.next(1, &vec![0]), None);
 
         let sync = registry.sync_for(node1);
-        assert_eq!(sync.0, vec![(1, Metric::new(0, vec![0], REGISTRY_LOCAL_BW))]);
+        assert_eq!(
+            sync.0,
+            vec![(1, Metric::new(0, vec![0], REGISTRY_LOCAL_BW))]
+        );
     }
 
     #[test]
@@ -134,7 +156,11 @@ mod tests {
         let node1: NodeId = 0x1;
 
         assert_eq!(registry.next(1, &vec![]), None);
-        registry.apply_sync(node1, Metric::new(1, vec![1, 0], 1), RegistrySync(vec![(1, Metric::new(1, vec![1], 1))]));
+        registry.apply_sync(
+            node1,
+            Metric::new(1, vec![1, 0], 1),
+            RegistrySync(vec![(1, Metric::new(1, vec![1], 1))]),
+        );
         assert_eq!(registry.next(1, &vec![]), Some(node1));
 
         registry.del_direct(node1);
@@ -149,15 +175,26 @@ mod tests {
         let _node2: NodeId = 0x2;
         let _node3: NodeId = 0x3;
 
-        let sync = vec![(2, Metric::new(1, vec![node1], 1)), (3, Metric::new(1, vec![node1], 1))];
-        registry.apply_sync(node1, Metric::new(1, vec![node1, node0], 2), RegistrySync(sync));
+        let sync = vec![
+            (2, Metric::new(1, vec![node1], 1)),
+            (3, Metric::new(1, vec![node1], 1)),
+        ];
+        registry.apply_sync(
+            node1,
+            Metric::new(1, vec![node1, node0], 2),
+            RegistrySync(sync),
+        );
 
         assert_eq!(registry.next(1, &vec![]), None);
         assert_eq!(registry.next(2, &vec![]), Some(node1));
         assert_eq!(registry.next(3, &vec![]), Some(node1));
 
         let sync = vec![(3, Metric::new(1, vec![node1], 1))];
-        registry.apply_sync(node1, Metric::new(1, vec![node1, node0], 1), RegistrySync(sync));
+        registry.apply_sync(
+            node1,
+            Metric::new(1, vec![node1, node0], 1),
+            RegistrySync(sync),
+        );
         assert_eq!(registry.next(1, &vec![]), None);
         assert_eq!(registry.next(2, &vec![]), None);
         assert_eq!(registry.next(3, &vec![]), Some(node1));
@@ -173,12 +210,22 @@ mod tests {
         let node4: NodeId = 0x4;
 
         let sync = vec![(2, Metric::new(1, vec![node3, node2, node1], 1))];
-        registry.apply_sync(node1, Metric::new(1, vec![node1, node0], 2), RegistrySync(sync));
+        registry.apply_sync(
+            node1,
+            Metric::new(1, vec![node1, node0], 2),
+            RegistrySync(sync),
+        );
 
         assert_eq!(registry.next(2, &vec![]), Some(node1));
         assert_eq!(registry.sync_for(node1), RegistrySync(vec![]));
         assert_eq!(registry.sync_for(node2), RegistrySync(vec![]));
         assert_eq!(registry.sync_for(node3), RegistrySync(vec![]));
-        assert_eq!(registry.sync_for(node4), RegistrySync(vec![(2, Metric::new(2, vec![node3, node2, node1, node0], 1))]));
+        assert_eq!(
+            registry.sync_for(node4),
+            RegistrySync(vec![(
+                2,
+                Metric::new(2, vec![node3, node2, node1, node0], 1)
+            )])
+        );
     }
 }
