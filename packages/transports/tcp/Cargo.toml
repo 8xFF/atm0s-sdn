@@ -12,10 +12,10 @@ parking_lot = { workspace = true }
 bluesea-identity = { workspace = true }
 async-std = { workspace = true }
 serde = { workspace = true }
-bincode = { workspace = true }
 log = { workspace = true }
 utils = { workspace = true }
 futures-util = "0.3"
+async-bincode = { version = "0.7.1", features = ["futures"], default-features = false }
 
 [dev-dependencies]
 env_logger = { workspace = true }

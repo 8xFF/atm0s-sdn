@@ -6,3 +6,20 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+bluesea-identity = { workspace = true }
+utils = { workspace = true }
+network = { workspace = true }
+thiserror = { workspace = true }
+async-std = { workspace = true }
+router = { workspace = true }
+manual = { workspace = true }
+transport-tcp = { workspace = true }
+fast-path-route = { workspace = true }
+
+env_logger = { workspace = true }
+async-trait = { workspace = true }
+log = { workspace = true }
+parking_lot = { workspace = true }
+serde = { workspace = true }
+clap = { workspace = true }
+rand = { workspace = true }

@@ -1,10 +1,14 @@
 use crate::msg::TcpMsg;
+use async_bincode::futures::AsyncBincodeStream;
+use async_bincode::AsyncDestination;
 use async_std::channel::{bounded, unbounded, Receiver, RecvError, Sender};
 use async_std::net::{Shutdown, TcpStream};
 use async_std::task::JoinHandle;
 use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use futures_util::io::{ReadHalf, WriteHalf};
-use futures_util::{select, AsyncReadExt, AsyncWriteExt, FutureExt, StreamExt};
+use futures_util::{
+    select, sink::Sink, AsyncReadExt, AsyncWriteExt, FutureExt, SinkExt, StreamExt,
+};
 use network::transport::{
     ConnectionEvent, ConnectionMsg, ConnectionReceiver, ConnectionSender, ConnectionStats,
 };
@@ -13,22 +17,19 @@ use std::sync::Arc;
 use std::time::Duration;
 use utils::Timer;
 
-pub const BUFFER_LEN: usize = 1500;
+pub type AsyncBincodeStreamU16<MSG> =
+    AsyncBincodeStream<TcpStream, TcpMsg<MSG>, TcpMsg<MSG>, AsyncDestination>;
+
+pub const BUFFER_LEN: usize = 16384;
 
 pub async fn send_tcp_stream<MSG: Serialize>(
-    writer: &mut TcpStream,
+    writer: &mut AsyncBincodeStreamU16<MSG>,
     msg: TcpMsg<MSG>,
 ) -> Result<(), ()> {
-    match bincode::serialize(&msg) {
-        Ok(buf) => match writer.write_all(&buf).await {
-            Ok(_) => Ok(()),
-            Err(err) => {
-                log::error!("[TcpTransport] write buffer error {:?}", err);
-                Err(())
-            }
-        },
+    match writer.send(msg).await {
+        Ok(_) => Ok(()),
         Err(err) => {
-            log::error!("[TcpTransport] serialize buffer error {:?}", err);
+            log::error!("[TcpTransport] write buffer error {:?}", err);
             Err(())
         }
     }
@@ -59,7 +60,7 @@ where
         remote_addr: NodeAddr,
         conn_id: ConnId,
         unreliable_queue_size: usize,
-        mut socket: TcpStream,
+        mut socket: AsyncBincodeStreamU16<MSG>,
         timer: Arc<dyn Timer>,
     ) -> (Self, Sender<OutgoingEvent<MSG>>) {
         let (reliable_sender, mut r_rx) = unbounded();
@@ -89,7 +90,7 @@ where
                         if let Err(e) = send_tcp_stream(&mut socket, msg).await {}
                     }
                     Ok(OutgoingEvent::CloseRequest) => {
-                        if let Err(e) = socket.shutdown(Shutdown::Both) {
+                        if let Err(e) = socket.get_mut().shutdown(Shutdown::Both) {
                             log::error!(
                                 "[TcpConnectionSender {} => {}] close sender error {}",
                                 node_id,
@@ -208,11 +209,13 @@ impl<MSG> Drop for TcpConnectionSender<MSG> {
 }
 
 pub async fn recv_tcp_stream<MSG: DeserializeOwned>(
-    buf: &mut [u8],
-    reader: &mut TcpStream,
+    reader: &mut AsyncBincodeStreamU16<MSG>,
 ) -> Result<TcpMsg<MSG>, ()> {
-    let size = reader.read(buf).await.map_err(|_| ())?;
-    bincode::deserialize::<TcpMsg<MSG>>(&buf[0..size]).map_err(|_| ())
+    if let Some(res) = reader.next().await {
+        res.map_err(|_| ())
+    } else {
+        Err(())
+    }
 }
 
 pub struct TcpConnectionReceiver<MSG> {
@@ -220,8 +223,7 @@ pub struct TcpConnectionReceiver<MSG> {
     pub(crate) remote_node_id: NodeId,
     pub(crate) remote_addr: NodeAddr,
     pub(crate) conn_id: ConnId,
-    pub(crate) socket: TcpStream,
-    pub(crate) buf: [u8; BUFFER_LEN],
+    pub(crate) socket: AsyncBincodeStreamU16<MSG>,
     pub(crate) timer: Arc<dyn Timer>,
     pub(crate) reliable_sender: Sender<OutgoingEvent<MSG>>,
 }
@@ -250,7 +252,7 @@ where
                 self.node_id,
                 self.remote_node_id
             );
-            match recv_tcp_stream::<MSG>(&mut self.buf, &mut self.socket).await {
+            match recv_tcp_stream::<MSG>(&mut self.socket).await {
                 Ok(msg) => {
                     match msg {
                         TcpMsg::Msg(service_id, msg) => {

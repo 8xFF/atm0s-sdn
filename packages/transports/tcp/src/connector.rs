@@ -1,5 +1,9 @@
-use crate::connection::{TcpConnectionReceiver, TcpConnectionSender, BUFFER_LEN};
+use crate::connection::{
+    AsyncBincodeStreamU16, TcpConnectionReceiver, TcpConnectionSender, BUFFER_LEN,
+};
 use crate::handshake::{outgoing_handshake, OutgoingHandshakeError};
+use crate::msg::TcpMsg;
+use async_bincode::futures::AsyncBincodeStream;
 use async_std::channel::{bounded, unbounded, Sender};
 use async_std::net::{Shutdown, TcpStream};
 use bluesea_identity::{ConnDirection, ConnId, NodeAddr, NodeAddrBuilder, NodeId, Protocol};
@@ -116,12 +120,18 @@ where
             }
 
             match TcpStream::connect(remote_addr).await {
-                Ok(mut socket) => {
+                Ok(socket) => {
+                    let mut socket_read =
+                        AsyncBincodeStream::<_, TcpMsg<MSG>, TcpMsg<MSG>, _>::from(socket.clone())
+                            .for_async();
+                    let mut socket_write =
+                        AsyncBincodeStream::<_, TcpMsg<MSG>, TcpMsg<MSG>, _>::from(socket.clone())
+                            .for_async();
                     match outgoing_handshake::<MSG>(
                         remote_node_id,
                         node_id,
                         node_addr,
-                        &mut socket,
+                        &mut socket_read,
                         conn_id,
                         &internal_tx,
                     )
@@ -134,7 +144,7 @@ where
                                 remote_node_addr.clone(),
                                 conn_id,
                                 1000,
-                                socket.clone(),
+                                socket_write,
                                 timer.clone(),
                             );
                             let connection_receiver = Box::new(TcpConnectionReceiver {
@@ -142,8 +152,7 @@ where
                                 remote_node_id,
                                 remote_addr: remote_node_addr,
                                 conn_id,
-                                socket,
-                                buf: [0; BUFFER_LEN],
+                                socket: socket_read,
                                 timer,
                                 reliable_sender,
                             });
