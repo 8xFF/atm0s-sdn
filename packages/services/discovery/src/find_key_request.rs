@@ -1,5 +1,5 @@
 use crate::kbucket::K_BUCKET;
-use bluesea_identity::{PeerAddr, PeerId};
+use bluesea_identity::{NodeAddr, NodeId};
 use std::collections::{HashMap, VecDeque};
 
 #[derive(Debug, Eq, PartialEq)]
@@ -15,7 +15,7 @@ impl FindKeyRequestStatus {
     }
 }
 
-enum PeerState {
+enum NodeState {
     Waiting { at: u64 },
     Connecting { at: u64 },
     Connected { at: u64 },
@@ -26,18 +26,18 @@ enum PeerState {
 
 pub struct FindKeyRequest {
     req_id: u32,
-    key: PeerId,
+    key: NodeId,
     timeout: u64,
-    peers: Vec<(PeerId, PeerAddr, PeerState)>,
+    nodes: Vec<(NodeId, NodeAddr, NodeState)>,
 }
 
 impl FindKeyRequest {
-    pub fn new(req_id: u32, key: PeerId, timeout: u64) -> Self {
+    pub fn new(req_id: u32, key: NodeId, timeout: u64) -> Self {
         Self {
             req_id,
             key,
             timeout,
-            peers: Default::default(),
+            nodes: Default::default(),
         }
     }
 
@@ -53,7 +53,7 @@ impl FindKeyRequest {
         self.req_id
     }
 
-    pub fn key(&self) -> PeerId {
+    pub fn key(&self) -> NodeId {
         self.key
     }
 
@@ -61,41 +61,41 @@ impl FindKeyRequest {
         let mut waiting_count = 0;
         let mut timeout_count = 0;
         let mut finished_count = 0;
-        let loop_len = K_BUCKET.min(self.peers.len());
-        for (_, _, state) in &self.peers[0..loop_len] {
+        let loop_len = K_BUCKET.min(self.nodes.len());
+        for (_, _, state) in &self.nodes[0..loop_len] {
             match state {
-                PeerState::Waiting { at, .. } => {
+                NodeState::Waiting { at, .. } => {
                     if *at + self.timeout > ts {
                         waiting_count += 1;
                     } else {
                         timeout_count += 1;
                     }
                 }
-                PeerState::Connecting { at, .. } => {
+                NodeState::Connecting { at, .. } => {
                     if *at + self.timeout > ts {
                         waiting_count += 1;
                     } else {
                         timeout_count += 1;
                     }
                 }
-                PeerState::Connected { at, .. } => {
+                NodeState::Connected { at, .. } => {
                     if *at + self.timeout > ts {
                         waiting_count += 1;
                     } else {
                         timeout_count += 1;
                     }
                 }
-                PeerState::Requesting { at, .. } => {
+                NodeState::Requesting { at, .. } => {
                     if *at + self.timeout > ts {
                         waiting_count += 1;
                     } else {
                         timeout_count += 1;
                     }
                 }
-                PeerState::ReceivedAnswer { .. } => {
+                NodeState::ReceivedAnswer { .. } => {
                     finished_count += 1;
                 }
-                PeerState::ConnectError { .. } => {
+                NodeState::ConnectError { .. } => {
                     timeout_count += 1;
                 }
             }
@@ -110,28 +110,28 @@ impl FindKeyRequest {
         }
     }
 
-    pub fn push_peer(&mut self, ts: u64, peer: PeerId, addr: PeerAddr, connected: bool) {
-        for (in_peer, _, _) in &self.peers {
-            if *in_peer == peer {
+    pub fn push_node(&mut self, ts: u64, node: NodeId, addr: NodeAddr, connected: bool) {
+        for (in_node, _, _) in &self.nodes {
+            if *in_node == node {
                 return;
             }
         }
         let state = if connected {
-            PeerState::Connected { at: ts }
+            NodeState::Connected { at: ts }
         } else {
-            PeerState::Waiting { at: ts }
+            NodeState::Waiting { at: ts }
         };
-        self.peers.push((peer, addr, state));
+        self.nodes.push((node, addr, state));
         let key = self.key;
-        self.peers.sort_by_key(|(peer, _, _)| *peer ^ key);
+        self.nodes.sort_by_key(|(node, _, _)| *node ^ key);
     }
 
-    pub fn pop_connect(&mut self, ts: u64) -> Option<(PeerId, PeerAddr)> {
-        for (peer, addr, state) in &mut self.peers {
+    pub fn pop_connect(&mut self, ts: u64) -> Option<(NodeId, NodeAddr)> {
+        for (node, addr, state) in &mut self.nodes {
             match state {
-                PeerState::Waiting { .. } => {
-                    *state = PeerState::Connecting { at: ts };
-                    return Some((*peer, addr.clone()));
+                NodeState::Waiting { .. } => {
+                    *state = NodeState::Connecting { at: ts };
+                    return Some((*node, addr.clone()));
                 }
                 _ => {}
             }
@@ -140,12 +140,12 @@ impl FindKeyRequest {
         None
     }
 
-    pub fn pop_request(&mut self, ts: u64) -> Option<PeerId> {
-        for (peer, addr, state) in &mut self.peers {
+    pub fn pop_request(&mut self, ts: u64) -> Option<NodeId> {
+        for (node, addr, state) in &mut self.nodes {
             match state {
-                PeerState::Connected { .. } => {
-                    *state = PeerState::Requesting { at: ts };
-                    return Some(*peer);
+                NodeState::Connected { .. } => {
+                    *state = NodeState::Requesting { at: ts };
+                    return Some(*node);
                 }
                 _ => {}
             }
@@ -154,12 +154,12 @@ impl FindKeyRequest {
         None
     }
 
-    pub fn on_connected_peer(&mut self, ts: u64, from_peer: PeerId) -> bool {
-        for (peer, _addr, state) in &mut self.peers {
+    pub fn on_connected_node(&mut self, ts: u64, from_node: NodeId) -> bool {
+        for (node, _addr, state) in &mut self.nodes {
             match state {
-                PeerState::Connecting { .. } => {
-                    if *peer == from_peer {
-                        *state = PeerState::Connected { at: ts };
+                NodeState::Connecting { .. } => {
+                    if *node == from_node {
+                        *state = NodeState::Connected { at: ts };
                         return true;
                     }
                 }
@@ -170,12 +170,12 @@ impl FindKeyRequest {
         false
     }
 
-    pub fn on_connect_error_peer(&mut self, ts: u64, from_peer: PeerId) -> bool {
-        for (peer, addr, state) in &mut self.peers {
+    pub fn on_connect_error_node(&mut self, ts: u64, from_node: NodeId) -> bool {
+        for (node, addr, state) in &mut self.nodes {
             match state {
-                PeerState::Connecting { .. } => {
-                    if *peer == from_peer {
-                        *state = PeerState::ConnectError { at: ts };
+                NodeState::Connecting { .. } => {
+                    if *node == from_node {
+                        *state = NodeState::ConnectError { at: ts };
                         return true;
                     }
                 }
@@ -186,19 +186,19 @@ impl FindKeyRequest {
         false
     }
 
-    pub fn on_answered_peer(
+    pub fn on_answered_node(
         &mut self,
         ts: u64,
-        from_peer: PeerId,
-        res: Vec<(PeerId, PeerAddr, bool)>,
+        from_node: NodeId,
+        res: Vec<(NodeId, NodeAddr, bool)>,
     ) -> bool {
-        for (peer, addr, state) in &mut self.peers {
+        for (node, addr, state) in &mut self.nodes {
             match state {
-                PeerState::Requesting { .. } => {
-                    if *peer == from_peer {
-                        *state = PeerState::ReceivedAnswer { at: ts };
-                        for (peer, addr, connected) in res {
-                            self.push_peer(ts, peer, addr, connected);
+                NodeState::Requesting { .. } => {
+                    if *node == from_node {
+                        *state = NodeState::ReceivedAnswer { at: ts };
+                        for (node, addr, connected) in res {
+                            self.push_node(ts, node, addr, connected);
                         }
                         return true;
                     }
@@ -214,7 +214,7 @@ impl FindKeyRequest {
 #[cfg(test)]
 mod tests {
     use super::{FindKeyRequest, FindKeyRequestStatus};
-    use bluesea_identity::{PeerAddr, Protocol};
+    use bluesea_identity::{NodeAddr, Protocol};
 
     #[derive(PartialEq, Debug)]
     enum Msg {
@@ -230,21 +230,21 @@ mod tests {
     #[test]
     fn simple_test_connect() {
         let mut list = FindKeyRequest::new(0, 0, 10000);
-        list.push_peer(0, 1, PeerAddr::from(Protocol::Udp(1)), false);
-        list.push_peer(0, 2, PeerAddr::from(Protocol::Udp(2)), false);
-        list.push_peer(0, 3, PeerAddr::from(Protocol::Udp(3)), false);
+        list.push_node(0, 1, NodeAddr::from(Protocol::Udp(1)), false);
+        list.push_node(0, 2, NodeAddr::from(Protocol::Udp(2)), false);
+        list.push_node(0, 3, NodeAddr::from(Protocol::Udp(3)), false);
 
         assert_eq!(
             list.pop_connect(0),
-            Some((1, PeerAddr::from(Protocol::Udp(1))))
+            Some((1, NodeAddr::from(Protocol::Udp(1))))
         );
         assert_eq!(
             list.pop_connect(0),
-            Some((2, PeerAddr::from(Protocol::Udp(2))))
+            Some((2, NodeAddr::from(Protocol::Udp(2))))
         );
         assert_eq!(
             list.pop_connect(0),
-            Some((3, PeerAddr::from(Protocol::Udp(3))))
+            Some((3, NodeAddr::from(Protocol::Udp(3))))
         );
         assert_eq!(list.pop_connect(0), None);
         assert_eq!(list.pop_request(0), None);
@@ -253,21 +253,21 @@ mod tests {
     #[test]
     fn test_unordered_connec() {
         let mut list = FindKeyRequest::new(0, 0, 10000);
-        list.push_peer(0, 2, PeerAddr::from(Protocol::Udp(2)), false);
-        list.push_peer(0, 1, PeerAddr::from(Protocol::Udp(1)), false);
-        list.push_peer(0, 3, PeerAddr::from(Protocol::Udp(3)), false);
+        list.push_node(0, 2, NodeAddr::from(Protocol::Udp(2)), false);
+        list.push_node(0, 1, NodeAddr::from(Protocol::Udp(1)), false);
+        list.push_node(0, 3, NodeAddr::from(Protocol::Udp(3)), false);
 
         assert_eq!(
             list.pop_connect(0),
-            Some((1, PeerAddr::from(Protocol::Udp(1))))
+            Some((1, NodeAddr::from(Protocol::Udp(1))))
         );
         assert_eq!(
             list.pop_connect(0),
-            Some((2, PeerAddr::from(Protocol::Udp(2))))
+            Some((2, NodeAddr::from(Protocol::Udp(2))))
         );
         assert_eq!(
             list.pop_connect(0),
-            Some((3, PeerAddr::from(Protocol::Udp(3))))
+            Some((3, NodeAddr::from(Protocol::Udp(3))))
         );
         assert_eq!(list.pop_connect(0), None);
         assert_eq!(list.pop_request(0), None);
@@ -276,9 +276,9 @@ mod tests {
     #[test]
     fn simple_test_request() {
         let mut list = FindKeyRequest::new(0, 0, 10000);
-        list.push_peer(0, 1, PeerAddr::from(Protocol::Udp(1)), true);
-        list.push_peer(0, 2, PeerAddr::from(Protocol::Udp(2)), true);
-        list.push_peer(0, 3, PeerAddr::from(Protocol::Udp(3)), true);
+        list.push_node(0, 1, NodeAddr::from(Protocol::Udp(1)), true);
+        list.push_node(0, 2, NodeAddr::from(Protocol::Udp(2)), true);
+        list.push_node(0, 3, NodeAddr::from(Protocol::Udp(3)), true);
 
         assert_eq!(list.pop_request(0), Some(1));
         assert_eq!(list.pop_request(0), Some(2));
@@ -290,9 +290,9 @@ mod tests {
     #[test]
     fn test_unordered_request() {
         let mut list = FindKeyRequest::new(0, 0, 10000);
-        list.push_peer(0, 2, PeerAddr::from(Protocol::Udp(2)), true);
-        list.push_peer(0, 1, PeerAddr::from(Protocol::Udp(1)), true);
-        list.push_peer(0, 3, PeerAddr::from(Protocol::Udp(3)), true);
+        list.push_node(0, 2, NodeAddr::from(Protocol::Udp(2)), true);
+        list.push_node(0, 1, NodeAddr::from(Protocol::Udp(1)), true);
+        list.push_node(0, 3, NodeAddr::from(Protocol::Udp(3)), true);
 
         assert_eq!(list.pop_request(0), Some(1));
         assert_eq!(list.pop_request(0), Some(2));
@@ -304,22 +304,22 @@ mod tests {
     #[test]
     fn test_duplicate() {
         let mut list = FindKeyRequest::new(0, 0, 10000);
-        list.push_peer(0, 1, PeerAddr::from(Protocol::Udp(1)), false);
-        list.push_peer(0, 1, PeerAddr::from(Protocol::Udp(1)), false);
-        list.push_peer(0, 2, PeerAddr::from(Protocol::Udp(2)), false);
-        list.push_peer(0, 3, PeerAddr::from(Protocol::Udp(3)), false);
+        list.push_node(0, 1, NodeAddr::from(Protocol::Udp(1)), false);
+        list.push_node(0, 1, NodeAddr::from(Protocol::Udp(1)), false);
+        list.push_node(0, 2, NodeAddr::from(Protocol::Udp(2)), false);
+        list.push_node(0, 3, NodeAddr::from(Protocol::Udp(3)), false);
 
         assert_eq!(
             list.pop_connect(0),
-            Some((1, PeerAddr::from(Protocol::Udp(1))))
+            Some((1, NodeAddr::from(Protocol::Udp(1))))
         );
         assert_eq!(
             list.pop_connect(0),
-            Some((2, PeerAddr::from(Protocol::Udp(2))))
+            Some((2, NodeAddr::from(Protocol::Udp(2))))
         );
         assert_eq!(
             list.pop_connect(0),
-            Some((3, PeerAddr::from(Protocol::Udp(3))))
+            Some((3, NodeAddr::from(Protocol::Udp(3))))
         );
         assert_eq!(list.pop_connect(0), None);
         assert_eq!(list.pop_request(0), None);
@@ -329,7 +329,7 @@ mod tests {
     fn test_timeout_not_connect() {
         let mut list = FindKeyRequest::new(0, 0, 10000);
 
-        list.push_peer(0, 1, PeerAddr::from(Protocol::Udp(1)), false);
+        list.push_node(0, 1, NodeAddr::from(Protocol::Udp(1)), false);
         assert_eq!(list.status(5000), FindKeyRequestStatus::Requesting);
         assert_eq!(list.status(10001), FindKeyRequestStatus::Timeout);
     }
@@ -338,12 +338,12 @@ mod tests {
     fn test_connect_error() {
         let mut list = FindKeyRequest::new(0, 0, 10000);
 
-        list.push_peer(0, 1, PeerAddr::from(Protocol::Udp(1)), false);
+        list.push_node(0, 1, NodeAddr::from(Protocol::Udp(1)), false);
         list.pop_connect(0);
 
         assert_eq!(list.status(5000), FindKeyRequestStatus::Requesting);
-        assert_eq!(list.on_connect_error_peer(5000, 2), false);
-        assert_eq!(list.on_connect_error_peer(5000, 1), true);
+        assert_eq!(list.on_connect_error_node(5000, 2), false);
+        assert_eq!(list.on_connect_error_node(5000, 1), true);
         assert_eq!(list.status(10001), FindKeyRequestStatus::Timeout);
     }
 
@@ -351,10 +351,10 @@ mod tests {
     fn test_request_timeout() {
         let mut list = FindKeyRequest::new(0, 0, 10000);
 
-        list.push_peer(0, 1, PeerAddr::from(Protocol::Udp(1)), false);
+        list.push_node(0, 1, NodeAddr::from(Protocol::Udp(1)), false);
         list.pop_connect(0);
-        assert_eq!(list.on_connected_peer(5000, 2), false);
-        assert_eq!(list.on_connected_peer(5000, 1), true);
+        assert_eq!(list.on_connected_node(5000, 2), false);
+        assert_eq!(list.on_connected_node(5000, 1), true);
         list.pop_request(0);
         assert_eq!(list.status(5000), FindKeyRequestStatus::Requesting);
         assert_eq!(list.status(15001), FindKeyRequestStatus::Timeout);
@@ -364,14 +364,14 @@ mod tests {
     fn test_request_success() {
         let mut list = FindKeyRequest::new(0, 0, 10000);
 
-        list.push_peer(0, 1, PeerAddr::from(Protocol::Udp(1)), false);
+        list.push_node(0, 1, NodeAddr::from(Protocol::Udp(1)), false);
         list.pop_connect(0);
         assert_eq!(list.status(5000), FindKeyRequestStatus::Requesting);
-        assert_eq!(list.on_connected_peer(5000, 1), true);
+        assert_eq!(list.on_connected_node(5000, 1), true);
         assert_eq!(list.pop_request(0), Some(1));
 
         assert_eq!(list.status(5000), FindKeyRequestStatus::Requesting);
-        assert_eq!(list.on_answered_peer(5000, 1, vec![]), true);
+        assert_eq!(list.on_answered_node(5000, 1, vec![]), true);
         assert_eq!(list.status(15001), FindKeyRequestStatus::Finished);
     }
 
@@ -379,13 +379,13 @@ mod tests {
     fn test_get_better_result() {
         let mut list = FindKeyRequest::new(0, 0, 10000);
 
-        list.push_peer(0, 1000, PeerAddr::from(Protocol::Udp(1)), true);
+        list.push_node(0, 1000, NodeAddr::from(Protocol::Udp(1)), true);
         assert_eq!(list.pop_request(0), Some(1000));
         assert_eq!(
-            list.on_answered_peer(
+            list.on_answered_node(
                 1000,
                 1000,
-                vec![(100, PeerAddr::from(Protocol::Udp(1)), true)]
+                vec![(100, NodeAddr::from(Protocol::Udp(1)), true)]
             ),
             true
         );

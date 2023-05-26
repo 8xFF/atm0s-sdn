@@ -1,4 +1,4 @@
-use bluesea_identity::PeerAddr;
+use bluesea_identity::NodeAddr;
 use serde::{Deserialize, Serialize};
 
 #[derive(PartialEq, Debug)]
@@ -12,7 +12,7 @@ pub enum ManualMsg {}
 
 #[derive(PartialEq, Debug)]
 pub enum ManualReq {
-    AddNeighbors(Vec<PeerAddr>),
+    AddNeighbors(Vec<NodeAddr>),
     GetNeighbors(),
     GetConnections(),
 }
@@ -28,6 +28,6 @@ pub enum ConnectionState {
 #[derive(PartialEq, Debug)]
 pub enum ManualRes {
     AddNeighborsRes(usize),
-    GetNeighborsRes(Vec<PeerAddr>),
-    GetConnectionsRes(Vec<(u32, PeerAddr, ConnectionState)>),
+    GetNeighborsRes(Vec<NodeAddr>),
+    GetConnectionsRes(Vec<(u32, NodeAddr, ConnectionState)>),
 }

@@ -1,7 +1,7 @@
 use crate::handler::ManualHandler;
 use crate::msg::*;
 use crate::MANUAL_SERVICE_ID;
-use bluesea_identity::{PeerAddr, PeerAddrType, PeerId};
+use bluesea_identity::{NodeAddr, NodeAddrType, NodeId};
 use network::behaviour::{ConnectionHandler, NetworkBehavior};
 use network::transport::{
     ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer,
@@ -22,19 +22,19 @@ enum OutgoingState {
     ConnectError(u64, Option<u32>, OutgoingConnectionError, usize),
 }
 
-struct PeerSlot {
-    addr: PeerAddr,
+struct NodeSlot {
+    addr: NodeAddr,
     incoming: Option<u32>,
     outgoing: OutgoingState,
 }
 
 pub struct ManualBehaviorConf {
-    pub neighbours: Vec<PeerAddr>,
+    pub neighbours: Vec<NodeAddr>,
     pub timer: Arc<dyn Timer>,
 }
 
 pub struct ManualBehavior {
-    neighbours: HashMap<PeerId, PeerSlot>,
+    neighbours: HashMap<NodeId, NodeSlot>,
     timer: Arc<dyn Timer>,
 }
 
@@ -42,10 +42,10 @@ impl ManualBehavior {
     pub fn new(conf: ManualBehaviorConf) -> Self {
         let mut neighbours = HashMap::new();
         for addr in conf.neighbours {
-            if let Some(node_id) = addr.peer_id() {
+            if let Some(node_id) = addr.node_id() {
                 neighbours.insert(
                     node_id,
-                    PeerSlot {
+                    NodeSlot {
                         addr,
                         incoming: None,
                         outgoing: OutgoingState::New,
@@ -73,14 +73,14 @@ where
     }
 
     fn on_tick(&mut self, agent: &BehaviorAgent<HE, MSG>, ts_ms: u64, interal_ms: u64) {
-        for (peer_id, slot) in &mut self.neighbours {
+        for (node_id, slot) in &mut self.neighbours {
             if slot.incoming.is_none() {
                 match &slot.outgoing {
-                    OutgoingState::New => match agent.connect_to(*peer_id, slot.addr.clone()) {
+                    OutgoingState::New => match agent.connect_to(*node_id, slot.addr.clone()) {
                         Ok(conn) => {
                             log::info!(
                                 "[ManualBehavior] connect to {} with addr {} => conn: {}",
-                                peer_id,
+                                node_id,
                                 slot.addr,
                                 conn.connection_id
                             );
@@ -89,7 +89,7 @@ where
                         Err(err) => {
                             log::error!(
                                 "[ManualBehavior] connect to {} with addr {} => error {:?}",
-                                peer_id,
+                                node_id,
                                 slot.addr,
                                 err
                             );
@@ -100,11 +100,11 @@ where
                         let sleep_ms = CONNECT_WAIT.get(*count).unwrap_or(&CONNECT_WAIT_MAX);
                         if ts + *sleep_ms < ts_ms {
                             //need reconnect
-                            match agent.connect_to(*peer_id, slot.addr.clone()) {
+                            match agent.connect_to(*node_id, slot.addr.clone()) {
                                 Ok(conn) => {
                                     log::info!(
                                         "[ManualBehavior] reconnect to {} with addr {} => conn: {}",
-                                        peer_id,
+                                        node_id,
                                         slot.addr,
                                         conn.connection_id
                                     );
@@ -115,7 +115,7 @@ where
                                     );
                                 }
                                 Err(err) => {
-                                    log::error!("[ManualBehavior] reconnect to {} with addr {} => error {:?}", peer_id, slot.addr, err);
+                                    log::error!("[ManualBehavior] reconnect to {} with addr {} => error {:?}", node_id, slot.addr, err);
                                     slot.outgoing =
                                         OutgoingState::ConnectError(ts_ms, None, err, count + 1);
                                 }
@@ -130,7 +130,7 @@ where
 
     fn check_incoming_connection(
         &mut self,
-        peer: PeerId,
+        node: NodeId,
         conn_id: u32,
     ) -> Result<(), ConnectionRejectReason> {
         Ok(())
@@ -138,7 +138,7 @@ where
 
     fn check_outgoing_connection(
         &mut self,
-        peer: PeerId,
+        node: NodeId,
         conn_id: u32,
     ) -> Result<(), ConnectionRejectReason> {
         Ok(())
@@ -151,8 +151,8 @@ where
     ) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
         let entry = self
             .neighbours
-            .entry(connection.remote_peer_id())
-            .or_insert_with(|| PeerSlot {
+            .entry(connection.remote_node_id())
+            .or_insert_with(|| NodeSlot {
                 addr: connection.remote_addr(),
                 incoming: None,
                 outgoing: OutgoingState::New,
@@ -168,8 +168,8 @@ where
     ) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
         let entry = self
             .neighbours
-            .entry(connection.remote_peer_id())
-            .or_insert_with(|| PeerSlot {
+            .entry(connection.remote_node_id())
+            .or_insert_with(|| NodeSlot {
                 addr: connection.remote_addr(),
                 incoming: None,
                 outgoing: OutgoingState::New,
@@ -183,7 +183,7 @@ where
         agent: &BehaviorAgent<HE, MSG>,
         connection: Arc<dyn ConnectionSender<MSG>>,
     ) {
-        if let Some(slot) = self.neighbours.get_mut(&connection.remote_peer_id()) {
+        if let Some(slot) = self.neighbours.get_mut(&connection.remote_node_id()) {
             slot.incoming = None;
         }
     }
@@ -193,7 +193,7 @@ where
         agent: &BehaviorAgent<HE, MSG>,
         connection: Arc<dyn ConnectionSender<MSG>>,
     ) {
-        if let Some(slot) = self.neighbours.get_mut(&connection.remote_peer_id()) {
+        if let Some(slot) = self.neighbours.get_mut(&connection.remote_node_id()) {
             slot.outgoing = OutgoingState::New;
         }
     }
@@ -201,11 +201,11 @@ where
     fn on_outgoing_connection_error(
         &mut self,
         agent: &BehaviorAgent<HE, MSG>,
-        peer_id: PeerId,
+        node_id: NodeId,
         connection_id: u32,
         err: &OutgoingConnectionError,
     ) {
-        if let Some(slot) = self.neighbours.get_mut(&peer_id) {
+        if let Some(slot) = self.neighbours.get_mut(&node_id) {
             match slot.outgoing {
                 OutgoingState::Connecting(_, _, count) => {
                     slot.outgoing = OutgoingState::ConnectError(
@@ -223,7 +223,7 @@ where
     fn on_handler_event(
         &mut self,
         agent: &BehaviorAgent<HE, MSG>,
-        peer_id: PeerId,
+        node_id: NodeId,
         connection_id: u32,
         event: BE,
     ) {
@@ -240,12 +240,12 @@ where
                 ManualReq::AddNeighbors(addrs) => {
                     let mut added_count = 0;
                     for addr in addrs {
-                        if let Some(node_id) = addr.peer_id() {
+                        if let Some(node_id) = addr.node_id() {
                             if self
                                 .neighbours
                                 .insert(
                                     node_id,
-                                    PeerSlot {
+                                    NodeSlot {
                                         addr,
                                         incoming: None,
                                         outgoing: OutgoingState::New,

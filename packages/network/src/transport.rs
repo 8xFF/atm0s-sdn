@@ -1,5 +1,5 @@
 use async_std::channel::{bounded, Receiver, Sender};
-use bluesea_identity::{PeerAddr, PeerId};
+use bluesea_identity::{NodeAddr, NodeId};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -10,8 +10,8 @@ pub struct TransportPendingOutgoing {
 }
 
 pub enum TransportEvent<MSG> {
-    IncomingRequest(PeerId, u32, Box<dyn ConnectionAcceptor>),
-    OutgoingRequest(PeerId, u32, Box<dyn ConnectionAcceptor>),
+    IncomingRequest(NodeId, u32, Box<dyn ConnectionAcceptor>),
+    OutgoingRequest(NodeId, u32, Box<dyn ConnectionAcceptor>),
     Incoming(
         Arc<dyn ConnectionSender<MSG>>,
         Box<dyn ConnectionReceiver<MSG> + Send>,
@@ -21,7 +21,7 @@ pub enum TransportEvent<MSG> {
         Box<dyn ConnectionReceiver<MSG> + Send>,
     ),
     OutgoingError {
-        peer_id: PeerId,
+        node_id: NodeId,
         connection_id: u32,
         err: OutgoingConnectionError,
     },
@@ -46,8 +46,8 @@ pub trait TransportRpc<Req, Res> {
 pub trait TransportConnector: Send + Sync {
     fn connect_to(
         &self,
-        peer_id: PeerId,
-        dest: PeerAddr,
+        node_id: NodeId,
+        dest: NodeAddr,
     ) -> Result<TransportPendingOutgoing, OutgoingConnectionError>;
 }
 
@@ -91,18 +91,18 @@ pub trait ConnectionAcceptor: Send + Sync {
 }
 
 pub trait ConnectionSender<MSG>: Send + Sync {
-    fn remote_peer_id(&self) -> PeerId;
+    fn remote_node_id(&self) -> NodeId;
     fn connection_id(&self) -> u32;
-    fn remote_addr(&self) -> PeerAddr;
+    fn remote_addr(&self) -> NodeAddr;
     fn send(&self, service_id: u8, msg: ConnectionMsg<MSG>);
     fn close(&self);
 }
 
 #[async_trait::async_trait]
 pub trait ConnectionReceiver<MSG> {
-    fn remote_peer_id(&self) -> PeerId;
+    fn remote_node_id(&self) -> NodeId;
     fn connection_id(&self) -> u32;
-    fn remote_addr(&self) -> PeerAddr;
+    fn remote_addr(&self) -> NodeAddr;
     async fn poll(&mut self) -> Result<ConnectionEvent<MSG>, ()>;
 }
 

@@ -1,6 +1,6 @@
 use crate::kbucket::bucket::KBucket;
 use crate::kbucket::entry::EntryState;
-use bluesea_identity::{PeerAddr, PeerId, PeerIdType};
+use bluesea_identity::{NodeAddr, NodeId, NodeIdType};
 
 pub mod bucket;
 pub mod entry;
@@ -69,63 +69,63 @@ impl KBucketTable {
         sum
     }
 
-    pub fn get_peer(&self, distance: PeerId) -> Option<&EntryState> {
+    pub fn get_node(&self, distance: NodeId) -> Option<&EntryState> {
         let bucket_index = distance.bucket_index();
         assert!(bucket_index <= KEY_BITS as u8);
         let bucket = &self.buckets[bucket_index as usize];
-        bucket.get_peer(distance)
+        bucket.get_node(distance)
     }
 
-    pub fn add_peer_connecting(&mut self, distance: PeerId, addr: PeerAddr) -> bool {
+    pub fn add_node_connecting(&mut self, distance: NodeId, addr: NodeAddr) -> bool {
         let bucket_index = distance.bucket_index();
         assert!(bucket_index <= KEY_BITS as u8);
         let bucket = &mut self.buckets[bucket_index as usize];
-        bucket.add_peer_connecting(distance, addr)
+        bucket.add_node_connecting(distance, addr)
     }
 
-    pub fn add_peer_connected(&mut self, distance: PeerId, addr: PeerAddr) -> bool {
+    pub fn add_node_connected(&mut self, distance: NodeId, addr: NodeAddr) -> bool {
         let bucket_index = distance.bucket_index();
         assert!(bucket_index <= KEY_BITS as u8);
         let bucket = &mut self.buckets[bucket_index as usize];
-        bucket.add_peer_connected(distance, addr)
+        bucket.add_node_connected(distance, addr)
     }
 
-    pub fn remove_connecting_peer(&mut self, distance: PeerId) -> bool {
+    pub fn remove_connecting_node(&mut self, distance: NodeId) -> bool {
         let bucket_index = distance.bucket_index();
         assert!(bucket_index <= KEY_BITS as u8);
         let bucket = &mut self.buckets[bucket_index as usize];
-        bucket.remove_connecting_peer(distance)
+        bucket.remove_connecting_node(distance)
     }
 
-    pub fn remove_connected_peer(&mut self, distance: PeerId) -> bool {
+    pub fn remove_connected_node(&mut self, distance: NodeId) -> bool {
         let bucket_index = distance.bucket_index();
         assert!(bucket_index <= KEY_BITS as u8);
         let bucket = &mut self.buckets[bucket_index as usize];
-        bucket.remove_connected_peer(distance)
+        bucket.remove_connected_node(distance)
     }
 
-    pub fn remove_timeout_peers(&mut self) -> Vec<PeerId> {
+    pub fn remove_timeout_nodes(&mut self) -> Vec<NodeId> {
         //TODO concat results
         for bucket in &mut self.buckets {
-            bucket.remove_timeout_peers();
+            bucket.remove_timeout_nodes();
         }
         vec![]
     }
 
-    pub fn closest_peers(&self, distance: PeerId) -> Vec<(PeerId, PeerAddr, bool)> {
+    pub fn closest_nodes(&self, distance: NodeId) -> Vec<(NodeId, NodeAddr, bool)> {
         let bucket_index = distance.bucket_index();
         assert!(bucket_index <= KEY_BITS as u8);
-        let mut closest_peer: Vec<(PeerId, PeerAddr, bool)> =
-            self.buckets[bucket_index as usize].peers();
-        let need_more = closest_peer.len() < K_BUCKET;
+        let mut closest_node: Vec<(NodeId, NodeAddr, bool)> =
+            self.buckets[bucket_index as usize].nodes();
+        let need_more = closest_node.len() < K_BUCKET;
         if need_more && bucket_index > 1 {
             let mut more_bucket_index = bucket_index - 1;
             //TODO reduce number of loop, maybe iter with 1 in key binary
             while more_bucket_index > 0 {
-                let new_list: Vec<(PeerId, PeerAddr, bool)> =
-                    self.buckets[more_bucket_index as usize].peers();
+                let new_list: Vec<(NodeId, NodeAddr, bool)> =
+                    self.buckets[more_bucket_index as usize].nodes();
                 for part in new_list {
-                    closest_peer.push(part);
+                    closest_node.push(part);
                 }
                 more_bucket_index -= 1;
             }
@@ -134,29 +134,29 @@ impl KBucketTable {
             let mut more_bucket_index = bucket_index + 1;
             //TODO reduce number of loop, maybe iter with 1 in key binary
             while more_bucket_index <= KEY_BITS as u8 {
-                let new_list: Vec<(PeerId, PeerAddr, bool)> =
-                    self.buckets[more_bucket_index as usize].peers();
+                let new_list: Vec<(NodeId, NodeAddr, bool)> =
+                    self.buckets[more_bucket_index as usize].nodes();
                 for part in new_list {
-                    closest_peer.push(part);
+                    closest_node.push(part);
                 }
                 more_bucket_index += 1;
             }
         }
-        closest_peer.sort_by_key(|(peer, _, _)| distance ^ *peer);
-        closest_peer.truncate(K_BUCKET);
-        closest_peer
+        closest_node.sort_by_key(|(node, _, _)| distance ^ *node);
+        closest_node.truncate(K_BUCKET);
+        closest_node
     }
 }
 
 pub struct KBucketTableWrap {
-    local_peer_id: PeerId,
+    local_node_id: NodeId,
     table: KBucketTable,
 }
 
 impl KBucketTableWrap {
-    pub fn new(local_peer_id: PeerId) -> Self {
+    pub fn new(local_node_id: NodeId) -> Self {
         Self {
-            local_peer_id,
+            local_node_id,
             table: KBucketTable::new(),
         }
     }
@@ -169,40 +169,40 @@ impl KBucketTableWrap {
         self.table.connected_size()
     }
 
-    pub fn get_peer(&self, peer: PeerId) -> Option<&EntryState> {
-        self.table.get_peer(peer)
+    pub fn get_node(&self, node: NodeId) -> Option<&EntryState> {
+        self.table.get_node(node)
     }
 
-    pub fn add_peer_connecting(&mut self, peer: PeerId, addr: PeerAddr) -> bool {
+    pub fn add_node_connecting(&mut self, node: NodeId, addr: NodeAddr) -> bool {
         self.table
-            .add_peer_connecting(peer ^ self.local_peer_id, addr)
+            .add_node_connecting(node ^ self.local_node_id, addr)
     }
 
-    pub fn add_peer_connected(&mut self, peer: PeerId, addr: PeerAddr) -> bool {
+    pub fn add_node_connected(&mut self, node: NodeId, addr: NodeAddr) -> bool {
         self.table
-            .add_peer_connected(peer ^ self.local_peer_id, addr)
+            .add_node_connected(node ^ self.local_node_id, addr)
     }
 
-    pub fn remove_connecting_peer(&mut self, peer: PeerId) -> bool {
-        self.table.remove_connecting_peer(peer ^ self.local_peer_id)
+    pub fn remove_connecting_node(&mut self, node: NodeId) -> bool {
+        self.table.remove_connecting_node(node ^ self.local_node_id)
     }
 
-    pub fn remove_connected_peer(&mut self, peer: PeerId) -> bool {
-        self.table.remove_connected_peer(peer ^ self.local_peer_id)
+    pub fn remove_connected_node(&mut self, node: NodeId) -> bool {
+        self.table.remove_connected_node(node ^ self.local_node_id)
     }
 
-    pub fn remove_timeout_peers(&mut self) -> Vec<PeerId> {
-        let mut removed = self.table.remove_timeout_peers();
+    pub fn remove_timeout_nodes(&mut self) -> Vec<NodeId> {
+        let mut removed = self.table.remove_timeout_nodes();
         for key in &mut removed {
-            *key = *key ^ self.local_peer_id
+            *key = *key ^ self.local_node_id
         }
         removed
     }
 
-    pub fn closest_peers(&self, key: PeerId) -> Vec<(PeerId, PeerAddr, bool)> {
-        let mut closest = self.table.closest_peers(key ^ self.local_peer_id);
+    pub fn closest_nodes(&self, key: NodeId) -> Vec<(NodeId, NodeAddr, bool)> {
+        let mut closest = self.table.closest_nodes(key ^ self.local_node_id);
         for (key, _, _) in &mut closest {
-            *key = *key ^ self.local_peer_id
+            *key = *key ^ self.local_node_id
         }
         closest
     }
@@ -211,63 +211,63 @@ impl KBucketTableWrap {
 #[cfg(test)]
 mod tests {
     use crate::kbucket::{KBucketTable, KBucketTableWrap};
-    use bluesea_identity::{PeerAddr, Protocol};
+    use bluesea_identity::{NodeAddr, Protocol};
 
     #[test]
     fn simple_table() {
         let mut table = KBucketTable::new();
         assert_eq!(
-            table.add_peer_connecting(1, PeerAddr::from(Protocol::Udp(1))),
+            table.add_node_connecting(1, NodeAddr::from(Protocol::Udp(1))),
             true
         );
         assert_eq!(
-            table.add_peer_connecting(10, PeerAddr::from(Protocol::Udp(10))),
+            table.add_node_connecting(10, NodeAddr::from(Protocol::Udp(10))),
             true
         );
         assert_eq!(
-            table.add_peer_connecting(40, PeerAddr::from(Protocol::Udp(40))),
+            table.add_node_connecting(40, NodeAddr::from(Protocol::Udp(40))),
             true
         );
         assert_eq!(
-            table.add_peer_connecting(100, PeerAddr::from(Protocol::Udp(100))),
+            table.add_node_connecting(100, NodeAddr::from(Protocol::Udp(100))),
             true
         );
         assert_eq!(
-            table.add_peer_connecting(120, PeerAddr::from(Protocol::Udp(120))),
+            table.add_node_connecting(120, NodeAddr::from(Protocol::Udp(120))),
             true
         );
         assert_eq!(
-            table.add_peer_connecting(u32::MAX, PeerAddr::from(Protocol::Udp(5000))),
+            table.add_node_connecting(u32::MAX, NodeAddr::from(Protocol::Udp(5000))),
             true
         );
 
         assert_eq!(
-            table.closest_peers(100),
+            table.closest_nodes(100),
             vec![
-                (100, PeerAddr::from(Protocol::Udp(100)), false),
-                (120, PeerAddr::from(Protocol::Udp(120)), false),
-                (40, PeerAddr::from(Protocol::Udp(40)), false),
-                (1, PeerAddr::from(Protocol::Udp(1)), false)
+                (100, NodeAddr::from(Protocol::Udp(100)), false),
+                (120, NodeAddr::from(Protocol::Udp(120)), false),
+                (40, NodeAddr::from(Protocol::Udp(40)), false),
+                (1, NodeAddr::from(Protocol::Udp(1)), false)
             ]
         );
 
         assert_eq!(
-            table.closest_peers(10),
+            table.closest_nodes(10),
             vec![
-                (10, PeerAddr::from(Protocol::Udp(10)), false),
-                (1, PeerAddr::from(Protocol::Udp(1)), false),
-                (40, PeerAddr::from(Protocol::Udp(40)), false),
-                (100, PeerAddr::from(Protocol::Udp(100)), false),
+                (10, NodeAddr::from(Protocol::Udp(10)), false),
+                (1, NodeAddr::from(Protocol::Udp(1)), false),
+                (40, NodeAddr::from(Protocol::Udp(40)), false),
+                (100, NodeAddr::from(Protocol::Udp(100)), false),
             ]
         );
 
         assert_eq!(
-            table.closest_peers(u32::MAX),
+            table.closest_nodes(u32::MAX),
             vec![
-                (u32::MAX, PeerAddr::from(Protocol::Udp(5000)), false),
-                (120, PeerAddr::from(Protocol::Udp(120)), false),
-                (100, PeerAddr::from(Protocol::Udp(100)), false),
-                (40, PeerAddr::from(Protocol::Udp(40)), false),
+                (u32::MAX, NodeAddr::from(Protocol::Udp(5000)), false),
+                (120, NodeAddr::from(Protocol::Udp(120)), false),
+                (100, NodeAddr::from(Protocol::Udp(100)), false),
+                (40, NodeAddr::from(Protocol::Udp(40)), false),
             ]
         );
     }
@@ -278,34 +278,34 @@ mod tests {
             let mut table = KBucketTable::new();
             for _ in 0..table_size {
                 let dis: u32 = rand::random();
-                let addr = PeerAddr::from(Protocol::Udp(dis as u16));
-                if table.add_peer_connected(dis, addr.clone()) {
+                let addr = NodeAddr::from(Protocol::Udp(dis as u16));
+                if table.add_node_connected(dis, addr.clone()) {
                     list.push((dis, addr, true));
                 }
             }
 
             for _ in 0..test_count {
                 let key: u32 = rand::random();
-                let closest_peers = table.closest_peers(key);
+                let closest_nodes = table.closest_nodes(key);
                 list.sort_by_key(|(dist, _, _)| *dist ^ key);
-                assert_eq!(closest_peers, list[0..closest_peers.len()]);
+                assert_eq!(closest_nodes, list[0..closest_nodes.len()]);
             }
         }
     }
 
-    fn test_manual(peers: Vec<u32>, key: u32) {
+    fn test_manual(nodes: Vec<u32>, key: u32) {
         let mut list = vec![];
         let mut table = KBucketTable::new();
-        for dis in peers {
-            let addr = PeerAddr::from(Protocol::Udp(dis as u16));
-            if table.add_peer_connected(dis, addr.clone()) {
+        for dis in nodes {
+            let addr = NodeAddr::from(Protocol::Udp(dis as u16));
+            if table.add_node_connected(dis, addr.clone()) {
                 list.push((dis, addr, true));
             }
         }
 
-        let closest_peers = table.closest_peers(key);
+        let closest_nodes = table.closest_nodes(key);
         list.sort_by_key(|(dist, _, _)| *dist ^ key);
-        assert_eq!(closest_peers, list[0..closest_peers.len()]);
+        assert_eq!(closest_nodes, list[0..closest_nodes.len()]);
     }
 
     #[test]
@@ -338,22 +338,22 @@ mod tests {
 
     fn random_insert_wrap(loop_count: usize, table_size: usize, test_count: usize) {
         for _ in 0..loop_count {
-            let local_peer_id = rand::random();
+            let local_node_id = rand::random();
             let mut list = vec![];
-            let mut table = KBucketTableWrap::new(local_peer_id);
+            let mut table = KBucketTableWrap::new(local_node_id);
             for _ in 0..table_size {
                 let dis: u32 = rand::random();
-                let addr = PeerAddr::from(Protocol::Udp(dis as u16));
-                if table.add_peer_connected(dis, addr.clone()) {
+                let addr = NodeAddr::from(Protocol::Udp(dis as u16));
+                if table.add_node_connected(dis, addr.clone()) {
                     list.push((dis, addr, true));
                 }
             }
 
             for _ in 0..test_count {
                 let key: u32 = rand::random();
-                let closest_peers = table.closest_peers(key);
+                let closest_nodes = table.closest_nodes(key);
                 list.sort_by_key(|(dist, _, _)| *dist ^ key);
-                assert_eq!(closest_peers, list[0..closest_peers.len()]);
+                assert_eq!(closest_nodes, list[0..closest_nodes.len()]);
             }
         }
     }

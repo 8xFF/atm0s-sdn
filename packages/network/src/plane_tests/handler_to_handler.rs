@@ -8,7 +8,7 @@ mod tests {
         OutgoingConnectionError, RpcAnswer,
     };
     use crate::{BehaviorAgent, ConnectionAgent, CrossHandlerRoute};
-    use bluesea_identity::{PeerAddr, PeerId, Protocol};
+    use bluesea_identity::{NodeAddr, NodeId, Protocol};
     use parking_lot::Mutex;
     use std::collections::VecDeque;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -17,7 +17,7 @@ mod tests {
     use utils::SystemTimer;
 
     enum TestCrossNetworkMsg {
-        PingToPeer(PeerId),
+        PingToNode(NodeId),
         PingToConn(u32),
     }
     enum TestCrossBehaviorEvent {}
@@ -73,7 +73,7 @@ mod tests {
 
         fn check_incoming_connection(
             &mut self,
-            peer: PeerId,
+            node: NodeId,
             conn_id: u32,
         ) -> Result<(), ConnectionRejectReason> {
             Ok(())
@@ -81,7 +81,7 @@ mod tests {
 
         fn check_outgoing_connection(
             &mut self,
-            peer: PeerId,
+            node: NodeId,
             conn_id: u32,
         ) -> Result<(), ConnectionRejectReason> {
             Ok(())
@@ -120,7 +120,7 @@ mod tests {
         fn on_outgoing_connection_error(
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
-            peer_id: PeerId,
+            node_id: NodeId,
             connection_id: u32,
             err: &OutgoingConnectionError,
         ) {
@@ -128,7 +128,7 @@ mod tests {
         fn on_handler_event(
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
-            peer_id: PeerId,
+            node_id: NodeId,
             connection_id: u32,
             event: BE,
         ) {
@@ -158,9 +158,9 @@ mod tests {
                     ConnectionMsg::Reliable { data, .. } => {
                         if let Ok(e) = data.try_into() {
                             match e {
-                                TestCrossNetworkMsg::PingToPeer(peer) => {
+                                TestCrossNetworkMsg::PingToNode(node) => {
                                     agent.send_to_handler(
-                                        CrossHandlerRoute::PeerFirst(peer),
+                                        CrossHandlerRoute::NodeFirst(node),
                                         TestCrossHandleEvent::Ping.into(),
                                     );
                                 }
@@ -182,7 +182,7 @@ mod tests {
         fn on_other_handler_event(
             &mut self,
             agent: &ConnectionAgent<BE, HE, MSG>,
-            from_peer: PeerId,
+            from_node: NodeId,
             from_conn: u32,
             event: HE,
         ) {
@@ -223,7 +223,7 @@ mod tests {
             ImplTestCrossNetworkReq,
             ImplTestCrossNetworkRes,
         >::new(NetworkPlaneConfig {
-            local_peer_id: 0,
+            local_node_id: 0,
             tick_ms: 1000,
             behavior: vec![behavior],
             transport,
@@ -231,13 +231,13 @@ mod tests {
             timer,
         });
 
-        let join = async_std::task::spawn(async move { while let Ok(_) = plane.run().await {} });
+        let join = async_std::task::spawn(async move { while let Ok(_) = plane.recv().await {} });
 
         faker
             .send(MockInput::FakeIncomingConnection(
                 1,
                 1,
-                PeerAddr::from(Protocol::Udp(1)),
+                NodeAddr::from(Protocol::Udp(1)),
             ))
             .await
             .unwrap();
@@ -245,7 +245,7 @@ mod tests {
             .send(MockInput::FakeIncomingConnection(
                 2,
                 2,
-                PeerAddr::from(Protocol::Udp(2)),
+                NodeAddr::from(Protocol::Udp(2)),
             ))
             .await
             .unwrap();
@@ -267,7 +267,7 @@ mod tests {
     }
 
     #[async_std::test]
-    async fn test_cross_behaviour_handler_peer() {
+    async fn test_cross_behaviour_handler_node() {
         let flag = Arc::new(AtomicBool::new(false));
         let behavior = Box::new(TestCrossNetworkBehavior { flag: flag.clone() });
 
@@ -284,7 +284,7 @@ mod tests {
             ImplTestCrossNetworkReq,
             ImplTestCrossNetworkRes,
         >::new(NetworkPlaneConfig {
-            local_peer_id: 0,
+            local_node_id: 0,
             tick_ms: 1000,
             behavior: vec![behavior],
             transport,
@@ -292,13 +292,13 @@ mod tests {
             timer,
         });
 
-        let join = async_std::task::spawn(async move { while let Ok(_) = plane.run().await {} });
+        let join = async_std::task::spawn(async move { while let Ok(_) = plane.recv().await {} });
 
         faker
             .send(MockInput::FakeIncomingConnection(
                 1,
                 1,
-                PeerAddr::from(Protocol::Udp(1)),
+                NodeAddr::from(Protocol::Udp(1)),
             ))
             .await
             .unwrap();
@@ -306,7 +306,7 @@ mod tests {
             .send(MockInput::FakeIncomingConnection(
                 2,
                 2,
-                PeerAddr::from(Protocol::Udp(2)),
+                NodeAddr::from(Protocol::Udp(2)),
             ))
             .await
             .unwrap();
@@ -317,7 +317,7 @@ mod tests {
                 1,
                 ConnectionMsg::Reliable {
                     stream_id: 0,
-                    data: TestCrossNetworkMsg::PingToPeer(2).into(),
+                    data: TestCrossNetworkMsg::PingToNode(2).into(),
                 },
             ))
             .await

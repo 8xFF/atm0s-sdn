@@ -1,5 +1,5 @@
 use crate::msg::{DiscoveryBehaviorEvent, DiscoveryHandlerEvent, DiscoveryMsg};
-use bluesea_identity::PeerId;
+use bluesea_identity::NodeId;
 use network::behaviour::ConnectionHandler;
 use network::transport::{ConnectionEvent, ConnectionMsg};
 use network::{BehaviorAgent, ConnectionAgent};
@@ -39,7 +39,7 @@ where
     fn on_other_handler_event(
         &mut self,
         agent: &ConnectionAgent<BE, HE, MSG>,
-        from_peer: PeerId,
+        from_node: NodeId,
         from_conn: u32,
         event: HE,
     ) {

@@ -3,7 +3,7 @@ use crate::handshake::{outgoing_handshake, OutgoingHandshakeError};
 use crate::OUTGOING_POSTFIX;
 use async_std::channel::{bounded, unbounded, Sender};
 use async_std::net::{Shutdown, TcpStream};
-use bluesea_identity::{PeerAddr, PeerAddrBuilder, PeerId, Protocol};
+use bluesea_identity::{NodeAddr, NodeAddrBuilder, NodeId, Protocol};
 use futures_util::{AsyncReadExt, AsyncWriteExt};
 use network::transport::{
     AsyncConnectionAcceptor, ConnectionRejectReason, OutgoingConnectionError, TransportConnector,
@@ -17,8 +17,8 @@ use utils::Timer;
 
 pub struct TcpConnector<MSG> {
     pub(crate) seed: AtomicU32,
-    pub(crate) peer_id: PeerId,
-    pub(crate) peer_addr_builder: Arc<PeerAddrBuilder>,
+    pub(crate) node_id: NodeId,
+    pub(crate) node_addr_builder: Arc<NodeAddrBuilder>,
     pub(crate) internal_tx: Sender<TransportEvent<MSG>>,
     pub(crate) timer: Arc<dyn Timer>,
 }
@@ -28,7 +28,7 @@ impl<MSG> TcpConnector<MSG> {
     ///
     /// Fails if the given `Multiaddr` does not begin with an IP
     /// protocol encapsulating a TCP port.
-    fn multiaddr_to_socketaddr(mut addr: PeerAddr) -> Result<SocketAddr, ()> {
+    fn multiaddr_to_socketaddr(mut addr: NodeAddr) -> Result<SocketAddr, ()> {
         // "Pop" the IP address and TCP port from the end of the address,
         // ignoring a `/p2p/...` suffix as well as any prefix of possibly
         // outer protocols, if present.
@@ -56,15 +56,15 @@ impl<MSG> TcpConnector<MSG> {
 }
 
 async fn wait_accept<MSG>(
-    remote_peer: PeerId,
+    remote_node: NodeId,
     conn_id: u32,
     internal_tx: &Sender<TransportEvent<MSG>>,
 ) -> Result<(), OutgoingHandshakeError> {
-    log::info!("[TcpConnector] connect to {} send local check", remote_peer);
+    log::info!("[TcpConnector] connect to {} send local check", remote_node);
     let (connection_acceptor, recv) = AsyncConnectionAcceptor::new();
     internal_tx
         .send(TransportEvent::OutgoingRequest(
-            remote_peer,
+            remote_node,
             conn_id,
             connection_acceptor,
         ))
@@ -72,7 +72,7 @@ async fn wait_accept<MSG>(
         .map_err(|_| OutgoingHandshakeError::InternalError)?;
     log::info!(
         "[TcpConnector] connect to {} wait local accept",
-        remote_peer
+        remote_node
     );
     if let Err(e) = recv
         .recv()
@@ -90,23 +90,23 @@ where
 {
     fn connect_to(
         &self,
-        remote_peer_id: PeerId,
-        remote_peer_addr: PeerAddr,
+        remote_node_id: NodeId,
+        remote_node_addr: NodeAddr,
     ) -> Result<TransportPendingOutgoing, OutgoingConnectionError> {
-        log::info!("[TcpConnector] connect to peer {}", remote_peer_addr);
+        log::info!("[TcpConnector] connect to node {}", remote_node_addr);
         let timer = self.timer.clone();
-        let peer_id = self.peer_id;
-        let peer_addr = self.peer_addr_builder.addr();
-        let remote_addr = Self::multiaddr_to_socketaddr(remote_peer_addr.clone())
+        let node_id = self.node_id;
+        let node_addr = self.node_addr_builder.addr();
+        let remote_addr = Self::multiaddr_to_socketaddr(remote_node_addr.clone())
             .map_err(|_| OutgoingConnectionError::UnsupportedProtocol)?;
         let conn_id = self.seed.load(Ordering::Relaxed) * 100 + OUTGOING_POSTFIX;
         let internal_tx = self.internal_tx.clone();
         self.seed.fetch_add(1, Ordering::Relaxed);
         async_std::task::spawn(async move {
-            if let Err(e) = wait_accept(remote_peer_id, conn_id, &internal_tx).await {
+            if let Err(e) = wait_accept(remote_node_id, conn_id, &internal_tx).await {
                 internal_tx
                     .send(TransportEvent::OutgoingError {
-                        peer_id: remote_peer_id,
+                        node_id: remote_node_id,
                         connection_id: conn_id,
                         err: OutgoingConnectionError::BehaviorRejected(
                             ConnectionRejectReason::Custom("LocalReject".to_string()),
@@ -119,9 +119,9 @@ where
             match TcpStream::connect(remote_addr).await {
                 Ok(mut socket) => {
                     match outgoing_handshake::<MSG>(
-                        remote_peer_id,
-                        peer_id,
-                        peer_addr,
+                        remote_node_id,
+                        node_id,
+                        node_addr,
                         &mut socket,
                         conn_id,
                         &internal_tx,
@@ -130,18 +130,18 @@ where
                     {
                         Ok(_) => {
                             let (connection_sender, reliable_sender) = TcpConnectionSender::new(
-                                peer_id,
-                                remote_peer_id,
-                                remote_peer_addr.clone(),
+                                node_id,
+                                remote_node_id,
+                                remote_node_addr.clone(),
                                 conn_id,
                                 1000,
                                 socket.clone(),
                                 timer.clone(),
                             );
                             let connection_receiver = Box::new(TcpConnectionReceiver {
-                                peer_id,
-                                remote_peer_id,
-                                remote_addr: remote_peer_addr,
+                                node_id,
+                                remote_node_id,
+                                remote_addr: remote_node_addr,
                                 conn_id,
                                 socket,
                                 buf: [0; BUFFER_LEN],
@@ -159,7 +159,7 @@ where
                             socket.shutdown(Shutdown::Both);
                             internal_tx
                                 .send(TransportEvent::OutgoingError {
-                                    peer_id: remote_peer_id,
+                                    node_id: remote_node_id,
                                     connection_id: conn_id,
                                     err: match err {
                                         OutgoingHandshakeError::SocketError => {
@@ -189,7 +189,7 @@ where
                 Err(err) => {
                     internal_tx
                         .send(TransportEvent::OutgoingError {
-                            peer_id: remote_peer_id,
+                            node_id: remote_node_id,
                             connection_id: conn_id,
                             err: OutgoingConnectionError::DestinationNotFound,
                         })

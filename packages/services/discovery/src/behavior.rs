@@ -3,7 +3,7 @@ use crate::handler::DiscoveryConnectionHandler;
 use crate::logic::{Action, DiscoveryLogic, DiscoveryLogicConf, Input};
 use crate::msg::{DiscoveryBehaviorEvent, DiscoveryHandlerEvent, DiscoveryMsg};
 use crate::DISCOVERY_SERVICE_ID;
-use bluesea_identity::{PeerAddr, PeerId};
+use bluesea_identity::{NodeAddr, NodeId};
 use network::behaviour::{ConnectionHandler, NetworkBehavior};
 use network::transport::{
     ConnectionMsg, ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer,
@@ -16,8 +16,8 @@ use std::sync::Arc;
 use utils::Timer;
 
 pub struct DiscoveryNetworkBehaviorOpts {
-    pub local_node_id: PeerId,
-    pub bootstrap_addrs: Option<Vec<(PeerId, PeerAddr)>>,
+    pub local_node_id: NodeId,
+    pub bootstrap_addrs: Option<Vec<(NodeId, NodeAddr)>>,
     pub timer: Arc<dyn Timer>,
 }
 
@@ -48,12 +48,12 @@ impl DiscoveryNetworkBehavior {
     {
         while let Some(action) = self.logic.poll_action() {
             match action {
-                Action::ConnectTo(peer_id, addr) => {
-                    agent.connect_to(peer_id, addr);
+                Action::ConnectTo(node_id, addr) => {
+                    agent.connect_to(node_id, addr);
                 }
-                Action::SendTo(peer_id, msg) => {
+                Action::SendTo(node_id, msg) => {
                     agent.send_to_net(
-                        CrossHandlerRoute::PeerFirst(peer_id),
+                        CrossHandlerRoute::NodeFirst(node_id),
                         ConnectionMsg::Reliable {
                             stream_id: 0,
                             data: msg.into(),
@@ -74,10 +74,10 @@ impl DiscoveryNetworkBehavior {
     {
         if self
             .connection_group
-            .add(connection.remote_peer_id(), connection.connection_id())
+            .add(connection.remote_node_id(), connection.connection_id())
         {
             self.logic.on_input(Input::OnConnected(
-                connection.remote_peer_id(),
+                connection.remote_node_id(),
                 connection.remote_addr(),
             ));
             self.process_logic_actions::<HE, MSG>(agent);
@@ -94,10 +94,10 @@ impl DiscoveryNetworkBehavior {
     {
         if self
             .connection_group
-            .remove(connection.remote_peer_id(), connection.connection_id())
+            .remove(connection.remote_node_id(), connection.connection_id())
         {
             self.logic
-                .on_input(Input::OnDisconnected(connection.remote_peer_id()));
+                .on_input(Input::OnDisconnected(connection.remote_node_id()));
             self.process_logic_actions::<HE, MSG>(agent);
         }
     }
@@ -115,8 +115,8 @@ where
 
     fn on_tick(&mut self, agent: &BehaviorAgent<HE, MSG>, ts_ms: u64, interal_ms: u64) {
         if let Some(bootstrap) = self.opts.bootstrap_addrs.take() {
-            for (peer, addr) in bootstrap {
-                self.logic.on_input(Input::AddPeer(peer, addr));
+            for (node, addr) in bootstrap {
+                self.logic.on_input(Input::AddNode(node, addr));
             }
             self.logic
                 .on_input(Input::RefreshKey(self.opts.local_node_id));
@@ -127,7 +127,7 @@ where
 
     fn check_incoming_connection(
         &mut self,
-        peer: PeerId,
+        node: NodeId,
         conn_id: u32,
     ) -> Result<(), ConnectionRejectReason> {
         Ok(())
@@ -135,7 +135,7 @@ where
 
     fn check_outgoing_connection(
         &mut self,
-        peer: PeerId,
+        node: NodeId,
         conn_id: u32,
     ) -> Result<(), ConnectionRejectReason> {
         Ok(())
@@ -178,24 +178,24 @@ where
     fn on_outgoing_connection_error(
         &mut self,
         agent: &BehaviorAgent<HE, MSG>,
-        peer_id: PeerId,
+        node_id: NodeId,
         connection_id: u32,
         err: &OutgoingConnectionError,
     ) {
-        self.logic.on_input(Input::OnConnectError(peer_id));
+        self.logic.on_input(Input::OnConnectError(node_id));
         self.process_logic_actions::<HE, MSG>(agent);
     }
 
     fn on_handler_event(
         &mut self,
         agent: &BehaviorAgent<HE, MSG>,
-        peer_id: PeerId,
+        node_id: NodeId,
         _connection_id: u32,
         event: BE,
     ) {
         match event.try_into() {
             Ok(DiscoveryBehaviorEvent::OnNetworkMessage(msg)) => {
-                self.logic.on_input(Input::OnData(peer_id, msg));
+                self.logic.on_input(Input::OnData(node_id, msg));
                 self.process_logic_actions::<HE, MSG>(agent);
             }
             Err(e) => {

@@ -8,7 +8,7 @@ mod tests {
         OutgoingConnectionError, RpcAnswer,
     };
     use crate::{BehaviorAgent, ConnectionAgent};
-    use bluesea_identity::{PeerAddr, PeerId, Protocol};
+    use bluesea_identity::{NodeAddr, NodeId, Protocol};
     use parking_lot::Mutex;
     use std::collections::VecDeque;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -36,9 +36,9 @@ mod tests {
 
     #[derive(PartialEq, Debug)]
     enum DebugInput<MSG> {
-        Opened(PeerId, u32),
-        Msg(PeerId, u32, MSG),
-        Closed(PeerId, u32),
+        Opened(NodeId, u32),
+        Msg(NodeId, u32, MSG),
+        Closed(NodeId, u32),
     }
 
     enum Behavior2Event {}
@@ -104,7 +104,7 @@ mod tests {
 
         fn check_incoming_connection(
             &mut self,
-            peer: PeerId,
+            node: NodeId,
             conn_id: u32,
         ) -> Result<(), ConnectionRejectReason> {
             Ok(())
@@ -112,7 +112,7 @@ mod tests {
 
         fn check_outgoing_connection(
             &mut self,
-            peer: PeerId,
+            node: NodeId,
             conn_id: u32,
         ) -> Result<(), ConnectionRejectReason> {
             Ok(())
@@ -155,7 +155,7 @@ mod tests {
         fn on_outgoing_connection_error(
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
-            peer_id: PeerId,
+            node_id: NodeId,
             connection_id: u32,
             err: &OutgoingConnectionError,
         ) {
@@ -163,7 +163,7 @@ mod tests {
         fn on_handler_event(
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
-            peer_id: PeerId,
+            node_id: NodeId,
             connection_id: u32,
             event: BE,
         ) {
@@ -188,7 +188,7 @@ mod tests {
         fn on_opened(&mut self, agent: &ConnectionAgent<BE, HE, MSG>) {
             self.input
                 .lock()
-                .push_back(DebugInput::Opened(agent.remote_peer_id(), agent.conn_id()));
+                .push_back(DebugInput::Opened(agent.remote_node_id(), agent.conn_id()));
         }
         fn on_tick(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, ts_ms: u64, interal_ms: u64) {}
         fn on_event(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, event: ConnectionEvent<MSG>) {
@@ -203,14 +203,14 @@ mod tests {
                                         data: Behavior1Msg::Pong.into(),
                                     });
                                     self.input.lock().push_back(DebugInput::Msg(
-                                        agent.remote_peer_id(),
+                                        agent.remote_node_id(),
                                         agent.conn_id(),
                                         Behavior1Msg::Ping.into(),
                                     ));
                                 }
                                 Behavior1Msg::Pong => {
                                     self.input.lock().push_back(DebugInput::Msg(
-                                        agent.remote_peer_id(),
+                                        agent.remote_node_id(),
                                         agent.conn_id(),
                                         Behavior1Msg::Pong.into(),
                                     ));
@@ -227,7 +227,7 @@ mod tests {
         fn on_other_handler_event(
             &mut self,
             agent: &ConnectionAgent<BE, HE, MSG>,
-            from_peer: PeerId,
+            from_node: NodeId,
             from_conn: u32,
             event: HE,
         ) {
@@ -238,7 +238,7 @@ mod tests {
         fn on_closed(&mut self, agent: &ConnectionAgent<BE, HE, MSG>) {
             self.input
                 .lock()
-                .push_back(DebugInput::Closed(agent.remote_peer_id(), agent.conn_id()));
+                .push_back(DebugInput::Closed(agent.remote_node_id(), agent.conn_id()));
         }
     }
 
@@ -255,7 +255,7 @@ mod tests {
 
         fn check_incoming_connection(
             &mut self,
-            peer: PeerId,
+            node: NodeId,
             conn_id: u32,
         ) -> Result<(), ConnectionRejectReason> {
             Ok(())
@@ -263,7 +263,7 @@ mod tests {
 
         fn check_outgoing_connection(
             &mut self,
-            peer: PeerId,
+            node: NodeId,
             conn_id: u32,
         ) -> Result<(), ConnectionRejectReason> {
             Ok(())
@@ -298,7 +298,7 @@ mod tests {
         fn on_outgoing_connection_error(
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
-            peer_id: PeerId,
+            node_id: NodeId,
             connection_id: u32,
             err: &OutgoingConnectionError,
         ) {
@@ -306,7 +306,7 @@ mod tests {
         fn on_handler_event(
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
-            peer_id: PeerId,
+            node_id: NodeId,
             connection_id: u32,
             event: BE,
         ) {
@@ -334,7 +334,7 @@ mod tests {
         fn on_other_handler_event(
             &mut self,
             agent: &ConnectionAgent<BE, HE, MSG>,
-            from_peer: PeerId,
+            from_node: NodeId,
             from_conn: u32,
             event: HE,
         ) {
@@ -367,7 +367,7 @@ mod tests {
             ImplNetworkReq,
             ImplNetworkRes,
         >::new(NetworkPlaneConfig {
-            local_peer_id: 0,
+            local_node_id: 0,
             tick_ms: 1000,
             behavior: vec![behavior1, behavior2],
             transport,
@@ -375,13 +375,13 @@ mod tests {
             timer,
         });
 
-        async_std::task::spawn(async move { while let Ok(_) = plane.run().await {} });
+        async_std::task::spawn(async move { while let Ok(_) = plane.recv().await {} });
 
         faker
             .send(MockInput::FakeIncomingConnection(
                 1,
                 1,
-                PeerAddr::from(Protocol::Udp(1)),
+                NodeAddr::from(Protocol::Udp(1)),
             ))
             .await
             .unwrap();

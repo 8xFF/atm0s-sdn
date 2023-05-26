@@ -5,7 +5,7 @@ use crate::msg::TcpMsg;
 use crate::INCOMING_POSTFIX;
 use async_std::channel::{bounded, unbounded, Receiver, Sender};
 use async_std::net::{Shutdown, TcpListener};
-use bluesea_identity::{PeerAddrBuilder, PeerId, Protocol};
+use bluesea_identity::{NodeAddrBuilder, NodeId, Protocol};
 use futures_util::{select, AsyncReadExt, AsyncWriteExt, FutureExt};
 use network::transport::{AsyncConnectionAcceptor, Transport, TransportConnector, TransportEvent};
 use serde::{de::DeserializeOwned, Serialize};
@@ -16,8 +16,8 @@ use std::time::Duration;
 use utils::{SystemTimer, Timer};
 
 pub struct TcpTransport<MSG> {
-    peer_id: PeerId,
-    peer_addr_builder: Arc<PeerAddrBuilder>,
+    node_id: NodeId,
+    node_addr_builder: Arc<NodeAddrBuilder>,
     listener: TcpListener,
     internal_tx: Sender<TransportEvent<MSG>>,
     internal_rx: Receiver<TransportEvent<MSG>>,
@@ -27,33 +27,33 @@ pub struct TcpTransport<MSG> {
 }
 
 impl<MSG> TcpTransport<MSG> {
-    pub async fn new(peer_id: PeerId, port: u16, peer_addr_builder: Arc<PeerAddrBuilder>) -> Self {
+    pub async fn new(node_id: NodeId, port: u16, node_addr_builder: Arc<NodeAddrBuilder>) -> Self {
         let (internal_tx, internal_rx) = unbounded();
         let addr_str = format!("0.0.0.0:{}", port);
         let addr: SocketAddr = addr_str.as_str().parse().unwrap();
         let listener = TcpListener::bind(addr).await.unwrap();
 
         //TODO get dynamic ip address
-        peer_addr_builder.add_protocol(Protocol::Ip4(Ipv4Addr::new(127, 0, 0, 1)));
+        node_addr_builder.add_protocol(Protocol::Ip4(Ipv4Addr::new(127, 0, 0, 1)));
         if port != 0 {
-            peer_addr_builder.add_protocol(Protocol::Tcp(port));
+            node_addr_builder.add_protocol(Protocol::Tcp(port));
         } else {
             if let Ok(addr) = listener.local_addr() {
-                peer_addr_builder.add_protocol(Protocol::Tcp(addr.port()));
+                node_addr_builder.add_protocol(Protocol::Tcp(addr.port()));
             }
         }
 
         Self {
-            peer_id,
-            peer_addr_builder: peer_addr_builder.clone(),
+            node_id,
+            node_addr_builder: node_addr_builder.clone(),
             listener,
             internal_tx: internal_tx.clone(),
             internal_rx,
             seed: 0,
             connector: Arc::new(TcpConnector {
                 seed: Default::default(),
-                peer_id,
-                peer_addr_builder,
+                node_id,
+                node_addr_builder,
                 internal_tx,
                 timer: Arc::new(SystemTimer()),
             }),
@@ -79,17 +79,17 @@ where
                         log::info!("[TcpTransport] incoming connect from {}", addr);
                         let internal_tx = self.internal_tx.clone();
                         let timer = self.timer.clone();
-                        let peer_id = self.peer_id;
-                        let peer_addr = self.peer_addr_builder.addr();
+                        let node_id = self.node_id;
+                        let node_addr = self.node_addr_builder.addr();
                         let conn_id = self.seed * 100 + INCOMING_POSTFIX;
                         self.seed += 1;
 
                         async_std::task::spawn(async move {
-                            match incoming_handshake::<MSG>(peer_id, peer_addr, &mut socket, conn_id, &internal_tx).await {
-                                Ok((remote_peer_id, remote_addr)) => {
+                            match incoming_handshake::<MSG>(node_id, node_addr, &mut socket, conn_id, &internal_tx).await {
+                                Ok((remote_node_id, remote_addr)) => {
                                     let (connection_sender, reliable_sender) = TcpConnectionSender::new(
-                                        peer_id,
-                                        remote_peer_id,
+                                        node_id,
+                                        remote_node_id,
                                         remote_addr.clone(),
                                         conn_id,
                                         1000,
@@ -97,8 +97,8 @@ where
                                         timer.clone(),
                                     );
                                     let connection_receiver = Box::new(TcpConnectionReceiver {
-                                        peer_id,
-                                        remote_peer_id,
+                                        node_id,
+                                        remote_node_id,
                                         remote_addr,
                                         conn_id,
                                         socket,

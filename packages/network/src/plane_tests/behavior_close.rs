@@ -8,7 +8,7 @@ mod tests {
         OutgoingConnectionError, RpcAnswer,
     };
     use crate::{BehaviorAgent, ConnectionAgent};
-    use bluesea_identity::{PeerAddr, PeerId, Protocol};
+    use bluesea_identity::{NodeAddr, NodeId, Protocol};
     use parking_lot::Mutex;
     use std::collections::VecDeque;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -19,11 +19,11 @@ mod tests {
     enum TestCrossNetworkMsg {
         CloseInHandle,
         CloseInBehaviorConn,
-        CloseInBehaviorPeer,
+        CloseInBehaviorNode,
     }
     enum TestCrossBehaviorEvent {
         CloseConn(u32),
-        ClosePeer(PeerId),
+        CloseNode(NodeId),
     }
     enum TestCrossHandleEvent {}
     enum TestCrossBehaviorReq {}
@@ -74,7 +74,7 @@ mod tests {
 
         fn check_incoming_connection(
             &mut self,
-            peer: PeerId,
+            node: NodeId,
             conn_id: u32,
         ) -> Result<(), ConnectionRejectReason> {
             Ok(())
@@ -82,7 +82,7 @@ mod tests {
 
         fn check_outgoing_connection(
             &mut self,
-            peer: PeerId,
+            node: NodeId,
             conn_id: u32,
         ) -> Result<(), ConnectionRejectReason> {
             Ok(())
@@ -125,7 +125,7 @@ mod tests {
         fn on_outgoing_connection_error(
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
-            peer_id: PeerId,
+            node_id: NodeId,
             connection_id: u32,
             err: &OutgoingConnectionError,
         ) {
@@ -133,7 +133,7 @@ mod tests {
         fn on_handler_event(
             &mut self,
             agent: &BehaviorAgent<HE, MSG>,
-            peer_id: PeerId,
+            node_id: NodeId,
             connection_id: u32,
             event: BE,
         ) {
@@ -142,8 +142,8 @@ mod tests {
                     TestCrossBehaviorEvent::CloseConn(conn) => {
                         agent.close_conn(conn);
                     }
-                    TestCrossBehaviorEvent::ClosePeer(peer_id) => {
-                        agent.close_peer(peer_id);
+                    TestCrossBehaviorEvent::CloseNode(node_id) => {
+                        agent.close_node(node_id);
                     }
                 }
             }
@@ -178,9 +178,9 @@ mod tests {
                                         TestCrossBehaviorEvent::CloseConn(agent.conn_id()).into(),
                                     );
                                 }
-                                TestCrossNetworkMsg::CloseInBehaviorPeer => {
+                                TestCrossNetworkMsg::CloseInBehaviorNode => {
                                     agent.send_behavior(
-                                        TestCrossBehaviorEvent::ClosePeer(agent.remote_peer_id())
+                                        TestCrossBehaviorEvent::CloseNode(agent.remote_node_id())
                                             .into(),
                                     );
                                 }
@@ -199,7 +199,7 @@ mod tests {
         fn on_other_handler_event(
             &mut self,
             agent: &ConnectionAgent<BE, HE, MSG>,
-            from_peer: PeerId,
+            from_node: NodeId,
             from_conn: u32,
             event: HE,
         ) {
@@ -229,7 +229,7 @@ mod tests {
             ImplTestCrossNetworkReq,
             ImplTestCrossNetworkRes,
         >::new(NetworkPlaneConfig {
-            local_peer_id: 0,
+            local_node_id: 0,
             tick_ms: 1000,
             behavior: vec![behavior],
             transport,
@@ -237,13 +237,13 @@ mod tests {
             timer,
         });
 
-        let join = async_std::task::spawn(async move { while let Ok(_) = plane.run().await {} });
+        let join = async_std::task::spawn(async move { while let Ok(_) = plane.recv().await {} });
 
         faker
             .send(MockInput::FakeIncomingConnection(
                 1,
                 1,
-                PeerAddr::from(Protocol::Udp(1)),
+                NodeAddr::from(Protocol::Udp(1)),
             ))
             .await
             .unwrap();
@@ -267,7 +267,7 @@ mod tests {
             .send(MockInput::FakeIncomingConnection(
                 1,
                 2,
-                PeerAddr::from(Protocol::Udp(1)),
+                NodeAddr::from(Protocol::Udp(1)),
             ))
             .await
             .unwrap();
@@ -291,7 +291,7 @@ mod tests {
             .send(MockInput::FakeIncomingConnection(
                 1,
                 3,
-                PeerAddr::from(Protocol::Udp(1)),
+                NodeAddr::from(Protocol::Udp(1)),
             ))
             .await
             .unwrap();
@@ -303,7 +303,7 @@ mod tests {
                 3,
                 ConnectionMsg::Reliable {
                     stream_id: 0,
-                    data: TestCrossNetworkMsg::CloseInBehaviorPeer.into(),
+                    data: TestCrossNetworkMsg::CloseInBehaviorNode.into(),
                 },
             ))
             .await

@@ -2,7 +2,7 @@ use crate::connection::VnetConnection;
 use crate::connector::VnetConnector;
 use crate::earth::VnetEarth;
 use crate::listener::{VnetListener, VnetListenerEvent};
-use bluesea_identity::{PeerAddr, PeerId};
+use bluesea_identity::{NodeAddr, NodeId};
 use network::transport::{Transport, TransportConnector, TransportEvent};
 use std::sync::Arc;
 
@@ -17,9 +17,9 @@ impl<MSG> VnetTransport<MSG>
 where
     MSG: Send + Sync + 'static,
 {
-    pub fn new(earth: Arc<VnetEarth<MSG>>, port: u64, peer: PeerId, addr: PeerAddr) -> Self {
+    pub fn new(earth: Arc<VnetEarth<MSG>>, port: u64, node: NodeId, addr: NodeAddr) -> Self {
         Self {
-            listener: earth.create_listener(port, peer, addr),
+            listener: earth.create_listener(port, node, addr),
             connector: Arc::new(VnetConnector {
                 port,
                 earth: earth.clone(),
@@ -42,11 +42,11 @@ where
     async fn recv(&mut self) -> Result<TransportEvent<MSG>, ()> {
         match self.listener.recv().await {
             None => Err(()),
-            Some(VnetListenerEvent::IncomingRequest(peer, conn, acceptor)) => {
-                Ok(TransportEvent::IncomingRequest(peer, conn, acceptor))
+            Some(VnetListenerEvent::IncomingRequest(node, conn, acceptor)) => {
+                Ok(TransportEvent::IncomingRequest(node, conn, acceptor))
             }
-            Some(VnetListenerEvent::OutgoingRequest(peer, conn, acceptor)) => {
-                Ok(TransportEvent::OutgoingRequest(peer, conn, acceptor))
+            Some(VnetListenerEvent::OutgoingRequest(node, conn, acceptor)) => {
+                Ok(TransportEvent::OutgoingRequest(node, conn, acceptor))
             }
             Some(VnetListenerEvent::Incoming((sender, recv))) => {
                 Ok(TransportEvent::Incoming(sender, recv))
@@ -54,10 +54,10 @@ where
             Some(VnetListenerEvent::Outgoing((sender, recv))) => {
                 Ok(TransportEvent::Outgoing(sender, recv))
             }
-            Some(VnetListenerEvent::OutgoingErr(connection_id, peer_id, err)) => {
+            Some(VnetListenerEvent::OutgoingErr(connection_id, node_id, err)) => {
                 Ok(TransportEvent::OutgoingError {
                     connection_id,
-                    peer_id,
+                    node_id: node_id,
                     err,
                 })
             }

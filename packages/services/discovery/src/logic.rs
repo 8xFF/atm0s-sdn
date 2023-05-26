@@ -2,7 +2,7 @@ use crate::find_key_request::{FindKeyRequest, FindKeyRequestStatus};
 use crate::kbucket::entry::EntryState;
 use crate::kbucket::KBucketTableWrap;
 use crate::msg::DiscoveryMsg;
-use bluesea_identity::{PeerAddr, PeerId, PeerIdType};
+use bluesea_identity::{NodeAddr, NodeId, NodeIdType};
 use network::transport::ConnectionSender;
 use network::BehaviorAgent;
 use std::collections::{HashMap, VecDeque};
@@ -11,29 +11,29 @@ use std::time::Duration;
 use utils::Timer;
 
 pub enum Input {
-    AddPeer(PeerId, PeerAddr),
-    RefreshKey(PeerId),
+    AddNode(NodeId, NodeAddr),
+    RefreshKey(NodeId),
     OnTick(u64),
-    OnData(PeerId, DiscoveryMsg),
-    OnConnected(PeerId, PeerAddr),
-    OnConnectError(PeerId),
-    OnDisconnected(PeerId),
+    OnData(NodeId, DiscoveryMsg),
+    OnConnected(NodeId, NodeAddr),
+    OnConnectError(NodeId),
+    OnDisconnected(NodeId),
 }
 
 #[derive(PartialEq, Debug)]
 pub enum Action {
-    ConnectTo(PeerId, PeerAddr),
-    SendTo(PeerId, DiscoveryMsg),
+    ConnectTo(NodeId, NodeAddr),
+    SendTo(NodeId, DiscoveryMsg),
 }
 
 pub struct DiscoveryLogicConf {
-    pub local_node_id: PeerId,
+    pub local_node_id: NodeId,
     pub timer: Arc<dyn Timer>,
 }
 
 pub struct DiscoveryLogic {
     req_id: u32,
-    local_node_id: PeerId,
+    local_node_id: NodeId,
     timer: Arc<dyn Timer>,
     table: KBucketTableWrap,
     action_queues: VecDeque<Action>,
@@ -54,16 +54,16 @@ impl DiscoveryLogic {
         }
     }
 
-    fn check_connected(&self, peer: PeerId) -> bool {
+    fn check_connected(&self, node: NodeId) -> bool {
         matches!(
-            self.table.get_peer(peer),
+            self.table.get_node(node),
             Some(EntryState::Connected { .. })
         )
     }
 
-    fn check_connecting(&self, peer: PeerId) -> bool {
+    fn check_connecting(&self, node: NodeId) -> bool {
         matches!(
-            self.table.get_peer(peer),
+            self.table.get_node(node),
             Some(EntryState::Connecting { .. })
         )
     }
@@ -74,29 +74,29 @@ impl DiscoveryLogic {
         table: &mut KBucketTableWrap,
         action_queues: &mut VecDeque<Action>,
     ) {
-        while let Some((peer, addr)) = req.pop_connect(ts) {
-            //Add peer to connecting, => 3 case
+        while let Some((node, addr)) = req.pop_connect(ts) {
+            //Add node to connecting, => 3 case
             // 1. To connecting state => send connect_to
             // 2. Already connecting  => just wait
             // 3. Cannot switch connecting, maybe table full => fire on_connect_error
-            if table.add_peer_connecting(peer, addr.clone()) {
-                action_queues.push_back(Action::ConnectTo(peer, addr));
-            } else if table.get_peer(peer).is_none() {
-                req.on_connect_error_peer(ts, peer);
+            if table.add_node_connecting(node, addr.clone()) {
+                action_queues.push_back(Action::ConnectTo(node, addr));
+            } else if table.get_node(node).is_none() {
+                req.on_connect_error_node(ts, node);
             }
         }
 
-        while let Some(peer) = req.pop_request(ts) {
+        while let Some(node) = req.pop_request(ts) {
             action_queues.push_back(Action::SendTo(
-                peer,
+                node,
                 DiscoveryMsg::FindKey(req.req_id(), req.key()),
             ));
         }
     }
 
-    fn locate_key(&mut self, key: PeerId) {
+    fn locate_key(&mut self, key: NodeId) {
         let req_id = self.req_id;
-        let need_contact_peers = self.table.closest_peers(key);
+        let need_contact_nodes = self.table.closest_nodes(key);
         let now_ms = self.timer.now_ms();
         {
             self.req_id = self.req_id.wrapping_add(1);
@@ -105,17 +105,17 @@ impl DiscoveryLogic {
                 .entry(req_id)
                 .or_insert_with(|| FindKeyRequest::new(req_id, key, 30000));
 
-            for (peer, addr, connected) in need_contact_peers {
-                request.push_peer(now_ms, peer, addr, connected);
+            for (node, addr, connected) in need_contact_nodes {
+                request.push_node(now_ms, node, addr, connected);
             }
             Self::process_request(now_ms, request, &mut self.table, &mut self.action_queues);
         }
     }
 
-    /// add peer to table, if it need connect => return true
-    fn process_add_peer(&mut self, peer: PeerId, addr: PeerAddr) -> bool {
-        if self.table.add_peer_connecting(peer, addr.clone()) {
-            self.action_queues.push_back(Action::ConnectTo(peer, addr));
+    /// add node to table, if it need connect => return true
+    fn process_add_node(&mut self, node: NodeId, addr: NodeAddr) -> bool {
+        if self.table.add_node_connecting(node, addr.clone()) {
+            self.action_queues.push_back(Action::ConnectTo(node, addr));
             true
         } else {
             false
@@ -128,18 +128,18 @@ impl DiscoveryLogic {
 
     pub fn on_input(&mut self, input: Input) {
         match input {
-            Input::AddPeer(peer, addr) => {
-                self.process_add_peer(peer, addr);
+            Input::AddNode(node, addr) => {
+                self.process_add_node(node, addr);
             }
-            Input::RefreshKey(peer) => {
-                self.locate_key(peer);
+            Input::RefreshKey(node) => {
+                self.locate_key(node);
             }
             Input::OnTick(ts) => {
-                let removed_peers = self.table.remove_timeout_peers();
+                let removed_nodes = self.table.remove_timeout_nodes();
                 let mut ended_reqs = vec![];
-                for removed_peer in removed_peers {
+                for removed_node in removed_nodes {
                     for (req_id, req) in &mut self.request_memory {
-                        if req.on_connect_error_peer(ts, removed_peer) {
+                        if req.on_connect_error_node(ts, removed_node) {
                             if req.is_ended(ts) {
                                 ended_reqs.push(*req_id);
                             }
@@ -170,26 +170,26 @@ impl DiscoveryLogic {
                     self.request_memory.remove(&req_id);
                 }
             }
-            Input::OnData(from_peer, data) => match data {
+            Input::OnData(from_node, data) => match data {
                 DiscoveryMsg::FindKey(req_id, key) => {
                     let mut res = vec![];
-                    let closest_peers = self.table.closest_peers(key);
-                    for (peer, addr, connected) in closest_peers {
-                        res.push((peer, addr));
+                    let closest_nodes = self.table.closest_nodes(key);
+                    for (node, addr, connected) in closest_nodes {
+                        res.push((node, addr));
                     }
                     self.action_queues.push_back(Action::SendTo(
-                        from_peer,
+                        from_node,
                         DiscoveryMsg::FindKeyRes(req_id, res),
                     ));
                 }
-                DiscoveryMsg::FindKeyRes(req_id, peers) => {
+                DiscoveryMsg::FindKeyRes(req_id, nodes) => {
                     let mut res_extended = vec![];
-                    for (peer, addr) in peers {
-                        res_extended.push((peer, addr, self.check_connected(peer)));
+                    for (node, addr) in nodes {
+                        res_extended.push((node, addr, self.check_connected(node)));
                     }
                     if let Some(request) = self.request_memory.get_mut(&req_id) {
                         let now_ms = self.timer.now_ms();
-                        if request.on_answered_peer(now_ms, from_peer, res_extended) {
+                        if request.on_answered_node(now_ms, from_node, res_extended) {
                             Self::process_request(
                                 now_ms,
                                 request,
@@ -204,11 +204,11 @@ impl DiscoveryLogic {
                     }
                 }
             },
-            Input::OnConnected(peer, address) => {
-                if self.table.add_peer_connected(peer, address) {
+            Input::OnConnected(node, address) => {
+                if self.table.add_node_connected(node, address) {
                     let now_ms = self.timer.now_ms();
                     for (req_id, req) in &mut self.request_memory {
-                        if req.on_connected_peer(now_ms, peer) {
+                        if req.on_connected_node(now_ms, node) {
                             Self::process_request(
                                 now_ms,
                                 req,
@@ -219,12 +219,12 @@ impl DiscoveryLogic {
                     }
                 }
             }
-            Input::OnConnectError(peer) => {
-                if self.table.remove_connecting_peer(peer) {
+            Input::OnConnectError(node) => {
+                if self.table.remove_connecting_node(node) {
                     let now_ms = self.timer.now_ms();
                     let mut ended_reqs = vec![];
                     for (req_id, req) in &mut self.request_memory {
-                        if req.on_connect_error_peer(now_ms, peer) {
+                        if req.on_connect_error_node(now_ms, node) {
                             Self::process_request(
                                 now_ms,
                                 req,
@@ -241,7 +241,7 @@ impl DiscoveryLogic {
                     }
                 }
             }
-            Input::OnDisconnected(peer) => if self.table.remove_connected_peer(peer) {},
+            Input::OnDisconnected(node) => if self.table.remove_connected_node(node) {},
         }
     }
 }
@@ -249,7 +249,7 @@ impl DiscoveryLogic {
 #[cfg(test)]
 mod test {
     use crate::logic::{Action, DiscoveryLogic, DiscoveryLogicConf, DiscoveryMsg, Input};
-    use bluesea_identity::{PeerAddr, Protocol};
+    use bluesea_identity::{NodeAddr, Protocol};
     use std::sync::Arc;
     use utils::SystemTimer;
 
@@ -260,27 +260,27 @@ mod test {
             timer: Arc::new(SystemTimer()),
         });
 
-        logic.on_input(Input::AddPeer(1000, PeerAddr::from(Protocol::Udp(1000))));
-        logic.on_input(Input::AddPeer(2000, PeerAddr::from(Protocol::Udp(2000))));
+        logic.on_input(Input::AddNode(1000, NodeAddr::from(Protocol::Udp(1000))));
+        logic.on_input(Input::AddNode(2000, NodeAddr::from(Protocol::Udp(2000))));
 
         logic.on_input(Input::RefreshKey(0)); //create request 0
 
         assert_eq!(
             logic.poll_action(),
-            Some(Action::ConnectTo(1000, PeerAddr::from(Protocol::Udp(1000))))
+            Some(Action::ConnectTo(1000, NodeAddr::from(Protocol::Udp(1000))))
         );
         assert_eq!(
             logic.poll_action(),
-            Some(Action::ConnectTo(2000, PeerAddr::from(Protocol::Udp(2000))))
+            Some(Action::ConnectTo(2000, NodeAddr::from(Protocol::Udp(2000))))
         );
 
         logic.on_input(Input::OnConnected(
             2000,
-            PeerAddr::from(Protocol::Udp(2000)),
+            NodeAddr::from(Protocol::Udp(2000)),
         ));
         logic.on_input(Input::OnConnected(
             1000,
-            PeerAddr::from(Protocol::Udp(1000)),
+            NodeAddr::from(Protocol::Udp(1000)),
         ));
 
         assert_eq!(
@@ -301,25 +301,25 @@ mod test {
             timer: Arc::new(SystemTimer()),
         });
 
-        logic.on_input(Input::AddPeer(1000, PeerAddr::from(Protocol::Udp(1000))));
-        logic.on_input(Input::AddPeer(2000, PeerAddr::from(Protocol::Udp(2000))));
+        logic.on_input(Input::AddNode(1000, NodeAddr::from(Protocol::Udp(1000))));
+        logic.on_input(Input::AddNode(2000, NodeAddr::from(Protocol::Udp(2000))));
 
         assert_eq!(
             logic.poll_action(),
-            Some(Action::ConnectTo(1000, PeerAddr::from(Protocol::Udp(1000))))
+            Some(Action::ConnectTo(1000, NodeAddr::from(Protocol::Udp(1000))))
         );
         assert_eq!(
             logic.poll_action(),
-            Some(Action::ConnectTo(2000, PeerAddr::from(Protocol::Udp(2000))))
+            Some(Action::ConnectTo(2000, NodeAddr::from(Protocol::Udp(2000))))
         );
 
         logic.on_input(Input::OnConnected(
             2000,
-            PeerAddr::from(Protocol::Udp(2000)),
+            NodeAddr::from(Protocol::Udp(2000)),
         ));
         logic.on_input(Input::OnConnected(
             1000,
-            PeerAddr::from(Protocol::Udp(1000)),
+            NodeAddr::from(Protocol::Udp(1000)),
         ));
 
         logic.on_input(Input::OnDisconnected(1000));
@@ -340,12 +340,12 @@ mod test {
             timer: Arc::new(SystemTimer()),
         });
 
-        logic.on_input(Input::AddPeer(1000, PeerAddr::from(Protocol::Udp(1000))));
+        logic.on_input(Input::AddNode(1000, NodeAddr::from(Protocol::Udp(1000))));
         logic.on_input(Input::RefreshKey(0)); //create request 0
 
         assert_eq!(
             logic.poll_action(),
-            Some(Action::ConnectTo(1000, PeerAddr::from(Protocol::Udp(1000))))
+            Some(Action::ConnectTo(1000, NodeAddr::from(Protocol::Udp(1000))))
         );
 
         logic.on_input(Input::OnConnectError(1000));

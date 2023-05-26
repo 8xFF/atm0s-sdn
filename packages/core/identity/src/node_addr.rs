@@ -1,14 +1,14 @@
-use crate::peer_id::PeerId;
+use crate::node_id::NodeId;
 use parking_lot::Mutex;
-pub type PeerAddr = multiaddr::Multiaddr;
+pub type NodeAddr = multiaddr::Multiaddr;
 pub use multiaddr::Protocol;
 
-pub trait PeerAddrType {
-    fn peer_id(&self) -> Option<PeerId>;
+pub trait NodeAddrType {
+    fn node_id(&self) -> Option<NodeId>;
 }
 
-impl PeerAddrType for PeerAddr {
-    fn peer_id(&self) -> Option<PeerId> {
+impl NodeAddrType for NodeAddr {
+    fn node_id(&self) -> Option<NodeId> {
         for protocol in self.iter() {
             match protocol {
                 Protocol::P2p(node_id) => return Some(node_id),
@@ -19,24 +19,24 @@ impl PeerAddrType for PeerAddr {
     }
 }
 
-pub struct PeerAddrBuilder {
-    addr: Mutex<PeerAddr>,
+pub struct NodeAddrBuilder {
+    addr: Mutex<NodeAddr>,
 }
 
-impl Default for PeerAddrBuilder {
+impl Default for NodeAddrBuilder {
     fn default() -> Self {
         Self {
-            addr: Mutex::new(PeerAddr::empty()),
+            addr: Mutex::new(NodeAddr::empty()),
         }
     }
 }
 
-impl PeerAddrBuilder {
+impl NodeAddrBuilder {
     pub fn add_protocol(&self, protocol: Protocol) {
         self.addr.lock().push(protocol);
     }
 
-    pub fn addr(&self) -> PeerAddr {
+    pub fn addr(&self) -> NodeAddr {
         (*self.addr.lock()).clone()
     }
 }

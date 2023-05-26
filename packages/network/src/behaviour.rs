@@ -3,7 +3,7 @@ use crate::transport::{
     ConnectionAcceptor, ConnectionEvent, ConnectionRejectReason, ConnectionSender,
     OutgoingConnectionError, RpcAnswer,
 };
-use bluesea_identity::PeerId;
+use bluesea_identity::NodeId;
 use std::sync::Arc;
 
 pub trait ConnectionHandler<BE, HE, MSG>: Send + Sync {
@@ -13,7 +13,7 @@ pub trait ConnectionHandler<BE, HE, MSG>: Send + Sync {
     fn on_other_handler_event(
         &mut self,
         agent: &ConnectionAgent<BE, HE, MSG>,
-        from_peer: PeerId,
+        from_node: NodeId,
         from_conn: u32,
         event: HE,
     );
@@ -29,12 +29,12 @@ where
     fn on_tick(&mut self, agent: &BehaviorAgent<HE, MSG>, ts_ms: u64, interal_ms: u64);
     fn check_incoming_connection(
         &mut self,
-        peer: PeerId,
+        node: NodeId,
         conn_id: u32,
     ) -> Result<(), ConnectionRejectReason>;
     fn check_outgoing_connection(
         &mut self,
-        peer: PeerId,
+        node: NodeId,
         conn_id: u32,
     ) -> Result<(), ConnectionRejectReason>;
     fn on_incoming_connection_connected(
@@ -60,14 +60,14 @@ where
     fn on_outgoing_connection_error(
         &mut self,
         agent: &BehaviorAgent<HE, MSG>,
-        peer_id: PeerId,
+        node_id: NodeId,
         connection_id: u32,
         err: &OutgoingConnectionError,
     );
     fn on_handler_event(
         &mut self,
         agent: &BehaviorAgent<HE, MSG>,
-        peer_id: PeerId,
+        node_id: NodeId,
         connection_id: u32,
         event: BE,
     );

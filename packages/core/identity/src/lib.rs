@@ -1,5 +1,5 @@
-mod peer_addr;
-mod peer_id;
+mod node_addr;
+mod node_id;
 
-pub use peer_addr::{PeerAddr, PeerAddrBuilder, PeerAddrType, Protocol};
-pub use peer_id::{PeerId, PeerIdType, PeerSegment};
+pub use node_addr::{NodeAddr, NodeAddrBuilder, NodeAddrType, Protocol};
+pub use node_id::{NodeId, NodeIdType, NodeSegment};

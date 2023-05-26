@@ -1,23 +1,23 @@
 use crate::transport::{ConnectionMsg, ConnectionSender};
 use async_std::channel::{unbounded, Receiver, Sender};
-use bluesea_identity::PeerId;
+use bluesea_identity::NodeId;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 pub(crate) enum CrossHandlerEvent<HE> {
     FromBehavior(HE),
-    FromHandler(PeerId, u32, HE),
+    FromHandler(NodeId, u32, HE),
 }
 
 #[derive(Debug)]
 pub enum CrossHandlerRoute {
-    PeerFirst(PeerId),
+    NodeFirst(NodeId),
     Conn(u32),
 }
 
 pub(crate) struct CrossHandlerGate<HE, MSG> {
-    peers: HashMap<
-        PeerId,
+    nodes: HashMap<
+        NodeId,
         HashMap<
             u32,
             (
@@ -38,7 +38,7 @@ pub(crate) struct CrossHandlerGate<HE, MSG> {
 impl<HE, MSG> Default for CrossHandlerGate<HE, MSG> {
     fn default() -> Self {
         Self {
-            peers: Default::default(),
+            nodes: Default::default(),
             conns: Default::default(),
         }
     }
@@ -56,13 +56,13 @@ where
         if !self.conns.contains_key(&net_sender.connection_id()) {
             log::info!(
                 "[CrossHandlerGate] add_con {} {}",
-                net_sender.remote_peer_id(),
+                net_sender.remote_node_id(),
                 net_sender.connection_id()
             );
             let (tx, rx) = unbounded();
             let entry = self
-                .peers
-                .entry(net_sender.remote_peer_id())
+                .nodes
+                .entry(net_sender.remote_node_id())
                 .or_insert_with(|| HashMap::new());
             self.conns
                 .insert(net_sender.connection_id(), (tx.clone(), net_sender.clone()));
@@ -77,14 +77,14 @@ where
         }
     }
 
-    pub(crate) fn remove_conn(&mut self, peer: PeerId, conn: u32) -> Option<()> {
+    pub(crate) fn remove_conn(&mut self, node: NodeId, conn: u32) -> Option<()> {
         if self.conns.contains_key(&conn) {
-            log::info!("[CrossHandlerGate] remove_con {} {}", peer, conn);
+            log::info!("[CrossHandlerGate] remove_con {} {}", node, conn);
             self.conns.remove(&conn);
-            let entry = self.peers.entry(peer).or_insert_with(|| HashMap::new());
+            let entry = self.nodes.entry(node).or_insert_with(|| HashMap::new());
             entry.remove(&conn);
             if entry.is_empty() {
-                self.peers.remove(&peer);
+                self.nodes.remove(&node);
             }
             Some(())
         } else {
@@ -97,7 +97,7 @@ where
         if let Some((s, c_s)) = self.conns.get(&conn) {
             log::info!(
                 "[CrossHandlerGate] close_con {} {}",
-                c_s.remote_peer_id(),
+                c_s.remote_node_id(),
                 conn
             );
             c_s.close();
@@ -106,12 +106,12 @@ where
         }
     }
 
-    pub(crate) fn close_peer(&self, peer: PeerId) {
-        if let Some(conns) = self.peers.get(&peer) {
+    pub(crate) fn close_node(&self, node: NodeId) {
+        if let Some(conns) = self.nodes.get(&node) {
             for (_conn_id, (s, c_s)) in conns {
                 log::info!(
-                    "[CrossHandlerGate] close_peer {} {}",
-                    peer,
+                    "[CrossHandlerGate] close_node {} {}",
+                    node,
                     c_s.connection_id()
                 );
                 c_s.close();
@@ -131,9 +131,9 @@ where
             route
         );
         match route {
-            CrossHandlerRoute::PeerFirst(peer_id) => {
-                if let Some(peer) = self.peers.get(&peer_id) {
-                    if let Some((s, c_s)) = peer.values().next() {
+            CrossHandlerRoute::NodeFirst(node_id) => {
+                if let Some(node) = self.nodes.get(&node_id) {
+                    if let Some((s, c_s)) = node.values().next() {
                         if let Err(e) = s.send_blocking((service_id, event)) {
                             log::error!("[CrossHandlerGate] send to handle error {:?}", e);
                         } else {
@@ -141,14 +141,14 @@ where
                         }
                     } else {
                         log::warn!(
-                            "[CrossHandlerGate] send_to_handler conn not found for peer {}",
-                            peer_id
+                            "[CrossHandlerGate] send_to_handler conn not found for node {}",
+                            node_id
                         );
                     }
                 } else {
                     log::warn!(
-                        "[CrossHandlerGate] send_to_handler peer not found {}",
-                        peer_id
+                        "[CrossHandlerGate] send_to_handler node not found {}",
+                        node_id
                     );
                 }
             }
@@ -179,19 +179,19 @@ where
             route
         );
         match route {
-            CrossHandlerRoute::PeerFirst(peer_id) => {
-                if let Some(peer) = self.peers.get(&peer_id) {
-                    if let Some((s, c_s)) = peer.values().next() {
+            CrossHandlerRoute::NodeFirst(node_id) => {
+                if let Some(node) = self.nodes.get(&node_id) {
+                    if let Some((s, c_s)) = node.values().next() {
                         c_s.send(service_id, msg);
                         return Some(());
                     } else {
                         log::warn!(
-                            "[CrossHandlerGate] send_to_handler conn not found for peer {}",
-                            peer_id
+                            "[CrossHandlerGate] send_to_handler conn not found for node {}",
+                            node_id
                         );
                     }
                 } else {
-                    log::warn!("[CrossHandlerGate] send_to_net peer not found {}", peer_id);
+                    log::warn!("[CrossHandlerGate] send_to_net node not found {}", node_id);
                 }
             }
             CrossHandlerRoute::Conn(conn) => {

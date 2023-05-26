@@ -1,32 +1,32 @@
-pub type PeerId = u32;
+pub type NodeId = u32;
 
-pub enum PeerSegment {
+pub enum NodeSegment {
     Public,
     Private(u8),
 }
 
-pub trait PeerIdType: Clone {
-    fn random() -> PeerId;
-    fn segment(&self) -> PeerSegment;
-    fn distance(&self, other: &PeerId) -> u32;
-    fn distance_bits(&self, other: &PeerId) -> u8;
+pub trait NodeIdType: Clone {
+    fn random() -> NodeId;
+    fn segment(&self) -> NodeSegment;
+    fn distance(&self, other: &NodeId) -> u32;
+    fn distance_bits(&self, other: &NodeId) -> u8;
     fn bucket_index(&self) -> u8;
 }
 
-impl PeerIdType for PeerId {
-    fn random() -> PeerId {
+impl NodeIdType for NodeId {
+    fn random() -> NodeId {
         rand::random()
     }
 
-    fn segment(&self) -> PeerSegment {
-        PeerSegment::Public
+    fn segment(&self) -> NodeSegment {
+        NodeSegment::Public
     }
 
-    fn distance(&self, other: &PeerId) -> u32 {
+    fn distance(&self, other: &NodeId) -> u32 {
         self ^ *other
     }
 
-    fn distance_bits(&self, other: &PeerId) -> u8 {
+    fn distance_bits(&self, other: &NodeId) -> u8 {
         let distance = self.distance(other);
         (32 - distance.leading_zeros()) as u8
     }
@@ -38,18 +38,18 @@ impl PeerIdType for PeerId {
 
 #[cfg(test)]
 mod tests {
-    use super::{PeerId, PeerIdType};
+    use super::{NodeId, NodeIdType};
 
     #[test]
     fn my_distance() {
-        let id1: PeerId = 30;
+        let id1: NodeId = 30;
         assert_eq!(id1.distance(&id1), 0);
         assert_eq!(id1.distance_bits(&id1), 0);
     }
 
     #[test]
     fn simple_distance() {
-        let id1: PeerId = 0;
+        let id1: NodeId = 0;
         assert_eq!(id1.distance_bits(&0), 0);
         assert_eq!(id1.distance_bits(&1), 1);
         assert_eq!(id1.distance_bits(&2), 2);

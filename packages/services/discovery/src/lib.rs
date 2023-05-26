@@ -16,7 +16,7 @@ mod tests {
     use crate::behavior::{DiscoveryNetworkBehavior, DiscoveryNetworkBehaviorOpts};
     use crate::msg::{DiscoveryBehaviorEvent, DiscoveryHandlerEvent, DiscoveryMsg};
     use crate::DISCOVERY_SERVICE_ID;
-    use bluesea_identity::{PeerAddr, Protocol};
+    use bluesea_identity::{NodeAddr, Protocol};
     use network::convert_enum;
     use network::mock::{MockInput, MockOutput, MockTransport, MockTransportRpc};
     use network::plane::{NetworkPlane, NetworkPlaneConfig};
@@ -46,7 +46,7 @@ mod tests {
     #[async_std::test]
     async fn bootstrap() {
         let neighbour1 = 1000;
-        let neighbour1_addr = PeerAddr::from(Protocol::Memory(1000));
+        let neighbour1_addr = NodeAddr::from(Protocol::Memory(1000));
 
         let (mock, faker, output) = MockTransport::<ImplNetworkMsg>::new();
         let (mock_rpc, faker_rpc, output_rpc) =
@@ -69,7 +69,7 @@ mod tests {
             ImplNetworkReq,
             ImplNetworkRes,
         >::new(NetworkPlaneConfig {
-            local_peer_id: 0,
+            local_node_id: 0,
             tick_ms: 100,
             behavior: vec![behavior],
             transport,
@@ -77,7 +77,7 @@ mod tests {
             timer,
         });
 
-        let join = async_std::task::spawn(async move { while let Ok(_) = plane.run().await {} });
+        let join = async_std::task::spawn(async move { while let Ok(_) = plane.recv().await {} });
         async_std::task::sleep(Duration::from_millis(1000)).await;
         assert_eq!(
             output.lock().pop_front(),
@@ -109,7 +109,7 @@ mod tests {
     #[async_std::test]
     async fn auto_refresh() {
         let neighbour1 = 1000;
-        let neighbour1_addr = PeerAddr::from(Protocol::Memory(1000));
+        let neighbour1_addr = NodeAddr::from(Protocol::Memory(1000));
 
         let (mock, faker, output) = MockTransport::<ImplNetworkMsg>::new();
         let (mock_rpc, faker_rpc, output_rpc) =
@@ -132,7 +132,7 @@ mod tests {
             ImplNetworkReq,
             ImplNetworkRes,
         >::new(NetworkPlaneConfig {
-            local_peer_id: 0,
+            local_node_id: 0,
             tick_ms: 100,
             behavior: vec![behavior],
             transport,
@@ -140,7 +140,7 @@ mod tests {
             timer,
         });
 
-        let join = async_std::task::spawn(async move { while let Ok(_) = plane.run().await {} });
+        let join = async_std::task::spawn(async move { while let Ok(_) = plane.recv().await {} });
         faker
             .send_blocking(MockInput::FakeIncomingConnection(
                 neighbour1,

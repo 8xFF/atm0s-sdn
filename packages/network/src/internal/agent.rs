@@ -5,13 +5,13 @@ use crate::transport::{
     TransportPendingOutgoing,
 };
 use async_std::channel::Sender;
-use bluesea_identity::{PeerAddr, PeerId};
+use bluesea_identity::{NodeAddr, NodeId};
 use parking_lot::RwLock;
 use std::sync::Arc;
 
 pub struct BehaviorAgent<HE, MSG> {
     service_id: u8,
-    local_peer_id: PeerId,
+    local_node_id: NodeId,
     connector: Arc<dyn TransportConnector>,
     cross_gate: Arc<RwLock<CrossHandlerGate<HE, MSG>>>,
 }
@@ -23,28 +23,28 @@ where
 {
     pub(crate) fn new(
         service_id: u8,
-        local_peer_id: PeerId,
+        local_node_id: NodeId,
         connector: Arc<dyn TransportConnector>,
         cross_gate: Arc<RwLock<CrossHandlerGate<HE, MSG>>>,
     ) -> Self {
         Self {
             service_id,
             connector,
-            local_peer_id,
+            local_node_id,
             cross_gate,
         }
     }
 
-    pub fn local_peer_id(&self) -> PeerId {
-        self.local_peer_id
+    pub fn local_node_id(&self) -> NodeId {
+        self.local_node_id
     }
 
     pub fn connect_to(
         &self,
-        peer_id: PeerId,
-        dest: PeerAddr,
+        node_id: NodeId,
+        dest: NodeAddr,
     ) -> Result<TransportPendingOutgoing, OutgoingConnectionError> {
-        self.connector.connect_to(peer_id, dest)
+        self.connector.connect_to(node_id, dest)
     }
 
     pub fn send_to_handler(&self, route: CrossHandlerRoute, event: HE) {
@@ -65,15 +65,15 @@ where
         self.cross_gate.read().close_conn(conn);
     }
 
-    pub fn close_peer(&self, peer: PeerId) {
-        self.cross_gate.read().close_peer(peer);
+    pub fn close_node(&self, node: NodeId) {
+        self.cross_gate.read().close_node(node);
     }
 }
 
 pub struct ConnectionAgent<BE, HE, MSG> {
     service_id: u8,
-    local_peer_id: PeerId,
-    remote_peer_id: PeerId,
+    local_node_id: NodeId,
+    remote_node_id: NodeId,
     conn_id: u32,
     sender: Arc<dyn ConnectionSender<MSG>>,
     internal_tx: Sender<NetworkPlaneInternalEvent<BE, MSG>>,
@@ -88,8 +88,8 @@ where
 {
     pub(crate) fn new(
         service_id: u8,
-        local_peer_id: PeerId,
-        remote_peer_id: PeerId,
+        local_node_id: NodeId,
+        remote_node_id: NodeId,
         conn_id: u32,
         sender: Arc<dyn ConnectionSender<MSG>>,
         internal_tx: Sender<NetworkPlaneInternalEvent<BE, MSG>>,
@@ -97,8 +97,8 @@ where
     ) -> Self {
         Self {
             service_id,
-            local_peer_id,
-            remote_peer_id,
+            local_node_id,
+            remote_node_id,
             conn_id,
             sender,
             internal_tx,
@@ -110,12 +110,12 @@ where
         self.conn_id
     }
 
-    pub fn local_peer_id(&self) -> PeerId {
-        self.local_peer_id
+    pub fn local_node_id(&self) -> NodeId {
+        self.local_node_id
     }
 
-    pub fn remote_peer_id(&self) -> PeerId {
-        self.remote_peer_id
+    pub fn remote_node_id(&self) -> NodeId {
+        self.remote_node_id
     }
 
     pub fn send_behavior(&self, event: BE) {
@@ -123,7 +123,7 @@ where
             .internal_tx
             .send_blocking(NetworkPlaneInternalEvent::ToBehaviour {
                 service_id: self.service_id,
-                peer_id: self.remote_peer_id,
+                node_id: self.remote_node_id,
                 conn_id: self.conn_id,
                 event,
             }) {
@@ -142,7 +142,7 @@ where
         self.cross_gate.read().send_to_handler(
             self.service_id,
             route,
-            CrossHandlerEvent::FromHandler(self.remote_peer_id, self.conn_id, event),
+            CrossHandlerEvent::FromHandler(self.remote_node_id, self.conn_id, event),
         );
     }
 

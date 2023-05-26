@@ -1,4 +1,4 @@
-use bluesea_identity::PeerId;
+use bluesea_identity::NodeId;
 use discovery::{
     DiscoveryBehaviorEvent, DiscoveryHandlerEvent, DiscoveryMsg, DiscoveryNetworkBehavior,
     DiscoveryNetworkBehaviorOpts,
@@ -24,7 +24,7 @@ enum NodeMessage {
     Discovery(DiscoveryMsg),
 }
 
-async fn start_node(node_id: PeerId, earth: Arc<VnetEarth<NodeMessage>>) {
+async fn start_node(node_id: NodeId, earth: Arc<VnetEarth<NodeMessage>>) {
     // let timer = Arc::new(SystemTimer());
     //
     // let behavior = Box::new(DiscoveryNetworkBehavior::new(
@@ -37,7 +37,7 @@ async fn start_node(node_id: PeerId, earth: Arc<VnetEarth<NodeMessage>>) {
     //
     // let mut plane = NetworkPlane::<ImplBehaviorEvent, ImplHandlerEvent, ImplNetworkMsg>::new(
     //     NetworkPlaneConfig {
-    //         local_peer_id: 0,
+    //         local_node_id: 0,
     //         tick_ms: 100,
     //         behavior: vec![behavior],
     //         transport,

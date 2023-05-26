@@ -2,7 +2,7 @@ use crate::msg::TcpMsg;
 use async_std::channel::{bounded, unbounded, Receiver, RecvError, Sender};
 use async_std::net::{Shutdown, TcpStream};
 use async_std::task::JoinHandle;
-use bluesea_identity::{PeerAddr, PeerId};
+use bluesea_identity::{NodeAddr, NodeId};
 use futures_util::io::{ReadHalf, WriteHalf};
 use futures_util::{select, AsyncReadExt, AsyncWriteExt, FutureExt, StreamExt};
 use network::transport::{
@@ -41,8 +41,8 @@ pub enum OutgoingEvent<MSG> {
 }
 
 pub struct TcpConnectionSender<MSG> {
-    remote_peer_id: PeerId,
-    remote_addr: PeerAddr,
+    remote_node_id: NodeId,
+    remote_addr: NodeAddr,
     conn_id: u32,
     reliable_sender: Sender<OutgoingEvent<MSG>>,
     unreliable_sender: Sender<OutgoingEvent<MSG>>,
@@ -54,9 +54,9 @@ where
     MSG: Serialize + Send + Sync + 'static,
 {
     pub fn new(
-        peer_id: PeerId,
-        remote_peer_id: PeerId,
-        remote_addr: PeerAddr,
+        node_id: NodeId,
+        remote_node_id: NodeId,
+        remote_addr: NodeAddr,
         conn_id: u32,
         unreliable_queue_size: usize,
         mut socket: TcpStream,
@@ -68,8 +68,8 @@ where
         let task = async_std::task::spawn(async move {
             log::info!(
                 "[TcpConnectionSender {} => {}] start sending loop",
-                peer_id,
-                remote_peer_id
+                node_id,
+                remote_node_id
             );
             let mut tick_interval = async_std::stream::interval(Duration::from_millis(5000));
             send_tcp_stream(&mut socket, TcpMsg::<MSG>::Ping(timer.now_ms())).await;
@@ -79,7 +79,7 @@ where
                     e = r_rx.recv().fuse() => e,
                     e = unr_rx.recv().fuse() => e,
                     e = tick_interval.next().fuse() => {
-                        log::debug!("[TcpConnectionSender {} => {}] sending Ping", peer_id, remote_peer_id);
+                        log::debug!("[TcpConnectionSender {} => {}] sending Ping", node_id, remote_node_id);
                         Ok(OutgoingEvent::Msg(TcpMsg::Ping(timer.now_ms())))
                     }
                 };
@@ -92,15 +92,15 @@ where
                         if let Err(e) = socket.shutdown(Shutdown::Both) {
                             log::error!(
                                 "[TcpConnectionSender {} => {}] close sender error {}",
-                                peer_id,
-                                remote_peer_id,
+                                node_id,
+                                remote_node_id,
                                 e
                             );
                         } else {
                             log::info!(
                                 "[TcpConnectionSender {} => {}] close sender loop",
-                                peer_id,
-                                remote_peer_id
+                                node_id,
+                                remote_node_id
                             );
                         }
                         break;
@@ -108,16 +108,16 @@ where
                     Ok(OutgoingEvent::ClosedNotify) => {
                         log::info!(
                             "[TcpConnectionSender {} => {}] socket closed",
-                            peer_id,
-                            remote_peer_id
+                            node_id,
+                            remote_node_id
                         );
                         break;
                     }
                     Err(err) => {
                         log::error!(
                             "[TcpConnectionSender {} => {}] channel error {:?}",
-                            peer_id,
-                            remote_peer_id,
+                            node_id,
+                            remote_node_id,
                             err
                         );
                         break;
@@ -126,8 +126,8 @@ where
             }
             log::info!(
                 "[TcpConnectionSender {} => {}] stop sending loop",
-                peer_id,
-                remote_peer_id
+                node_id,
+                remote_node_id
             );
             ()
         });
@@ -135,7 +135,7 @@ where
         (
             Self {
                 remote_addr,
-                remote_peer_id,
+                remote_node_id,
                 conn_id,
                 reliable_sender: reliable_sender.clone(),
                 unreliable_sender,
@@ -150,15 +150,15 @@ impl<MSG> ConnectionSender<MSG> for TcpConnectionSender<MSG>
 where
     MSG: Send + Sync + 'static,
 {
-    fn remote_peer_id(&self) -> PeerId {
-        self.remote_peer_id
+    fn remote_node_id(&self) -> NodeId {
+        self.remote_node_id
     }
 
     fn connection_id(&self) -> u32 {
         self.conn_id
     }
 
-    fn remote_addr(&self) -> PeerAddr {
+    fn remote_addr(&self) -> NodeAddr {
         self.remote_addr.clone()
     }
 
@@ -212,9 +212,9 @@ pub async fn recv_tcp_stream<MSG: DeserializeOwned>(
 }
 
 pub struct TcpConnectionReceiver<MSG> {
-    pub(crate) peer_id: PeerId,
-    pub(crate) remote_peer_id: PeerId,
-    pub(crate) remote_addr: PeerAddr,
+    pub(crate) node_id: NodeId,
+    pub(crate) remote_node_id: NodeId,
+    pub(crate) remote_addr: NodeAddr,
     pub(crate) conn_id: u32,
     pub(crate) socket: TcpStream,
     pub(crate) buf: [u8; BUFFER_LEN],
@@ -227,15 +227,15 @@ impl<MSG> ConnectionReceiver<MSG> for TcpConnectionReceiver<MSG>
 where
     MSG: Serialize + DeserializeOwned + Send + Sync + 'static,
 {
-    fn remote_peer_id(&self) -> PeerId {
-        self.remote_peer_id
+    fn remote_node_id(&self) -> NodeId {
+        self.remote_node_id
     }
 
     fn connection_id(&self) -> u32 {
         self.conn_id
     }
 
-    fn remote_addr(&self) -> PeerAddr {
+    fn remote_addr(&self) -> NodeAddr {
         self.remote_addr.clone()
     }
 
@@ -243,8 +243,8 @@ where
         loop {
             log::debug!(
                 "[ConnectionReceiver {} => {}] waiting event",
-                self.peer_id,
-                self.remote_peer_id
+                self.node_id,
+                self.remote_node_id
             );
             match recv_tcp_stream::<MSG>(&mut self.buf, &mut self.socket).await {
                 Ok(msg) => {
@@ -255,8 +255,8 @@ where
                         TcpMsg::Ping(sent_ts) => {
                             log::debug!(
                                 "[ConnectionReceiver {} => {}] on Ping => reply Pong",
-                                self.peer_id,
-                                self.remote_peer_id
+                                self.node_id,
+                                self.remote_node_id
                             );
                             self.reliable_sender
                                 .send_blocking(OutgoingEvent::Msg(TcpMsg::<MSG>::Pong(sent_ts)));
@@ -265,8 +265,8 @@ where
                             //TODO est speed and over_use state
                             log::debug!(
                                 "[ConnectionReceiver {} => {}] on Pong",
-                                self.peer_id,
-                                self.remote_peer_id
+                                self.node_id,
+                                self.remote_node_id
                             );
                             break Ok(ConnectionEvent::Stats(ConnectionStats {
                                 rtt_ms: (self.timer.now_ms() - ping_sent_ts) as u16,
@@ -277,15 +277,15 @@ where
                             }));
                         }
                         _ => {
-                            log::warn!("[ConnectionReceiver {} => {}] wrong msg type, required TcpMsg::Msg", self.peer_id, self.remote_peer_id);
+                            log::warn!("[ConnectionReceiver {} => {}] wrong msg type, required TcpMsg::Msg", self.node_id, self.remote_node_id);
                         }
                     }
                 }
                 Err(e) => {
                     log::info!(
                         "[ConnectionReceiver {} => {}] stream closed",
-                        self.peer_id,
-                        self.remote_peer_id
+                        self.node_id,
+                        self.remote_node_id
                     );
                     self.reliable_sender
                         .send_blocking(OutgoingEvent::ClosedNotify);

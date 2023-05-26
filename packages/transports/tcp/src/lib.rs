@@ -12,7 +12,7 @@ pub use transport::TcpTransport;
 #[cfg(test)]
 mod tests {
     use crate::transport::TcpTransport;
-    use bluesea_identity::{PeerAddr, PeerAddrBuilder, Protocol};
+    use bluesea_identity::{NodeAddr, NodeAddrBuilder, Protocol};
     use network::transport::{
         ConnectionEvent, ConnectionMsg, ConnectionStats, OutgoingConnectionError, Transport,
         TransportEvent,
@@ -29,21 +29,21 @@ mod tests {
 
     #[async_std::test]
     async fn simple_network() {
-        let peer_addr_builder1 = Arc::new(PeerAddrBuilder::default());
-        let mut tran1 = TcpTransport::<Msg>::new(1, 10001, peer_addr_builder1.clone()).await;
+        let node_addr_builder1 = Arc::new(NodeAddrBuilder::default());
+        let mut tran1 = TcpTransport::<Msg>::new(1, 10001, node_addr_builder1.clone()).await;
 
-        let peer_addr_builder2 = Arc::new(PeerAddrBuilder::default());
-        let mut tran2 = TcpTransport::<Msg>::new(2, 10002, peer_addr_builder2.clone()).await;
+        let node_addr_builder2 = Arc::new(NodeAddrBuilder::default());
+        let mut tran2 = TcpTransport::<Msg>::new(2, 10002, node_addr_builder2.clone()).await;
 
         let connector1 = tran1.connector();
         let conn_id = connector1
-            .connect_to(2, peer_addr_builder2.addr())
+            .connect_to(2, node_addr_builder2.addr())
             .unwrap()
             .connection_id;
 
         match tran1.recv().await.unwrap() {
-            TransportEvent::OutgoingRequest(peer, conn, acceptor) => {
-                assert_eq!(peer, 2);
+            TransportEvent::OutgoingRequest(node, conn, acceptor) => {
+                assert_eq!(node, 2);
                 assert_eq!(conn, conn_id);
                 acceptor.accept();
             }
@@ -53,8 +53,8 @@ mod tests {
         }
 
         match tran2.recv().await.unwrap() {
-            TransportEvent::IncomingRequest(peer, conn, acceptor) => {
-                assert_eq!(peer, 1);
+            TransportEvent::IncomingRequest(node, conn, acceptor) => {
+                assert_eq!(node, 1);
                 acceptor.accept();
             }
             _ => {
@@ -64,8 +64,8 @@ mod tests {
 
         let (tran2_sender, mut tran2_recv) = match tran2.recv().await.unwrap() {
             TransportEvent::Incoming(sender, recv) => {
-                assert_eq!(sender.remote_peer_id(), 1);
-                assert_eq!(sender.remote_addr(), peer_addr_builder1.addr());
+                assert_eq!(sender.remote_node_id(), 1);
+                assert_eq!(sender.remote_addr(), node_addr_builder1.addr());
                 (sender, recv)
             }
             _ => {
@@ -75,8 +75,8 @@ mod tests {
 
         let (tran1_sender, mut tran1_recv) = match tran1.recv().await.unwrap() {
             TransportEvent::Outgoing(sender, recv) => {
-                assert_eq!(sender.remote_peer_id(), 2);
-                assert_eq!(sender.remote_addr(), peer_addr_builder2.addr());
+                assert_eq!(sender.remote_node_id(), 2);
+                assert_eq!(sender.remote_addr(), node_addr_builder2.addr());
                 assert_eq!(sender.connection_id(), conn_id);
                 (sender, recv)
             }
@@ -143,13 +143,13 @@ mod tests {
 
     #[async_std::test]
     async fn simple_network_connect_addr_not_found() {
-        let peer_addr_builder1 = Arc::new(PeerAddrBuilder::default());
-        let mut tran1 = TcpTransport::<Msg>::new(1, 20001, peer_addr_builder1.clone()).await;
+        let node_addr_builder1 = Arc::new(NodeAddrBuilder::default());
+        let mut tran1 = TcpTransport::<Msg>::new(1, 20001, node_addr_builder1.clone()).await;
         let connector1 = tran1.connector();
         let conn_id = connector1
             .connect_to(
                 2,
-                PeerAddr::from_iter(vec![
+                NodeAddr::from_iter(vec![
                     Protocol::Ip4(Ipv4Addr::new(127, 0, 0, 1)),
                     Protocol::Tcp(20002),
                 ]),
@@ -158,7 +158,7 @@ mod tests {
             .connection_id;
 
         match tran1.recv().await.unwrap() {
-            TransportEvent::OutgoingRequest(peer, conn, acceptor) => {
+            TransportEvent::OutgoingRequest(node, conn, acceptor) => {
                 acceptor.accept();
             }
             _ => {
@@ -177,23 +177,23 @@ mod tests {
     }
 
     #[async_std::test]
-    async fn simple_network_connect_wrong_peer() {
-        let peer_addr_builder1 = Arc::new(PeerAddrBuilder::default());
-        let mut tran1 = TcpTransport::<Msg>::new(1, 30001, peer_addr_builder1.clone()).await;
+    async fn simple_network_connect_wrong_node() {
+        let node_addr_builder1 = Arc::new(NodeAddrBuilder::default());
+        let mut tran1 = TcpTransport::<Msg>::new(1, 30001, node_addr_builder1.clone()).await;
 
-        let peer_addr_builder2 = Arc::new(PeerAddrBuilder::default());
-        let mut tran2 = TcpTransport::<Msg>::new(2, 30002, peer_addr_builder2.clone()).await;
+        let node_addr_builder2 = Arc::new(NodeAddrBuilder::default());
+        let mut tran2 = TcpTransport::<Msg>::new(2, 30002, node_addr_builder2.clone()).await;
 
         let connector1 = tran1.connector();
         let conn_id = connector1
-            .connect_to(3, peer_addr_builder2.addr())
+            .connect_to(3, node_addr_builder2.addr())
             .unwrap()
             .connection_id;
 
         let join = async_std::task::spawn(async move { while tran2.recv().await.is_ok() {} });
 
         match tran1.recv().await.unwrap() {
-            TransportEvent::OutgoingRequest(peer, conn, acceptor) => {
+            TransportEvent::OutgoingRequest(node, conn, acceptor) => {
                 acceptor.accept();
             }
             _ => {

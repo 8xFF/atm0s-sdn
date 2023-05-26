@@ -1,5 +1,5 @@
 use async_std::channel::{Receiver, Sender};
-use bluesea_identity::{PeerAddr, PeerId};
+use bluesea_identity::{NodeAddr, NodeId};
 use network::transport::{ConnectionEvent, ConnectionMsg, ConnectionReceiver, ConnectionSender};
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -11,11 +11,11 @@ pub type VnetConnection<MSG> = (
 );
 
 pub struct VnetConnectionReceiver<MSG> {
-    pub(crate) remote_peer_id: PeerId,
+    pub(crate) remote_node_id: NodeId,
     pub(crate) conn_id: u32,
-    pub(crate) remote_addr: PeerAddr,
+    pub(crate) remote_addr: NodeAddr,
     pub(crate) recv: Receiver<Option<(u8, ConnectionMsg<MSG>)>>,
-    pub(crate) connections: Arc<RwLock<HashMap<u32, (PeerId, PeerId)>>>,
+    pub(crate) connections: Arc<RwLock<HashMap<u32, (NodeId, NodeId)>>>,
 }
 
 #[async_trait::async_trait]
@@ -23,15 +23,15 @@ impl<MSG> ConnectionReceiver<MSG> for VnetConnectionReceiver<MSG>
 where
     MSG: Send + Sync,
 {
-    fn remote_peer_id(&self) -> bluesea_identity::PeerId {
-        self.remote_peer_id
+    fn remote_node_id(&self) -> bluesea_identity::NodeId {
+        self.remote_node_id
     }
 
     fn connection_id(&self) -> u32 {
         self.conn_id
     }
 
-    fn remote_addr(&self) -> bluesea_identity::PeerAddr {
+    fn remote_addr(&self) -> bluesea_identity::NodeAddr {
         self.remote_addr.clone()
     }
 
@@ -47,9 +47,9 @@ where
 }
 
 pub struct VnetConnectionSender<MSG> {
-    pub(crate) remote_peer_id: PeerId,
+    pub(crate) remote_node_id: NodeId,
     pub(crate) conn_id: u32,
-    pub(crate) remote_addr: PeerAddr,
+    pub(crate) remote_addr: NodeAddr,
     pub(crate) sender: Sender<Option<(u8, ConnectionMsg<MSG>)>>,
     pub(crate) remote_sender: Sender<Option<(u8, ConnectionMsg<MSG>)>>,
 }
@@ -59,15 +59,15 @@ impl<MSG> ConnectionSender<MSG> for VnetConnectionSender<MSG>
 where
     MSG: Send + Sync,
 {
-    fn remote_peer_id(&self) -> bluesea_identity::PeerId {
-        self.remote_peer_id
+    fn remote_node_id(&self) -> bluesea_identity::NodeId {
+        self.remote_node_id
     }
 
     fn connection_id(&self) -> u32 {
         self.conn_id
     }
 
-    fn remote_addr(&self) -> bluesea_identity::PeerAddr {
+    fn remote_addr(&self) -> bluesea_identity::NodeAddr {
         self.remote_addr.clone()
     }
 

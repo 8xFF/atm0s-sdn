@@ -1,4 +1,4 @@
-use bluesea_identity::{PeerAddr, PeerAddrBuilder, Protocol};
+use bluesea_identity::{NodeAddr, NodeAddrBuilder, Protocol};
 use clap::Parser;
 use manual::*;
 use network::convert_enum;
@@ -42,21 +42,21 @@ struct Args {
 
     /// Neighbors
     #[arg(env, long)]
-    neighbours: Vec<PeerAddr>,
+    neighbours: Vec<NodeAddr>,
 }
 
 #[async_std::main]
 async fn main() {
     env_logger::init();
     let args: Args = Args::parse();
-    let peer_addr_builder = Arc::new(PeerAddrBuilder::default());
-    peer_addr_builder.add_protocol(Protocol::P2p(args.node_id));
+    let node_addr_builder = Arc::new(NodeAddrBuilder::default());
+    node_addr_builder.add_protocol(Protocol::P2p(args.node_id));
     let transport =
-        transport_tcp::TcpTransport::<NodeMsg>::new(args.node_id, 0, peer_addr_builder.clone())
+        transport_tcp::TcpTransport::<NodeMsg>::new(args.node_id, 0, node_addr_builder.clone())
             .await;
     let (transport_rpc, _, _) = network::mock::MockTransportRpc::new();
-    let peer_addr = peer_addr_builder.addr();
-    log::info!("Listen on addr {}", peer_addr);
+    let node_addr = node_addr_builder.addr();
+    log::info!("Listen on addr {}", node_addr);
 
     let manual = ManualBehavior::new(ManualBehaviorConf {
         neighbours: args.neighbours.clone(),
@@ -66,7 +66,7 @@ async fn main() {
     let mut plane =
         NetworkPlane::<NodeBehaviorEvent, NodeHandleEvent, NodeMsg, NodeRpcReq, NodeRpcRes>::new(
             NetworkPlaneConfig {
-                local_peer_id: args.node_id,
+                local_node_id: args.node_id,
                 tick_ms: 1000,
                 behavior: vec![Box::new(manual)],
                 transport: Box::new(transport),

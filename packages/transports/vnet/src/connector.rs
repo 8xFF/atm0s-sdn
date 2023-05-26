@@ -14,14 +14,14 @@ where
 {
     fn connect_to(
         &self,
-        peer_id: bluesea_identity::PeerId,
-        addr: bluesea_identity::PeerAddr,
+        node_id: bluesea_identity::NodeId,
+        addr: bluesea_identity::NodeAddr,
     ) -> Result<TransportPendingOutgoing, OutgoingConnectionError> {
         for protocol in &addr {
             match protocol {
                 Protocol::Memory(port) => {
                     if let Some(connection_id) =
-                        self.earth.create_outgoing(self.port, peer_id, port)
+                        self.earth.create_outgoing(self.port, node_id, port)
                     {
                         return Ok(TransportPendingOutgoing { connection_id });
                     } else {

@@ -1,14 +1,14 @@
-use bluesea_identity::{PeerAddr, PeerId};
+use bluesea_identity::{NodeAddr, NodeId};
 
 pub enum EntryState {
     Connecting {
-        distance: PeerId,
-        addr: PeerAddr,
+        distance: NodeId,
+        addr: NodeAddr,
         started_at: u64,
     },
     Connected {
-        distance: PeerId,
-        addr: PeerAddr,
+        distance: NodeId,
+        addr: NodeAddr,
         started_at: u64,
     },
     Empty,
