@@ -1,0 +1,18 @@
+[package]
+name = "key-value"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-trait = { workspace = true }
+bluesea-identity = { workspace = true }
+utils = { workspace = true }
+key-value-storage = { workspace = true }
+network = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+router = { workspace = true }
+serde = { workspace = true }
+async-std = { workspace = true }

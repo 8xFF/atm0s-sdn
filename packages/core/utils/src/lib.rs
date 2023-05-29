@@ -1,6 +1,11 @@
+pub mod hashmap;
 pub mod init_array;
 pub mod init_vec;
+pub mod random;
+pub mod vec_dequeue;
 
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub trait Timer: Send + Sync {
@@ -17,5 +22,22 @@ impl Timer for SystemTimer {
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")
             .as_millis() as u64
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct MockTimer {
+    current_value: Arc<AtomicU64>,
+}
+
+impl Timer for MockTimer {
+    fn now_ms(&self) -> u64 {
+        self.current_value.load(Ordering::Relaxed)
+    }
+}
+
+impl MockTimer {
+    pub fn fake(&self, value: u64) {
+        self.current_value.store(value, Ordering::Relaxed);
     }
 }
