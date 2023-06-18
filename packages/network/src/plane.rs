@@ -1,10 +1,7 @@
 use crate::behaviour::{ConnectionHandler, NetworkBehavior};
 use crate::internal::agent::{BehaviorAgent, ConnectionAgent};
 use crate::internal::cross_handler_gate::{CrossHandlerEvent, CrossHandlerGate};
-use crate::transport::{
-    ConnectionEvent, ConnectionMsg, ConnectionSender, OutgoingConnectionError, RpcAnswer,
-    Transport, TransportConnector, TransportEvent, TransportPendingOutgoing, TransportRpc,
-};
+use crate::transport::{ConnectionEvent, ConnectionMsg, ConnectionReceiver, ConnectionSender, MsgRoute, OutgoingConnectionError, RpcAnswer, Transport, TransportConnector, TransportEvent, TransportPendingOutgoing, TransportRpc};
 use async_std::channel::{bounded, unbounded, Receiver, Sender};
 use async_std::stream::Interval;
 use bluesea_identity::{ConnId, NodeAddr, NodeId};
@@ -16,6 +13,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use utils::init_vec::init_vec;
 use utils::Timer;
+use crate::router::{RouteAction, RouterTable};
 
 pub enum NetworkPlaneInternalEvent<BE, MSG> {
     ToBehaviour {
@@ -40,6 +38,8 @@ pub struct NetworkPlaneConfig<BE, HE, MSG, Req, Res> {
     pub transport_rpc: Box<dyn TransportRpc<Req, Res> + Send + Sync>,
     /// Timer for getting timestamp miliseconds
     pub timer: Arc<dyn Timer>,
+    /// Routing table, which is used to route message to correct node
+    pub router: Arc<dyn RouterTable>,
 }
 
 pub struct NetworkPlane<BE, HE, MSG, Req, Res> {
@@ -54,6 +54,7 @@ pub struct NetworkPlane<BE, HE, MSG, Req, Res> {
     transport: Box<dyn Transport<MSG> + Send + Sync>,
     transport_rpc: Box<dyn TransportRpc<Req, Res> + Send + Sync>,
     timer: Arc<dyn Timer>,
+    router: Arc<dyn RouterTable>,
     internal_tx: Sender<NetworkPlaneInternalEvent<BE, MSG>>,
     internal_rx: Receiver<NetworkPlaneInternalEvent<BE, MSG>>,
     cross_gate: Arc<RwLock<CrossHandlerGate<HE, MSG>>>,
@@ -71,7 +72,7 @@ where
     /// Creating new network plane, after create need to run
     /// `while let Some(_) = plane.run().await {}`
     pub fn new(conf: NetworkPlaneConfig<BE, HE, MSG, Req, Res>) -> Self {
-        let cross_gate: Arc<RwLock<CrossHandlerGate<HE, MSG>>> = Default::default();
+        let cross_gate: Arc<RwLock<CrossHandlerGate<HE, MSG>>> = Arc::new(RwLock::new(CrossHandlerGate::new(conf.router.clone())));
 
         let (internal_tx, internal_rx) = unbounded();
         let mut behaviors: Vec<
@@ -108,6 +109,7 @@ where
             internal_tx,
             internal_rx,
             timer: conf.timer,
+            router: conf.router,
             cross_gate,
         }
     }
@@ -235,6 +237,7 @@ where
         let internal_tx = self.internal_tx.clone();
         let tick_ms = self.tick_ms;
         let timer = self.timer.clone();
+        let router = self.router.clone();
         async_std::task::spawn(async move {
             log::info!(
                 "[NetworkPlane] fire handlers on_opened ({}, {})",
@@ -284,24 +287,7 @@ where
                     }
                     e = receiver.poll().fuse() => match e {
                         Ok(event) => {
-                            match &event {
-                                ConnectionEvent::Msg { service_id, .. } => {
-                                    log::debug!("[NetworkPlane] fire handlers on_event network msg for conn ({}, {}) from service {}", receiver.remote_node_id(), receiver.conn_id(), service_id);
-                                    if let Some((handler, conn_agent)) = &mut handlers[*service_id as usize] {
-                                        handler.on_event(&conn_agent, event);
-                                    } else {
-                                        debug_assert!(false, "service not found {}", service_id);
-                                    }
-                                }
-                                ConnectionEvent::Stats(stats) => {
-                                    log::debug!("[NetworkPlane] fire handlers on_event network stats for conn ({}, {})", receiver.remote_node_id(), receiver.conn_id());
-                                    for handler in &mut handlers {
-                                        if let Some((handler, conn_agent)) = handler {
-                                            handler.on_event(&conn_agent, ConnectionEvent::Stats(stats.clone()));
-                                        }
-                                    }
-                                }
-                            }
+                            process_conn_msg(event, &mut handlers, &sender, &receiver, &router);
                         }
                         Err(err) => {
                             break;
@@ -399,6 +385,46 @@ where
                 },
                 Err(_) => {
                     Err(())
+                }
+            }
+        }
+    }
+}
+
+fn process_conn_msg<BE, HE, MSG>(
+    event: ConnectionEvent<MSG>,
+    handlers: &mut Vec<
+        Option<(
+            Box<dyn ConnectionHandler<BE, HE, MSG>>,
+            ConnectionAgent<BE, HE, MSG>,
+        )>,
+    >,
+    sender: &Arc<dyn ConnectionSender<MSG>>,
+    receiver: &Box<dyn ConnectionReceiver<MSG> + Send>,
+    router: &Arc<dyn RouterTable>,
+) {
+    match &event {
+        ConnectionEvent::Msg { route, service_id, .. } => {
+            match router.path_to(route, *service_id) {
+                RouteAction::Reject => {},
+                RouteAction::Local => {
+                    log::debug!("[NetworkPlane] fire handlers on_event network msg for conn ({}, {}) from service {}", receiver.remote_node_id(), receiver.conn_id(), service_id);
+                    if let Some((handler, conn_agent)) = &mut handlers[*service_id as usize] {
+                        handler.on_event(&conn_agent, event);
+                    } else {
+                        debug_assert!(false, "service not found {}", service_id);
+                    }
+                }
+                RouteAction::Remote(conn, node_id) => {
+
+                }
+            }
+        }
+        ConnectionEvent::Stats(stats) => {
+            log::debug!("[NetworkPlane] fire handlers on_event network stats for conn ({}, {})", receiver.remote_node_id(), receiver.conn_id());
+            for handler in handlers {
+                if let Some((handler, conn_agent)) = handler {
+                    handler.on_event(&conn_agent, ConnectionEvent::Stats(stats.clone()));
                 }
             }
         }

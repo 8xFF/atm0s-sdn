@@ -1,8 +1,9 @@
-use crate::transport::{ConnectionMsg, ConnectionSender};
+use crate::transport::{ConnectionMsg, ConnectionSender, MsgRoute};
 use async_std::channel::{unbounded, Receiver, Sender};
 use bluesea_identity::{ConnId, NodeId};
 use std::collections::HashMap;
 use std::sync::Arc;
+use crate::router::{RouteAction, RouterTable};
 
 pub(crate) enum CrossHandlerEvent<HE> {
     FromBehavior(HE),
@@ -33,15 +34,7 @@ pub(crate) struct CrossHandlerGate<HE, MSG> {
             Arc<dyn ConnectionSender<MSG>>,
         ),
     >,
-}
-
-impl<HE, MSG> Default for CrossHandlerGate<HE, MSG> {
-    fn default() -> Self {
-        Self {
-            nodes: Default::default(),
-            conns: Default::default(),
-        }
-    }
+    router: Arc<dyn RouterTable>,
 }
 
 impl<HE, MSG> CrossHandlerGate<HE, MSG>
@@ -49,6 +42,14 @@ where
     HE: Send + Sync + 'static,
     MSG: Send + Sync + 'static,
 {
+    pub fn new(router: Arc<dyn RouterTable>) -> Self {
+        Self {
+            nodes: Default::default(),
+            conns: Default::default(),
+            router,
+        }
+    }
+
     pub(crate) fn add_conn(
         &mut self,
         net_sender: Arc<dyn ConnectionSender<MSG>>,
@@ -165,8 +166,9 @@ where
 
     pub(crate) fn send_to_net(
         &self,
+        route: MsgRoute,
+        ttl: u8,
         service_id: u8,
-        route: CrossHandlerRoute,
         msg: ConnectionMsg<MSG>,
     ) -> Option<()> {
         log::debug!(
@@ -174,31 +176,20 @@ where
             service_id,
             route
         );
-        match route {
-            CrossHandlerRoute::NodeFirst(node_id) => {
-                if let Some(node) = self.nodes.get(&node_id) {
-                    if let Some((s, c_s)) = node.values().next() {
-                        c_s.send(service_id, msg);
-                        return Some(());
-                    } else {
-                        log::warn!(
-                            "[CrossHandlerGate] send_to_handler conn not found for node {}",
-                            node_id
-                        );
-                    }
-                } else {
-                    log::warn!("[CrossHandlerGate] send_to_net node not found {}", node_id);
-                }
+        match self.router.path_to(&route, service_id) {
+            RouteAction::Reject => None,
+            RouteAction::Local => {
+                todo!()
             }
-            CrossHandlerRoute::Conn(conn) => {
+            RouteAction::Remote(conn, node) => {
                 if let Some((s, c_s)) = self.conns.get(&conn) {
-                    c_s.send(service_id, msg);
+                    c_s.send(route, ttl, service_id, msg);
                     return Some(());
                 } else {
                     log::warn!("[CrossHandlerGate] send_to_net conn not found {}", conn);
+                    None
                 }
             }
-        };
-        None
+        }
     }
 }

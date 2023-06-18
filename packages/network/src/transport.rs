@@ -67,8 +67,17 @@ pub struct ConnectionStats {
 }
 
 #[derive(PartialEq, Debug)]
+pub enum MsgRoute {
+    Node(NodeId),
+    Closest(NodeId),
+    Service
+}
+
+#[derive(PartialEq, Debug)]
 pub enum ConnectionEvent<MSG> {
     Msg {
+        ttl: u8,
+        route: MsgRoute,
         service_id: u8,
         msg: ConnectionMsg<MSG>,
     },
@@ -94,7 +103,7 @@ pub trait ConnectionSender<MSG>: Send + Sync {
     fn remote_node_id(&self) -> NodeId;
     fn conn_id(&self) -> ConnId;
     fn remote_addr(&self) -> NodeAddr;
-    fn send(&self, service_id: u8, msg: ConnectionMsg<MSG>);
+    fn send(&self, route: MsgRoute, ttl: u8, service_id: u8, msg: ConnectionMsg<MSG>);
     fn close(&self);
 }
 

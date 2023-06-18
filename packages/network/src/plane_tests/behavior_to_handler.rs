@@ -15,6 +15,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
     use utils::SystemTimer;
+    use crate::router::ForceLocalRouter;
 
     enum TestCrossNetworkMsg {}
     enum TestCrossBehaviorEvent {
@@ -203,6 +204,7 @@ mod tests {
             transport,
             transport_rpc: Box::new(mock_rpc),
             timer,
+            router: Arc::new(ForceLocalRouter()),
         });
 
         let join = async_std::task::spawn(async move { while let Ok(_) = plane.recv().await {} });

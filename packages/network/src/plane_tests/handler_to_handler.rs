@@ -15,6 +15,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
     use utils::SystemTimer;
+    use crate::router::ForceLocalRouter;
 
     enum TestCrossNetworkMsg {
         PingToNode(NodeId),
@@ -154,7 +155,7 @@ mod tests {
         fn on_tick(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, ts_ms: u64, interal_ms: u64) {}
         fn on_event(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, event: ConnectionEvent<MSG>) {
             match event {
-                ConnectionEvent::Msg { service_id, msg } => match msg {
+                ConnectionEvent::Msg { route, ttl, service_id, msg } => match msg {
                     ConnectionMsg::Reliable { data, .. } => {
                         if let Ok(e) = data.try_into() {
                             match e {
@@ -229,6 +230,7 @@ mod tests {
             transport,
             transport_rpc: Box::new(mock_rpc),
             timer,
+            router: Arc::new(ForceLocalRouter()),
         });
 
         let join = async_std::task::spawn(async move { while let Ok(_) = plane.recv().await {} });
@@ -290,6 +292,7 @@ mod tests {
             transport,
             transport_rpc: Box::new(mock_rpc),
             timer,
+            router: Arc::new(ForceLocalRouter()),
         });
 
         let join = async_std::task::spawn(async move { while let Ok(_) = plane.recv().await {} });

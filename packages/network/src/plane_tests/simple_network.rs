@@ -3,10 +3,7 @@ mod tests {
     use crate::behaviour::{ConnectionHandler, NetworkBehavior};
     use crate::mock::{MockInput, MockOutput, MockTransport, MockTransportRpc};
     use crate::plane::{NetworkPlane, NetworkPlaneConfig};
-    use crate::transport::{
-        ConnectionEvent, ConnectionMsg, ConnectionRejectReason, ConnectionSender,
-        OutgoingConnectionError, RpcAnswer,
-    };
+    use crate::transport::{ConnectionEvent, ConnectionMsg, ConnectionRejectReason, ConnectionSender, MsgRoute, OutgoingConnectionError, RpcAnswer};
     use crate::{BehaviorAgent, ConnectionAgent};
     use bluesea_identity::{ConnId, NodeAddr, NodeId, Protocol};
     use parking_lot::Mutex;
@@ -15,6 +12,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
     use utils::SystemTimer;
+    use crate::router::ForceLocalRouter;
 
     #[derive(PartialEq, Debug)]
     enum Behavior1Msg {
@@ -373,6 +371,7 @@ mod tests {
             transport,
             transport_rpc: Box::new(mock_rpc),
             timer,
+            router: Arc::new(ForceLocalRouter()),
         });
 
         async_std::task::spawn(async move { while let Ok(_) = plane.recv().await {} });
@@ -414,7 +413,9 @@ mod tests {
         assert_eq!(
             output.lock().pop_front(),
             Some(MockOutput::SendTo(
-                0,
+                MsgRoute::Service,
+                1,
+                1,
                 1,
                 ConnId::from_in(0, 1),
                 ConnectionMsg::Reliable {

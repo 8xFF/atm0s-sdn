@@ -3,10 +3,7 @@ mod connection_sender;
 mod transport;
 mod transport_rpc;
 
-use crate::transport::{
-    ConnectionMsg, ConnectionSender, OutgoingConnectionError, Transport, TransportConnector,
-    TransportEvent, TransportPendingOutgoing,
-};
+use crate::transport::{ConnectionMsg, ConnectionSender, MsgRoute, OutgoingConnectionError, Transport, TransportConnector, TransportEvent, TransportPendingOutgoing};
 use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -27,7 +24,7 @@ pub enum MockInput<M> {
 #[derive(PartialEq, Debug)]
 pub enum MockOutput<M> {
     ConnectTo(NodeId, NodeAddr),
-    SendTo(u8, NodeId, ConnId, ConnectionMsg<M>),
+    SendTo(MsgRoute, u8, u8, NodeId, ConnId, ConnectionMsg<M>),
 }
 
 pub use transport::MockTransport;

@@ -1,9 +1,6 @@
 use crate::internal::cross_handler_gate::{CrossHandlerEvent, CrossHandlerGate, CrossHandlerRoute};
 use crate::plane::NetworkPlaneInternalEvent;
-use crate::transport::{
-    ConnectionMsg, ConnectionSender, OutgoingConnectionError, TransportConnector,
-    TransportPendingOutgoing,
-};
+use crate::transport::{ConnectionMsg, ConnectionSender, MsgRoute, OutgoingConnectionError, TransportConnector, TransportPendingOutgoing};
 use async_std::channel::Sender;
 use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use parking_lot::RwLock;
@@ -55,10 +52,10 @@ where
         );
     }
 
-    pub fn send_to_net(&self, route: CrossHandlerRoute, msg: ConnectionMsg<MSG>) {
+    pub fn send_to_net(&self, route: MsgRoute, ttl: u8, msg: ConnectionMsg<MSG>) {
         self.cross_gate
             .read()
-            .send_to_net(self.service_id, route, msg);
+            .send_to_net(route, ttl, self.service_id, msg);
     }
 
     pub fn close_conn(&self, conn: ConnId) {
@@ -135,7 +132,7 @@ where
     }
 
     pub fn send_net(&self, msg: ConnectionMsg<MSG>) {
-        self.sender.send(self.service_id, msg);
+        self.sender.send(MsgRoute::Node(self.remote_node_id), 1, self.service_id, msg);
     }
 
     pub fn send_to_handler(&self, route: CrossHandlerRoute, event: HE) {
@@ -146,10 +143,10 @@ where
         );
     }
 
-    pub fn send_to_net(&self, route: CrossHandlerRoute, msg: ConnectionMsg<MSG>) {
+    pub fn send_to_net(&self, route: MsgRoute, ttl: u8, msg: ConnectionMsg<MSG>) {
         self.cross_gate
             .read()
-            .send_to_net(self.service_id, route, msg);
+            .send_to_net(route, ttl, self.service_id, msg);
     }
 
     pub fn close_conn(&self) {

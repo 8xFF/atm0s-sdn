@@ -1,5 +1,5 @@
 use crate::mock::MockOutput;
-use crate::transport::{ConnectionEvent, ConnectionMsg, ConnectionSender};
+use crate::transport::{ConnectionEvent, ConnectionMsg, ConnectionSender, MsgRoute};
 use async_std::channel::Sender;
 use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use parking_lot::Mutex;
@@ -30,8 +30,10 @@ where
         self.remote_addr.clone()
     }
 
-    fn send(&self, service_id: u8, msg: ConnectionMsg<MSG>) {
+    fn send(&self, route: MsgRoute, ttl: u8, service_id: u8, msg: ConnectionMsg<MSG>) {
         self.output.lock().push_back(MockOutput::SendTo(
+            route,
+            ttl,
             service_id,
             self.remote_node_id,
             self.conn_id,

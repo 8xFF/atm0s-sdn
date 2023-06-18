@@ -1,11 +1,7 @@
 use crate::mock::connection_receiver::MockConnectionReceiver;
 use crate::mock::connection_sender::MockConnectionSender;
 use crate::mock::{MockInput, MockOutput};
-use crate::transport::{
-    AsyncConnectionAcceptor, ConnectionEvent, ConnectionMsg, ConnectionSender,
-    OutgoingConnectionError, Transport, TransportConnector, TransportEvent,
-    TransportPendingOutgoing,
-};
+use crate::transport::{AsyncConnectionAcceptor, ConnectionEvent, ConnectionMsg, ConnectionSender, MsgRoute, OutgoingConnectionError, Transport, TransportConnector, TransportEvent, TransportPendingOutgoing};
 use async_std::channel::{bounded, unbounded, Receiver, Sender};
 use bluesea_identity::{ConnDirection, ConnId, NodeAddr, NodeId};
 use parking_lot::Mutex;
@@ -184,11 +180,11 @@ impl<M: Send + Sync + 'static> Transport<M> for MockTransport<M> {
                     log::debug!("FakeIncomingMsg {} {}", service_id, conn);
                     if let Some(sender) = self.in_conns.get(&conn) {
                         sender
-                            .send_blocking(Some(ConnectionEvent::Msg { service_id, msg }))
+                            .send_blocking(Some(ConnectionEvent::Msg { route: MsgRoute::Service, ttl: 1, service_id, msg }))
                             .unwrap();
                     } else if let Some(sender) = self.out_conns.get(&conn) {
                         sender
-                            .send_blocking(Some(ConnectionEvent::Msg { service_id, msg }))
+                            .send_blocking(Some(ConnectionEvent::Msg { route: MsgRoute::Service, ttl: 1, service_id, msg }))
                             .unwrap();
                     } else {
                         panic!("connection not found");
