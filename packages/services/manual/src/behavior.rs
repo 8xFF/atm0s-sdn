@@ -3,10 +3,7 @@ use crate::msg::*;
 use crate::MANUAL_SERVICE_ID;
 use bluesea_identity::{ConnId, NodeAddr, NodeAddrType, NodeId};
 use network::behaviour::{ConnectionHandler, NetworkBehavior};
-use network::transport::{
-    ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer,
-    TransportPendingOutgoing,
-};
+use network::transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer, TransportPendingOutgoing};
 use network::BehaviorAgent;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -53,10 +50,7 @@ impl ManualBehavior {
                 );
             }
         }
-        Self {
-            neighbours,
-            timer: conf.timer,
-        }
+        Self { neighbours, timer: conf.timer }
     }
 }
 
@@ -78,21 +72,11 @@ where
                 match &slot.outgoing {
                     OutgoingState::New => match agent.connect_to(*node_id, slot.addr.clone()) {
                         Ok(conn) => {
-                            log::info!(
-                                "[ManualBehavior] connect to {} with addr {} => conn: {}",
-                                node_id,
-                                slot.addr,
-                                conn.conn_id
-                            );
+                            log::info!("[ManualBehavior] connect to {} with addr {} => conn: {}", node_id, slot.addr, conn.conn_id);
                             slot.outgoing = OutgoingState::Connecting(ts_ms, conn.conn_id, 0);
                         }
                         Err(err) => {
-                            log::error!(
-                                "[ManualBehavior] connect to {} with addr {} => error {:?}",
-                                node_id,
-                                slot.addr,
-                                err
-                            );
+                            log::error!("[ManualBehavior] connect to {} with addr {} => error {:?}", node_id, slot.addr, err);
                             slot.outgoing = OutgoingState::ConnectError(ts_ms, None, err, 0);
                         }
                     },
@@ -102,19 +86,12 @@ where
                             //need reconnect
                             match agent.connect_to(*node_id, slot.addr.clone()) {
                                 Ok(conn) => {
-                                    log::info!(
-                                        "[ManualBehavior] reconnect to {} with addr {} => conn: {}",
-                                        node_id,
-                                        slot.addr,
-                                        conn.conn_id
-                                    );
-                                    slot.outgoing =
-                                        OutgoingState::Connecting(ts_ms, conn.conn_id, count + 1);
+                                    log::info!("[ManualBehavior] reconnect to {} with addr {} => conn: {}", node_id, slot.addr, conn.conn_id);
+                                    slot.outgoing = OutgoingState::Connecting(ts_ms, conn.conn_id, count + 1);
                                 }
                                 Err(err) => {
                                     log::error!("[ManualBehavior] reconnect to {} with addr {} => error {:?}", node_id, slot.addr, err);
-                                    slot.outgoing =
-                                        OutgoingState::ConnectError(ts_ms, None, err, count + 1);
+                                    slot.outgoing = OutgoingState::ConnectError(ts_ms, None, err, count + 1);
                                 }
                             }
                         }
@@ -125,113 +102,58 @@ where
         }
     }
 
-    fn check_incoming_connection(
-        &mut self,
-        node: NodeId,
-        conn_id: ConnId,
-    ) -> Result<(), ConnectionRejectReason> {
+    fn check_incoming_connection(&mut self, node: NodeId, conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
         Ok(())
     }
 
-    fn check_outgoing_connection(
-        &mut self,
-        node: NodeId,
-        conn_id: ConnId,
-    ) -> Result<(), ConnectionRejectReason> {
+    fn check_outgoing_connection(&mut self, node: NodeId, conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
         Ok(())
     }
 
-    fn on_incoming_connection_connected(
-        &mut self,
-        agent: &BehaviorAgent<HE, MSG>,
-        conn: Arc<dyn ConnectionSender<MSG>>,
-    ) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
-        let entry = self
-            .neighbours
-            .entry(conn.remote_node_id())
-            .or_insert_with(|| NodeSlot {
-                addr: conn.remote_addr(),
-                incoming: None,
-                outgoing: OutgoingState::New,
-            });
+    fn on_incoming_connection_connected(&mut self, agent: &BehaviorAgent<HE, MSG>, conn: Arc<dyn ConnectionSender<MSG>>) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
+        let entry = self.neighbours.entry(conn.remote_node_id()).or_insert_with(|| NodeSlot {
+            addr: conn.remote_addr(),
+            incoming: None,
+            outgoing: OutgoingState::New,
+        });
         entry.incoming = Some(conn.conn_id());
         Some(Box::new(ManualHandler {}))
     }
 
-    fn on_outgoing_connection_connected(
-        &mut self,
-        agent: &BehaviorAgent<HE, MSG>,
-        connection: Arc<dyn ConnectionSender<MSG>>,
-    ) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
-        let entry = self
-            .neighbours
-            .entry(connection.remote_node_id())
-            .or_insert_with(|| NodeSlot {
-                addr: connection.remote_addr(),
-                incoming: None,
-                outgoing: OutgoingState::New,
-            });
+    fn on_outgoing_connection_connected(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender<MSG>>) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
+        let entry = self.neighbours.entry(connection.remote_node_id()).or_insert_with(|| NodeSlot {
+            addr: connection.remote_addr(),
+            incoming: None,
+            outgoing: OutgoingState::New,
+        });
         entry.outgoing = OutgoingState::Connected(self.timer.now_ms(), connection.conn_id());
         Some(Box::new(ManualHandler {}))
     }
 
-    fn on_incoming_connection_disconnected(
-        &mut self,
-        agent: &BehaviorAgent<HE, MSG>,
-        connection: Arc<dyn ConnectionSender<MSG>>,
-    ) {
+    fn on_incoming_connection_disconnected(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender<MSG>>) {
         if let Some(slot) = self.neighbours.get_mut(&connection.remote_node_id()) {
             slot.incoming = None;
         }
     }
 
-    fn on_outgoing_connection_disconnected(
-        &mut self,
-        agent: &BehaviorAgent<HE, MSG>,
-        connection: Arc<dyn ConnectionSender<MSG>>,
-    ) {
+    fn on_outgoing_connection_disconnected(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender<MSG>>) {
         if let Some(slot) = self.neighbours.get_mut(&connection.remote_node_id()) {
             slot.outgoing = OutgoingState::New;
         }
     }
 
-    fn on_outgoing_connection_error(
-        &mut self,
-        agent: &BehaviorAgent<HE, MSG>,
-        node_id: NodeId,
-        conn_id: ConnId,
-        err: &OutgoingConnectionError,
-    ) {
+    fn on_outgoing_connection_error(&mut self, agent: &BehaviorAgent<HE, MSG>, node_id: NodeId, conn_id: ConnId, err: &OutgoingConnectionError) {
         if let Some(slot) = self.neighbours.get_mut(&node_id) {
             match slot.outgoing {
-                OutgoingState::Connecting(_, _, count) => {
-                    slot.outgoing = OutgoingState::ConnectError(
-                        self.timer.now_ms(),
-                        Some(conn_id),
-                        err.clone(),
-                        count,
-                    )
-                }
+                OutgoingState::Connecting(_, _, count) => slot.outgoing = OutgoingState::ConnectError(self.timer.now_ms(), Some(conn_id), err.clone(), count),
                 _ => {}
             }
         }
     }
 
-    fn on_handler_event(
-        &mut self,
-        agent: &BehaviorAgent<HE, MSG>,
-        node_id: NodeId,
-        connection_id: ConnId,
-        event: BE,
-    ) {
-    }
+    fn on_handler_event(&mut self, agent: &BehaviorAgent<HE, MSG>, node_id: NodeId, connection_id: ConnId, event: BE) {}
 
-    fn on_rpc(
-        &mut self,
-        agent: &BehaviorAgent<HE, MSG>,
-        req: Req,
-        res: Box<dyn RpcAnswer<Res>>,
-    ) -> bool {
+    fn on_rpc(&mut self, agent: &BehaviorAgent<HE, MSG>, req: Req, res: Box<dyn RpcAnswer<Res>>) -> bool {
         if let Ok(req) = req.try_into() {
             match req {
                 ManualReq::AddNeighbors(addrs) => {
@@ -267,34 +189,18 @@ where
                     let mut conns = vec![];
                     for (_, slot) in &self.neighbours {
                         if let Some(conn) = slot.incoming {
-                            conns.push((
-                                conn,
-                                slot.addr.clone(),
-                                ConnectionState::IncomingConnected,
-                            ));
+                            conns.push((conn, slot.addr.clone(), ConnectionState::IncomingConnected));
                         }
                         match slot.outgoing {
                             OutgoingState::Connecting(_, conn, _) => {
-                                conns.push((
-                                    conn,
-                                    slot.addr.clone(),
-                                    ConnectionState::OutgoingConnecting,
-                                ));
+                                conns.push((conn, slot.addr.clone(), ConnectionState::OutgoingConnecting));
                             }
                             OutgoingState::Connected(_, conn) => {
-                                conns.push((
-                                    conn,
-                                    slot.addr.clone(),
-                                    ConnectionState::OutgoingConnected,
-                                ));
+                                conns.push((conn, slot.addr.clone(), ConnectionState::OutgoingConnected));
                             }
                             OutgoingState::ConnectError(_, conn, _, _) => {
                                 if let Some(conn_id) = conn {
-                                    conns.push((
-                                        conn_id,
-                                        slot.addr.clone(),
-                                        ConnectionState::OutgoingError,
-                                    ));
+                                    conns.push((conn_id, slot.addr.clone(), ConnectionState::OutgoingError));
                                 }
                             }
                             _ => {}

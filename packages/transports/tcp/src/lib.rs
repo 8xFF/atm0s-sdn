@@ -10,10 +10,7 @@ pub use transport::TcpTransport;
 mod tests {
     use crate::transport::TcpTransport;
     use bluesea_identity::{NodeAddr, NodeAddrBuilder, Protocol};
-    use network::transport::{
-        ConnectionEvent, ConnectionMsg, ConnectionStats, OutgoingConnectionError, Transport,
-        TransportEvent,
-    };
+    use network::transport::{ConnectionEvent, ConnectionMsg, ConnectionStats, OutgoingConnectionError, Transport, TransportEvent};
     use serde::{Deserialize, Serialize};
     use std::net::Ipv4Addr;
     use std::sync::Arc;
@@ -33,10 +30,7 @@ mod tests {
         let mut tran2 = TcpTransport::<Msg>::new(2, 10002, node_addr_builder2.clone()).await;
 
         let connector1 = tran1.connector();
-        let conn_id = connector1
-            .connect_to(2, node_addr_builder2.addr())
-            .unwrap()
-            .conn_id;
+        let conn_id = connector1.connect_to(2, node_addr_builder2.addr()).unwrap().conn_id;
 
         match tran1.recv().await.unwrap() {
             TransportEvent::OutgoingRequest(node, conn, acceptor) => {
@@ -87,22 +81,13 @@ mod tests {
                 ConnectionEvent::Stats(stats) => {}
                 e => panic!("Should received stats {:?}", e),
             }
-            tran2_sender.send(
-                1,
-                ConnectionMsg::Reliable {
-                    stream_id: 0,
-                    data: Msg::Ping,
-                },
-            );
+            tran2_sender.send(1, ConnectionMsg::Reliable { stream_id: 0, data: Msg::Ping });
             let received_event = tran2_recv.poll().await.unwrap();
             assert_eq!(
                 received_event,
                 ConnectionEvent::Msg {
                     service_id: 0,
-                    msg: ConnectionMsg::Reliable {
-                        stream_id: 0,
-                        data: Msg::Ping
-                    }
+                    msg: ConnectionMsg::Reliable { stream_id: 0, data: Msg::Ping }
                 }
             );
             assert_eq!(tran2_recv.poll().await, Err(()));
@@ -118,20 +103,11 @@ mod tests {
             received_event,
             ConnectionEvent::Msg {
                 service_id: 1,
-                msg: ConnectionMsg::Reliable {
-                    stream_id: 0,
-                    data: Msg::Ping
-                }
+                msg: ConnectionMsg::Reliable { stream_id: 0, data: Msg::Ping }
             }
         );
 
-        tran1_sender.send(
-            0,
-            ConnectionMsg::Reliable {
-                stream_id: 0,
-                data: Msg::Ping,
-            },
-        );
+        tran1_sender.send(0, ConnectionMsg::Reliable { stream_id: 0, data: Msg::Ping });
 
         tran1_sender.close();
         assert_eq!(tran1_recv.poll().await, Err(()));
@@ -144,13 +120,7 @@ mod tests {
         let mut tran1 = TcpTransport::<Msg>::new(1, 20001, node_addr_builder1.clone()).await;
         let connector1 = tran1.connector();
         let conn_id = connector1
-            .connect_to(
-                2,
-                NodeAddr::from_iter(vec![
-                    Protocol::Ip4(Ipv4Addr::new(127, 0, 0, 1)),
-                    Protocol::Tcp(20002),
-                ]),
-            )
+            .connect_to(2, NodeAddr::from_iter(vec![Protocol::Ip4(Ipv4Addr::new(127, 0, 0, 1)), Protocol::Tcp(20002)]))
             .unwrap()
             .conn_id;
 
@@ -182,10 +152,7 @@ mod tests {
         let mut tran2 = TcpTransport::<Msg>::new(2, 30002, node_addr_builder2.clone()).await;
 
         let connector1 = tran1.connector();
-        let conn_id = connector1
-            .connect_to(3, node_addr_builder2.addr())
-            .unwrap()
-            .conn_id;
+        let conn_id = connector1.connect_to(3, node_addr_builder2.addr()).unwrap().conn_id;
 
         let join = async_std::task::spawn(async move { while tran2.recv().await.is_ok() {} });
 

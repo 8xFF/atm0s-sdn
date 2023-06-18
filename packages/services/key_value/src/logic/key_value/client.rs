@@ -127,14 +127,8 @@ impl KeyValueClient {
             StorageActionRetryStrategy::Retry(10),
         );
         self.events.push_back(event);
-        
-        self.subscribes.insert(
-            *key,
-            SubSlot {
-                ex,
-                fired_at: self.timer.now_ms(),
-            },
-        );
+
+        self.subscribes.insert(*key, SubSlot { ex, fired_at: self.timer.now_ms() });
     }
 
     /// Unsubscribe to a key
@@ -352,12 +346,7 @@ mod tests {
                 &random,
                 StorageActionRouting::ClosestNode(key),
                 key,
-                KeyValueServerAction::Set(
-                    key,
-                    value,
-                    client.storage.get(&key).unwrap().version,
-                    ex
-                ),
+                KeyValueServerAction::Set(key, value, client.storage.get(&key).unwrap().version, ex),
                 StorageActionRetryStrategy::Retry(10),
             ))
         );

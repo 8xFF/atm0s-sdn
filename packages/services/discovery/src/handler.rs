@@ -36,14 +36,7 @@ where
         }
     }
 
-    fn on_other_handler_event(
-        &mut self,
-        agent: &ConnectionAgent<BE, HE, MSG>,
-        from_node: NodeId,
-        from_conn: ConnId,
-        event: HE,
-    ) {
-    }
+    fn on_other_handler_event(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, from_node: NodeId, from_conn: ConnId, event: HE) {}
 
     fn on_behavior_event(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, event: HE) {}
 

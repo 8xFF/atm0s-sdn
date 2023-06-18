@@ -1,16 +1,8 @@
 use bluesea_identity::{NodeAddr, NodeId};
 
 pub enum EntryState {
-    Connecting {
-        distance: NodeId,
-        addr: NodeAddr,
-        started_at: u64,
-    },
-    Connected {
-        distance: NodeId,
-        addr: NodeAddr,
-        started_at: u64,
-    },
+    Connecting { distance: NodeId, addr: NodeAddr, started_at: u64 },
+    Connected { distance: NodeId, addr: NodeAddr, started_at: u64 },
     Empty,
 }
 
@@ -20,9 +12,7 @@ pub struct Entry {
 
 impl Entry {
     pub(crate) fn new() -> Self {
-        Self {
-            state: EntryState::Empty,
-        }
+        Self { state: EntryState::Empty }
     }
 
     pub fn is_empty(&self) -> bool {

@@ -1,6 +1,6 @@
 use crate::router::{Router, RouterSync};
 use crate::table::{Metric, Path};
-use crate::{ServiceDestination};
+use crate::ServiceDestination;
 use bluesea_identity::{ConnId, NodeId};
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -29,11 +29,7 @@ impl SharedRouter {
         self.router.write().register_service(service_id)
     }
 
-    pub fn service_next(
-        &self,
-        service_id: u8,
-        excepts: &Vec<NodeId>,
-    ) -> Option<ServiceDestination> {
+    pub fn service_next(&self, service_id: u8, excepts: &Vec<NodeId>) -> Option<ServiceDestination> {
         self.router.read().service_next(service_id, excepts)
     }
 
@@ -62,9 +58,7 @@ impl SharedRouter {
     }
 
     pub fn apply_sync(&self, conn: ConnId, src: NodeId, src_send_metric: Metric, sync: RouterSync) {
-        self.router
-            .write()
-            .apply_sync(conn, src, src_send_metric, sync);
+        self.router.write().apply_sync(conn, src, src_send_metric, sync);
     }
 
     pub fn dump(&self) {

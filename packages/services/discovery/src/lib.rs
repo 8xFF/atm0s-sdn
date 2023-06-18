@@ -20,7 +20,8 @@ mod tests {
     use network::convert_enum;
     use network::mock::{MockInput, MockOutput, MockTransport, MockTransportRpc};
     use network::plane::{NetworkPlane, NetworkPlaneConfig};
-    use network::transport::ConnectionMsg;
+    use network::router::ForceLocalRouter;
+    use network::transport::{ConnectionMsg, MsgRoute};
     use std::sync::Arc;
     use std::time::Duration;
     use utils::SystemTimer;
@@ -49,53 +50,39 @@ mod tests {
         let neighbour1_addr = NodeAddr::from(Protocol::Memory(1000));
 
         let (mock, faker, output) = MockTransport::<ImplNetworkMsg>::new();
-        let (mock_rpc, faker_rpc, output_rpc) =
-            MockTransportRpc::<ImplNetworkReq, ImplNetworkRes>::new();
+        let (mock_rpc, faker_rpc, output_rpc) = MockTransportRpc::<ImplNetworkReq, ImplNetworkRes>::new();
         let transport = Box::new(mock);
         let timer = Arc::new(SystemTimer());
 
-        let behavior = Box::new(DiscoveryNetworkBehavior::new(
-            DiscoveryNetworkBehaviorOpts {
-                local_node_id: 0,
-                bootstrap_addrs: Some(vec![(neighbour1, neighbour1_addr.clone())]),
-                timer: timer.clone(),
-            },
-        ));
+        let behavior = Box::new(DiscoveryNetworkBehavior::new(DiscoveryNetworkBehaviorOpts {
+            local_node_id: 0,
+            bootstrap_addrs: Some(vec![(neighbour1, neighbour1_addr.clone())]),
+            timer: timer.clone(),
+        }));
 
-        let mut plane = NetworkPlane::<
-            ImplBehaviorEvent,
-            ImplHandlerEvent,
-            ImplNetworkMsg,
-            ImplNetworkReq,
-            ImplNetworkRes,
-        >::new(NetworkPlaneConfig {
+        let mut plane = NetworkPlane::<ImplBehaviorEvent, ImplHandlerEvent, ImplNetworkMsg, ImplNetworkReq, ImplNetworkRes>::new(NetworkPlaneConfig {
             local_node_id: 0,
             tick_ms: 100,
             behavior: vec![behavior],
             transport,
             transport_rpc: Box::new(mock_rpc),
             timer,
+            router: Arc::new(ForceLocalRouter()),
         });
 
         let join = async_std::task::spawn(async move { while let Ok(_) = plane.recv().await {} });
         async_std::task::sleep(Duration::from_millis(1000)).await;
-        assert_eq!(
-            output.lock().pop_front(),
-            Some(MockOutput::ConnectTo(neighbour1, neighbour1_addr.clone()))
-        );
+        assert_eq!(output.lock().pop_front(), Some(MockOutput::ConnectTo(neighbour1, neighbour1_addr.clone())));
         faker
-            .send_blocking(MockInput::FakeOutgoingConnection(
-                neighbour1,
-                ConnId::from_out(0, 0),
-                neighbour1_addr.clone(),
-            ))
+            .send_blocking(MockInput::FakeOutgoingConnection(neighbour1, ConnId::from_out(0, 0), neighbour1_addr.clone()))
             .unwrap();
         async_std::task::sleep(Duration::from_millis(100)).await;
         assert_eq!(
             output.lock().pop_front(),
             Some(MockOutput::SendTo(
+                MsgRoute::Node(neighbour1),
+                10,
                 DISCOVERY_SERVICE_ID,
-                neighbour1,
                 ConnId::from_out(0, 0),
                 ConnectionMsg::Reliable {
                     stream_id: 0,
@@ -112,41 +99,29 @@ mod tests {
         let neighbour1_addr = NodeAddr::from(Protocol::Memory(1000));
 
         let (mock, faker, output) = MockTransport::<ImplNetworkMsg>::new();
-        let (mock_rpc, faker_rpc, output_rpc) =
-            MockTransportRpc::<ImplNetworkReq, ImplNetworkRes>::new();
+        let (mock_rpc, faker_rpc, output_rpc) = MockTransportRpc::<ImplNetworkReq, ImplNetworkRes>::new();
         let transport = Box::new(mock);
         let timer = Arc::new(SystemTimer());
 
-        let behavior = Box::new(DiscoveryNetworkBehavior::new(
-            DiscoveryNetworkBehaviorOpts {
-                local_node_id: 0,
-                bootstrap_addrs: None,
-                timer: timer.clone(),
-            },
-        ));
+        let behavior = Box::new(DiscoveryNetworkBehavior::new(DiscoveryNetworkBehaviorOpts {
+            local_node_id: 0,
+            bootstrap_addrs: None,
+            timer: timer.clone(),
+        }));
 
-        let mut plane = NetworkPlane::<
-            ImplBehaviorEvent,
-            ImplHandlerEvent,
-            ImplNetworkMsg,
-            ImplNetworkReq,
-            ImplNetworkRes,
-        >::new(NetworkPlaneConfig {
+        let mut plane = NetworkPlane::<ImplBehaviorEvent, ImplHandlerEvent, ImplNetworkMsg, ImplNetworkReq, ImplNetworkRes>::new(NetworkPlaneConfig {
             local_node_id: 0,
             tick_ms: 100,
             behavior: vec![behavior],
             transport,
             transport_rpc: Box::new(mock_rpc),
             timer,
+            router: Arc::new(ForceLocalRouter()),
         });
 
         let join = async_std::task::spawn(async move { while let Ok(_) = plane.recv().await {} });
         faker
-            .send_blocking(MockInput::FakeIncomingConnection(
-                neighbour1,
-                ConnId::from_in(0, 0),
-                neighbour1_addr.clone(),
-            ))
+            .send_blocking(MockInput::FakeIncomingConnection(neighbour1, ConnId::from_in(0, 0), neighbour1_addr.clone()))
             .unwrap();
         async_std::task::sleep(Duration::from_millis(200)).await;
         assert_eq!(

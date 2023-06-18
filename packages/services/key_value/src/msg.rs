@@ -13,9 +13,7 @@ pub enum KeyValueBehaviorEvent {
     FromNode(KeyValueMsg),
 }
 
-pub enum KeyValueHandlerEvent {
-    
-}
+pub enum KeyValueHandlerEvent {}
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum KeyValueMsg {
@@ -65,13 +63,7 @@ pub struct StorageAction {
 }
 
 impl StorageAction {
-    pub fn make<A>(
-        random: &Arc<dyn Random<u64>>,
-        routing: StorageActionRouting,
-        target_id: KeyId,
-        action: A,
-        retry: StorageActionRetryStrategy,
-    ) -> Self
+    pub fn make<A>(random: &Arc<dyn Random<u64>>, routing: StorageActionRouting, target_id: KeyId, action: A, retry: StorageActionRetryStrategy) -> Self
     where
         A: Into<SubAction>,
     {

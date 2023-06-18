@@ -18,12 +18,7 @@ where
     HE: Send + Sync + 'static,
     MSG: Send + Sync + 'static,
 {
-    pub(crate) fn new(
-        service_id: u8,
-        local_node_id: NodeId,
-        connector: Arc<dyn TransportConnector>,
-        cross_gate: Arc<RwLock<CrossHandlerGate<HE, MSG>>>,
-    ) -> Self {
+    pub(crate) fn new(service_id: u8, local_node_id: NodeId, connector: Arc<dyn TransportConnector>, cross_gate: Arc<RwLock<CrossHandlerGate<HE, MSG>>>) -> Self {
         Self {
             service_id,
             connector,
@@ -36,26 +31,16 @@ where
         self.local_node_id
     }
 
-    pub fn connect_to(
-        &self,
-        node_id: NodeId,
-        dest: NodeAddr,
-    ) -> Result<TransportPendingOutgoing, OutgoingConnectionError> {
+    pub fn connect_to(&self, node_id: NodeId, dest: NodeAddr) -> Result<TransportPendingOutgoing, OutgoingConnectionError> {
         self.connector.connect_to(node_id, dest)
     }
 
     pub fn send_to_handler(&self, route: CrossHandlerRoute, event: HE) {
-        self.cross_gate.read().send_to_handler(
-            self.service_id,
-            route,
-            CrossHandlerEvent::FromBehavior(event),
-        );
+        self.cross_gate.read().send_to_handler(self.service_id, route, CrossHandlerEvent::FromBehavior(event));
     }
 
     pub fn send_to_net(&self, route: MsgRoute, ttl: u8, msg: ConnectionMsg<MSG>) {
-        self.cross_gate
-            .read()
-            .send_to_net(route, ttl, self.service_id, msg);
+        self.cross_gate.read().send_to_net(route, ttl, self.service_id, msg);
     }
 
     pub fn close_conn(&self, conn: ConnId) {
@@ -116,14 +101,12 @@ where
     }
 
     pub fn send_behavior(&self, event: BE) {
-        match self
-            .internal_tx
-            .send_blocking(NetworkPlaneInternalEvent::ToBehaviour {
-                service_id: self.service_id,
-                node_id: self.remote_node_id,
-                conn_id: self.conn_id,
-                event,
-            }) {
+        match self.internal_tx.send_blocking(NetworkPlaneInternalEvent::ToBehaviour {
+            service_id: self.service_id,
+            node_id: self.remote_node_id,
+            conn_id: self.conn_id,
+            event,
+        }) {
             Ok(_) => {}
             Err(err) => {
                 log::error!("send event to Behavior error {:?}", err);
@@ -136,17 +119,13 @@ where
     }
 
     pub fn send_to_handler(&self, route: CrossHandlerRoute, event: HE) {
-        self.cross_gate.read().send_to_handler(
-            self.service_id,
-            route,
-            CrossHandlerEvent::FromHandler(self.remote_node_id, self.conn_id, event),
-        );
+        self.cross_gate
+            .read()
+            .send_to_handler(self.service_id, route, CrossHandlerEvent::FromHandler(self.remote_node_id, self.conn_id, event));
     }
 
     pub fn send_to_net(&self, route: MsgRoute, ttl: u8, msg: ConnectionMsg<MSG>) {
-        self.cross_gate
-            .read()
-            .send_to_net(route, ttl, self.service_id, msg);
+        self.cross_gate.read().send_to_net(route, ttl, self.service_id, msg);
     }
 
     pub fn close_conn(&self) {

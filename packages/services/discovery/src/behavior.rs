@@ -5,10 +5,7 @@ use crate::msg::{DiscoveryBehaviorEvent, DiscoveryHandlerEvent, DiscoveryMsg};
 use crate::DISCOVERY_SERVICE_ID;
 use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use network::behaviour::{ConnectionHandler, NetworkBehavior};
-use network::transport::{
-    ConnectionMsg, ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer,
-    TransportPendingOutgoing,
-};
+use network::transport::{ConnectionMsg, ConnectionRejectReason, ConnectionSender, MsgRoute, OutgoingConnectionError, RpcAnswer, TransportPendingOutgoing};
 use network::{BehaviorAgent, CrossHandlerRoute};
 use parking_lot::Mutex;
 use std::collections::HashMap;
@@ -52,52 +49,30 @@ impl DiscoveryNetworkBehavior {
                     agent.connect_to(node_id, addr);
                 }
                 Action::SendTo(node_id, msg) => {
-                    agent.send_to_net(
-                        CrossHandlerRoute::NodeFirst(node_id),
-                        ConnectionMsg::Reliable {
-                            stream_id: 0,
-                            data: msg.into(),
-                        },
-                    );
+                    agent.send_to_net(MsgRoute::Node(node_id), 1, ConnectionMsg::Reliable { stream_id: 0, data: msg.into() });
                 }
             }
         }
     }
 
-    fn add_connection_if_need<HE, MSG>(
-        &mut self,
-        agent: &BehaviorAgent<HE, MSG>,
-        connection: Arc<dyn ConnectionSender<MSG>>,
-    ) where
+    fn add_connection_if_need<HE, MSG>(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender<MSG>>)
+    where
         HE: Send + Sync + 'static,
         MSG: TryInto<DiscoveryMsg> + From<DiscoveryMsg> + Send + Sync + 'static,
     {
-        if self
-            .connection_group
-            .add(connection.remote_node_id(), connection.conn_id())
-        {
-            self.logic.on_input(Input::OnConnected(
-                connection.remote_node_id(),
-                connection.remote_addr(),
-            ));
+        if self.connection_group.add(connection.remote_node_id(), connection.conn_id()) {
+            self.logic.on_input(Input::OnConnected(connection.remote_node_id(), connection.remote_addr()));
             self.process_logic_actions::<HE, MSG>(agent);
         }
     }
 
-    fn remove_connection_if_need<HE, MSG>(
-        &mut self,
-        agent: &BehaviorAgent<HE, MSG>,
-        connection: Arc<dyn ConnectionSender<MSG>>,
-    ) where
+    fn remove_connection_if_need<HE, MSG>(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender<MSG>>)
+    where
         HE: Send + Sync + 'static,
         MSG: TryInto<DiscoveryMsg> + From<DiscoveryMsg> + Send + Sync + 'static,
     {
-        if self
-            .connection_group
-            .remove(connection.remote_node_id(), connection.conn_id())
-        {
-            self.logic
-                .on_input(Input::OnDisconnected(connection.remote_node_id()));
+        if self.connection_group.remove(connection.remote_node_id(), connection.conn_id()) {
+            self.logic.on_input(Input::OnDisconnected(connection.remote_node_id()));
             self.process_logic_actions::<HE, MSG>(agent);
         }
     }
@@ -118,81 +93,44 @@ where
             for (node, addr) in bootstrap {
                 self.logic.on_input(Input::AddNode(node, addr));
             }
-            self.logic
-                .on_input(Input::RefreshKey(self.opts.local_node_id));
+            self.logic.on_input(Input::RefreshKey(self.opts.local_node_id));
         }
         self.logic.on_input(Input::OnTick(ts_ms));
         self.process_logic_actions::<HE, MSG>(agent);
     }
 
-    fn check_incoming_connection(
-        &mut self,
-        node: NodeId,
-        conn_id: ConnId,
-    ) -> Result<(), ConnectionRejectReason> {
+    fn check_incoming_connection(&mut self, node: NodeId, conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
         Ok(())
     }
 
-    fn check_outgoing_connection(
-        &mut self,
-        node: NodeId,
-        conn_id: ConnId,
-    ) -> Result<(), ConnectionRejectReason> {
+    fn check_outgoing_connection(&mut self, node: NodeId, conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
         Ok(())
     }
 
-    fn on_incoming_connection_connected(
-        &mut self,
-        agent: &BehaviorAgent<HE, MSG>,
-        connection: Arc<dyn ConnectionSender<MSG>>,
-    ) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
+    fn on_incoming_connection_connected(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender<MSG>>) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
         self.add_connection_if_need(agent, connection);
         Some(Box::new(DiscoveryConnectionHandler::new()))
     }
 
-    fn on_outgoing_connection_connected(
-        &mut self,
-        agent: &BehaviorAgent<HE, MSG>,
-        connection: Arc<dyn ConnectionSender<MSG>>,
-    ) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
+    fn on_outgoing_connection_connected(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender<MSG>>) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
         self.add_connection_if_need(agent, connection);
         Some(Box::new(DiscoveryConnectionHandler::new()))
     }
 
-    fn on_incoming_connection_disconnected(
-        &mut self,
-        agent: &BehaviorAgent<HE, MSG>,
-        connection: Arc<dyn ConnectionSender<MSG>>,
-    ) {
+    fn on_incoming_connection_disconnected(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender<MSG>>) {
         self.remove_connection_if_need(agent, connection);
     }
 
-    fn on_outgoing_connection_disconnected(
-        &mut self,
-        agent: &BehaviorAgent<HE, MSG>,
-        connection: Arc<dyn ConnectionSender<MSG>>,
-    ) {
+    fn on_outgoing_connection_disconnected(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender<MSG>>) {
         self.remove_connection_if_need(agent, connection);
     }
 
-    fn on_outgoing_connection_error(
-        &mut self,
-        agent: &BehaviorAgent<HE, MSG>,
-        node_id: NodeId,
-        connection_id: ConnId,
-        err: &OutgoingConnectionError,
-    ) {
+    fn on_outgoing_connection_error(&mut self, agent: &BehaviorAgent<HE, MSG>, node_id: NodeId, connection_id: ConnId, err: &OutgoingConnectionError) {
         self.logic.on_input(Input::OnConnectError(node_id));
         self.process_logic_actions::<HE, MSG>(agent);
     }
 
-    fn on_handler_event(
-        &mut self,
-        agent: &BehaviorAgent<HE, MSG>,
-        node_id: NodeId,
-        _connection_id: ConnId,
-        event: BE,
-    ) {
+    fn on_handler_event(&mut self, agent: &BehaviorAgent<HE, MSG>, node_id: NodeId, _connection_id: ConnId, event: BE) {
         match event.try_into() {
             Ok(DiscoveryBehaviorEvent::OnNetworkMessage(msg)) => {
                 self.logic.on_input(Input::OnData(node_id, msg));
@@ -204,12 +142,7 @@ where
         }
     }
 
-    fn on_rpc(
-        &mut self,
-        agent: &BehaviorAgent<HE, MSG>,
-        req: Req,
-        res: Box<dyn RpcAnswer<Res>>,
-    ) -> bool {
+    fn on_rpc(&mut self, agent: &BehaviorAgent<HE, MSG>, req: Req, res: Box<dyn RpcAnswer<Res>>) -> bool {
         todo!()
     }
 }

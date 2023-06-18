@@ -4,5 +4,5 @@ pub type ValueType = Vec<u8>;
 
 mod behavior;
 mod handler;
-pub mod msg;
 pub mod logic;
+pub mod msg;

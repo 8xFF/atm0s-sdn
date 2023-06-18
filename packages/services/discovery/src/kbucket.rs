@@ -115,15 +115,13 @@ impl KBucketTable {
     pub fn closest_nodes(&self, distance: NodeId) -> Vec<(NodeId, NodeAddr, bool)> {
         let bucket_index = distance.bucket_index();
         assert!(bucket_index <= KEY_BITS as u8);
-        let mut closest_node: Vec<(NodeId, NodeAddr, bool)> =
-            self.buckets[bucket_index as usize].nodes();
+        let mut closest_node: Vec<(NodeId, NodeAddr, bool)> = self.buckets[bucket_index as usize].nodes();
         let need_more = closest_node.len() < K_BUCKET;
         if need_more && bucket_index > 1 {
             let mut more_bucket_index = bucket_index - 1;
             //TODO reduce number of loop, maybe iter with 1 in key binary
             while more_bucket_index > 0 {
-                let new_list: Vec<(NodeId, NodeAddr, bool)> =
-                    self.buckets[more_bucket_index as usize].nodes();
+                let new_list: Vec<(NodeId, NodeAddr, bool)> = self.buckets[more_bucket_index as usize].nodes();
                 for part in new_list {
                     closest_node.push(part);
                 }
@@ -134,8 +132,7 @@ impl KBucketTable {
             let mut more_bucket_index = bucket_index + 1;
             //TODO reduce number of loop, maybe iter with 1 in key binary
             while more_bucket_index <= KEY_BITS as u8 {
-                let new_list: Vec<(NodeId, NodeAddr, bool)> =
-                    self.buckets[more_bucket_index as usize].nodes();
+                let new_list: Vec<(NodeId, NodeAddr, bool)> = self.buckets[more_bucket_index as usize].nodes();
                 for part in new_list {
                     closest_node.push(part);
                 }
@@ -174,13 +171,11 @@ impl KBucketTableWrap {
     }
 
     pub fn add_node_connecting(&mut self, node: NodeId, addr: NodeAddr) -> bool {
-        self.table
-            .add_node_connecting(node ^ self.local_node_id, addr)
+        self.table.add_node_connecting(node ^ self.local_node_id, addr)
     }
 
     pub fn add_node_connected(&mut self, node: NodeId, addr: NodeAddr) -> bool {
-        self.table
-            .add_node_connected(node ^ self.local_node_id, addr)
+        self.table.add_node_connected(node ^ self.local_node_id, addr)
     }
 
     pub fn remove_connecting_node(&mut self, node: NodeId) -> bool {
@@ -216,30 +211,12 @@ mod tests {
     #[test]
     fn simple_table() {
         let mut table = KBucketTable::new();
-        assert_eq!(
-            table.add_node_connecting(1, NodeAddr::from(Protocol::Udp(1))),
-            true
-        );
-        assert_eq!(
-            table.add_node_connecting(10, NodeAddr::from(Protocol::Udp(10))),
-            true
-        );
-        assert_eq!(
-            table.add_node_connecting(40, NodeAddr::from(Protocol::Udp(40))),
-            true
-        );
-        assert_eq!(
-            table.add_node_connecting(100, NodeAddr::from(Protocol::Udp(100))),
-            true
-        );
-        assert_eq!(
-            table.add_node_connecting(120, NodeAddr::from(Protocol::Udp(120))),
-            true
-        );
-        assert_eq!(
-            table.add_node_connecting(u32::MAX, NodeAddr::from(Protocol::Udp(5000))),
-            true
-        );
+        assert_eq!(table.add_node_connecting(1, NodeAddr::from(Protocol::Udp(1))), true);
+        assert_eq!(table.add_node_connecting(10, NodeAddr::from(Protocol::Udp(10))), true);
+        assert_eq!(table.add_node_connecting(40, NodeAddr::from(Protocol::Udp(40))), true);
+        assert_eq!(table.add_node_connecting(100, NodeAddr::from(Protocol::Udp(100))), true);
+        assert_eq!(table.add_node_connecting(120, NodeAddr::from(Protocol::Udp(120))), true);
+        assert_eq!(table.add_node_connecting(u32::MAX, NodeAddr::from(Protocol::Udp(5000))), true);
 
         assert_eq!(
             table.closest_nodes(100),
@@ -310,10 +287,7 @@ mod tests {
 
     #[test]
     fn failed_1() {
-        test_manual(
-            vec![483704965, 473524180, 526503063, 190210392, 27511667],
-            299570928,
-        );
+        test_manual(vec![483704965, 473524180, 526503063, 190210392, 27511667], 299570928);
     }
 
     #[test]

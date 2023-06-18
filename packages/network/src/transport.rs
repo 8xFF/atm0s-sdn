@@ -12,19 +12,9 @@ pub struct TransportPendingOutgoing {
 pub enum TransportEvent<MSG> {
     IncomingRequest(NodeId, ConnId, Box<dyn ConnectionAcceptor>),
     OutgoingRequest(NodeId, ConnId, Box<dyn ConnectionAcceptor>),
-    Incoming(
-        Arc<dyn ConnectionSender<MSG>>,
-        Box<dyn ConnectionReceiver<MSG> + Send>,
-    ),
-    Outgoing(
-        Arc<dyn ConnectionSender<MSG>>,
-        Box<dyn ConnectionReceiver<MSG> + Send>,
-    ),
-    OutgoingError {
-        node_id: NodeId,
-        conn_id: ConnId,
-        err: OutgoingConnectionError,
-    },
+    Incoming(Arc<dyn ConnectionSender<MSG>>, Box<dyn ConnectionReceiver<MSG> + Send>),
+    Outgoing(Arc<dyn ConnectionSender<MSG>>, Box<dyn ConnectionReceiver<MSG> + Send>),
+    OutgoingError { node_id: NodeId, conn_id: ConnId, err: OutgoingConnectionError },
 }
 
 #[async_trait::async_trait]
@@ -44,11 +34,7 @@ pub trait TransportRpc<Req, Res> {
 }
 
 pub trait TransportConnector: Send + Sync {
-    fn connect_to(
-        &self,
-        node_id: NodeId,
-        dest: NodeAddr,
-    ) -> Result<TransportPendingOutgoing, OutgoingConnectionError>;
+    fn connect_to(&self, node_id: NodeId, dest: NodeAddr) -> Result<TransportPendingOutgoing, OutgoingConnectionError>;
 }
 
 #[derive(PartialEq, Debug, Serialize, Deserialize)]
@@ -70,17 +56,12 @@ pub struct ConnectionStats {
 pub enum MsgRoute {
     Node(NodeId),
     Closest(NodeId),
-    Service
+    Service,
 }
 
 #[derive(PartialEq, Debug)]
 pub enum ConnectionEvent<MSG> {
-    Msg {
-        ttl: u8,
-        route: MsgRoute,
-        service_id: u8,
-        msg: ConnectionMsg<MSG>,
-    },
+    Msg { ttl: u8, route: MsgRoute, service_id: u8, msg: ConnectionMsg<MSG> },
     Stats(ConnectionStats),
 }
 

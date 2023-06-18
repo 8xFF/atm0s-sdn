@@ -31,14 +31,7 @@ where
     }
 
     fn send(&self, route: MsgRoute, ttl: u8, service_id: u8, msg: ConnectionMsg<MSG>) {
-        self.output.lock().push_back(MockOutput::SendTo(
-            route,
-            ttl,
-            service_id,
-            self.remote_node_id,
-            self.conn_id,
-            msg,
-        ));
+        self.output.lock().push_back(MockOutput::SendTo(route, ttl, service_id, self.remote_node_id, self.conn_id, msg));
     }
 
     fn close(&self) {

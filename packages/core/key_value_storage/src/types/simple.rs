@@ -196,19 +196,10 @@ where
 
     //Private functions
     ///Fire set events of slot, this should be called after new data is set
-    fn fire_set_events(
-        key: &K,
-        slot: &ValueSlot<V, H>,
-        events: &mut VecDeque<OutputEvent<K, V, H>>,
-    ) -> bool {
+    fn fire_set_events(key: &K, slot: &ValueSlot<V, H>, events: &mut VecDeque<OutputEvent<K, V, H>>) -> bool {
         if let Some((value, version)) = &slot.value {
             for (handler, _handler_slot) in slot.listeners.iter() {
-                events.push_back(OutputEvent::NotifySet(
-                    key.clone(),
-                    value.clone(),
-                    *version,
-                    handler.clone(),
-                ));
+                events.push_back(OutputEvent::NotifySet(key.clone(), value.clone(), *version, handler.clone()));
             }
             true
         } else {
@@ -217,19 +208,10 @@ where
     }
 
     ///Fire del events of slot, this should be called before delete data
-    fn fire_del_events(
-        key: &K,
-        slot: &ValueSlot<V, H>,
-        events: &mut VecDeque<OutputEvent<K, V, H>>,
-    ) -> bool {
+    fn fire_del_events(key: &K, slot: &ValueSlot<V, H>, events: &mut VecDeque<OutputEvent<K, V, H>>) -> bool {
         if let Some((value, version)) = &slot.value {
             for (handler, _handler_slot) in slot.listeners.iter() {
-                events.push_back(OutputEvent::NotifyDel(
-                    key.clone(),
-                    value.clone(),
-                    *version,
-                    handler.clone(),
-                ));
+                events.push_back(OutputEvent::NotifyDel(key.clone(), value.clone(), *version, handler.clone()));
             }
             true
         } else {
@@ -307,10 +289,7 @@ mod tests {
         let handler = 1;
         store.subscribe(&key, handler, None);
         assert!(store.set(key, value, version, None));
-        assert_eq!(
-            store.poll(),
-            Some(OutputEvent::NotifySet(key, value, version, handler))
-        );
+        assert_eq!(store.poll(), Some(OutputEvent::NotifySet(key, value, version, handler)));
         assert_eq!(store.poll(), None);
     }
 
@@ -367,14 +346,8 @@ mod tests {
         store.subscribe(&key, handler, None);
         assert!(store.set(key, value, version, None));
         assert_eq!(store.del(&key), Some((value, version)));
-        assert_eq!(
-            store.poll(),
-            Some(OutputEvent::NotifySet(key, value, version, handler))
-        );
-        assert_eq!(
-            store.poll(),
-            Some(OutputEvent::NotifyDel(key, value, version, handler))
-        );
+        assert_eq!(store.poll(), Some(OutputEvent::NotifySet(key, value, version, handler)));
+        assert_eq!(store.poll(), Some(OutputEvent::NotifyDel(key, value, version, handler)));
         assert_eq!(store.poll(), None);
     }
 
@@ -405,17 +378,11 @@ mod tests {
         let handler = 1;
         store.subscribe(&key, handler, None);
         assert!(store.set(key, value, version, Some(100)));
-        assert_eq!(
-            store.poll(),
-            Some(OutputEvent::NotifySet(key, value, version, handler))
-        );
+        assert_eq!(store.poll(), Some(OutputEvent::NotifySet(key, value, version, handler)));
         assert_eq!(store.poll(), None);
         timer.fake(100);
         store.tick();
-        assert_eq!(
-            store.poll(),
-            Some(OutputEvent::NotifyDel(key, value, version, handler))
-        );
+        assert_eq!(store.poll(), Some(OutputEvent::NotifyDel(key, value, version, handler)));
         assert_eq!(store.poll(), None);
     }
 
@@ -430,10 +397,7 @@ mod tests {
         let handler = 1;
         store.subscribe(&key, handler, Some(100));
         assert!(store.set(key, value, version, None));
-        assert_eq!(
-            store.poll(),
-            Some(OutputEvent::NotifySet(key, value, version, handler))
-        );
+        assert_eq!(store.poll(), Some(OutputEvent::NotifySet(key, value, version, handler)));
         timer.fake(100);
         store.tick();
         assert_eq!(store.del(&key), Some((value, version)));
@@ -545,14 +509,8 @@ mod tests {
         assert!(store.set(key1, value1, version1, None));
         assert_eq!(store.del(&key1), Some((value1, version1)));
 
-        assert_eq!(
-            store.poll(),
-            Some(OutputEvent::NotifySet(key1, value1, version1, handler1))
-        );
-        assert_eq!(
-            store.poll(),
-            Some(OutputEvent::NotifyDel(key1, value1, version1, handler1))
-        );
+        assert_eq!(store.poll(), Some(OutputEvent::NotifySet(key1, value1, version1, handler1)));
+        assert_eq!(store.poll(), Some(OutputEvent::NotifyDel(key1, value1, version1, handler1)));
         assert_eq!(store.poll(), None);
 
         let new_stats = dhat::HeapStats::get();

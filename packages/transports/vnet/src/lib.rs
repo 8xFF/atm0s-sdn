@@ -11,9 +11,7 @@ pub use transport::VnetTransport;
 mod tests {
     use crate::{VnetEarth, VnetTransport};
     use bluesea_identity::{NodeAddr, Protocol};
-    use network::transport::{
-        ConnectionEvent, ConnectionMsg, OutgoingConnectionError, Transport, TransportEvent,
-    };
+    use network::transport::{ConnectionEvent, ConnectionMsg, MsgRoute, OutgoingConnectionError, Transport, TransportEvent};
     use std::sync::Arc;
 
     #[derive(PartialEq, Debug)]
@@ -26,16 +24,11 @@ mod tests {
     async fn simple_network() {
         let vnet = Arc::new(VnetEarth::default());
 
-        let mut tran1 =
-            VnetTransport::<Msg>::new(vnet.clone(), 1, 1, NodeAddr::from(Protocol::Memory(1)));
-        let mut tran2 =
-            VnetTransport::<Msg>::new(vnet.clone(), 2, 2, NodeAddr::from(Protocol::Memory(2)));
+        let mut tran1 = VnetTransport::<Msg>::new(vnet.clone(), 1, 1, NodeAddr::from(Protocol::Memory(1)));
+        let mut tran2 = VnetTransport::<Msg>::new(vnet.clone(), 2, 2, NodeAddr::from(Protocol::Memory(2)));
 
         let connector1 = tran1.connector();
-        let conn_id = connector1
-            .connect_to(2, NodeAddr::from(Protocol::Memory(2)))
-            .unwrap()
-            .conn_id;
+        let conn_id = connector1.connect_to(2, NodeAddr::from(Protocol::Memory(2))).unwrap().conn_id;
 
         match tran2.recv().await.unwrap() {
             TransportEvent::IncomingRequest(node, conn, acceptor) => {
@@ -83,41 +76,27 @@ mod tests {
             }
         };
 
-        tran1_sender.send(
-            0,
-            ConnectionMsg::Reliable {
-                stream_id: 0,
-                data: Msg::Ping,
-            },
-        );
+        tran1_sender.send(MsgRoute::Node(1), 1, 0, ConnectionMsg::Reliable { stream_id: 0, data: Msg::Ping });
         let received_event = tran2_recv.poll().await.unwrap();
         assert_eq!(
             received_event,
             ConnectionEvent::Msg {
+                route: MsgRoute::Node(1),
+                ttl: 1,
                 service_id: 0,
-                msg: ConnectionMsg::Reliable {
-                    stream_id: 0,
-                    data: Msg::Ping
-                }
+                msg: ConnectionMsg::Reliable { stream_id: 0, data: Msg::Ping }
             }
         );
 
-        tran2_sender.send(
-            1,
-            ConnectionMsg::Reliable {
-                stream_id: 0,
-                data: Msg::Ping,
-            },
-        );
+        tran2_sender.send(MsgRoute::Node(1), 1, 0, ConnectionMsg::Reliable { stream_id: 0, data: Msg::Ping });
         let received_event = tran1_recv.poll().await.unwrap();
         assert_eq!(
             received_event,
             ConnectionEvent::Msg {
+                route: MsgRoute::Node(1),
+                ttl: 1,
                 service_id: 1,
-                msg: ConnectionMsg::Reliable {
-                    stream_id: 0,
-                    data: Msg::Ping
-                }
+                msg: ConnectionMsg::Reliable { stream_id: 0, data: Msg::Ping }
             }
         );
 
@@ -131,13 +110,9 @@ mod tests {
     async fn simple_network_connect_addr_not_found() {
         let vnet = Arc::new(VnetEarth::default());
 
-        let mut tran1 =
-            VnetTransport::<Msg>::new(vnet.clone(), 1, 1, NodeAddr::from(Protocol::Memory(1)));
+        let mut tran1 = VnetTransport::<Msg>::new(vnet.clone(), 1, 1, NodeAddr::from(Protocol::Memory(1)));
         let connector1 = tran1.connector();
-        let conn_id = connector1
-            .connect_to(2, NodeAddr::from(Protocol::Memory(2)))
-            .unwrap()
-            .conn_id;
+        let conn_id = connector1.connect_to(2, NodeAddr::from(Protocol::Memory(2))).unwrap().conn_id;
         match tran1.recv().await.unwrap() {
             TransportEvent::OutgoingError { err, .. } => {
                 assert_eq!(err, OutgoingConnectionError::DestinationNotFound);
@@ -152,15 +127,10 @@ mod tests {
     async fn simple_network_connect_wrong_node() {
         let vnet = Arc::new(VnetEarth::default());
 
-        let mut tran1 =
-            VnetTransport::<Msg>::new(vnet.clone(), 1, 1, NodeAddr::from(Protocol::Memory(1)));
-        let mut tran2 =
-            VnetTransport::<Msg>::new(vnet.clone(), 2, 2, NodeAddr::from(Protocol::Memory(2)));
+        let mut tran1 = VnetTransport::<Msg>::new(vnet.clone(), 1, 1, NodeAddr::from(Protocol::Memory(1)));
+        let mut tran2 = VnetTransport::<Msg>::new(vnet.clone(), 2, 2, NodeAddr::from(Protocol::Memory(2)));
         let connector1 = tran1.connector();
-        let conn_id = connector1
-            .connect_to(3, NodeAddr::from(Protocol::Memory(2)))
-            .unwrap()
-            .conn_id;
+        let conn_id = connector1.connect_to(3, NodeAddr::from(Protocol::Memory(2))).unwrap().conn_id;
         match tran1.recv().await.unwrap() {
             TransportEvent::OutgoingError { err, .. } => {
                 assert_eq!(err, OutgoingConnectionError::AuthenticationError);

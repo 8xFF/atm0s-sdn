@@ -9,9 +9,7 @@ pub struct Dest {
 
 impl Default for Dest {
     fn default() -> Self {
-        Dest {
-            paths: Default::default(),
-        }
+        Dest { paths: Default::default() }
     }
 }
 
@@ -114,18 +112,9 @@ mod tests {
         dest.set_path(conn2, node2, Metric::new(2, vec![4, 2], 1));
 
         assert_eq!(dest.next(&vec![]), Some((conn1, node1)));
-        assert_eq!(
-            dest.next_path(&vec![node1]),
-            Some(Path(conn2, node2, Metric::new(2, vec![4, 2], 1)))
-        );
-        assert_eq!(
-            dest.next_path(&vec![node2]),
-            Some(Path(conn1, node1, Metric::new(1, vec![4, 1], 1)))
-        );
-        assert_eq!(
-            dest.next_path(&vec![node3]),
-            Some(Path(conn1, node1, Metric::new(1, vec![4, 1], 1)))
-        );
+        assert_eq!(dest.next_path(&vec![node1]), Some(Path(conn2, node2, Metric::new(2, vec![4, 2], 1))));
+        assert_eq!(dest.next_path(&vec![node2]), Some(Path(conn1, node1, Metric::new(1, vec![4, 1], 1))));
+        assert_eq!(dest.next_path(&vec![node3]), Some(Path(conn1, node1, Metric::new(1, vec![4, 1], 1))));
         assert_eq!(dest.next(&vec![node1, node2]), None);
         assert_eq!(dest.next_path(&vec![node1, node2]), None);
     }
@@ -149,18 +138,9 @@ mod tests {
         dest.del_path(conn1);
 
         assert_eq!(dest.next(&vec![]), Some((conn2, node2)));
-        assert_eq!(
-            dest.next_path(&vec![node1]),
-            Some(Path(conn2, node2, Metric::new(2, vec![4, 6, 2], 1)))
-        );
-        assert_eq!(
-            dest.next_path(&vec![node2]),
-            Some(Path(conn3, node3, Metric::new(3, vec![4, 6, 2, 3], 1)))
-        );
-        assert_eq!(
-            dest.next_path(&vec![node3]),
-            Some(Path(conn2, node2, Metric::new(2, vec![4, 6, 2], 1)))
-        );
+        assert_eq!(dest.next_path(&vec![node1]), Some(Path(conn2, node2, Metric::new(2, vec![4, 6, 2], 1))));
+        assert_eq!(dest.next_path(&vec![node2]), Some(Path(conn3, node3, Metric::new(3, vec![4, 6, 2, 3], 1))));
+        assert_eq!(dest.next_path(&vec![node3]), Some(Path(conn2, node2, Metric::new(2, vec![4, 6, 2], 1))));
     }
 
     #[test]
@@ -181,10 +161,7 @@ mod tests {
         //this path from 3 => 2 => 1
         dest.set_path(conn1, node1, Metric::new(1, vec![3, 2, 1], 1));
 
-        assert_eq!(
-            dest.best_for(node4),
-            Some(Path(conn1, node1, Metric::new(1, vec![3, 2, 1], 1)))
-        );
+        assert_eq!(dest.best_for(node4), Some(Path(conn1, node1, Metric::new(1, vec![3, 2, 1], 1))));
         assert_eq!(dest.best_for(node1), None);
         assert_eq!(dest.best_for(node2), None);
     }

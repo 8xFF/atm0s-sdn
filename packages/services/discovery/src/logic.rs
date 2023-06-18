@@ -55,25 +55,14 @@ impl DiscoveryLogic {
     }
 
     fn check_connected(&self, node: NodeId) -> bool {
-        matches!(
-            self.table.get_node(node),
-            Some(EntryState::Connected { .. })
-        )
+        matches!(self.table.get_node(node), Some(EntryState::Connected { .. }))
     }
 
     fn check_connecting(&self, node: NodeId) -> bool {
-        matches!(
-            self.table.get_node(node),
-            Some(EntryState::Connecting { .. })
-        )
+        matches!(self.table.get_node(node), Some(EntryState::Connecting { .. }))
     }
 
-    fn process_request(
-        ts: u64,
-        req: &mut FindKeyRequest,
-        table: &mut KBucketTableWrap,
-        action_queues: &mut VecDeque<Action>,
-    ) {
+    fn process_request(ts: u64, req: &mut FindKeyRequest, table: &mut KBucketTableWrap, action_queues: &mut VecDeque<Action>) {
         while let Some((node, addr)) = req.pop_connect(ts) {
             //Add node to connecting, => 3 case
             // 1. To connecting state => send connect_to
@@ -87,10 +76,7 @@ impl DiscoveryLogic {
         }
 
         while let Some(node) = req.pop_request(ts) {
-            action_queues.push_back(Action::SendTo(
-                node,
-                DiscoveryMsg::FindKey(req.req_id(), req.key()),
-            ));
+            action_queues.push_back(Action::SendTo(node, DiscoveryMsg::FindKey(req.req_id(), req.key())));
         }
     }
 
@@ -100,10 +86,7 @@ impl DiscoveryLogic {
         let now_ms = self.timer.now_ms();
         {
             self.req_id = self.req_id.wrapping_add(1);
-            let request = self
-                .request_memory
-                .entry(req_id)
-                .or_insert_with(|| FindKeyRequest::new(req_id, key, 30000));
+            let request = self.request_memory.entry(req_id).or_insert_with(|| FindKeyRequest::new(req_id, key, 30000));
 
             for (node, addr, connected) in need_contact_nodes {
                 request.push_node(now_ms, node, addr, connected);
@@ -177,10 +160,7 @@ impl DiscoveryLogic {
                     for (node, addr, connected) in closest_nodes {
                         res.push((node, addr));
                     }
-                    self.action_queues.push_back(Action::SendTo(
-                        from_node,
-                        DiscoveryMsg::FindKeyRes(req_id, res),
-                    ));
+                    self.action_queues.push_back(Action::SendTo(from_node, DiscoveryMsg::FindKeyRes(req_id, res)));
                 }
                 DiscoveryMsg::FindKeyRes(req_id, nodes) => {
                     let mut res_extended = vec![];
@@ -190,12 +170,7 @@ impl DiscoveryLogic {
                     if let Some(request) = self.request_memory.get_mut(&req_id) {
                         let now_ms = self.timer.now_ms();
                         if request.on_answered_node(now_ms, from_node, res_extended) {
-                            Self::process_request(
-                                now_ms,
-                                request,
-                                &mut self.table,
-                                &mut self.action_queues,
-                            );
+                            Self::process_request(now_ms, request, &mut self.table, &mut self.action_queues);
                             if request.status(now_ms) == FindKeyRequestStatus::Finished {
                                 self.request_memory.remove(&req_id);
                             }
@@ -209,12 +184,7 @@ impl DiscoveryLogic {
                     let now_ms = self.timer.now_ms();
                     for (req_id, req) in &mut self.request_memory {
                         if req.on_connected_node(now_ms, node) {
-                            Self::process_request(
-                                now_ms,
-                                req,
-                                &mut self.table,
-                                &mut self.action_queues,
-                            );
+                            Self::process_request(now_ms, req, &mut self.table, &mut self.action_queues);
                         }
                     }
                 }
@@ -225,12 +195,7 @@ impl DiscoveryLogic {
                     let mut ended_reqs = vec![];
                     for (req_id, req) in &mut self.request_memory {
                         if req.on_connect_error_node(now_ms, node) {
-                            Self::process_request(
-                                now_ms,
-                                req,
-                                &mut self.table,
-                                &mut self.action_queues,
-                            );
+                            Self::process_request(now_ms, req, &mut self.table, &mut self.action_queues);
                             if req.is_ended(now_ms) {
                                 ended_reqs.push(*req_id);
                             }
@@ -265,32 +230,14 @@ mod test {
 
         logic.on_input(Input::RefreshKey(0)); //create request 0
 
-        assert_eq!(
-            logic.poll_action(),
-            Some(Action::ConnectTo(1000, NodeAddr::from(Protocol::Udp(1000))))
-        );
-        assert_eq!(
-            logic.poll_action(),
-            Some(Action::ConnectTo(2000, NodeAddr::from(Protocol::Udp(2000))))
-        );
+        assert_eq!(logic.poll_action(), Some(Action::ConnectTo(1000, NodeAddr::from(Protocol::Udp(1000)))));
+        assert_eq!(logic.poll_action(), Some(Action::ConnectTo(2000, NodeAddr::from(Protocol::Udp(2000)))));
 
-        logic.on_input(Input::OnConnected(
-            2000,
-            NodeAddr::from(Protocol::Udp(2000)),
-        ));
-        logic.on_input(Input::OnConnected(
-            1000,
-            NodeAddr::from(Protocol::Udp(1000)),
-        ));
+        logic.on_input(Input::OnConnected(2000, NodeAddr::from(Protocol::Udp(2000))));
+        logic.on_input(Input::OnConnected(1000, NodeAddr::from(Protocol::Udp(1000))));
 
-        assert_eq!(
-            logic.poll_action(),
-            Some(Action::SendTo(2000, DiscoveryMsg::FindKey(0, 0)))
-        );
-        assert_eq!(
-            logic.poll_action(),
-            Some(Action::SendTo(1000, DiscoveryMsg::FindKey(0, 0)))
-        );
+        assert_eq!(logic.poll_action(), Some(Action::SendTo(2000, DiscoveryMsg::FindKey(0, 0))));
+        assert_eq!(logic.poll_action(), Some(Action::SendTo(1000, DiscoveryMsg::FindKey(0, 0))));
         assert_eq!(logic.poll_action(), None);
     }
 
@@ -304,32 +251,17 @@ mod test {
         logic.on_input(Input::AddNode(1000, NodeAddr::from(Protocol::Udp(1000))));
         logic.on_input(Input::AddNode(2000, NodeAddr::from(Protocol::Udp(2000))));
 
-        assert_eq!(
-            logic.poll_action(),
-            Some(Action::ConnectTo(1000, NodeAddr::from(Protocol::Udp(1000))))
-        );
-        assert_eq!(
-            logic.poll_action(),
-            Some(Action::ConnectTo(2000, NodeAddr::from(Protocol::Udp(2000))))
-        );
+        assert_eq!(logic.poll_action(), Some(Action::ConnectTo(1000, NodeAddr::from(Protocol::Udp(1000)))));
+        assert_eq!(logic.poll_action(), Some(Action::ConnectTo(2000, NodeAddr::from(Protocol::Udp(2000)))));
 
-        logic.on_input(Input::OnConnected(
-            2000,
-            NodeAddr::from(Protocol::Udp(2000)),
-        ));
-        logic.on_input(Input::OnConnected(
-            1000,
-            NodeAddr::from(Protocol::Udp(1000)),
-        ));
+        logic.on_input(Input::OnConnected(2000, NodeAddr::from(Protocol::Udp(2000))));
+        logic.on_input(Input::OnConnected(1000, NodeAddr::from(Protocol::Udp(1000))));
 
         logic.on_input(Input::OnDisconnected(1000));
 
         logic.on_input(Input::RefreshKey(0)); //create request 0
 
-        assert_eq!(
-            logic.poll_action(),
-            Some(Action::SendTo(2000, DiscoveryMsg::FindKey(0, 0)))
-        );
+        assert_eq!(logic.poll_action(), Some(Action::SendTo(2000, DiscoveryMsg::FindKey(0, 0))));
         assert_eq!(logic.poll_action(), None);
     }
 
@@ -343,10 +275,7 @@ mod test {
         logic.on_input(Input::AddNode(1000, NodeAddr::from(Protocol::Udp(1000))));
         logic.on_input(Input::RefreshKey(0)); //create request 0
 
-        assert_eq!(
-            logic.poll_action(),
-            Some(Action::ConnectTo(1000, NodeAddr::from(Protocol::Udp(1000))))
-        );
+        assert_eq!(logic.poll_action(), Some(Action::ConnectTo(1000, NodeAddr::from(Protocol::Udp(1000)))));
 
         logic.on_input(Input::OnConnectError(1000));
 

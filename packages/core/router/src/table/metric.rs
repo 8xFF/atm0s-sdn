@@ -37,11 +37,7 @@ pub struct Metric {
 
 impl Metric {
     pub fn new(latency: u16, hops: Vec<NodeId>, bandwidth: u32) -> Self {
-        Metric {
-            latency,
-            hops,
-            bandwidth,
-        }
+        Metric { latency, hops, bandwidth }
     }
 
     pub fn contain_in_hops(&self, node_id: NodeId) -> bool {
@@ -59,12 +55,8 @@ impl Metric {
 
 impl PartialOrd for Metric {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        if (self.bandwidth >= BANDWIDTH_LIMIT && other.bandwidth >= BANDWIDTH_LIMIT)
-            || (self.bandwidth < BANDWIDTH_LIMIT && other.bandwidth < BANDWIDTH_LIMIT)
-        {
-            let res = match (self.latency + (self.hops.len() as u16 * HOP_PLUS_RTT))
-                .cmp(&(other.latency + (other.hops.len() as u16 * HOP_PLUS_RTT)))
-            {
+        if (self.bandwidth >= BANDWIDTH_LIMIT && other.bandwidth >= BANDWIDTH_LIMIT) || (self.bandwidth < BANDWIDTH_LIMIT && other.bandwidth < BANDWIDTH_LIMIT) {
+            let res = match (self.latency + (self.hops.len() as u16 * HOP_PLUS_RTT)).cmp(&(other.latency + (other.hops.len() as u16 * HOP_PLUS_RTT))) {
                 Ordering::Less => Ordering::Less,
                 Ordering::Greater => Ordering::Greater,
                 Ordering::Equal => match self.hops.len().cmp(&other.hops.len()) {

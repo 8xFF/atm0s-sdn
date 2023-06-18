@@ -199,41 +199,20 @@ mod tests {
     #[test]
     fn simple_add_get() {
         let mut bucket = KBucket::new(0);
-        assert_eq!(
-            bucket.add_node_connecting(1, NodeAddr::from(Protocol::Udp(1))),
-            true
-        );
-        assert_eq!(
-            bucket.add_node_connecting(1, NodeAddr::from(Protocol::Udp(1))),
-            false
-        );
-        assert_eq!(
-            bucket.add_node_connected(1, NodeAddr::from(Protocol::Udp(1))),
-            true
-        );
+        assert_eq!(bucket.add_node_connecting(1, NodeAddr::from(Protocol::Udp(1))), true);
+        assert_eq!(bucket.add_node_connecting(1, NodeAddr::from(Protocol::Udp(1))), false);
+        assert_eq!(bucket.add_node_connected(1, NodeAddr::from(Protocol::Udp(1))), true);
 
         assert_eq!(bucket.size(), 1);
 
-        assert_eq!(
-            bucket.add_node_connecting(2, NodeAddr::from(Protocol::Udp(2))),
-            true
-        );
-        assert_eq!(
-            bucket.nodes(),
-            vec![
-                (1, NodeAddr::from(Protocol::Udp(1)), true),
-                (2, NodeAddr::from(Protocol::Udp(2)), false)
-            ]
-        );
+        assert_eq!(bucket.add_node_connecting(2, NodeAddr::from(Protocol::Udp(2))), true);
+        assert_eq!(bucket.nodes(), vec![(1, NodeAddr::from(Protocol::Udp(1)), true), (2, NodeAddr::from(Protocol::Udp(2)), false)]);
     }
 
     #[test]
     fn remove_connecting() {
         let mut bucket = KBucket::new(0);
-        assert_eq!(
-            bucket.add_node_connecting(1, NodeAddr::from(Protocol::Udp(1))),
-            true
-        );
+        assert_eq!(bucket.add_node_connecting(1, NodeAddr::from(Protocol::Udp(1))), true);
         assert_eq!(bucket.size(), 1);
         assert_eq!(bucket.remove_connecting_node(1), true);
         assert_eq!(bucket.size(), 0);
@@ -242,10 +221,7 @@ mod tests {
     #[test]
     fn remove_connected() {
         let mut bucket = KBucket::new(0);
-        assert_eq!(
-            bucket.add_node_connected(1, NodeAddr::from(Protocol::Udp(1))),
-            true
-        );
+        assert_eq!(bucket.add_node_connected(1, NodeAddr::from(Protocol::Udp(1))), true);
         assert_eq!(bucket.size(), 1);
         assert_eq!(bucket.remove_connected_node(1), true);
         assert_eq!(bucket.size(), 0);
@@ -254,10 +230,7 @@ mod tests {
     #[test]
     fn remove_connecting_but_has_connected() {
         let mut bucket = KBucket::new(0);
-        assert_eq!(
-            bucket.add_node_connected(1, NodeAddr::from(Protocol::Udp(1))),
-            true
-        );
+        assert_eq!(bucket.add_node_connected(1, NodeAddr::from(Protocol::Udp(1))), true);
         assert_eq!(bucket.size(), 1);
         assert_eq!(bucket.remove_connecting_node(1), false);
         assert_eq!(bucket.size(), 1);
@@ -266,10 +239,7 @@ mod tests {
     #[test]
     fn remove_connected_but_has_connecting() {
         let mut bucket = KBucket::new(0);
-        assert_eq!(
-            bucket.add_node_connecting(1, NodeAddr::from(Protocol::Udp(1))),
-            true
-        );
+        assert_eq!(bucket.add_node_connecting(1, NodeAddr::from(Protocol::Udp(1))), true);
         assert_eq!(bucket.size(), 1);
         assert_eq!(bucket.remove_connected_node(1), false);
         assert_eq!(bucket.size(), 1);

@@ -1,8 +1,5 @@
 use bluesea_identity::NodeId;
-use discovery::{
-    DiscoveryBehaviorEvent, DiscoveryHandlerEvent, DiscoveryMsg, DiscoveryNetworkBehavior,
-    DiscoveryNetworkBehaviorOpts,
-};
+use discovery::{DiscoveryBehaviorEvent, DiscoveryHandlerEvent, DiscoveryMsg, DiscoveryNetworkBehavior, DiscoveryNetworkBehaviorOpts};
 use network::convert_enum;
 use network::plane::{NetworkPlane, NetworkPlaneConfig};
 use std::sync::Arc;

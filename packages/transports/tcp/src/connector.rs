@@ -1,6 +1,4 @@
-use crate::connection::{
-    AsyncBincodeStreamU16, TcpConnectionReceiver, TcpConnectionSender, BUFFER_LEN,
-};
+use crate::connection::{AsyncBincodeStreamU16, TcpConnectionReceiver, TcpConnectionSender, BUFFER_LEN};
 use crate::handshake::{outgoing_handshake, OutgoingHandshakeError};
 use crate::msg::TcpMsg;
 use async_bincode::futures::AsyncBincodeStream;
@@ -8,10 +6,7 @@ use async_std::channel::{bounded, unbounded, Sender};
 use async_std::net::{Shutdown, TcpStream};
 use bluesea_identity::{ConnDirection, ConnId, NodeAddr, NodeAddrBuilder, NodeId, Protocol};
 use futures_util::{AsyncReadExt, AsyncWriteExt};
-use network::transport::{
-    AsyncConnectionAcceptor, ConnectionRejectReason, OutgoingConnectionError, TransportConnector,
-    TransportEvent, TransportPendingOutgoing,
-};
+use network::transport::{AsyncConnectionAcceptor, ConnectionRejectReason, OutgoingConnectionError, TransportConnector, TransportEvent, TransportPendingOutgoing};
 use serde::{de::DeserializeOwned, Serialize};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -58,30 +53,15 @@ impl<MSG> TcpConnector<MSG> {
     }
 }
 
-async fn wait_accept<MSG>(
-    remote_node: NodeId,
-    conn_id: ConnId,
-    internal_tx: &Sender<TransportEvent<MSG>>,
-) -> Result<(), OutgoingHandshakeError> {
+async fn wait_accept<MSG>(remote_node: NodeId, conn_id: ConnId, internal_tx: &Sender<TransportEvent<MSG>>) -> Result<(), OutgoingHandshakeError> {
     log::info!("[TcpConnector] connect to {} send local check", remote_node);
     let (connection_acceptor, recv) = AsyncConnectionAcceptor::new();
     internal_tx
-        .send(TransportEvent::OutgoingRequest(
-            remote_node,
-            conn_id,
-            connection_acceptor,
-        ))
+        .send(TransportEvent::OutgoingRequest(remote_node, conn_id, connection_acceptor))
         .await
         .map_err(|_| OutgoingHandshakeError::InternalError)?;
-    log::info!(
-        "[TcpConnector] connect to {} wait local accept",
-        remote_node
-    );
-    if let Err(e) = recv
-        .recv()
-        .await
-        .map_err(|_| OutgoingHandshakeError::InternalError)?
-    {
+    log::info!("[TcpConnector] connect to {} wait local accept", remote_node);
+    if let Err(e) = recv.recv().await.map_err(|_| OutgoingHandshakeError::InternalError)? {
         return Err(OutgoingHandshakeError::Rejected);
     }
     Ok(())
@@ -91,17 +71,12 @@ impl<MSG> TransportConnector for TcpConnector<MSG>
 where
     MSG: Serialize + DeserializeOwned + Send + Sync + 'static,
 {
-    fn connect_to(
-        &self,
-        remote_node_id: NodeId,
-        remote_node_addr: NodeAddr,
-    ) -> Result<TransportPendingOutgoing, OutgoingConnectionError> {
+    fn connect_to(&self, remote_node_id: NodeId, remote_node_addr: NodeAddr) -> Result<TransportPendingOutgoing, OutgoingConnectionError> {
         log::info!("[TcpConnector] connect to node {}", remote_node_addr);
         let timer = self.timer.clone();
         let node_id = self.node_id;
         let node_addr = self.node_addr_builder.addr();
-        let remote_addr = Self::multiaddr_to_socketaddr(remote_node_addr.clone())
-            .map_err(|_| OutgoingConnectionError::UnsupportedProtocol)?;
+        let remote_addr = Self::multiaddr_to_socketaddr(remote_node_addr.clone()).map_err(|_| OutgoingConnectionError::UnsupportedProtocol)?;
         let conn_seed = self.seed.fetch_add(1, Ordering::Relaxed);
         let conn_id = ConnId::from_out(1, conn_seed);
         let internal_tx = self.internal_tx.clone();
@@ -111,9 +86,7 @@ where
                     .send(TransportEvent::OutgoingError {
                         node_id: remote_node_id,
                         conn_id: conn_id,
-                        err: OutgoingConnectionError::BehaviorRejected(
-                            ConnectionRejectReason::Custom("LocalReject".to_string()),
-                        ),
+                        err: OutgoingConnectionError::BehaviorRejected(ConnectionRejectReason::Custom("LocalReject".to_string())),
                     })
                     .await;
                 return;
@@ -121,32 +94,11 @@ where
 
             match TcpStream::connect(remote_addr).await {
                 Ok(socket) => {
-                    let mut socket_read =
-                        AsyncBincodeStream::<_, TcpMsg<MSG>, TcpMsg<MSG>, _>::from(socket.clone())
-                            .for_async();
-                    let mut socket_write =
-                        AsyncBincodeStream::<_, TcpMsg<MSG>, TcpMsg<MSG>, _>::from(socket.clone())
-                            .for_async();
-                    match outgoing_handshake::<MSG>(
-                        remote_node_id,
-                        node_id,
-                        node_addr,
-                        &mut socket_read,
-                        conn_id,
-                        &internal_tx,
-                    )
-                    .await
-                    {
+                    let mut socket_read = AsyncBincodeStream::<_, TcpMsg<MSG>, TcpMsg<MSG>, _>::from(socket.clone()).for_async();
+                    let mut socket_write = AsyncBincodeStream::<_, TcpMsg<MSG>, TcpMsg<MSG>, _>::from(socket.clone()).for_async();
+                    match outgoing_handshake::<MSG>(remote_node_id, node_id, node_addr, &mut socket_read, conn_id, &internal_tx).await {
                         Ok(_) => {
-                            let (connection_sender, reliable_sender) = TcpConnectionSender::new(
-                                node_id,
-                                remote_node_id,
-                                remote_node_addr.clone(),
-                                conn_id,
-                                1000,
-                                socket_write,
-                                timer.clone(),
-                            );
+                            let (connection_sender, reliable_sender) = TcpConnectionSender::new(node_id, remote_node_id, remote_node_addr.clone(), conn_id, 1000, socket_write, timer.clone());
                             let connection_receiver = Box::new(TcpConnectionReceiver {
                                 node_id,
                                 remote_node_id,
@@ -156,12 +108,7 @@ where
                                 timer,
                                 reliable_sender,
                             });
-                            internal_tx
-                                .send(TransportEvent::Outgoing(
-                                    Arc::new(connection_sender),
-                                    connection_receiver,
-                                ))
-                                .await;
+                            internal_tx.send(TransportEvent::Outgoing(Arc::new(connection_sender), connection_receiver)).await;
                         }
                         Err(err) => {
                             socket.shutdown(Shutdown::Both);
@@ -170,24 +117,12 @@ where
                                     node_id: remote_node_id,
                                     conn_id: conn_id,
                                     err: match err {
-                                        OutgoingHandshakeError::SocketError => {
-                                            OutgoingConnectionError::DestinationNotFound
-                                        }
-                                        OutgoingHandshakeError::Timeout => {
-                                            OutgoingConnectionError::AuthenticationError
-                                        }
-                                        OutgoingHandshakeError::WrongMsg => {
-                                            OutgoingConnectionError::AuthenticationError
-                                        }
-                                        OutgoingHandshakeError::InternalError => {
-                                            OutgoingConnectionError::AuthenticationError
-                                        }
-                                        OutgoingHandshakeError::Rejected => {
-                                            OutgoingConnectionError::AuthenticationError
-                                        }
-                                        OutgoingHandshakeError::NetError => {
-                                            OutgoingConnectionError::DestinationNotFound
-                                        }
+                                        OutgoingHandshakeError::SocketError => OutgoingConnectionError::DestinationNotFound,
+                                        OutgoingHandshakeError::Timeout => OutgoingConnectionError::AuthenticationError,
+                                        OutgoingHandshakeError::WrongMsg => OutgoingConnectionError::AuthenticationError,
+                                        OutgoingHandshakeError::InternalError => OutgoingConnectionError::AuthenticationError,
+                                        OutgoingHandshakeError::Rejected => OutgoingConnectionError::AuthenticationError,
+                                        OutgoingHandshakeError::NetError => OutgoingConnectionError::DestinationNotFound,
                                     },
                                 })
                                 .await;

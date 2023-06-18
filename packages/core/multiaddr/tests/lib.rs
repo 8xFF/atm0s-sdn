@@ -36,9 +36,7 @@ fn byteswriter() {
         for p in b.0.iter() {
             x = x.with(p)
         }
-        x.iter()
-            .zip(a.0.iter().chain(b.0.iter()))
-            .all(|(x, y)| x == y)
+        x.iter().zip(a.0.iter().chain(b.0.iter())).all(|(x, y)| x == y)
     }
     QuickCheck::new().quickcheck(prop as fn(Ma, Ma) -> bool)
 }
@@ -145,10 +143,7 @@ fn ma_valid(source: &str, target: &str, protocols: Vec<Protocol<'_>>) {
     assert_eq!(HEXUPPER.encode(&parsed.to_vec()[..]), target);
     assert_eq!(parsed.iter().collect::<Vec<_>>(), protocols);
     assert_eq!(source.parse::<Multiaddr>().unwrap().to_string(), source);
-    assert_eq!(
-        Multiaddr::try_from(HEXUPPER.decode(target.as_bytes()).unwrap()).unwrap(),
-        parsed
-    );
+    assert_eq!(Multiaddr::try_from(HEXUPPER.decode(target.as_bytes()).unwrap()).unwrap(), parsed);
 }
 
 #[test]
@@ -170,21 +165,9 @@ fn construct_success() {
     let local: Ipv4Addr = "127.0.0.1".parse().unwrap();
     let addr6: Ipv6Addr = "2001:8a0:7ac5:4201:3ac9:86ff:fe31:7095".parse().unwrap();
 
-    ma_valid(
-        "/ip4/1.2.3.4",
-        "0401020304",
-        vec![Ip4("1.2.3.4".parse().unwrap())],
-    );
-    ma_valid(
-        "/ip4/0.0.0.0",
-        "0400000000",
-        vec![Ip4("0.0.0.0".parse().unwrap())],
-    );
-    ma_valid(
-        "/ip6/::1",
-        "2900000000000000000000000000000001",
-        vec![Ip6("::1".parse().unwrap())],
-    );
+    ma_valid("/ip4/1.2.3.4", "0401020304", vec![Ip4("1.2.3.4".parse().unwrap())]);
+    ma_valid("/ip4/0.0.0.0", "0400000000", vec![Ip4("0.0.0.0".parse().unwrap())]);
+    ma_valid("/ip6/::1", "2900000000000000000000000000000001", vec![Ip6("::1".parse().unwrap())]);
     ma_valid(
         "/ip6/2601:9:4f81:9700:803e:ca65:66e8:c21",
         "29260100094F819700803ECA6566E80C21",
@@ -199,50 +182,18 @@ fn construct_success() {
     ma_valid("/udp/65535", "9102FFFF", vec![Udp(65535)]);
     ma_valid("/tcp/65535", "06FFFF", vec![Tcp(65535)]);
     ma_valid("/p2p/1234", "A503000004D2", vec![P2p(1234)]);
-    ma_valid(
-        "/udp/1234/sctp/1234",
-        "910204D2840104D2",
-        vec![Udp(1234), Sctp(1234)],
-    );
+    ma_valid("/udp/1234/sctp/1234", "910204D2840104D2", vec![Udp(1234), Sctp(1234)]);
     ma_valid("/udp/1234/udt", "910204D2AD02", vec![Udp(1234), Udt]);
     ma_valid("/udp/1234/utp", "910204D2AE02", vec![Udp(1234), Utp]);
     ma_valid("/tcp/1234/http", "0604D2E003", vec![Tcp(1234), Http]);
-    ma_valid(
-        "/tcp/1234/tls/http",
-        "0604D2C003E003",
-        vec![Tcp(1234), Tls, Http],
-    );
+    ma_valid("/tcp/1234/tls/http", "0604D2C003E003", vec![Tcp(1234), Tls, Http]);
     ma_valid("/tcp/1234/https", "0604D2BB03", vec![Tcp(1234), Https]);
-    ma_valid(
-        "/p2p/1000/tcp/1234",
-        "A503000003E80604D2",
-        vec![P2p(1000), Tcp(1234)],
-    );
-    ma_valid(
-        "/ip4/127.0.0.1/udp/1234",
-        "047F000001910204D2",
-        vec![Ip4(local), Udp(1234)],
-    );
-    ma_valid(
-        "/ip4/127.0.0.1/udp/0",
-        "047F00000191020000",
-        vec![Ip4(local), Udp(0)],
-    );
-    ma_valid(
-        "/ip4/127.0.0.1/tcp/1234",
-        "047F0000010604D2",
-        vec![Ip4(local), Tcp(1234)],
-    );
-    ma_valid(
-        "/ip4/127.0.0.1/p2p/1000",
-        "047F000001A503000003E8",
-        vec![Ip4(local), P2p(1000)],
-    );
-    ma_valid(
-        "/ip4/127.0.0.1/p2p/1000/tcp/1234",
-        "047F000001A503000003E80604D2",
-        vec![Ip4(local), P2p(1000), Tcp(1234)],
-    );
+    ma_valid("/p2p/1000/tcp/1234", "A503000003E80604D2", vec![P2p(1000), Tcp(1234)]);
+    ma_valid("/ip4/127.0.0.1/udp/1234", "047F000001910204D2", vec![Ip4(local), Udp(1234)]);
+    ma_valid("/ip4/127.0.0.1/udp/0", "047F00000191020000", vec![Ip4(local), Udp(0)]);
+    ma_valid("/ip4/127.0.0.1/tcp/1234", "047F0000010604D2", vec![Ip4(local), Tcp(1234)]);
+    ma_valid("/ip4/127.0.0.1/p2p/1000", "047F000001A503000003E8", vec![Ip4(local), P2p(1000)]);
+    ma_valid("/ip4/127.0.0.1/p2p/1000/tcp/1234", "047F000001A503000003E80604D2", vec![Ip4(local), P2p(1000), Tcp(1234)]);
     // /unix/a/b/c/d/e,
     // /unix/stdio,
     // /ip4/1.2.3.4/tcp/80/unix/a/b/c/d/e/f,
@@ -255,13 +206,7 @@ fn construct_success() {
     ma_valid(
         "/p2p-webrtc-star/ip4/127.0.0.1/tcp/9090/ws/p2p/1000",
         "9302047F000001062382DD03A503000003E8",
-        vec![
-            P2pWebRtcStar,
-            Ip4(local),
-            Tcp(9090),
-            Ws("/".into()),
-            P2p(1000),
-        ],
+        vec![P2pWebRtcStar, Ip4(local), Tcp(9090), Ws("/".into()), P2p(1000)],
     );
     ma_valid(
         "/ip6/2001:8a0:7ac5:4201:3ac9:86ff:fe31:7095/tcp/8000/wss/p2p/1000",
@@ -281,39 +226,15 @@ fn construct_success() {
     ma_valid(
         "/dnsaddr/sjc-1.bootstrap.libp2p.io/tcp/1234/p2p/1000",
         "3819736A632D312E626F6F7473747261702E6C69627032702E696F0604D2A503000003E8",
-        vec![
-            Dnsaddr(Cow::Borrowed("sjc-1.bootstrap.libp2p.io")),
-            Tcp(1234),
-            P2p(1000),
-        ],
+        vec![Dnsaddr(Cow::Borrowed("sjc-1.bootstrap.libp2p.io")), Tcp(1234), P2p(1000)],
     );
-    ma_valid(
-        "/ip4/127.0.0.1/tcp/127/ws",
-        "047F00000106007FDD03",
-        vec![Ip4(local), Tcp(127), Ws("/".into())],
-    );
-    ma_valid(
-        "/ip4/127.0.0.1/tcp/127/tls",
-        "047F00000106007FC003",
-        vec![Ip4(local), Tcp(127), Tls],
-    );
-    ma_valid(
-        "/ip4/127.0.0.1/tcp/127/tls/ws",
-        "047F00000106007FC003DD03",
-        vec![Ip4(local), Tcp(127), Tls, Ws("/".into())],
-    );
+    ma_valid("/ip4/127.0.0.1/tcp/127/ws", "047F00000106007FDD03", vec![Ip4(local), Tcp(127), Ws("/".into())]);
+    ma_valid("/ip4/127.0.0.1/tcp/127/tls", "047F00000106007FC003", vec![Ip4(local), Tcp(127), Tls]);
+    ma_valid("/ip4/127.0.0.1/tcp/127/tls/ws", "047F00000106007FC003DD03", vec![Ip4(local), Tcp(127), Tls, Ws("/".into())]);
 
-    ma_valid(
-        "/ip4/127.0.0.1/tcp/127/noise",
-        "047F00000106007FC603",
-        vec![Ip4(local), Tcp(127), Noise],
-    );
+    ma_valid("/ip4/127.0.0.1/tcp/127/noise", "047F00000106007FC603", vec![Ip4(local), Tcp(127), Noise]);
 
-    ma_valid(
-        "/ip4/127.0.0.1/udp/1234/webrtc-direct",
-        "047F000001910204D29802",
-        vec![Ip4(local), Udp(1234), WebRTCDirect],
-    );
+    ma_valid("/ip4/127.0.0.1/udp/1234/webrtc-direct", "047F000001910204D29802", vec![Ip4(local), Udp(1234), WebRTCDirect]);
     ma_valid(
         "/ip4/127.0.0.1/udp/1234/quic/webtransport",
         "047F000001910204D2CC03D103",
@@ -360,24 +281,15 @@ fn construct_fail() {
     ];
 
     for address in &addresses {
-        assert!(
-            address.parse::<Multiaddr>().is_err(),
-            "{}",
-            address.to_string()
-        );
+        assert!(address.parse::<Multiaddr>().is_err(), "{}", address.to_string());
     }
 }
 
 #[test]
 fn to_multiaddr() {
+    assert_eq!(Multiaddr::from(Ipv4Addr::new(127, 0, 0, 1)), "/ip4/127.0.0.1".parse().unwrap());
     assert_eq!(
-        Multiaddr::from(Ipv4Addr::new(127, 0, 0, 1)),
-        "/ip4/127.0.0.1".parse().unwrap()
-    );
-    assert_eq!(
-        Multiaddr::from(Ipv6Addr::new(
-            0x2601, 0x9, 0x4f81, 0x9700, 0x803e, 0xca65, 0x66e8, 0xc21
-        )),
+        Multiaddr::from(Ipv6Addr::new(0x2601, 0x9, 0x4f81, 0x9700, 0x803e, 0xca65, 0x66e8, 0xc21)),
         "/ip6/2601:9:4f81:9700:803e:ca65:66e8:c21".parse().unwrap()
     );
     assert_eq!(
@@ -386,22 +298,15 @@ fn to_multiaddr() {
     );
     assert_eq!(
         Multiaddr::try_from("/ip6/2601:9:4f81:9700:803e:ca65:66e8:c21").unwrap(),
-        "/ip6/2601:9:4f81:9700:803e:ca65:66e8:c21"
-            .parse::<Multiaddr>()
-            .unwrap()
+        "/ip6/2601:9:4f81:9700:803e:ca65:66e8:c21".parse::<Multiaddr>().unwrap()
     );
     assert_eq!(
         Multiaddr::from(Ipv4Addr::new(127, 0, 0, 1)).with(Protocol::Tcp(1234)),
         "/ip4/127.0.0.1/tcp/1234".parse::<Multiaddr>().unwrap()
     );
     assert_eq!(
-        Multiaddr::from(Ipv6Addr::new(
-            0x2601, 0x9, 0x4f81, 0x9700, 0x803e, 0xca65, 0x66e8, 0xc21
-        ))
-        .with(Protocol::Tcp(1234)),
-        "/ip6/2601:9:4f81:9700:803e:ca65:66e8:c21/tcp/1234"
-            .parse::<Multiaddr>()
-            .unwrap()
+        Multiaddr::from(Ipv6Addr::new(0x2601, 0x9, 0x4f81, 0x9700, 0x803e, 0xca65, 0x66e8, 0xc21)).with(Protocol::Tcp(1234)),
+        "/ip6/2601:9:4f81:9700:803e:ca65:66e8:c21/tcp/1234".parse::<Multiaddr>().unwrap()
     );
 }
 
@@ -425,10 +330,7 @@ fn ser_and_deser_bincode() {
     let addr: Multiaddr = "/ip4/0.0.0.0/tcp/0/tls".parse::<Multiaddr>().unwrap();
     let serialized = bincode::serialize(&addr).unwrap();
     // compact addressing
-    assert_eq!(
-        serialized,
-        vec![10, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 6, 0, 0, 192, 3]
-    );
+    assert_eq!(serialized, vec![10, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 6, 0, 0, 192, 3]);
     let deserialized: Multiaddr = bincode::deserialize(&serialized).unwrap();
     assert_eq!(addr, deserialized);
 }
@@ -471,10 +373,7 @@ fn replace_ip6_with_ip4() {
 fn replace_ip4_with_ip6() {
     let server = multiaddr!(Ip4(Ipv4Addr::LOCALHOST), Tcp(10000u16));
     let result = replace_ip_addr(&server, "2001:db8::1".parse::<Ipv6Addr>().unwrap().into());
-    assert_eq!(
-        result.unwrap(),
-        "/ip6/2001:db8::1/tcp/10000".parse::<Multiaddr>().unwrap()
-    )
+    assert_eq!(result.unwrap(), "/ip6/2001:db8::1/tcp/10000".parse::<Multiaddr>().unwrap())
 }
 
 #[test]
@@ -530,21 +429,7 @@ fn protocol_stack() {
         "/ip4/127.0.0.1/udp/1234/webrtc-direct",
     ];
     let argless = std::collections::HashSet::from([
-        "http",
-        "https",
-        "noise",
-        "p2p-circuit",
-        "p2p-webrtc-direct",
-        "p2p-webrtc-star",
-        "p2p-websocket-star",
-        "quic",
-        "quic-v1",
-        "tls",
-        "udt",
-        "utp",
-        "webrtc-direct",
-        "ws",
-        "wss",
+        "http", "https", "noise", "p2p-circuit", "p2p-webrtc-direct", "p2p-webrtc-star", "p2p-websocket-star", "quic", "quic-v1", "tls", "udt", "utp", "webrtc-direct", "ws", "wss",
     ]);
     for addr_str in addresses {
         let ma = Multiaddr::from_str(addr_str).expect("These are supposed to be valid multiaddrs");

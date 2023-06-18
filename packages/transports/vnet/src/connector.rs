@@ -12,11 +12,7 @@ impl<MSG> TransportConnector for VnetConnector<MSG>
 where
     MSG: Send + Sync + 'static,
 {
-    fn connect_to(
-        &self,
-        node_id: bluesea_identity::NodeId,
-        addr: bluesea_identity::NodeAddr,
-    ) -> Result<TransportPendingOutgoing, OutgoingConnectionError> {
+    fn connect_to(&self, node_id: bluesea_identity::NodeId, addr: bluesea_identity::NodeAddr) -> Result<TransportPendingOutgoing, OutgoingConnectionError> {
         for protocol in &addr {
             match protocol {
                 Protocol::Memory(port) => {

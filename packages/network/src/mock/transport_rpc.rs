@@ -10,18 +10,11 @@ pub struct MockRpcAnswer<Res> {
 
 impl<Res> RpcAnswer<Res> for MockRpcAnswer<Res> {
     fn ok(&self, res: Res) {
-        self.output
-            .lock()
-            .push_back(MockTransportRpcOutput::Answer(Ok(res)));
+        self.output.lock().push_back(MockTransportRpcOutput::Answer(Ok(res)));
     }
 
     fn error(&self, code: u32, message: &str) {
-        self.output
-            .lock()
-            .push_back(MockTransportRpcOutput::Answer(Err((
-                code,
-                message.to_string(),
-            ))));
+        self.output.lock().push_back(MockTransportRpcOutput::Answer(Err((code, message.to_string()))));
     }
 }
 
@@ -39,21 +32,10 @@ pub struct MockTransportRpc<Req, Res> {
 }
 
 impl<Req, Res> MockTransportRpc<Req, Res> {
-    pub fn new() -> (
-        Self,
-        Sender<MockTransportRpcInput<Req>>,
-        Arc<Mutex<VecDeque<MockTransportRpcOutput<Res>>>>,
-    ) {
+    pub fn new() -> (Self, Sender<MockTransportRpcInput<Req>>, Arc<Mutex<VecDeque<MockTransportRpcOutput<Res>>>>) {
         let (tx, rx) = unbounded();
         let output = Arc::new(Mutex::new(VecDeque::new()));
-        (
-            Self {
-                rx,
-                output: output.clone(),
-            },
-            tx,
-            output,
-        )
+        (Self { rx, output: output.clone() }, tx, output)
     }
 }
 
@@ -66,9 +48,7 @@ where
     async fn recv(&mut self) -> Result<(u8, Req, Box<dyn RpcAnswer<Res>>), ()> {
         match self.rx.recv().await {
             Ok(MockTransportRpcInput::Req(service_id, req)) => {
-                let answer = Box::new(MockRpcAnswer {
-                    output: self.output.clone(),
-                });
+                let answer = Box::new(MockRpcAnswer { output: self.output.clone() });
                 Ok((service_id, req, answer))
             }
             Err(_) => Err(()),

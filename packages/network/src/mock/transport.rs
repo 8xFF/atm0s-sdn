@@ -1,7 +1,9 @@
 use crate::mock::connection_receiver::MockConnectionReceiver;
 use crate::mock::connection_sender::MockConnectionSender;
 use crate::mock::{MockInput, MockOutput};
-use crate::transport::{AsyncConnectionAcceptor, ConnectionEvent, ConnectionMsg, ConnectionSender, MsgRoute, OutgoingConnectionError, Transport, TransportConnector, TransportEvent, TransportPendingOutgoing};
+use crate::transport::{
+    AsyncConnectionAcceptor, ConnectionEvent, ConnectionMsg, ConnectionSender, MsgRoute, OutgoingConnectionError, Transport, TransportConnector, TransportEvent, TransportPendingOutgoing,
+};
 use async_std::channel::{bounded, unbounded, Receiver, Sender};
 use bluesea_identity::{ConnDirection, ConnId, NodeAddr, NodeId};
 use parking_lot::Mutex;
@@ -15,16 +17,10 @@ pub struct MockTransportConnector<M: Send + Sync> {
 }
 
 impl<M: Send + Sync> TransportConnector for MockTransportConnector<M> {
-    fn connect_to(
-        &self,
-        node_id: NodeId,
-        dest: NodeAddr,
-    ) -> Result<TransportPendingOutgoing, OutgoingConnectionError> {
+    fn connect_to(&self, node_id: NodeId, dest: NodeAddr) -> Result<TransportPendingOutgoing, OutgoingConnectionError> {
         let conn_seed = self.conn_id.fetch_add(1, Ordering::Relaxed);
         let conn_id = ConnId::from_out(0, conn_seed);
-        self.output
-            .lock()
-            .push_back(MockOutput::ConnectTo(node_id, dest));
+        self.output.lock().push_back(MockOutput::ConnectTo(node_id, dest));
         Ok(TransportPendingOutgoing { conn_id })
     }
 }
@@ -39,11 +35,7 @@ pub struct MockTransport<M> {
 }
 
 impl<M> MockTransport<M> {
-    pub fn new() -> (
-        Self,
-        Sender<MockInput<M>>,
-        Arc<Mutex<VecDeque<MockOutput<M>>>>,
-    ) {
+    pub fn new() -> (Self, Sender<MockInput<M>>, Arc<Mutex<VecDeque<MockOutput<M>>>>) {
         let (sender, receiver) = unbounded();
         let output = Arc::new(Mutex::new(VecDeque::new()));
         (
@@ -81,19 +73,11 @@ impl<M: Send + Sync + 'static> Transport<M> for MockTransport<M> {
                     async_std::task::spawn(async move {
                         match acceptor_recv.recv().await {
                             Ok(Ok(_)) => {
-                                sender
-                                    .send_blocking(MockInput::FakeIncomingConnectionForce(
-                                        node, conn, addr,
-                                    ))
-                                    .unwrap();
+                                sender.send_blocking(MockInput::FakeIncomingConnectionForce(node, conn, addr)).unwrap();
                             }
                             Ok(Err(err)) => {
                                 sender
-                                    .send_blocking(MockInput::FakeOutgoingConnectionError(
-                                        node,
-                                        conn,
-                                        OutgoingConnectionError::BehaviorRejected(err),
-                                    ))
+                                    .send_blocking(MockInput::FakeOutgoingConnectionError(node, conn, OutgoingConnectionError::BehaviorRejected(err)))
                                     .unwrap();
                             }
                             _ => {
@@ -109,11 +93,7 @@ impl<M: Send + Sync + 'static> Transport<M> for MockTransport<M> {
                     async_std::task::spawn(async move {
                         match acceptor_recv.recv().await {
                             Ok(Ok(_)) => {
-                                sender
-                                    .send_blocking(MockInput::FakeOutgoingConnectionForce(
-                                        node, conn, addr,
-                                    ))
-                                    .unwrap();
+                                sender.send_blocking(MockInput::FakeOutgoingConnectionForce(node, conn, addr)).unwrap();
                             }
                             _ => {}
                         }
@@ -139,10 +119,7 @@ impl<M: Send + Sync + 'static> Transport<M> for MockTransport<M> {
                     };
 
                     self.in_conns.insert(conn, sender);
-                    break Ok(TransportEvent::Incoming(
-                        Arc::new(conn_sender),
-                        Box::new(conn_recv),
-                    ));
+                    break Ok(TransportEvent::Incoming(Arc::new(conn_sender), Box::new(conn_recv)));
                 }
                 MockInput::FakeOutgoingConnectionForce(node, conn, addr) => {
                     log::debug!("FakeOutgoingConnectionForce {} {} {}", node, conn, addr);
@@ -163,10 +140,7 @@ impl<M: Send + Sync + 'static> Transport<M> for MockTransport<M> {
                     };
 
                     self.out_conns.insert(conn, sender);
-                    break Ok(TransportEvent::Outgoing(
-                        Arc::new(conn_sender),
-                        Box::new(conn_recv),
-                    ));
+                    break Ok(TransportEvent::Outgoing(Arc::new(conn_sender), Box::new(conn_recv)));
                 }
                 MockInput::FakeOutgoingConnectionError(node_id, connection_id, err) => {
                     self.out_conns.remove(&connection_id);
@@ -180,11 +154,21 @@ impl<M: Send + Sync + 'static> Transport<M> for MockTransport<M> {
                     log::debug!("FakeIncomingMsg {} {}", service_id, conn);
                     if let Some(sender) = self.in_conns.get(&conn) {
                         sender
-                            .send_blocking(Some(ConnectionEvent::Msg { route: MsgRoute::Service, ttl: 1, service_id, msg }))
+                            .send_blocking(Some(ConnectionEvent::Msg {
+                                route: MsgRoute::Service,
+                                ttl: 1,
+                                service_id,
+                                msg,
+                            }))
                             .unwrap();
                     } else if let Some(sender) = self.out_conns.get(&conn) {
                         sender
-                            .send_blocking(Some(ConnectionEvent::Msg { route: MsgRoute::Service, ttl: 1, service_id, msg }))
+                            .send_blocking(Some(ConnectionEvent::Msg {
+                                route: MsgRoute::Service,
+                                ttl: 1,
+                                service_id,
+                                msg,
+                            }))
                             .unwrap();
                     } else {
                         panic!("connection not found");

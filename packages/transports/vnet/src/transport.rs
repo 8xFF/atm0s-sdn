@@ -20,10 +20,7 @@ where
     pub fn new(earth: Arc<VnetEarth<MSG>>, port: u64, node: NodeId, addr: NodeAddr) -> Self {
         Self {
             listener: earth.create_listener(port, node, addr),
-            connector: Arc::new(VnetConnector {
-                port,
-                earth: earth.clone(),
-            }),
+            connector: Arc::new(VnetConnector { port, earth: earth.clone() }),
             earth,
             port,
         }
@@ -42,25 +39,11 @@ where
     async fn recv(&mut self) -> Result<TransportEvent<MSG>, ()> {
         match self.listener.recv().await {
             None => Err(()),
-            Some(VnetListenerEvent::IncomingRequest(node, conn, acceptor)) => {
-                Ok(TransportEvent::IncomingRequest(node, conn, acceptor))
-            }
-            Some(VnetListenerEvent::OutgoingRequest(node, conn, acceptor)) => {
-                Ok(TransportEvent::OutgoingRequest(node, conn, acceptor))
-            }
-            Some(VnetListenerEvent::Incoming((sender, recv))) => {
-                Ok(TransportEvent::Incoming(sender, recv))
-            }
-            Some(VnetListenerEvent::Outgoing((sender, recv))) => {
-                Ok(TransportEvent::Outgoing(sender, recv))
-            }
-            Some(VnetListenerEvent::OutgoingErr(node_id, conn_id, err)) => {
-                Ok(TransportEvent::OutgoingError {
-                    node_id,
-                    conn_id,
-                    err,
-                })
-            }
+            Some(VnetListenerEvent::IncomingRequest(node, conn, acceptor)) => Ok(TransportEvent::IncomingRequest(node, conn, acceptor)),
+            Some(VnetListenerEvent::OutgoingRequest(node, conn, acceptor)) => Ok(TransportEvent::OutgoingRequest(node, conn, acceptor)),
+            Some(VnetListenerEvent::Incoming((sender, recv))) => Ok(TransportEvent::Incoming(sender, recv)),
+            Some(VnetListenerEvent::Outgoing((sender, recv))) => Ok(TransportEvent::Outgoing(sender, recv)),
+            Some(VnetListenerEvent::OutgoingErr(node_id, conn_id, err)) => Ok(TransportEvent::OutgoingError { node_id, conn_id, err }),
         }
     }
 }

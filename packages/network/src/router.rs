@@ -1,5 +1,5 @@
-use bluesea_identity::{ConnId, NodeId};
 use crate::transport::MsgRoute;
+use bluesea_identity::{ConnId, NodeId};
 
 pub enum RouteAction {
     Reject,

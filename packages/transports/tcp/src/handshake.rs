@@ -5,9 +5,7 @@ use async_std::net::TcpStream;
 use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use futures_util::io::{ReadHalf, WriteHalf};
 use futures_util::AsyncWriteExt;
-use network::transport::{
-    AsyncConnectionAcceptor, ConnectionRejectReason, OutgoingConnectionError, TransportEvent,
-};
+use network::transport::{AsyncConnectionAcceptor, ConnectionRejectReason, OutgoingConnectionError, TransportEvent};
 use serde::{de::DeserializeOwned, Serialize};
 use std::time::Duration;
 
@@ -40,16 +38,8 @@ pub async fn incoming_handshake<MSG: Serialize + DeserializeOwned>(
                 log::info!("[TcpTransport] handshake from {} {}", node, addr);
                 (node, addr)
             } else {
-                log::warn!(
-                    "[TcpTransport] handshake from wrong node info {} vs {}",
-                    my_node_2,
-                    my_node
-                );
-                send_tcp_stream(
-                    socket,
-                    TcpMsg::<MSG>::ConnectResponse(Err("WrongNode".to_string())),
-                )
-                .await;
+                log::warn!("[TcpTransport] handshake from wrong node info {} vs {}", my_node_2, my_node);
+                send_tcp_stream(socket, TcpMsg::<MSG>::ConnectResponse(Err("WrongNode".to_string()))).await;
                 return Err(IncomingHandshakeError::ValidateError);
             }
         }
@@ -61,30 +51,14 @@ pub async fn incoming_handshake<MSG: Serialize + DeserializeOwned>(
 
     let (connection_acceptor, recv) = AsyncConnectionAcceptor::new();
     internal_tx
-        .send(TransportEvent::IncomingRequest(
-            remote_node,
-            conn_id,
-            connection_acceptor,
-        ))
+        .send(TransportEvent::IncomingRequest(remote_node, conn_id, connection_acceptor))
         .await
         .map_err(|_| IncomingHandshakeError::InternalError)?;
-    if let Err(e) = recv
-        .recv()
-        .await
-        .map_err(|_| IncomingHandshakeError::InternalError)?
-    {
-        send_tcp_stream(
-            socket,
-            TcpMsg::<MSG>::ConnectResponse(Err("Rejected".to_string())),
-        )
-        .await;
+    if let Err(e) = recv.recv().await.map_err(|_| IncomingHandshakeError::InternalError)? {
+        send_tcp_stream(socket, TcpMsg::<MSG>::ConnectResponse(Err("Rejected".to_string()))).await;
         return Err(IncomingHandshakeError::Rejected);
     }
-    send_tcp_stream(
-        socket,
-        TcpMsg::<MSG>::ConnectResponse(Ok((my_node, my_addr))),
-    )
-    .await;
+    send_tcp_stream(socket, TcpMsg::<MSG>::ConnectResponse(Ok((my_node, my_addr)))).await;
 
     Ok((remote_node, remote_addr))
 }
@@ -106,45 +80,26 @@ pub async fn outgoing_handshake<MSG: Serialize + DeserializeOwned>(
     conn_id: ConnId,
     internal_tx: &Sender<TransportEvent<MSG>>,
 ) -> Result<(), OutgoingHandshakeError> {
-    log::info!(
-        "[TcpTransport] outgoing_handshake send ConnectRequest to {}",
-        remote_node
-    );
-    send_tcp_stream(
-        socket,
-        TcpMsg::<MSG>::ConnectRequest(remote_node, my_node, my_node_addr),
-    )
-    .await
-    .map_err(|_| OutgoingHandshakeError::SocketError)?;
+    log::info!("[TcpTransport] outgoing_handshake send ConnectRequest to {}", remote_node);
+    send_tcp_stream(socket, TcpMsg::<MSG>::ConnectRequest(remote_node, my_node, my_node_addr))
+        .await
+        .map_err(|_| OutgoingHandshakeError::SocketError)?;
 
-    log::info!(
-        "[TcpTransport] outgoing_handshake wait ConnectResponse from {}",
-        remote_node
-    );
+    log::info!("[TcpTransport] outgoing_handshake wait ConnectResponse from {}", remote_node);
     let msg = async_std::future::timeout(Duration::from_secs(5), recv_tcp_stream::<MSG>(socket))
         .await
         .map_err(|_| {
-            log::info!(
-                "[TcpTransport] outgoing_handshake wait ConnectResponse from {} timeout",
-                remote_node
-            );
+            log::info!("[TcpTransport] outgoing_handshake wait ConnectResponse from {} timeout", remote_node);
             OutgoingHandshakeError::Timeout
         })?
         .map_err(|_| OutgoingHandshakeError::SocketError)?;
     let _node = match msg {
         TcpMsg::ConnectResponse(Ok((node_id, addr))) => {
-            log::info!(
-                "[TcpTransport] outgoing_handshake ConnectResponse Ok from {} {}",
-                node_id,
-                addr
-            );
+            log::info!("[TcpTransport] outgoing_handshake ConnectResponse Ok from {} {}", node_id, addr);
             node_id
         }
         TcpMsg::ConnectResponse(Err(err)) => {
-            log::info!(
-                "[TcpTransport] outgoing_handshake ConnectResponse Err {}",
-                err
-            );
+            log::info!("[TcpTransport] outgoing_handshake ConnectResponse Err {}", err);
             return Err(OutgoingHandshakeError::Rejected);
         }
         _ => return Err(OutgoingHandshakeError::WrongMsg),

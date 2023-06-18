@@ -1,5 +1,5 @@
 use bluesea_identity::{NodeAddr, NodeId};
-use network::transport::ConnectionMsg;
+use network::transport::{ConnectionMsg, MsgRoute};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
@@ -8,5 +8,5 @@ pub enum TcpMsg<MSG> {
     ConnectResponse(Result<(NodeId, NodeAddr), String>),
     Ping(u64),
     Pong(u64),
-    Msg(u8, ConnectionMsg<MSG>),
+    Msg(MsgRoute, u8, u8, ConnectionMsg<MSG>),
 }

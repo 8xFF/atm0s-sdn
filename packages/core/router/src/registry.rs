@@ -40,11 +40,7 @@ impl Registry {
             let pre_empty = self.remote_destinations[i as usize].is_empty();
             self.remote_destinations[i as usize].del_path(conn);
             if !pre_empty && self.remote_destinations[i as usize].is_empty() {
-                log::info!(
-                    "[Registry] removed service {} from dest {} because of direct disconnected",
-                    i,
-                    conn
-                );
+                log::info!("[Registry] removed service {} from dest {} because of direct disconnected", i, conn);
             }
         }
     }
@@ -53,25 +49,12 @@ impl Registry {
         if self.local_destinations[service_id as usize] {
             Some(ServiceDestination::Local)
         } else {
-            self.remote_destinations[service_id as usize]
-                .next(excepts)
-                .map(|(c, n)| ServiceDestination::Remote(c, n))
+            self.remote_destinations[service_id as usize].next(excepts).map(|(c, n)| ServiceDestination::Remote(c, n))
         }
     }
 
-    pub fn apply_sync(
-        &mut self,
-        src_conn: ConnId,
-        src: NodeId,
-        src_send_metric: Metric,
-        sync: RegistrySync,
-    ) {
-        log::debug!(
-            "apply sync from {} -> {}, sync {:?}",
-            src,
-            self.node_id,
-            sync.0
-        );
+    pub fn apply_sync(&mut self, src_conn: ConnId, src: NodeId, src_send_metric: Metric, sync: RegistrySync) {
+        log::debug!("apply sync from {} -> {}, sync {:?}", src, self.node_id, sync.0);
         let mut cached: HashMap<u8, Metric> = HashMap::new();
         for (index, metric) in sync.0 {
             if let Some(sum) = metric.add(&src_send_metric) {
@@ -85,11 +68,7 @@ impl Registry {
                 None => {
                     if !dest.is_empty() {
                         if let Some(_) = dest.del_path(src_conn) {
-                            log::info!(
-                                "[Registry] removed service {} from dest {} after sync",
-                                i,
-                                src
-                            );
+                            log::info!("[Registry] removed service {} from dest {} after sync", i, src);
                         }
                     }
                 }
@@ -140,13 +119,7 @@ impl Registry {
             }
             index += 1;
         }
-        log::info!(
-            "[Registry {}] local services: {:?} remote services: {:?}, nexts {:?}",
-            self.node_id,
-            local_services,
-            slots,
-            nexts
-        );
+        log::info!("[Registry {}] local services: {:?} remote services: {:?}, nexts {:?}", self.node_id, local_services, slots, nexts);
     }
 }
 
@@ -171,10 +144,7 @@ mod tests {
         // assert_eq!(registry.next(1, &vec![0]), None);
 
         let sync = registry.sync_for(node1);
-        assert_eq!(
-            sync.0,
-            vec![(1, Metric::new(0, vec![0], REGISTRY_LOCAL_BW))]
-        );
+        assert_eq!(sync.0, vec![(1, Metric::new(0, vec![0], REGISTRY_LOCAL_BW))]);
     }
 
     #[test]
@@ -188,16 +158,8 @@ mod tests {
         let mut registry = Registry::new(node0);
 
         assert_eq!(registry.next(1, &vec![]), None);
-        registry.apply_sync(
-            conn1,
-            node1,
-            Metric::new(1, vec![1, 0], 1),
-            RegistrySync(vec![(1, Metric::new(1, vec![1], 1))]),
-        );
-        assert_eq!(
-            registry.next(1, &vec![]),
-            Some(ServiceDestination::Remote(conn1, node1))
-        );
+        registry.apply_sync(conn1, node1, Metric::new(1, vec![1, 0], 1), RegistrySync(vec![(1, Metric::new(1, vec![1], 1))]));
+        assert_eq!(registry.next(1, &vec![]), Some(ServiceDestination::Remote(conn1, node1)));
 
         registry.del_direct(conn1);
         assert_eq!(registry.next(1, &vec![]), None);
@@ -213,40 +175,18 @@ mod tests {
         let _node2: NodeId = 0x2;
         let _node3: NodeId = 0x3;
 
-        let sync = vec![
-            (2, Metric::new(1, vec![node1], 1)),
-            (3, Metric::new(1, vec![node1], 1)),
-        ];
-        registry.apply_sync(
-            conn1,
-            node1,
-            Metric::new(1, vec![node1, node0], 2),
-            RegistrySync(sync),
-        );
+        let sync = vec![(2, Metric::new(1, vec![node1], 1)), (3, Metric::new(1, vec![node1], 1))];
+        registry.apply_sync(conn1, node1, Metric::new(1, vec![node1, node0], 2), RegistrySync(sync));
 
         assert_eq!(registry.next(1, &vec![]), None);
-        assert_eq!(
-            registry.next(2, &vec![]),
-            Some(ServiceDestination::Remote(conn1, node1))
-        );
-        assert_eq!(
-            registry.next(3, &vec![]),
-            Some(ServiceDestination::Remote(conn1, node1))
-        );
+        assert_eq!(registry.next(2, &vec![]), Some(ServiceDestination::Remote(conn1, node1)));
+        assert_eq!(registry.next(3, &vec![]), Some(ServiceDestination::Remote(conn1, node1)));
 
         let sync = vec![(3, Metric::new(1, vec![node1], 1))];
-        registry.apply_sync(
-            conn1,
-            node1,
-            Metric::new(1, vec![node1, node0], 1),
-            RegistrySync(sync),
-        );
+        registry.apply_sync(conn1, node1, Metric::new(1, vec![node1, node0], 1), RegistrySync(sync));
         assert_eq!(registry.next(1, &vec![]), None);
         assert_eq!(registry.next(2, &vec![]), None);
-        assert_eq!(
-            registry.next(3, &vec![]),
-            Some(ServiceDestination::Remote(conn1, node1))
-        );
+        assert_eq!(registry.next(3, &vec![]), Some(ServiceDestination::Remote(conn1, node1)));
     }
 
     #[test]
@@ -260,27 +200,13 @@ mod tests {
         let node4: NodeId = 0x4;
 
         let sync = vec![(2, Metric::new(1, vec![node3, node2, node1], 1))];
-        registry.apply_sync(
-            conn1,
-            node1,
-            Metric::new(1, vec![node1, node0], 2),
-            RegistrySync(sync),
-        );
+        registry.apply_sync(conn1, node1, Metric::new(1, vec![node1, node0], 2), RegistrySync(sync));
 
-        assert_eq!(
-            registry.next(2, &vec![]),
-            Some(ServiceDestination::Remote(conn1, node1))
-        );
+        assert_eq!(registry.next(2, &vec![]), Some(ServiceDestination::Remote(conn1, node1)));
         assert_eq!(registry.sync_for(node1), RegistrySync(vec![]));
         assert_eq!(registry.sync_for(node2), RegistrySync(vec![]));
         assert_eq!(registry.sync_for(node3), RegistrySync(vec![]));
-        assert_eq!(
-            registry.sync_for(node4),
-            RegistrySync(vec![(
-                2,
-                Metric::new(2, vec![node3, node2, node1, node0], 1)
-            )])
-        );
+        assert_eq!(registry.sync_for(node4), RegistrySync(vec![(2, Metric::new(2, vec![node3, node2, node1, node0], 1))]));
     }
 
     //TODO test multi connections with same node

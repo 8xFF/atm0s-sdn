@@ -7,9 +7,7 @@ pub struct VecDeque<T> {
 /// Implement mirror function of VecDeque and auto call shink_to_fit when delete
 impl<T> VecDeque<T> {
     pub fn new() -> Self {
-        VecDeque {
-            data: VecDequeOrigin::new(),
-        }
+        VecDeque { data: VecDequeOrigin::new() }
     }
 
     pub fn with_capacity(capacity: usize) -> Self {

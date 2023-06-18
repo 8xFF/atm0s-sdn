@@ -186,12 +186,7 @@ impl FindKeyRequest {
         false
     }
 
-    pub fn on_answered_node(
-        &mut self,
-        ts: u64,
-        from_node: NodeId,
-        res: Vec<(NodeId, NodeAddr, bool)>,
-    ) -> bool {
+    pub fn on_answered_node(&mut self, ts: u64, from_node: NodeId, res: Vec<(NodeId, NodeAddr, bool)>) -> bool {
         for (node, addr, state) in &mut self.nodes {
             match state {
                 NodeState::Requesting { .. } => {
@@ -234,18 +229,9 @@ mod tests {
         list.push_node(0, 2, NodeAddr::from(Protocol::Udp(2)), false);
         list.push_node(0, 3, NodeAddr::from(Protocol::Udp(3)), false);
 
-        assert_eq!(
-            list.pop_connect(0),
-            Some((1, NodeAddr::from(Protocol::Udp(1))))
-        );
-        assert_eq!(
-            list.pop_connect(0),
-            Some((2, NodeAddr::from(Protocol::Udp(2))))
-        );
-        assert_eq!(
-            list.pop_connect(0),
-            Some((3, NodeAddr::from(Protocol::Udp(3))))
-        );
+        assert_eq!(list.pop_connect(0), Some((1, NodeAddr::from(Protocol::Udp(1)))));
+        assert_eq!(list.pop_connect(0), Some((2, NodeAddr::from(Protocol::Udp(2)))));
+        assert_eq!(list.pop_connect(0), Some((3, NodeAddr::from(Protocol::Udp(3)))));
         assert_eq!(list.pop_connect(0), None);
         assert_eq!(list.pop_request(0), None);
     }
@@ -257,18 +243,9 @@ mod tests {
         list.push_node(0, 1, NodeAddr::from(Protocol::Udp(1)), false);
         list.push_node(0, 3, NodeAddr::from(Protocol::Udp(3)), false);
 
-        assert_eq!(
-            list.pop_connect(0),
-            Some((1, NodeAddr::from(Protocol::Udp(1))))
-        );
-        assert_eq!(
-            list.pop_connect(0),
-            Some((2, NodeAddr::from(Protocol::Udp(2))))
-        );
-        assert_eq!(
-            list.pop_connect(0),
-            Some((3, NodeAddr::from(Protocol::Udp(3))))
-        );
+        assert_eq!(list.pop_connect(0), Some((1, NodeAddr::from(Protocol::Udp(1)))));
+        assert_eq!(list.pop_connect(0), Some((2, NodeAddr::from(Protocol::Udp(2)))));
+        assert_eq!(list.pop_connect(0), Some((3, NodeAddr::from(Protocol::Udp(3)))));
         assert_eq!(list.pop_connect(0), None);
         assert_eq!(list.pop_request(0), None);
     }
@@ -309,18 +286,9 @@ mod tests {
         list.push_node(0, 2, NodeAddr::from(Protocol::Udp(2)), false);
         list.push_node(0, 3, NodeAddr::from(Protocol::Udp(3)), false);
 
-        assert_eq!(
-            list.pop_connect(0),
-            Some((1, NodeAddr::from(Protocol::Udp(1))))
-        );
-        assert_eq!(
-            list.pop_connect(0),
-            Some((2, NodeAddr::from(Protocol::Udp(2))))
-        );
-        assert_eq!(
-            list.pop_connect(0),
-            Some((3, NodeAddr::from(Protocol::Udp(3))))
-        );
+        assert_eq!(list.pop_connect(0), Some((1, NodeAddr::from(Protocol::Udp(1)))));
+        assert_eq!(list.pop_connect(0), Some((2, NodeAddr::from(Protocol::Udp(2)))));
+        assert_eq!(list.pop_connect(0), Some((3, NodeAddr::from(Protocol::Udp(3)))));
         assert_eq!(list.pop_connect(0), None);
         assert_eq!(list.pop_request(0), None);
     }
@@ -381,14 +349,7 @@ mod tests {
 
         list.push_node(0, 1000, NodeAddr::from(Protocol::Udp(1)), true);
         assert_eq!(list.pop_request(0), Some(1000));
-        assert_eq!(
-            list.on_answered_node(
-                1000,
-                1000,
-                vec![(100, NodeAddr::from(Protocol::Udp(1)), true)]
-            ),
-            true
-        );
+        assert_eq!(list.on_answered_node(1000, 1000, vec![(100, NodeAddr::from(Protocol::Udp(1)), true)]), true);
         assert_eq!(list.status(1000), FindKeyRequestStatus::Requesting);
         assert_eq!(list.pop_request(1000), Some(100));
         assert_eq!(list.status(1000), FindKeyRequestStatus::Requesting);

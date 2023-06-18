@@ -3,10 +3,8 @@ mod tests {
     use crate::behaviour::{ConnectionHandler, NetworkBehavior};
     use crate::mock::{MockInput, MockOutput, MockTransport, MockTransportRpc};
     use crate::plane::{NetworkPlane, NetworkPlaneConfig};
-    use crate::transport::{
-        ConnectionEvent, ConnectionMsg, ConnectionRejectReason, ConnectionSender,
-        OutgoingConnectionError, RpcAnswer,
-    };
+    use crate::router::ForceLocalRouter;
+    use crate::transport::{ConnectionEvent, ConnectionMsg, ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer};
     use crate::{BehaviorAgent, ConnectionAgent};
     use bluesea_identity::{ConnId, NodeAddr, NodeId, Protocol};
     use parking_lot::Mutex;
@@ -15,7 +13,6 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
     use utils::SystemTimer;
-    use crate::router::ForceLocalRouter;
 
     enum TestCrossNetworkMsg {
         CloseInHandle,
@@ -73,71 +70,34 @@ mod tests {
         }
         fn on_tick(&mut self, agent: &BehaviorAgent<HE, MSG>, ts_ms: u64, interal_ms: u64) {}
 
-        fn check_incoming_connection(
-            &mut self,
-            node: NodeId,
-            conn_id: ConnId,
-        ) -> Result<(), ConnectionRejectReason> {
+        fn check_incoming_connection(&mut self, node: NodeId, conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
             Ok(())
         }
 
-        fn check_outgoing_connection(
-            &mut self,
-            node: NodeId,
-            conn_id: ConnId,
-        ) -> Result<(), ConnectionRejectReason> {
+        fn check_outgoing_connection(&mut self, node: NodeId, conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
             Ok(())
         }
 
-        fn on_incoming_connection_connected(
-            &mut self,
-            agent: &BehaviorAgent<HE, MSG>,
-            connection: Arc<dyn ConnectionSender<MSG>>,
-        ) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
+        fn on_incoming_connection_connected(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender<MSG>>) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
             self.conn_counter.fetch_add(1, Ordering::Relaxed);
             Some(Box::new(TestCrossNetworkHandler {
                 conn_counter: self.conn_counter.clone(),
             }))
         }
-        fn on_outgoing_connection_connected(
-            &mut self,
-            agent: &BehaviorAgent<HE, MSG>,
-            connection: Arc<dyn ConnectionSender<MSG>>,
-        ) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
+        fn on_outgoing_connection_connected(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender<MSG>>) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
             self.conn_counter.fetch_add(1, Ordering::Relaxed);
             Some(Box::new(TestCrossNetworkHandler {
                 conn_counter: self.conn_counter.clone(),
             }))
         }
-        fn on_incoming_connection_disconnected(
-            &mut self,
-            agent: &BehaviorAgent<HE, MSG>,
-            conn: Arc<dyn ConnectionSender<MSG>>,
-        ) {
+        fn on_incoming_connection_disconnected(&mut self, agent: &BehaviorAgent<HE, MSG>, conn: Arc<dyn ConnectionSender<MSG>>) {
             self.conn_counter.fetch_sub(1, Ordering::Relaxed);
         }
-        fn on_outgoing_connection_disconnected(
-            &mut self,
-            agent: &BehaviorAgent<HE, MSG>,
-            connection: Arc<dyn ConnectionSender<MSG>>,
-        ) {
+        fn on_outgoing_connection_disconnected(&mut self, agent: &BehaviorAgent<HE, MSG>, connection: Arc<dyn ConnectionSender<MSG>>) {
             self.conn_counter.fetch_sub(1, Ordering::Relaxed);
         }
-        fn on_outgoing_connection_error(
-            &mut self,
-            agent: &BehaviorAgent<HE, MSG>,
-            node_id: NodeId,
-            conn_id: ConnId,
-            err: &OutgoingConnectionError,
-        ) {
-        }
-        fn on_handler_event(
-            &mut self,
-            agent: &BehaviorAgent<HE, MSG>,
-            node_id: NodeId,
-            conn_id: ConnId,
-            event: BE,
-        ) {
+        fn on_outgoing_connection_error(&mut self, agent: &BehaviorAgent<HE, MSG>, node_id: NodeId, conn_id: ConnId, err: &OutgoingConnectionError) {}
+        fn on_handler_event(&mut self, agent: &BehaviorAgent<HE, MSG>, node_id: NodeId, conn_id: ConnId, event: BE) {
             if let Ok(event) = event.try_into() {
                 match event {
                     TestCrossBehaviorEvent::CloseConn(conn) => {
@@ -150,12 +110,7 @@ mod tests {
             }
         }
 
-        fn on_rpc(
-            &mut self,
-            agent: &BehaviorAgent<HE, MSG>,
-            req: Req,
-            res: Box<dyn RpcAnswer<Res>>,
-        ) -> bool {
+        fn on_rpc(&mut self, agent: &BehaviorAgent<HE, MSG>, req: Req, res: Box<dyn RpcAnswer<Res>>) -> bool {
             todo!()
         }
     }
@@ -175,15 +130,10 @@ mod tests {
                         if let Ok(e) = data.try_into() {
                             match e {
                                 TestCrossNetworkMsg::CloseInBehaviorConn => {
-                                    agent.send_behavior(
-                                        TestCrossBehaviorEvent::CloseConn(agent.conn_id()).into(),
-                                    );
+                                    agent.send_behavior(TestCrossBehaviorEvent::CloseConn(agent.conn_id()).into());
                                 }
                                 TestCrossNetworkMsg::CloseInBehaviorNode => {
-                                    agent.send_behavior(
-                                        TestCrossBehaviorEvent::CloseNode(agent.remote_node_id())
-                                            .into(),
-                                    );
+                                    agent.send_behavior(TestCrossBehaviorEvent::CloseNode(agent.remote_node_id()).into());
                                 }
                                 TestCrossNetworkMsg::CloseInHandle => {
                                     agent.close_conn();
@@ -197,14 +147,7 @@ mod tests {
             }
         }
 
-        fn on_other_handler_event(
-            &mut self,
-            agent: &ConnectionAgent<BE, HE, MSG>,
-            from_node: NodeId,
-            from_conn: ConnId,
-            event: HE,
-        ) {
-        }
+        fn on_other_handler_event(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, from_node: NodeId, from_conn: ConnId, event: HE) {}
 
         fn on_behavior_event(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, event: HE) {}
         fn on_closed(&mut self, agent: &ConnectionAgent<BE, HE, MSG>) {}
@@ -213,42 +156,27 @@ mod tests {
     #[async_std::test]
     async fn test_behaviour_close_conn() {
         let conn_counter: Arc<AtomicU32> = Default::default();
-        let behavior = Box::new(TestCrossNetworkBehavior {
-            conn_counter: conn_counter.clone(),
-        });
+        let behavior = Box::new(TestCrossNetworkBehavior { conn_counter: conn_counter.clone() });
 
         let (mock, faker, output) = MockTransport::<ImplTestCrossNetworkMsg>::new();
-        let (mock_rpc, faker_rpc, output_rpc) =
-            MockTransportRpc::<ImplTestCrossNetworkReq, ImplTestCrossNetworkRes>::new();
+        let (mock_rpc, faker_rpc, output_rpc) = MockTransportRpc::<ImplTestCrossNetworkReq, ImplTestCrossNetworkRes>::new();
         let transport = Box::new(mock);
         let timer = Arc::new(SystemTimer());
 
-        let mut plane = NetworkPlane::<
-            ImplTestCrossNetworkBehaviorEvent,
-            ImplTestCrossNetworkHandlerEvent,
-            ImplTestCrossNetworkMsg,
-            ImplTestCrossNetworkReq,
-            ImplTestCrossNetworkRes,
-        >::new(NetworkPlaneConfig {
-            local_node_id: 0,
-            tick_ms: 1000,
-            behavior: vec![behavior],
-            transport,
-            transport_rpc: Box::new(mock_rpc),
-            timer,
-            router: Arc::new(ForceLocalRouter())
-        });
+        let mut plane =
+            NetworkPlane::<ImplTestCrossNetworkBehaviorEvent, ImplTestCrossNetworkHandlerEvent, ImplTestCrossNetworkMsg, ImplTestCrossNetworkReq, ImplTestCrossNetworkRes>::new(NetworkPlaneConfig {
+                local_node_id: 0,
+                tick_ms: 1000,
+                behavior: vec![behavior],
+                transport,
+                transport_rpc: Box::new(mock_rpc),
+                timer,
+                router: Arc::new(ForceLocalRouter()),
+            });
 
         let join = async_std::task::spawn(async move { while let Ok(_) = plane.recv().await {} });
 
-        faker
-            .send(MockInput::FakeIncomingConnection(
-                1,
-                ConnId::from_in(0, 1),
-                NodeAddr::from(Protocol::Udp(1)),
-            ))
-            .await
-            .unwrap();
+        faker.send(MockInput::FakeIncomingConnection(1, ConnId::from_in(0, 1), NodeAddr::from(Protocol::Udp(1)))).await.unwrap();
         async_std::task::sleep(Duration::from_millis(100)).await;
         assert_eq!(conn_counter.load(Ordering::Relaxed), 1);
         faker
@@ -265,14 +193,7 @@ mod tests {
         async_std::task::sleep(Duration::from_millis(100)).await;
         assert_eq!(conn_counter.load(Ordering::Relaxed), 0);
 
-        faker
-            .send(MockInput::FakeIncomingConnection(
-                1,
-                ConnId::from_in(0, 2),
-                NodeAddr::from(Protocol::Udp(1)),
-            ))
-            .await
-            .unwrap();
+        faker.send(MockInput::FakeIncomingConnection(1, ConnId::from_in(0, 2), NodeAddr::from(Protocol::Udp(1)))).await.unwrap();
         async_std::task::sleep(Duration::from_millis(100)).await;
         assert_eq!(conn_counter.load(Ordering::Relaxed), 1);
         faker
@@ -289,14 +210,7 @@ mod tests {
         async_std::task::sleep(Duration::from_millis(100)).await;
         assert_eq!(conn_counter.load(Ordering::Relaxed), 0);
 
-        faker
-            .send(MockInput::FakeIncomingConnection(
-                1,
-                ConnId::from_in(0, 3),
-                NodeAddr::from(Protocol::Udp(1)),
-            ))
-            .await
-            .unwrap();
+        faker.send(MockInput::FakeIncomingConnection(1, ConnId::from_in(0, 3), NodeAddr::from(Protocol::Udp(1)))).await.unwrap();
         async_std::task::sleep(Duration::from_millis(100)).await;
         assert_eq!(conn_counter.load(Ordering::Relaxed), 1);
         faker

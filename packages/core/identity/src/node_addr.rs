@@ -25,9 +25,7 @@ pub struct NodeAddrBuilder {
 
 impl Default for NodeAddrBuilder {
     fn default() -> Self {
-        Self {
-            addr: Mutex::new(NodeAddr::empty()),
-        }
+        Self { addr: Mutex::new(NodeAddr::empty()) }
     }
 }
 

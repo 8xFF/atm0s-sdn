@@ -57,7 +57,7 @@ impl KeyValueServer {
                             key,
                             KeyValueClientEvent::NotifySet(key, value, version).into(),
                             StorageActionRetryStrategy::Retry(10),
-                        ))
+                        ));
                     }
                 }
                 key_value_storage::simple::OutputEvent::NotifyDel(key, _value, version, dest_node) => {
@@ -68,7 +68,7 @@ impl KeyValueServer {
                             key,
                             KeyValueClientEvent::NotifyDel(key, version).into(),
                             StorageActionRetryStrategy::Retry(10),
-                        ))
+                        ));
                     }
                 }
             }

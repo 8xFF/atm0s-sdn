@@ -20,9 +20,7 @@ where
     K: std::cmp::Eq + std::hash::Hash,
 {
     pub fn new() -> Self {
-        HashMap {
-            data: HashMapOrigin::new(),
-        }
+        HashMap { data: HashMapOrigin::new() }
     }
 
     pub fn with_capacity(capacity: usize) -> Self {
@@ -110,9 +108,7 @@ where
     }
 
     pub fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
-        HashMap {
-            data: HashMapOrigin::from_iter(iter),
-        }
+        HashMap { data: HashMapOrigin::from_iter(iter) }
     }
 }
 
