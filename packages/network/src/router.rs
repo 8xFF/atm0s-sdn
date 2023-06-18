@@ -1,5 +1,5 @@
-use crate::transport::MsgRoute;
 use bluesea_identity::{ConnId, NodeId};
+use crate::msg::MsgRoute;
 
 pub enum RouteAction {
     Reject,
@@ -13,9 +13,9 @@ pub trait RouterTable: Send + Sync {
     fn path_to_service(&self, service_id: u8) -> RouteAction;
     fn path_to(&self, route: &MsgRoute, service_id: u8) -> RouteAction {
         match route {
-            MsgRoute::Node(dest) => self.path_to_node(*dest),
-            MsgRoute::Closest(key) => self.path_to_key(*key),
-            MsgRoute::Service => self.path_to_service(service_id),
+            MsgRoute::ToNode(dest) => self.path_to_node(*dest),
+            MsgRoute::ToKey(key) => self.path_to_key(*key),
+            MsgRoute::ToService(_) => self.path_to_service(service_id),
         }
     }
 }

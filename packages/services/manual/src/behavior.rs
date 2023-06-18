@@ -3,7 +3,7 @@ use crate::msg::*;
 use crate::MANUAL_SERVICE_ID;
 use bluesea_identity::{ConnId, NodeAddr, NodeAddrType, NodeId};
 use network::behaviour::{ConnectionHandler, NetworkBehavior};
-use network::transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer, TransportPendingOutgoing};
+use network::transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer, TransportConnectingOutgoing};
 use network::BehaviorAgent;
 use std::collections::HashMap;
 use std::sync::Arc;

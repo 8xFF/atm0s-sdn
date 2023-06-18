@@ -9,3 +9,4 @@ edition = "2021"
 rand = "0.8"
 multiaddr = { workspace = true }
 parking_lot = { workspace = true }
+serde = { workspace = true }

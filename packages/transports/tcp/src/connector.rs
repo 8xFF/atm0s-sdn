@@ -6,7 +6,7 @@ use async_std::channel::{bounded, unbounded, Sender};
 use async_std::net::{Shutdown, TcpStream};
 use bluesea_identity::{ConnDirection, ConnId, NodeAddr, NodeAddrBuilder, NodeId, Protocol};
 use futures_util::{AsyncReadExt, AsyncWriteExt};
-use network::transport::{AsyncConnectionAcceptor, ConnectionRejectReason, OutgoingConnectionError, TransportConnector, TransportEvent, TransportPendingOutgoing};
+use network::transport::{AsyncConnectionAcceptor, ConnectionRejectReason, OutgoingConnectionError, TransportConnector, TransportEvent, TransportConnectingOutgoing};
 use serde::{de::DeserializeOwned, Serialize};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -71,7 +71,7 @@ impl<MSG> TransportConnector for TcpConnector<MSG>
 where
     MSG: Serialize + DeserializeOwned + Send + Sync + 'static,
 {
-    fn connect_to(&self, remote_node_id: NodeId, remote_node_addr: NodeAddr) -> Result<TransportPendingOutgoing, OutgoingConnectionError> {
+    fn connect_to(&self, remote_node_id: NodeId, remote_node_addr: NodeAddr) -> Result<TransportConnectingOutgoing, OutgoingConnectionError> {
         log::info!("[TcpConnector] connect to node {}", remote_node_addr);
         let timer = self.timer.clone();
         let node_id = self.node_id;
@@ -140,6 +140,6 @@ where
                 }
             }
         });
-        Ok(TransportPendingOutgoing { conn_id: conn_id })
+        Ok(TransportConnectingOutgoing { conn_id: conn_id })
     }
 }

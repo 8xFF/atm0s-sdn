@@ -1,8 +1,9 @@
 use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 use std::path::Display;
+use serde::{Deserialize, Serialize};
 
-#[derive(Copy, Clone)]
+#[derive(Deserialize, Serialize, Copy, Clone)]
 pub struct ConnId {
     value: u64,
 }

@@ -5,7 +5,7 @@ use crate::msg::{DiscoveryBehaviorEvent, DiscoveryHandlerEvent, DiscoveryMsg};
 use crate::DISCOVERY_SERVICE_ID;
 use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use network::behaviour::{ConnectionHandler, NetworkBehavior};
-use network::transport::{ConnectionMsg, ConnectionRejectReason, ConnectionSender, MsgRoute, OutgoingConnectionError, RpcAnswer, TransportPendingOutgoing};
+use network::transport::{ConnectionMsg, ConnectionRejectReason, ConnectionSender, MsgRoute, OutgoingConnectionError, RpcAnswer, TransportConnectingOutgoing};
 use network::{BehaviorAgent, CrossHandlerRoute};
 use parking_lot::Mutex;
 use std::collections::HashMap;

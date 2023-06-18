@@ -1,9 +1,10 @@
 use crate::router::{RouteAction, RouterTable};
-use crate::transport::{ConnectionMsg, ConnectionSender, MsgRoute};
+use crate::transport::ConnectionSender;
 use async_std::channel::{unbounded, Receiver, Sender};
 use bluesea_identity::{ConnId, NodeId};
 use std::collections::HashMap;
 use std::sync::Arc;
+use crate::msg::TransportMsg;
 
 pub(crate) enum CrossHandlerEvent<HE> {
     FromBehavior(HE),
@@ -16,16 +17,15 @@ pub enum CrossHandlerRoute {
     Conn(ConnId),
 }
 
-pub(crate) struct CrossHandlerGate<HE, MSG> {
-    nodes: HashMap<NodeId, HashMap<ConnId, (Sender<(u8, CrossHandlerEvent<HE>)>, Arc<dyn ConnectionSender<MSG>>)>>,
-    conns: HashMap<ConnId, (Sender<(u8, CrossHandlerEvent<HE>)>, Arc<dyn ConnectionSender<MSG>>)>,
+pub(crate) struct CrossHandlerGate<HE> {
+    nodes: HashMap<NodeId, HashMap<ConnId, (Sender<(u8, CrossHandlerEvent<HE>)>, Arc<dyn ConnectionSender>)>>,
+    conns: HashMap<ConnId, (Sender<(u8, CrossHandlerEvent<HE>)>, Arc<dyn ConnectionSender>)>,
     router: Arc<dyn RouterTable>,
 }
 
-impl<HE, MSG> CrossHandlerGate<HE, MSG>
+impl<HE> CrossHandlerGate<HE>
 where
     HE: Send + Sync + 'static,
-    MSG: Send + Sync + 'static,
 {
     pub fn new(router: Arc<dyn RouterTable>) -> Self {
         Self {
@@ -35,7 +35,7 @@ where
         }
     }
 
-    pub(crate) fn add_conn(&mut self, net_sender: Arc<dyn ConnectionSender<MSG>>) -> Option<Receiver<(u8, CrossHandlerEvent<HE>)>> {
+    pub(crate) fn add_conn(&mut self, net_sender: Arc<dyn ConnectionSender>) -> Option<Receiver<(u8, CrossHandlerEvent<HE>)>> {
         if !self.conns.contains_key(&net_sender.conn_id()) {
             log::info!("[CrossHandlerGate] add_con {} {}", net_sender.remote_node_id(), net_sender.conn_id());
             let (tx, rx) = unbounded();
@@ -116,16 +116,16 @@ where
         None
     }
 
-    pub(crate) fn send_to_net(&self, route: MsgRoute, ttl: u8, service_id: u8, msg: ConnectionMsg<MSG>) -> Option<()> {
-        log::debug!("[CrossHandlerGate] send_to_net service: {} route: {:?}", service_id, route);
-        match self.router.path_to(&route, service_id) {
+    pub(crate) fn send_to_net(&self, msg: TransportMsg) -> Option<()> {
+        log::debug!("[CrossHandlerGate] send_to_net service: {} route: {:?}", msg.header.service_id, msg.header.route);
+        match self.router.path_to(&msg.header.route, msg.header.service_id) {
             RouteAction::Reject => None,
             RouteAction::Local => {
                 todo!()
             }
             RouteAction::Remote(conn, node) => {
                 if let Some((s, c_s)) = self.conns.get(&conn) {
-                    c_s.send(route, ttl, service_id, msg);
+                    c_s.send(msg);
                     return Some(());
                 } else {
                     log::warn!("[CrossHandlerGate] send_to_net conn not found {}", conn);

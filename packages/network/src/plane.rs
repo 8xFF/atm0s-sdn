@@ -3,7 +3,7 @@ use crate::internal::agent::{BehaviorAgent, ConnectionAgent};
 use crate::internal::cross_handler_gate::{CrossHandlerEvent, CrossHandlerGate};
 use crate::router::{RouteAction, RouterTable};
 use crate::transport::{
-    ConnectionEvent, ConnectionMsg, ConnectionReceiver, ConnectionSender, MsgRoute, OutgoingConnectionError, RpcAnswer, Transport, TransportConnector, TransportEvent, TransportPendingOutgoing,
+    ConnectionEvent, ConnectionReceiver, ConnectionSender, OutgoingConnectionError, RpcAnswer, Transport, TransportConnector, TransportEvent, TransportConnectingOutgoing,
     TransportRpc,
 };
 use async_std::channel::{bounded, unbounded, Receiver, Sender};
@@ -18,21 +18,21 @@ use std::time::Duration;
 use utils::init_vec::init_vec;
 use utils::Timer;
 
-pub enum NetworkPlaneInternalEvent<BE, MSG> {
+pub enum NetworkPlaneInternalEvent<BE> {
     ToBehaviour { service_id: u8, node_id: NodeId, conn_id: ConnId, event: BE },
-    IncomingDisconnected(Arc<dyn ConnectionSender<MSG>>),
-    OutgoingDisconnected(Arc<dyn ConnectionSender<MSG>>),
+    IncomingDisconnected(Arc<dyn ConnectionSender>),
+    OutgoingDisconnected(Arc<dyn ConnectionSender>),
 }
 
-pub struct NetworkPlaneConfig<BE, HE, MSG, Req, Res> {
+pub struct NetworkPlaneConfig<BE, HE, Req, Res> {
     /// Local node_id, which is u32 value
     pub local_node_id: NodeId,
     /// Tick_ms, each tick_ms miliseconds, network will call tick function on both behavior and handler
     pub tick_ms: u64,
     /// List of behavior
-    pub behavior: Vec<Box<dyn NetworkBehavior<BE, HE, MSG, Req, Res> + Send + Sync>>,
+    pub behavior: Vec<Box<dyn NetworkBehavior<BE, HE, Req, Res> + Send + Sync>>,
     /// Transport which is used
-    pub transport: Box<dyn Transport<MSG> + Send + Sync>,
+    pub transport: Box<dyn Transport + Send + Sync>,
     pub transport_rpc: Box<dyn TransportRpc<Req, Res> + Send + Sync>,
     /// Timer for getting timestamp miliseconds
     pub timer: Arc<dyn Timer>,
@@ -40,35 +40,34 @@ pub struct NetworkPlaneConfig<BE, HE, MSG, Req, Res> {
     pub router: Arc<dyn RouterTable>,
 }
 
-pub struct NetworkPlane<BE, HE, MSG, Req, Res> {
+pub struct NetworkPlane<BE, HE, Req, Res> {
     local_node_id: NodeId,
     tick_ms: u64,
-    behaviors: Vec<Option<(Box<dyn NetworkBehavior<BE, HE, MSG, Req, Res> + Send + Sync>, BehaviorAgent<HE, MSG>)>>,
-    transport: Box<dyn Transport<MSG> + Send + Sync>,
+    behaviors: Vec<Option<(Box<dyn NetworkBehavior<BE, HE, Req, Res> + Send + Sync>, BehaviorAgent<HE>)>>,
+    transport: Box<dyn Transport + Send + Sync>,
     transport_rpc: Box<dyn TransportRpc<Req, Res> + Send + Sync>,
     timer: Arc<dyn Timer>,
     router: Arc<dyn RouterTable>,
-    internal_tx: Sender<NetworkPlaneInternalEvent<BE, MSG>>,
-    internal_rx: Receiver<NetworkPlaneInternalEvent<BE, MSG>>,
-    cross_gate: Arc<RwLock<CrossHandlerGate<HE, MSG>>>,
+    internal_tx: Sender<NetworkPlaneInternalEvent<BE>>,
+    internal_rx: Receiver<NetworkPlaneInternalEvent<BE>>,
+    cross_gate: Arc<RwLock<CrossHandlerGate<HE>>>,
     tick_interval: Interval,
 }
 
-impl<BE, HE, MSG, Req, Res> NetworkPlane<BE, HE, MSG, Req, Res>
+impl<BE, HE, Req, Res> NetworkPlane<BE, HE, Req, Res>
 where
     BE: Send + Sync + 'static,
     HE: Send + Sync + 'static,
-    MSG: Send + Sync + 'static,
     Req: Send + Sync + 'static,
     Res: Send + Sync + 'static,
 {
     /// Creating new network plane, after create need to run
     /// `while let Some(_) = plane.run().await {}`
-    pub fn new(conf: NetworkPlaneConfig<BE, HE, MSG, Req, Res>) -> Self {
-        let cross_gate: Arc<RwLock<CrossHandlerGate<HE, MSG>>> = Arc::new(RwLock::new(CrossHandlerGate::new(conf.router.clone())));
+    pub fn new(conf: NetworkPlaneConfig<BE, HE, Req, Res>) -> Self {
+        let cross_gate: Arc<RwLock<CrossHandlerGate<HE>>> = Arc::new(RwLock::new(CrossHandlerGate::new(conf.router.clone())));
 
         let (internal_tx, internal_rx) = unbounded();
-        let mut behaviors: Vec<Option<(Box<dyn NetworkBehavior<BE, HE, MSG, Req, Res> + Send + Sync>, BehaviorAgent<HE, MSG>)>> = init_vec(256, || None);
+        let mut behaviors: Vec<Option<(Box<dyn NetworkBehavior<BE, HE, Req, Res> + Send + Sync>, BehaviorAgent<HE>)>> = init_vec(256, || None);
 
         for behavior in conf.behavior {
             let service_id = behavior.service_id() as usize;
@@ -94,7 +93,7 @@ where
         }
     }
 
-    fn process_transport_event(&mut self, e: Result<TransportEvent<MSG>, ()>) -> Result<(), ()> {
+    fn process_transport_event(&mut self, e: Result<TransportEvent, ()>) -> Result<(), ()> {
         let (outgoing, sender, mut receiver, mut handlers, mut conn_internal_rx) = match e? {
             TransportEvent::IncomingRequest(node, conn_id, acceptor) => {
                 for behaviour in &mut self.behaviors {
@@ -126,10 +125,10 @@ where
                 let rx = cross_gate.add_conn(sender.clone());
                 drop(cross_gate);
                 if let Some(rx) = rx {
-                    let mut handlers: Vec<Option<(Box<dyn ConnectionHandler<BE, HE, MSG>>, ConnectionAgent<BE, HE, MSG>)>> = init_vec(256, || None);
+                    let mut handlers: Vec<Option<(Box<dyn ConnectionHandler<BE, HE>>, ConnectionAgent<BE, HE>)>> = init_vec(256, || None);
                     for behaviour in &mut self.behaviors {
                         if let Some((behaviour, agent)) = behaviour {
-                            let conn_agent = ConnectionAgent::<BE, HE, MSG>::new(
+                            let conn_agent = ConnectionAgent::<BE, HE>::new(
                                 behaviour.service_id(),
                                 self.local_node_id,
                                 receiver.remote_node_id(),
@@ -152,10 +151,10 @@ where
                 let rx = cross_gate.add_conn(sender.clone());
                 drop(cross_gate);
                 if let Some(rx) = rx {
-                    let mut handlers: Vec<Option<(Box<dyn ConnectionHandler<BE, HE, MSG>>, ConnectionAgent<BE, HE, MSG>)>> = init_vec(256, || None);
+                    let mut handlers: Vec<Option<(Box<dyn ConnectionHandler<BE, HE>>, ConnectionAgent<BE, HE>)>> = init_vec(256, || None);
                     for behaviour in &mut self.behaviors {
                         if let Some((behaviour, agent)) = behaviour {
-                            let conn_agent = ConnectionAgent::<BE, HE, MSG>::new(
+                            let conn_agent = ConnectionAgent::<BE, HE>::new(
                                 behaviour.service_id(),
                                 self.local_node_id,
                                 receiver.remote_node_id(),
@@ -174,14 +173,14 @@ where
                 }
             }
             TransportEvent::OutgoingError {
-                node_id: node_id,
-                conn_id: connection_id,
+                node_id,
+                conn_id,
                 err,
             } => {
-                log::info!("[NetworkPlane] received TransportEvent::OutgoingError({}, {})", node_id, connection_id);
+                log::info!("[NetworkPlane] received TransportEvent::OutgoingError({}, {})", node_id, conn_id);
                 for behaviour in &mut self.behaviors {
                     if let Some((behaviour, agent)) = behaviour {
-                        behaviour.on_outgoing_connection_error(agent, node_id, connection_id, &err);
+                        behaviour.on_outgoing_connection_error(agent, node_id, conn_id, &err);
                     }
                 }
                 return Ok(());
@@ -328,27 +327,27 @@ where
     }
 }
 
-fn process_conn_msg<BE, HE, MSG>(
-    event: ConnectionEvent<MSG>,
-    handlers: &mut Vec<Option<(Box<dyn ConnectionHandler<BE, HE, MSG>>, ConnectionAgent<BE, HE, MSG>)>>,
-    sender: &Arc<dyn ConnectionSender<MSG>>,
-    receiver: &Box<dyn ConnectionReceiver<MSG> + Send>,
+fn process_conn_msg<BE, HE>(
+    event: ConnectionEvent,
+    handlers: &mut Vec<Option<(Box<dyn ConnectionHandler<BE, HE>>, ConnectionAgent<BE, HE>)>>,
+    sender: &Arc<dyn ConnectionSender>,
+    receiver: &Box<dyn ConnectionReceiver + Send>,
     router: &Arc<dyn RouterTable>,
 ) {
     match &event {
-        ConnectionEvent::Msg { route, service_id, .. } => match router.path_to(route, *service_id) {
+        ConnectionEvent::Msg(msg) => match router.path_to(&msg.header.route, msg.header.service_id) {
             RouteAction::Reject => {}
             RouteAction::Local => {
                 log::debug!(
                     "[NetworkPlane] fire handlers on_event network msg for conn ({}, {}) from service {}",
                     receiver.remote_node_id(),
                     receiver.conn_id(),
-                    service_id
+                    msg.header.service_id
                 );
-                if let Some((handler, conn_agent)) = &mut handlers[*service_id as usize] {
+                if let Some((handler, conn_agent)) = &mut handlers[msg.header.service_id as usize] {
                     handler.on_event(&conn_agent, event);
                 } else {
-                    debug_assert!(false, "service not found {}", service_id);
+                    debug_assert!(false, "service not found {}", msg.header.service_id);
                 }
             }
             RouteAction::Remote(conn, node_id) => {}

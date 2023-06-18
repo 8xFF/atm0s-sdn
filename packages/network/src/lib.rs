@@ -5,6 +5,7 @@ pub mod plane;
 mod plane_tests;
 pub mod router;
 pub mod transport;
+mod msg;
 
 pub use convert_enum;
 pub use internal::agent::*;

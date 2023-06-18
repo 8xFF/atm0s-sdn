@@ -1,24 +1,24 @@
 use crate::internal::cross_handler_gate::{CrossHandlerEvent, CrossHandlerGate, CrossHandlerRoute};
 use crate::plane::NetworkPlaneInternalEvent;
-use crate::transport::{ConnectionMsg, ConnectionSender, MsgRoute, OutgoingConnectionError, TransportConnector, TransportPendingOutgoing};
+use crate::transport::{ConnectionSender, OutgoingConnectionError, TransportConnector, TransportConnectingOutgoing};
 use async_std::channel::Sender;
 use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use parking_lot::RwLock;
 use std::sync::Arc;
+use crate::msg::TransportMsg;
 
-pub struct BehaviorAgent<HE, MSG> {
+pub struct BehaviorAgent<HE> {
     service_id: u8,
     local_node_id: NodeId,
     connector: Arc<dyn TransportConnector>,
-    cross_gate: Arc<RwLock<CrossHandlerGate<HE, MSG>>>,
+    cross_gate: Arc<RwLock<CrossHandlerGate<HE>>>,
 }
 
-impl<HE, MSG> BehaviorAgent<HE, MSG>
+impl<HE> BehaviorAgent<HE>
 where
     HE: Send + Sync + 'static,
-    MSG: Send + Sync + 'static,
 {
-    pub(crate) fn new(service_id: u8, local_node_id: NodeId, connector: Arc<dyn TransportConnector>, cross_gate: Arc<RwLock<CrossHandlerGate<HE, MSG>>>) -> Self {
+    pub(crate) fn new(service_id: u8, local_node_id: NodeId, connector: Arc<dyn TransportConnector>, cross_gate: Arc<RwLock<CrossHandlerGate<HE>>>) -> Self {
         Self {
             service_id,
             connector,
@@ -31,7 +31,7 @@ where
         self.local_node_id
     }
 
-    pub fn connect_to(&self, node_id: NodeId, dest: NodeAddr) -> Result<TransportPendingOutgoing, OutgoingConnectionError> {
+    pub fn connect_to(&self, node_id: NodeId, dest: NodeAddr) -> Result<TransportConnectingOutgoing, OutgoingConnectionError> {
         self.connector.connect_to(node_id, dest)
     }
 
@@ -39,8 +39,8 @@ where
         self.cross_gate.read().send_to_handler(self.service_id, route, CrossHandlerEvent::FromBehavior(event));
     }
 
-    pub fn send_to_net(&self, route: MsgRoute, ttl: u8, msg: ConnectionMsg<MSG>) {
-        self.cross_gate.read().send_to_net(route, ttl, self.service_id, msg);
+    pub fn send_to_net(&self, msg: TransportMsg) {
+        self.cross_gate.read().send_to_net(msg);
     }
 
     pub fn close_conn(&self, conn: ConnId) {
@@ -52,30 +52,29 @@ where
     }
 }
 
-pub struct ConnectionAgent<BE, HE, MSG> {
+pub struct ConnectionAgent<BE, HE> {
     service_id: u8,
     local_node_id: NodeId,
     remote_node_id: NodeId,
     conn_id: ConnId,
-    sender: Arc<dyn ConnectionSender<MSG>>,
-    internal_tx: Sender<NetworkPlaneInternalEvent<BE, MSG>>,
-    cross_gate: Arc<RwLock<CrossHandlerGate<HE, MSG>>>,
+    sender: Arc<dyn ConnectionSender>,
+    internal_tx: Sender<NetworkPlaneInternalEvent<BE>>,
+    cross_gate: Arc<RwLock<CrossHandlerGate<HE>>>,
 }
 
-impl<BE, HE, MSG> ConnectionAgent<BE, HE, MSG>
+impl<BE, HE> ConnectionAgent<BE, HE>
 where
     BE: Send + Sync + 'static,
     HE: Send + Sync + 'static,
-    MSG: Send + Sync + 'static,
 {
     pub(crate) fn new(
         service_id: u8,
         local_node_id: NodeId,
         remote_node_id: NodeId,
         conn_id: ConnId,
-        sender: Arc<dyn ConnectionSender<MSG>>,
-        internal_tx: Sender<NetworkPlaneInternalEvent<BE, MSG>>,
-        cross_gate: Arc<RwLock<CrossHandlerGate<HE, MSG>>>,
+        sender: Arc<dyn ConnectionSender>,
+        internal_tx: Sender<NetworkPlaneInternalEvent<BE>>,
+        cross_gate: Arc<RwLock<CrossHandlerGate<HE>>>,
     ) -> Self {
         Self {
             service_id,
@@ -114,8 +113,8 @@ where
         }
     }
 
-    pub fn send_net(&self, msg: ConnectionMsg<MSG>) {
-        self.sender.send(MsgRoute::Node(self.remote_node_id), 1, self.service_id, msg);
+    pub fn send_net(&self, msg: TransportMsg) {
+        self.sender.send(msg);
     }
 
     pub fn send_to_handler(&self, route: CrossHandlerRoute, event: HE) {
@@ -124,8 +123,8 @@ where
             .send_to_handler(self.service_id, route, CrossHandlerEvent::FromHandler(self.remote_node_id, self.conn_id, event));
     }
 
-    pub fn send_to_net(&self, route: MsgRoute, ttl: u8, msg: ConnectionMsg<MSG>) {
-        self.cross_gate.read().send_to_net(route, ttl, self.service_id, msg);
+    pub fn send_to_net(&self, msg: TransportMsg) {
+        self.cross_gate.read().send_to_net(msg);
     }
 
     pub fn close_conn(&self) {

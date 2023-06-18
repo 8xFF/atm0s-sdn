@@ -4,23 +4,24 @@ use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use thiserror::Error;
+use crate::msg::TransportMsg;
 
-pub struct TransportPendingOutgoing {
+pub struct TransportConnectingOutgoing {
     pub conn_id: ConnId,
 }
 
-pub enum TransportEvent<MSG> {
+pub enum TransportEvent {
     IncomingRequest(NodeId, ConnId, Box<dyn ConnectionAcceptor>),
     OutgoingRequest(NodeId, ConnId, Box<dyn ConnectionAcceptor>),
-    Incoming(Arc<dyn ConnectionSender<MSG>>, Box<dyn ConnectionReceiver<MSG> + Send>),
-    Outgoing(Arc<dyn ConnectionSender<MSG>>, Box<dyn ConnectionReceiver<MSG> + Send>),
+    Incoming(Arc<dyn ConnectionSender>, Box<dyn ConnectionReceiver + Send>),
+    Outgoing(Arc<dyn ConnectionSender>, Box<dyn ConnectionReceiver + Send>),
     OutgoingError { node_id: NodeId, conn_id: ConnId, err: OutgoingConnectionError },
 }
 
 #[async_trait::async_trait]
-pub trait Transport<MSG> {
+pub trait Transport {
     fn connector(&self) -> Arc<dyn TransportConnector>;
-    async fn recv(&mut self) -> Result<TransportEvent<MSG>, ()>;
+    async fn recv(&mut self) -> Result<TransportEvent, ()>;
 }
 
 pub trait RpcAnswer<Res> {
@@ -34,13 +35,7 @@ pub trait TransportRpc<Req, Res> {
 }
 
 pub trait TransportConnector: Send + Sync {
-    fn connect_to(&self, node_id: NodeId, dest: NodeAddr) -> Result<TransportPendingOutgoing, OutgoingConnectionError>;
-}
-
-#[derive(PartialEq, Debug, Serialize, Deserialize)]
-pub enum ConnectionMsg<MSG> {
-    Reliable { stream_id: u16, data: MSG },
-    Unreliable { stream_id: u16, data: MSG },
+    fn connect_to(&self, node_id: NodeId, dest: NodeAddr) -> Result<TransportConnectingOutgoing, OutgoingConnectionError>;
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -53,15 +48,8 @@ pub struct ConnectionStats {
 }
 
 #[derive(PartialEq, Debug)]
-pub enum MsgRoute {
-    Node(NodeId),
-    Closest(NodeId),
-    Service,
-}
-
-#[derive(PartialEq, Debug)]
-pub enum ConnectionEvent<MSG> {
-    Msg { ttl: u8, route: MsgRoute, service_id: u8, msg: ConnectionMsg<MSG> },
+pub enum ConnectionEvent {
+    Msg(TransportMsg),
     Stats(ConnectionStats),
 }
 
@@ -80,20 +68,20 @@ pub trait ConnectionAcceptor: Send + Sync {
     fn reject(&self, err: ConnectionRejectReason);
 }
 
-pub trait ConnectionSender<MSG>: Send + Sync {
+pub trait ConnectionSender: Send + Sync {
     fn remote_node_id(&self) -> NodeId;
     fn conn_id(&self) -> ConnId;
     fn remote_addr(&self) -> NodeAddr;
-    fn send(&self, route: MsgRoute, ttl: u8, service_id: u8, msg: ConnectionMsg<MSG>);
+    fn send(&self, msg: TransportMsg);
     fn close(&self);
 }
 
 #[async_trait::async_trait]
-pub trait ConnectionReceiver<MSG> {
+pub trait ConnectionReceiver {
     fn remote_node_id(&self) -> NodeId;
     fn conn_id(&self) -> ConnId;
     fn remote_addr(&self) -> NodeAddr;
-    async fn poll(&mut self) -> Result<ConnectionEvent<MSG>, ()>;
+    async fn poll(&mut self) -> Result<ConnectionEvent, ()>;
 }
 
 #[derive(PartialEq, Error, Clone, Debug)]
