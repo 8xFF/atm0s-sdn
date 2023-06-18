@@ -1,38 +1,41 @@
 use crate::{
     msg::{StorageAction, StorageActionRetryStrategy, StorageActionRouting},
-    KeyId,
+    KeyId, ValueType,
 };
 use key_value_storage::simple::SimpleKeyValue;
+use router::SharedRouter;
 use std::sync::Arc;
 use utils::{random::Random, Timer};
 
-use super::{KeyValueClientEvents, KeyValueServerActions};
+use super::{KeyValueClientEvent, KeyValueServerAction};
 
 pub struct KeyValueServer {
-    storage: SimpleKeyValue<KeyId, Vec<u8>, u32>,
+    storage: SimpleKeyValue<KeyId, ValueType, u32>,
     random: Arc<dyn Random<u64>>,
+    router: SharedRouter,
 }
 
 impl KeyValueServer {
-    pub fn new(random: Arc<dyn Random<u64>>, timer: Arc<dyn Timer>) -> Self {
+    pub fn new(router: SharedRouter, random: Arc<dyn Random<u64>>, timer: Arc<dyn Timer>) -> Self {
         Self {
             storage: SimpleKeyValue::new(timer.clone()),
             random,
+            router,
         }
     }
 
-    pub fn on_remote(&mut self, action: KeyValueServerActions) {
+    pub fn on_remote(&mut self, action: KeyValueServerAction) {
         match action {
-            KeyValueServerActions::Set(key, value, version, ex) => {
+            KeyValueServerAction::Set(key, value, version, ex) => {
                 self.storage.set(key, value, version, ex);
             }
-            KeyValueServerActions::Del(key, value) => {
+            KeyValueServerAction::Del(key, value) => {
                 self.storage.del(&key);
             }
-            KeyValueServerActions::Sub(key, dest_node, ex) => {
+            KeyValueServerAction::Sub(key, dest_node, ex) => {
                 self.storage.subscribe(&key, dest_node, ex);
             }
-            KeyValueServerActions::UnSub(key, dest_node) => {
+            KeyValueServerAction::UnSub(key, dest_node) => {
                 self.storage.unsubscribe(&key, &dest_node);
             }
         }
@@ -43,27 +46,31 @@ impl KeyValueServer {
     }
 
     pub fn poll(&mut self) -> Option<StorageAction> {
-        let event = self.storage.poll()?;
-        match event {
-            key_value_storage::simple::OutputEvent::NotifySet(key, value, version, dest_node) => {
-                //TODO check if this node is the closest node to the key
-                Some(StorageAction::make::<KeyValueClientEvents>(
-                    &self.random,
-                    StorageActionRouting::Node(dest_node),
-                    key,
-                    KeyValueClientEvents::NotifySet(key, value, version).into(),
-                    StorageActionRetryStrategy::Retry(10),
-                ))
-            }
-            key_value_storage::simple::OutputEvent::NotifyDel(key, _value, version, dest_node) => {
-                //TODO check if this node is the closest node to the key
-                Some(StorageAction::make::<KeyValueClientEvents>(
-                    &self.random,
-                    StorageActionRouting::Node(dest_node),
-                    key,
-                    KeyValueClientEvents::NotifyDel(key, version).into(),
-                    StorageActionRetryStrategy::Retry(10),
-                ))
+        loop {
+            let event = self.storage.poll()?;
+            match event {
+                key_value_storage::simple::OutputEvent::NotifySet(key, value, version, dest_node) => {
+                    if self.router.closest_node(key as u32, &vec![]).is_none() {
+                        return Some(StorageAction::make::<KeyValueClientEvent>(
+                            &self.random,
+                            StorageActionRouting::Node(dest_node),
+                            key,
+                            KeyValueClientEvent::NotifySet(key, value, version).into(),
+                            StorageActionRetryStrategy::Retry(10),
+                        ))
+                    }
+                }
+                key_value_storage::simple::OutputEvent::NotifyDel(key, _value, version, dest_node) => {
+                    if self.router.closest_node(key as u32, &vec![]).is_none() {
+                        return Some(StorageAction::make::<KeyValueClientEvent>(
+                            &self.random,
+                            StorageActionRouting::Node(dest_node),
+                            key,
+                            KeyValueClientEvent::NotifyDel(key, version).into(),
+                            StorageActionRetryStrategy::Retry(10),
+                        ))
+                    }
+                }
             }
         }
     }

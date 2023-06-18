@@ -15,15 +15,3 @@ pub enum ServiceDestination {
     Local,
     Remote(ConnId, NodeId),
 }
-
-#[derive(PartialEq, Debug)]
-pub enum NodeDestination {
-    Local,
-    Remote(ConnId, NodeId),
-}
-
-#[derive(PartialEq, Debug)]
-pub enum NodeDestinationPath {
-    Local,
-    Remote(Path),
-}

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::registry::{Registry, RegistrySync};
 use crate::table::{Metric, Path, Table, TableSync};
-use crate::{NodeDestination, NodeDestinationPath, ServiceDestination};
+use crate::{ServiceDestination};
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct RouterSync(pub(crate) RegistrySync, pub(crate) [Option<TableSync>; 4]);
@@ -79,48 +79,51 @@ impl Router {
         self.service_registry.del_direct(over);
     }
 
-    pub fn next(&self, dest: NodeId, excepts: &Vec<NodeId>) -> Option<NodeDestination> {
+    pub fn next(&self, dest: NodeId, excepts: &Vec<NodeId>) -> Option<(ConnId, NodeId)> {
         let eq_util_layer = self.local_node_id.eq_util_layer(&dest) as usize;
         debug_assert!(eq_util_layer <= 4);
         if eq_util_layer == 0 {
-            Some(NodeDestination::Local)
+            None
         } else {
             self.tables
                 .get(eq_util_layer - 1)?
                 .next(dest, excepts)
-                .map(|(c, n)| NodeDestination::Remote(c, n))
         }
     }
 
-    pub fn next_path(&self, dest: NodeId, excepts: &Vec<NodeId>) -> Option<NodeDestinationPath> {
+    pub fn next_path(&self, dest: NodeId, excepts: &Vec<NodeId>) -> Option<Path> {
         let eq_util_layer = self.local_node_id.eq_util_layer(&dest) as usize;
         debug_assert!(eq_util_layer <= 4);
         if eq_util_layer == 0 {
-            Some(NodeDestinationPath::Local)
+            None
         } else {
             self.tables
                 .get(eq_util_layer - 1)?
                 .next_path(dest, excepts)
-                .map(|p| NodeDestinationPath::Remote(p))
         }
     }
 
-    // pub fn closest_node(&self, key: NodeId, excepts: &Vec<NodeId>) -> Option<NodeId> {
-    //     for i in [3, 2, 1, 0] {
-    //         let index = key.layer(i);
-    //         let current_node_index = self.id.layer(i);
-    //         let (next_index, next_node) = self.tables[i as usize].closest_for(index, excepts);
-    //
-    //         if next_index != current_node_index { //other zone => sending this this
-    //         log::debug!("[Router {}] next node for {} ({}) in layer {}: {:?} => ({}, {:?})", self.id, key, index, i, self.tables[i as usize].slots(), next_index, next_node);
-    //             return next_node;
-    //         } else {
-    //             log::debug!("[Router {}] finding closest to {} in layer {} {:?} -> ({}, {:?})", self.id, key, i, self.tables[i as usize].slots(), next_index, next_node);
-    //         }
-    //     }
-    //
-    //     Some(self.id)
-    // }
+    pub fn closest_node(&self, key: NodeId, excepts: &Vec<NodeId>) -> Option<(ConnId, NodeId, u8, u8)> {
+        for i in [3, 2, 1, 0] {
+            let index = key.layer(i);
+            let (mut next_index, next_conn, next_node) = self.tables[i as usize].closest_for(index, excepts)?;
+            let current_node_index = self.local_node_id.layer(i);
+            let next_distance = index ^ next_index;
+            let local_distance = index ^ current_node_index;
+            if local_distance < next_distance { //if current node is closer => set to current index
+                next_index = current_node_index;
+            }
+
+            if next_index != current_node_index { //other zone => sending this this
+                log::debug!("[Router {}] next node for {} ({}) in layer {}: {:?} => ({}, {:?})", self.local_node_id, key, index, i, self.tables[i as usize].slots(), next_index, next_node);
+                return Some((next_conn, next_node, i, next_index));
+            } else {
+                log::debug!("[Router {}] finding closest to {} in layer {} {:?} -> ({}, {:?})", self.local_node_id, key, i, self.tables[i as usize].slots(), next_index, next_node);
+            }
+        }
+    
+        None
+    }
 
     pub fn create_sync(&self, for_node: NodeId) -> RouterSync {
         RouterSync(
@@ -162,10 +165,12 @@ impl Router {
 
 #[cfg(test)]
 mod tests {
+    use std::vec;
+
     use crate::registry::{RegistrySync, REGISTRY_LOCAL_BW};
     use crate::router::{Router, RouterSync};
     use crate::table::{Metric, Path, TableSync};
-    use crate::{NodeDestination, NodeDestinationPath, ServiceDestination};
+    use crate::ServiceDestination;
     use bluesea_identity::{ConnDirection, ConnId, NodeId, NodeIdType};
 
     #[test]
@@ -191,14 +196,14 @@ mod tests {
         //same zone, group
         assert_eq!(
             router.next(node1, &vec![node0]),
-            Some(NodeDestination::Remote(node1_conn, node1))
+            Some((node1_conn, node1))
         );
         assert_eq!(router.next(node2, &vec![node0]), None);
 
         //other zone
         assert_eq!(
             router.next(z_node2, &vec![node0]),
-            Some(NodeDestination::Remote(z_node1_conn, z_node1))
+            Some((z_node1_conn, z_node1))
         );
     }
 
@@ -371,43 +376,43 @@ mod tests {
 
         assert_eq!(
             router_a.next_path(node_b, &vec![]),
-            Some(NodeDestinationPath::Remote(Path(
+            Some(Path(
                 conn_b,
                 node_b,
                 Metric::new(1, vec![node_b, node_a], 1)
-            )))
+            ))
         );
         assert_eq!(
             router_a.next_path(node_c, &vec![]),
-            Some(NodeDestinationPath::Remote(Path(
+            Some(Path(
                 conn_b,
                 node_b,
                 Metric::new(2, vec![node_c, node_b, node_a], 1)
-            )))
+            ))
         );
         assert_eq!(
             router_a.next_path(node_d, &vec![]),
-            Some(NodeDestinationPath::Remote(Path(
+            Some(Path(
                 conn_d,
                 node_d,
                 Metric::new(1, vec![node_d, node_a], 1)
-            )))
+            ))
         );
         assert_eq!(
             router_a.next_path(node_e, &vec![]),
-            Some(NodeDestinationPath::Remote(Path(
+            Some(Path(
                 conn_b,
                 node_b,
                 Metric::new(2, vec![node_e, node_b, node_a], 1)
-            )))
+            ))
         );
         assert_eq!(
             router_a.next_path(node_f, &vec![]),
-            Some(NodeDestinationPath::Remote(Path(
+            Some(Path(
                 conn_b,
                 node_b,
                 Metric::new(3, vec![node_f, node_c, node_b, node_a], 1)
-            )))
+            ))
         );
         assert_eq!(
             router_f.service_next(1, &vec![]),
@@ -529,79 +534,73 @@ mod tests {
         **/
         assert_eq!(
             router_a.next_path(node_b, &vec![node_a]),
-            Some(NodeDestinationPath::Remote(Path(
+            Some(Path(
                 conn_d,
                 node_d,
                 Metric::new(4, vec![node_b, node_e, node_d, node_a], 1)
-            )))
+            ))
         );
         assert_eq!(
             router_a.next_path(node_c, &vec![node_a]),
-            Some(NodeDestinationPath::Remote(Path(
+            Some(Path(
                 conn_d,
                 node_d,
                 Metric::new(5, vec![node_c, node_b, node_e, node_d, node_a], 1)
-            )))
+            ))
         );
         assert_eq!(
             router_a.next_path(node_d, &vec![node_a]),
-            Some(NodeDestinationPath::Remote(Path(
+            Some(Path(
                 conn_d,
                 node_d,
                 Metric::new(1, vec![node_d, node_a], 1)
-            )))
+            ))
         );
         assert_eq!(
             router_a.next_path(node_e, &vec![node_a]),
-            Some(NodeDestinationPath::Remote(Path(
+            Some(Path(
                 conn_d,
                 node_d,
                 Metric::new(3, vec![node_e, node_d, node_a], 1)
-            )))
+            ))
         );
         assert_eq!(
             router_a.next_path(node_f, &vec![node_a]),
-            Some(NodeDestinationPath::Remote(Path(
+            Some(Path(
                 conn_d,
                 node_d,
                 Metric::new(6, vec![node_f, node_c, node_b, node_e, node_d, node_a], 1)
-            )))
+            ))
         );
     }
 
-    // #[test]
-    // fn closest_node() {
-    //     let (node_A, mut router_A) = create_router(NodeId::build(0, 0, 0, 1));
-    //
-    //     assert_eq!(router_A.closest_node(0x01, &vec![]), Some(node_A));
-    //
-    //     let node_5000 = NodeId::build(5,0,0,1);
-    //     let node_0500 = NodeId::build(0,5,0,1);
-    //     router_A.set_direct(node_5000, Metric::new(1,vec![node_5000, node_A],1));
-    //     router_A.set_direct(node_0500, Metric::new(1,vec![node_0500, node_A],1));
-    //
-    //     assert_eq!(router_A.closest_node(NodeId::build(1, 0, 0, 0), &vec![]), Some(node_A));
-    //     assert_eq!(router_A.closest_node(NodeId::build(4, 0, 0, 0), &vec![]), Some(node_5000));
-    //     assert_eq!(router_A.closest_node(NodeId::build(6, 0, 0, 0), &vec![]), Some(node_5000));
-    //
-    //     assert_eq!(router_A.closest_node(NodeId::build(0, 1, 0, 0), &vec![]), Some(node_A));
-    //     assert_eq!(router_A.closest_node(NodeId::build(0, 6, 0, 0), &vec![]), Some(node_0500));
-    //     assert_eq!(router_A.closest_node(NodeId::build(2, 1, 0, 0), &vec![]), Some(node_A));
-    //     assert_eq!(router_A.closest_node(NodeId::build(2, 6, 0, 0), &vec![]), Some(node_0500));
-    // }
-    //
-    // #[test]
-    // fn closest_node_strong() {
-    //     let (node_A, mut router_A) = create_router(1);
-    //     let (node_B, mut router_B) = create_router(16842753);
-    //
-    //     router_A.set_direct(node_B, Metric::new(1,vec![node_B, node_A],1));
-    //     router_A.set_direct(16842752, Metric::new(1,vec![16842752, node_A],1));
-    //
-    //     router_B.set_direct(node_A, Metric::new(1,vec![node_A, node_B],1));
-    //     router_B.set_direct(16842752, Metric::new(1,vec![16842752, node_B],1));
-    //
-    //     assert_eq!(router_A.closest_node(2181103616, &vec![]), Some(node_A));
-    //     assert_eq!(router_B.closest_node(2181103616, &vec![]), Some(node_A));
-    // }
+    #[test]
+    fn closest_node() {
+        let (node_A, conn_A, mut router_A) = create_router(NodeId::build(0, 0, 0, 1));
+    
+        assert_eq!(router_A.closest_node(0x01, &vec![]), None);
+    
+        let node_5000 = NodeId::build(5,0,0,1);
+        let node_0500 = NodeId::build(0,5,0,1);
+
+        let conn_5000 = ConnId::from_out(0, 5000);
+        let conn_0500 = ConnId::from_out(0, 500);
+
+        router_A.set_direct(conn_5000, node_5000, Metric::new(1,vec![node_5000, node_A],1));
+        router_A.set_direct(conn_0500, node_0500, Metric::new(1,vec![node_0500, node_A],1));
+    
+        assert_eq!(router_A.closest_node(NodeId::build(1, 0, 0, 0), &vec![]), None);
+        assert_eq!(router_A.closest_node(NodeId::build(4, 0, 0, 0), &vec![]), Some((conn_5000, node_5000, 3, 5)));
+        assert_eq!(router_A.closest_node(NodeId::build(6, 0, 0, 0), &vec![]), Some((conn_5000, node_5000, 3, 5)));
+    
+        assert_eq!(router_A.closest_node(NodeId::build(0, 1, 0, 0), &vec![]), None);
+        assert_eq!(router_A.closest_node(NodeId::build(0, 6, 0, 0), &vec![]), Some((conn_0500, node_0500, 2, 5)));
+        assert_eq!(router_A.closest_node(NodeId::build(2, 1, 0, 0), &vec![]), None);
+        assert_eq!(router_A.closest_node(NodeId::build(2, 6, 0, 0), &vec![]), Some((conn_0500, node_0500, 2, 5)));
+    }
+
+    #[test]
+    fn random_test_closest() {
+        //TODO
+    }
 }

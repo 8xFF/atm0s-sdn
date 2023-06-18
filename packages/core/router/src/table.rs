@@ -24,14 +24,13 @@ pub struct Table {
 
 impl Table {
     pub fn new(node_id: NodeId, layer: u8) -> Self {
-        let node_index = node_id.layer(layer);
         let mut dests = init_array!(Dest, 256, Default::default());
 
         Table {
             node_id,
             layer,
             dests,
-            slots: vec![node_index],
+            slots: vec![],
         }
     }
 
@@ -98,39 +97,21 @@ impl Table {
         self.dests[index as usize].next_path(excepts)
     }
 
-    // pub fn closest_for(&self, key: u8, excepts: &Vec<NodeId>) -> (u8, Option<NodeId>) {
-    //     let current_node_index = self.node_id.layer(self.layer);
-    //     if self.slots.len() <= 1 {
-    //         return (current_node_index, Some(self.node_id));
-    //     }
-    //
-    //     match self.slots.binary_search(&key) {
-    //         Ok(_) => { //found => using provided slot
-    //             (key, self.dests[key as usize].next(excepts))
-    //         }
-    //         Err(bigger_index) => {
-    //             let (left, right) = {
-    //                 if bigger_index < self.slots.len() { //found slot that bigger than key
-    //                     if bigger_index > 0 {
-    //                         (bigger_index - 1, bigger_index)
-    //                     } else {
-    //                         (self.slots.len() - 1, bigger_index)
-    //                     }
-    //                 } else {
-    //                     (bigger_index - 1, 0)
-    //                 }
-    //             };
-    //
-    //             let left_value = self.slots[left];
-    //             let right_value = self.slots[right];
-    //             if circle_distance(left_value, key) <= circle_distance(right_value, key) {
-    //                 (left_value, self.dests[left_value as usize].next(excepts))
-    //             } else {
-    //                 (right_value, self.dests[right_value as usize].next(excepts))
-    //             }
-    //         }
-    //     }
-    // }
+    pub fn closest_for(&self, key: u8, excepts: &Vec<NodeId>) -> Option<(u8, ConnId, NodeId)> {
+        let mut closest_distance: u16 = 256;
+        let mut res = None;
+        for slot in &self.slots {
+            let distance = (*slot ^ key) as u16;
+            if distance < closest_distance {
+                if let Some((conn, node)) = self.dests[*slot as usize].next(excepts) {
+                    res = Some((*slot, conn, node));
+                    closest_distance = distance;
+                }
+            }
+        }
+
+        res
+    }
 
     pub fn apply_sync(
         &mut self,
@@ -261,7 +242,7 @@ mod tests {
         ///fake
         table.add_direct(conn3, node3, Metric::new(1, vec![3, 0], 1));
 
-        assert_eq!(table.slots(), vec![0, 1, 2, 3]);
+        assert_eq!(table.slots(), vec![1, 2, 3]);
 
         assert_eq!(table.next(node1, &vec![node2]), Some((conn1, node1)));
 
@@ -324,7 +305,7 @@ mod tests {
         ];
         table.apply_sync(conn1, node1, Metric::new(1, vec![1, 0], 2), TableSync(sync));
 
-        assert_eq!(table.slots(), vec![0, 1, 2, 3]);
+        assert_eq!(table.slots(), vec![1, 2, 3]);
         assert_eq!(
             table.next_path(node1, &vec![node2]),
             Some(Path(conn1, node1, Metric::new(1, vec![1, 0], 1)))
@@ -421,38 +402,31 @@ mod tests {
         assert_eq!(table_a.next(node_d, &vec![]), Some((conn_b, node_b)));
     }
 
-    // #[test]
-    // fn closest_key() {
-    //     let node0: NodeId = 0x0;
-    //     let mut table = Table::new(node0, 0);
-    //
-    //     assert_eq!(table.closest_for(0, &vec![]), (0, Some(0)));
-    //     assert_eq!(table.closest_for(100, &vec![]), (0, Some(0)));
-    //
-    //     table.add_direct(1, Metric::new(1, vec![1, 0], 1));
-    //     table.add_direct(5, Metric::new(1, vec![5, 0], 1));
-    //     table.add_direct(40, Metric::new(1, vec![40, 0], 1));
-    //
-    //     assert_eq!(table.closest_for(0, &vec![]), (0, Some(0)));
-    //     assert_eq!(table.closest_for(3, &vec![]), (1, Some(1)));
-    //     assert_eq!(table.closest_for(3, &vec![1]), (1, None));
-    //
-    //     assert_eq!(table.closest_for(4, &vec![]), (5, Some(5)));
-    //     assert_eq!(table.closest_for(20, &vec![]), (5, Some(5)));
-    //     assert_eq!(table.closest_for(40, &vec![]), (40, Some(40)));
-    //     assert_eq!(table.closest_for(41, &vec![]), (40, Some(40)));
-    //
-    //     assert_eq!(table.closest_for(254, &vec![]), (0, Some(0)));
-    // }
-    //
-    // #[test]
-    // fn closest_key_strong_order() {
-    //     let mut table_1 = Table::new(0x00, 0);
-    //     let mut table_2 = Table::new(0x01, 0);
-    //
-    //     table_1.add_direct(0x01, Metric::new(1, vec![1, 0], 1));
-    //     table_2.add_direct(0x00, Metric::new(1, vec![0, 1], 1));
-    //
-    //     assert_eq!(table_1.closest_for(0x82, &vec![]), table_2.closest_for(0x82, &vec![]));
-    // }
+    #[test]
+    fn closest_key() {
+        let node0: NodeId = 0x0;
+        let mut table = Table::new(node0, 0);
+    
+        assert_eq!(table.closest_for(0, &vec![]), None);
+        assert_eq!(table.closest_for(100, &vec![]), None);
+
+        let conn1 = ConnId::from_out(0, 1);
+        let conn5 = ConnId::from_out(0, 5);
+        let conn40 = ConnId::from_out(0, 40);
+    
+        table.add_direct(conn1, 1, Metric::new(1, vec![1, 0], 1));
+        table.add_direct(conn5, 5, Metric::new(1, vec![5, 0], 1));
+        table.add_direct(conn40, 40, Metric::new(1, vec![40, 0], 1));
+    
+        assert_eq!(table.closest_for(0, &vec![]), Some((1, conn1, 1)));
+        assert_eq!(table.closest_for(3, &vec![]), Some((1, conn1, 1)));
+        assert_eq!(table.closest_for(3, &vec![1]), Some((5, conn5, 5)));
+    
+        assert_eq!(table.closest_for(4, &vec![]), Some((5, conn5, 5)));
+        assert_eq!(table.closest_for(20, &vec![]), Some((5, conn5, 5)));
+        assert_eq!(table.closest_for(40, &vec![]), Some((40, conn40, 40)));
+        assert_eq!(table.closest_for(41, &vec![]), Some((40, conn40, 40)));
+    
+        assert_eq!(table.closest_for(254, &vec![]), Some((40, conn40, 40)));
+    }
 }

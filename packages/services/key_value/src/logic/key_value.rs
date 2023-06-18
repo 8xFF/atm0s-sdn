@@ -32,16 +32,16 @@ pub mod server;
 /// Action and Ack: Each action has uuid and when action is executed, it will create an ack with the same uuid and response to
 /// source of action. If ack is not received in a period of time, the action will be executed again.
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum KeyValueServerActions {
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum KeyValueServerAction {
     Set(KeyId, ValueType, u64, Option<u64>),
     Del(KeyId, u64),
     Sub(KeyId, NodeId, Option<u64>),
     UnSub(KeyId, NodeId),
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum KeyValueClientEvents {
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum KeyValueClientEvent {
     NotifySet(KeyId, ValueType, u64),
     NotifyDel(KeyId, u64),
 }
