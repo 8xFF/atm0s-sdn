@@ -1,10 +1,10 @@
 use bluesea_identity::{NodeAddr, NodeAddrBuilder, Protocol};
 use clap::Parser;
-use fast_path_route::{FastPathRouteBehavior, FastPathRouteBehaviorEvent, FastPathRouteHandlerEvent, FastPathRouteMsg, FastPathRouteReq, FastPathRouteRes};
-use manual::*;
+use layers_spread_router::SharedRouter;
+use layers_spread_router_sync::{LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent, LayersSpreadRouterSyncHandlerEvent, LayersSpreadRouterSyncMsg, LayersSpreadRouterSyncReq, LayersSpreadRouterSyncRes};
+use manual_discovery::{ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent, ManualMsg, ManualReq, ManualRes};
 use network::convert_enum;
 use network::plane::{NetworkPlane, NetworkPlaneConfig};
-use router::SharedRouter;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use utils::SystemTimer;
@@ -12,31 +12,31 @@ use utils::SystemTimer;
 #[derive(convert_enum::From, convert_enum::TryInto)]
 enum NodeBehaviorEvent {
     Manual(ManualBehaviorEvent),
-    FastPathRoute(FastPathRouteBehaviorEvent),
+    LayersSpreadRouterSync(LayersSpreadRouterSyncBehaviorEvent),
 }
 
 #[derive(convert_enum::From, convert_enum::TryInto)]
 enum NodeHandleEvent {
     Manual(ManualHandlerEvent),
-    FastPathRoute(FastPathRouteHandlerEvent),
+    LayersSpreadRouterSync(LayersSpreadRouterSyncHandlerEvent),
 }
 
 #[derive(convert_enum::From, convert_enum::TryInto, Serialize, Deserialize)]
 enum NodeMsg {
     Manual(ManualMsg),
-    FastPathRoute(FastPathRouteMsg),
+    LayersSpreadRouterSync(LayersSpreadRouterSyncMsg),
 }
 
 #[derive(convert_enum::From, convert_enum::TryInto)]
 enum NodeRpcReq {
     Manual(ManualReq),
-    FastPathRoute(FastPathRouteReq),
+    LayersSpreadRouterSync(LayersSpreadRouterSyncReq),
 }
 
 #[derive(convert_enum::From, convert_enum::TryInto)]
 enum NodeRpcRes {
     Manual(ManualRes),
-    FastPathRoute(FastPathRouteRes),
+    LayersSpreadRouterSync(LayersSpreadRouterSyncRes),
 }
 
 /// Node with manual network builder
@@ -58,7 +58,7 @@ async fn main() {
     let args: Args = Args::parse();
     let node_addr_builder = Arc::new(NodeAddrBuilder::default());
     node_addr_builder.add_protocol(Protocol::P2p(args.node_id));
-    let transport = transport_tcp::TcpTransport::<NodeMsg>::new(args.node_id, 0, node_addr_builder.clone()).await;
+    let transport = transport_tcp::TcpTransport::new(args.node_id, 0, node_addr_builder.clone()).await;
     let (transport_rpc, _, _) = network::mock::MockTransportRpc::new();
     let node_addr = node_addr_builder.addr();
     log::info!("Listen on addr {}", node_addr);
@@ -70,12 +70,13 @@ async fn main() {
         timer: Arc::new(SystemTimer()),
     });
 
-    let fast_path_route = FastPathRouteBehavior::new(router.clone());
+    let spreads_layer_router = LayersSpreadRouterSyncBehavior::new(router.clone());
 
-    let mut plane = NetworkPlane::<NodeBehaviorEvent, NodeHandleEvent, NodeMsg, NodeRpcReq, NodeRpcRes>::new(NetworkPlaneConfig {
+    let mut plane = NetworkPlane::<NodeBehaviorEvent, NodeHandleEvent, NodeRpcReq, NodeRpcRes>::new(NetworkPlaneConfig {
+        router: Arc::new(router),
         local_node_id: args.node_id,
         tick_ms: 1000,
-        behavior: vec![Box::new(manual), Box::new(fast_path_route)],
+        behavior: vec![Box::new(manual), Box::new(spreads_layer_router)],
         transport: Box::new(transport),
         transport_rpc: Box::new(transport_rpc),
         timer: Arc::new(SystemTimer()),

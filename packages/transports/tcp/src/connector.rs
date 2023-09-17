@@ -1,27 +1,25 @@
-use crate::connection::{AsyncBincodeStreamU16, TcpConnectionReceiver, TcpConnectionSender, BUFFER_LEN};
+use crate::connection::{TcpConnectionReceiver, TcpConnectionSender};
 use crate::handshake::{outgoing_handshake, OutgoingHandshakeError};
 use crate::msg::TcpMsg;
 use async_bincode::futures::AsyncBincodeStream;
-use async_std::channel::{bounded, unbounded, Sender};
+use async_std::channel::Sender;
 use async_std::net::{Shutdown, TcpStream};
-use bluesea_identity::{ConnDirection, ConnId, NodeAddr, NodeAddrBuilder, NodeId, Protocol};
-use futures_util::{AsyncReadExt, AsyncWriteExt};
+use bluesea_identity::{ConnId, NodeAddr, NodeAddrBuilder, NodeId, Protocol};
 use network::transport::{AsyncConnectionAcceptor, ConnectionRejectReason, OutgoingConnectionError, TransportConnector, TransportEvent, TransportConnectingOutgoing};
-use serde::{de::DeserializeOwned, Serialize};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use utils::Timer;
 
-pub struct TcpConnector<MSG> {
+pub struct TcpConnector {
     pub(crate) seed: AtomicU64,
     pub(crate) node_id: NodeId,
     pub(crate) node_addr_builder: Arc<NodeAddrBuilder>,
-    pub(crate) internal_tx: Sender<TransportEvent<MSG>>,
+    pub(crate) internal_tx: Sender<TransportEvent>,
     pub(crate) timer: Arc<dyn Timer>,
 }
 
-impl<MSG> TcpConnector<MSG> {
+impl TcpConnector {
     /// Extracts a `SocketAddr` from a given `Multiaddr`.
     ///
     /// Fails if the given `Multiaddr` does not begin with an IP
@@ -53,7 +51,7 @@ impl<MSG> TcpConnector<MSG> {
     }
 }
 
-async fn wait_accept<MSG>(remote_node: NodeId, conn_id: ConnId, internal_tx: &Sender<TransportEvent<MSG>>) -> Result<(), OutgoingHandshakeError> {
+async fn wait_accept(remote_node: NodeId, conn_id: ConnId, internal_tx: &Sender<TransportEvent>) -> Result<(), OutgoingHandshakeError> {
     log::info!("[TcpConnector] connect to {} send local check", remote_node);
     let (connection_acceptor, recv) = AsyncConnectionAcceptor::new();
     internal_tx
@@ -67,10 +65,7 @@ async fn wait_accept<MSG>(remote_node: NodeId, conn_id: ConnId, internal_tx: &Se
     Ok(())
 }
 
-impl<MSG> TransportConnector for TcpConnector<MSG>
-where
-    MSG: Serialize + DeserializeOwned + Send + Sync + 'static,
-{
+impl TransportConnector for TcpConnector {
     fn connect_to(&self, remote_node_id: NodeId, remote_node_addr: NodeAddr) -> Result<TransportConnectingOutgoing, OutgoingConnectionError> {
         log::info!("[TcpConnector] connect to node {}", remote_node_addr);
         let timer = self.timer.clone();
@@ -94,9 +89,9 @@ where
 
             match TcpStream::connect(remote_addr).await {
                 Ok(socket) => {
-                    let mut socket_read = AsyncBincodeStream::<_, TcpMsg<MSG>, TcpMsg<MSG>, _>::from(socket.clone()).for_async();
-                    let mut socket_write = AsyncBincodeStream::<_, TcpMsg<MSG>, TcpMsg<MSG>, _>::from(socket.clone()).for_async();
-                    match outgoing_handshake::<MSG>(remote_node_id, node_id, node_addr, &mut socket_read, conn_id, &internal_tx).await {
+                    let mut socket_read = AsyncBincodeStream::<_, TcpMsg, TcpMsg, _>::from(socket.clone()).for_async();
+                    let mut socket_write = AsyncBincodeStream::<_, TcpMsg, TcpMsg, _>::from(socket.clone()).for_async();
+                    match outgoing_handshake(remote_node_id, node_id, node_addr, &mut socket_read, conn_id, &internal_tx).await {
                         Ok(_) => {
                             let (connection_sender, reliable_sender) = TcpConnectionSender::new(node_id, remote_node_id, remote_node_addr.clone(), conn_id, 1000, socket_write, timer.clone());
                             let connection_receiver = Box::new(TcpConnectionReceiver {

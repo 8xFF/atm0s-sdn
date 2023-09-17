@@ -1,7 +1,7 @@
-use crate::router::{RouteAction, RouterTable};
 use crate::transport::ConnectionSender;
 use async_std::channel::{unbounded, Receiver, Sender};
 use bluesea_identity::{ConnId, NodeId};
+use bluesea_router::{RouteAction, RouterTable};
 use std::collections::HashMap;
 use std::sync::Arc;
 use crate::msg::TransportMsg;
@@ -123,8 +123,8 @@ where
             RouteAction::Local => {
                 todo!()
             }
-            RouteAction::Remote(conn, node) => {
-                if let Some((s, c_s)) = self.conns.get(&conn) {
+            RouteAction::Next(conn, node) => {
+                if let Some((_s, c_s)) = self.conns.get(&conn) {
                     c_s.send(msg);
                     return Some(());
                 } else {

@@ -9,9 +9,12 @@ pub use transport::TcpTransport;
 #[cfg(test)]
 mod tests {
     use crate::transport::TcpTransport;
-    use bluesea_identity::{NodeAddr, NodeAddrBuilder, Protocol};
-    use network::transport::{ConnectionEvent, ConnectionMsg, ConnectionStats, OutgoingConnectionError, Transport, TransportEvent};
+    use bluesea_identity::{NodeAddrBuilder, NodeAddr, Protocol};
+    use bluesea_router::RouteRule;
+    use network::msg::TransportMsg;
+    use network::transport::{ConnectionEvent, Transport, TransportEvent, OutgoingConnectionError};
     use serde::{Deserialize, Serialize};
+
     use std::net::Ipv4Addr;
     use std::sync::Arc;
 
@@ -21,13 +24,22 @@ mod tests {
         Pong,
     }
 
+    fn create_reliable(msg: Msg) -> TransportMsg {
+        TransportMsg::build_reliable(
+            0, 
+            RouteRule::Direct, 
+            0, 
+            bincode::serialize(&msg).unwrap()
+        )
+    }
+
     #[async_std::test]
     async fn simple_network() {
         let node_addr_builder1 = Arc::new(NodeAddrBuilder::default());
-        let mut tran1 = TcpTransport::<Msg>::new(1, 10001, node_addr_builder1.clone()).await;
+        let mut tran1 = TcpTransport::new(1, 10001, node_addr_builder1.clone()).await;
 
         let node_addr_builder2 = Arc::new(NodeAddrBuilder::default());
-        let mut tran2 = TcpTransport::<Msg>::new(2, 10002, node_addr_builder2.clone()).await;
+        let mut tran2 = TcpTransport::new(2, 10002, node_addr_builder2.clone()).await;
 
         let connector1 = tran1.connector();
         let conn_id = connector1.connect_to(2, node_addr_builder2.addr()).unwrap().conn_id;
@@ -81,14 +93,11 @@ mod tests {
                 ConnectionEvent::Stats(stats) => {}
                 e => panic!("Should received stats {:?}", e),
             }
-            tran2_sender.send(1, ConnectionMsg::Reliable { stream_id: 0, data: Msg::Ping });
+            tran2_sender.send(create_reliable(Msg::Ping));
             let received_event = tran2_recv.poll().await.unwrap();
             assert_eq!(
                 received_event,
-                ConnectionEvent::Msg {
-                    service_id: 0,
-                    msg: ConnectionMsg::Reliable { stream_id: 0, data: Msg::Ping }
-                }
+                ConnectionEvent::Msg(create_reliable(Msg::Ping))
             );
             assert_eq!(tran2_recv.poll().await, Err(()));
         });
@@ -101,13 +110,10 @@ mod tests {
         let received_event = tran1_recv.poll().await.unwrap();
         assert_eq!(
             received_event,
-            ConnectionEvent::Msg {
-                service_id: 1,
-                msg: ConnectionMsg::Reliable { stream_id: 0, data: Msg::Ping }
-            }
+            ConnectionEvent::Msg(create_reliable(Msg::Ping))
         );
 
-        tran1_sender.send(0, ConnectionMsg::Reliable { stream_id: 0, data: Msg::Ping });
+        tran1_sender.send(create_reliable(Msg::Ping));
 
         tran1_sender.close();
         assert_eq!(tran1_recv.poll().await, Err(()));
@@ -117,7 +123,7 @@ mod tests {
     #[async_std::test]
     async fn simple_network_connect_addr_not_found() {
         let node_addr_builder1 = Arc::new(NodeAddrBuilder::default());
-        let mut tran1 = TcpTransport::<Msg>::new(1, 20001, node_addr_builder1.clone()).await;
+        let mut tran1 = TcpTransport::new(1, 20001, node_addr_builder1.clone()).await;
         let connector1 = tran1.connector();
         let conn_id = connector1
             .connect_to(2, NodeAddr::from_iter(vec![Protocol::Ip4(Ipv4Addr::new(127, 0, 0, 1)), Protocol::Tcp(20002)]))
@@ -146,10 +152,10 @@ mod tests {
     #[async_std::test]
     async fn simple_network_connect_wrong_node() {
         let node_addr_builder1 = Arc::new(NodeAddrBuilder::default());
-        let mut tran1 = TcpTransport::<Msg>::new(1, 30001, node_addr_builder1.clone()).await;
+        let mut tran1 = TcpTransport::new(1, 30001, node_addr_builder1.clone()).await;
 
         let node_addr_builder2 = Arc::new(NodeAddrBuilder::default());
-        let mut tran2 = TcpTransport::<Msg>::new(2, 30002, node_addr_builder2.clone()).await;
+        let mut tran2 = TcpTransport::new(2, 30002, node_addr_builder2.clone()).await;
 
         let connector1 = tran1.connector();
         let conn_id = connector1.connect_to(3, node_addr_builder2.addr()).unwrap().conn_id;

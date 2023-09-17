@@ -1,15 +1,13 @@
 #[cfg(test)]
 mod tests {
     use crate::behaviour::{ConnectionHandler, NetworkBehavior};
-    use crate::mock::{MockInput, MockOutput, MockTransport, MockTransportRpc};
+    use crate::mock::{MockInput, MockTransport, MockTransportRpc};
     use crate::plane::{NetworkPlane, NetworkPlaneConfig};
-    use crate::router::ForceLocalRouter;
     use crate::transport::{ConnectionEvent, ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer};
     use crate::{BehaviorAgent, ConnectionAgent, CrossHandlerRoute};
     use bluesea_identity::{ConnId, NodeAddr, NodeId, Protocol};
-    use parking_lot::Mutex;
-    use std::collections::VecDeque;
-    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+    use bluesea_router::ForceLocalRouter;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
     use utils::SystemTimer;

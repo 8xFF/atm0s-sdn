@@ -1,20 +1,18 @@
 #[cfg(test)]
 mod tests {
     use crate::behaviour::{ConnectionHandler, NetworkBehavior};
-    use crate::mock::{MockInput, MockOutput, MockTransport, MockTransportRpc};
+    use crate::mock::{MockInput, MockTransport, MockTransportRpc};
     use crate::plane::{NetworkPlane, NetworkPlaneConfig};
-    use crate::router::ForceLocalRouter;
     use crate::transport::{ConnectionEvent, ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer};
     use crate::{BehaviorAgent, ConnectionAgent};
     use bluesea_identity::{ConnId, NodeAddr, NodeId, Protocol};
-    use parking_lot::Mutex;
-    use std::collections::VecDeque;
-    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+    use bluesea_router::{ForceLocalRouter, RouteRule};
+    use std::sync::atomic::{ AtomicU32, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
     use utils::SystemTimer;
     use serde::{Serialize, Deserialize};
-    use crate::msg::{MsgHeader, MsgRoute, TransportMsg};
+    use crate::msg::{MsgHeader, TransportMsg};
 
     #[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
     enum TestCrossNetworkMsg {
@@ -180,7 +178,7 @@ mod tests {
         faker
             .send(MockInput::FakeIncomingMsg(
                 ConnId::from_in(0, 1),
-                TransportMsg::from_payload_bincode(MsgHeader::build_simple(0, MsgRoute::ToNode(1), 0), &TestCrossNetworkMsg::CloseInHandle).unwrap(),
+                TransportMsg::from_payload_bincode(MsgHeader::build_reliable(0, RouteRule::ToNode(1), 0), &TestCrossNetworkMsg::CloseInHandle).unwrap(),
             ))
             .await
             .unwrap();
@@ -193,7 +191,7 @@ mod tests {
         faker
             .send(MockInput::FakeIncomingMsg(
                 ConnId::from_in(0, 2),
-                TransportMsg::from_payload_bincode(MsgHeader::build_simple(0, MsgRoute::ToNode(1), 0), &TestCrossNetworkMsg::CloseInBehaviorConn).unwrap(),
+                TransportMsg::from_payload_bincode(MsgHeader::build_reliable(0, RouteRule::ToNode(1), 0), &TestCrossNetworkMsg::CloseInBehaviorConn).unwrap(),
             ))
             .await
             .unwrap();
@@ -206,7 +204,7 @@ mod tests {
         faker
             .send(MockInput::FakeIncomingMsg(
                 ConnId::from_in(0, 3),
-                TransportMsg::from_payload_bincode(MsgHeader::build_simple(0, MsgRoute::ToNode(1), 0), &TestCrossNetworkMsg::CloseInBehaviorNode).unwrap(),
+                TransportMsg::from_payload_bincode(MsgHeader::build_reliable(0, RouteRule::ToNode(1), 0), &TestCrossNetworkMsg::CloseInBehaviorNode).unwrap(),
             ))
             .await
             .unwrap();

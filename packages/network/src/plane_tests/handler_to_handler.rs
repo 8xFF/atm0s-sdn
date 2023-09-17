@@ -3,10 +3,10 @@ mod tests {
     use crate::behaviour::{ConnectionHandler, NetworkBehavior};
     use crate::mock::{MockInput, MockOutput, MockTransport, MockTransportRpc};
     use crate::plane::{NetworkPlane, NetworkPlaneConfig};
-    use crate::router::ForceLocalRouter;
     use crate::transport::{ConnectionEvent, ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer};
     use crate::{BehaviorAgent, ConnectionAgent, CrossHandlerRoute};
     use bluesea_identity::{ConnId, NodeAddr, NodeId, Protocol};
+    use bluesea_router::{ForceLocalRouter, RouteRule};
     use parking_lot::Mutex;
     use std::collections::VecDeque;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -14,7 +14,7 @@ mod tests {
     use std::time::Duration;
     use utils::SystemTimer;
     use serde::{Serialize, Deserialize};
-    use crate::msg::{MsgHeader, MsgRoute, TransportMsg};
+    use crate::msg::{MsgHeader, TransportMsg};
 
     #[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
     enum TestCrossNetworkMsg {
@@ -166,7 +166,7 @@ mod tests {
         faker
             .send(MockInput::FakeIncomingMsg(
                 ConnId::from_in(0, 1),
-                TransportMsg::from_payload_bincode(MsgHeader::build_simple(0, MsgRoute::ToNode(1), 0), &TestCrossNetworkMsg::PingToConn(ConnId::from_in(0, 2))).unwrap(),
+                TransportMsg::from_payload_bincode(MsgHeader::build_reliable(0, RouteRule::ToNode(1), 0), &TestCrossNetworkMsg::PingToConn(ConnId::from_in(0, 2))).unwrap(),
             ))
             .await
             .unwrap();
@@ -204,7 +204,7 @@ mod tests {
         faker
             .send(MockInput::FakeIncomingMsg(
                 ConnId::from_in(0, 1),
-                TransportMsg::from_payload_bincode(MsgHeader::build_simple(0, MsgRoute::ToNode(1), 0), &TestCrossNetworkMsg::PingToNode(2)).unwrap(),
+                TransportMsg::from_payload_bincode(MsgHeader::build_reliable(0, RouteRule::ToNode(1), 0), &TestCrossNetworkMsg::PingToNode(2)).unwrap(),
             ))
             .await
             .unwrap();

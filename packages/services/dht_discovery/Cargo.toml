@@ -1,0 +1,24 @@
+[package]
+name = "dht-discovery"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-trait = { workspace = true }
+bincode = { workspace = true }
+bluesea-identity = { workspace = true }
+bluesea-router = { workspace = true }
+utils = { workspace = true }
+network = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+parking_lot = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+rand = "0.8"
+async-std = { workspace = true }
+env_logger = { workspace = true }
+transport-vnet = { workspace = true }

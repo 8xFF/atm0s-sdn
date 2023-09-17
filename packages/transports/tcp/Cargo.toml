@@ -10,6 +10,7 @@ network = { workspace = true }
 async-trait = { workspace = true }
 parking_lot = { workspace = true }
 bluesea-identity = { workspace = true }
+bincode = { workspace = true }
 async-std = { workspace = true }
 serde = { workspace = true }
 log = { workspace = true }
@@ -18,4 +19,6 @@ futures-util = "0.3"
 async-bincode = { version = "0.7.1", features = ["futures"], default-features = false }
 
 [dev-dependencies]
+bluesea-router = { workspace = true }
 env_logger = { workspace = true }
+async-std = { workspace = true }

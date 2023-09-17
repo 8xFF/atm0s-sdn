@@ -3,14 +3,12 @@ use bluesea_identity::Protocol;
 use network::transport::{OutgoingConnectionError, TransportConnector, TransportConnectingOutgoing};
 use std::sync::Arc;
 
-pub struct VnetConnector<MSG> {
+pub struct VnetConnector {
     pub(crate) port: u64,
-    pub(crate) earth: Arc<VnetEarth<MSG>>,
+    pub(crate) earth: Arc<VnetEarth>,
 }
 
-impl<MSG> TransportConnector for VnetConnector<MSG>
-where
-    MSG: Send + Sync + 'static,
+impl TransportConnector for VnetConnector
 {
     fn connect_to(&self, node_id: bluesea_identity::NodeId, addr: bluesea_identity::NodeAddr) -> Result<TransportConnectingOutgoing, OutgoingConnectionError> {
         for protocol in &addr {

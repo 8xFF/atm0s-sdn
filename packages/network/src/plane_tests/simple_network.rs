@@ -3,18 +3,18 @@ mod tests {
     use crate::behaviour::{ConnectionHandler, NetworkBehavior};
     use crate::mock::{MockInput, MockOutput, MockTransport, MockTransportRpc};
     use crate::plane::{NetworkPlane, NetworkPlaneConfig};
-    use crate::router::ForceLocalRouter;
     use crate::transport::{ConnectionEvent, ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer};
     use crate::{BehaviorAgent, ConnectionAgent};
     use bluesea_identity::{ConnId, NodeAddr, NodeId, Protocol};
+    use bluesea_router::{RouteRule, ForceLocalRouter};
     use parking_lot::Mutex;
     use std::collections::VecDeque;
-    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+    use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
     use utils::SystemTimer;
     use serde::{Serialize, Deserialize};
-    use crate::msg::{MsgHeader, MsgRoute, TransportMsg};
+    use crate::msg::{MsgHeader, TransportMsg};
 
     #[derive(Serialize, Deserialize, PartialEq, Debug)]
     enum Behavior1Msg {
@@ -146,7 +146,7 @@ mod tests {
                     if let Ok(msg) = msg.get_payload_bincode::<Behavior1Msg>() {
                         match msg {
                             Behavior1Msg::Ping => {
-                                agent.send_net( TransportMsg::from_payload_bincode(MsgHeader::build_simple(0, MsgRoute::ToNode(1), 0), &Behavior1Msg::Pong).unwrap());
+                                agent.send_net( TransportMsg::from_payload_bincode(MsgHeader::build_reliable(0, RouteRule::ToNode(1), 0), &Behavior1Msg::Pong).unwrap());
                                 self.input.lock().push_back(DebugInput::Msg(agent.remote_node_id(), agent.conn_id(), Behavior1Msg::Ping.into()));
                             }
                             Behavior1Msg::Pong => {
@@ -248,7 +248,7 @@ mod tests {
         faker
             .send(MockInput::FakeIncomingMsg(
                 ConnId::from_in(0, 1),
-                TransportMsg::from_payload_bincode(MsgHeader::build_simple(0, MsgRoute::ToNode(1), 0), &Behavior1Msg::Ping).unwrap(),
+                TransportMsg::from_payload_bincode(MsgHeader::build_reliable(0, RouteRule::ToNode(1), 0), &Behavior1Msg::Ping).unwrap(),
             ))
             .await
             .unwrap();
@@ -261,7 +261,7 @@ mod tests {
             Some(MockOutput::SendTo(
                 1,
                 ConnId::from_in(0, 1),
-                TransportMsg::from_payload_bincode(MsgHeader::build_simple(0, MsgRoute::ToNode(1), 0), &Behavior1Msg::Pong).unwrap(),
+                TransportMsg::from_payload_bincode(MsgHeader::build_reliable(0, RouteRule::ToNode(1), 0), &Behavior1Msg::Pong).unwrap(),
             ))
         );
         faker.send(MockInput::FakeDisconnectIncoming(1, ConnId::from_in(0, 1))).await.unwrap();

@@ -1,19 +1,9 @@
-use bytes::{Bytes, BytesMut};
+use bluesea_router::RouteRule;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use bluesea_identity::NodeId;
 
 pub const DEFAULT_MSG_TTL: u8 = 64;
-
-/// ServiceMeta is using for determine which node will be routed, example node with lowest price or lowest latency, which for future use
-pub type ServiceMeta = u32;
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum MsgRoute {
-    ToNode(NodeId),
-    ToService(ServiceMeta),
-    ToKey(NodeId),
-}
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum MsgHeaderError {
@@ -27,7 +17,7 @@ pub enum MsgHeaderError {
 ///     0                   1                   2                   3
 ///     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-///    |V=0|R|F|V|  S |      TTL      |   Service     |       M       |
+///    |V=0|R|F|V|  S |      TTL      |    Service     |       M       |
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ///    |                         Route Destination                     |
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -45,10 +35,11 @@ pub enum MsgHeaderError {
 ///     If this bit is set, from node_id will occupy 32 bits in header
 /// validation (V): 1 bits
 /// route type (S): 3 bits
-///     0: ToNode
-///     1: ToService
-///     2: ToKey
-///     3-7: Reserved
+///     0: Direct : which node received this msg will handle it
+///     1: ToNode : which node received this msg will route it to node_id
+///     2: ToService : which node received this msg will route it to service meta
+///     3: ToKey : which node received this msg will route it to key
+///     4-7: Reserved
 /// ttl (TTL): 8 bits
 /// service id (Service): 8 bits
 /// meta (M): 8 bits (not used yet)
@@ -65,7 +56,7 @@ pub struct MsgHeader {
     pub reliable: bool,
     pub ttl: u8,
     pub service_id: u8,
-    pub route: MsgRoute,
+    pub route: RouteRule,
     pub stream_id: u32,
     /// Which can be anonymous or specific node
     pub from_node: Option<NodeId>,
@@ -73,10 +64,23 @@ pub struct MsgHeader {
 }
 
 impl MsgHeader {
-    pub fn build_simple(service_id: u8, route: MsgRoute, stream_id: u32) -> Self {
+    pub fn build_reliable(service_id: u8, route: RouteRule, stream_id: u32) -> Self {
         Self {
             version: 0,
             reliable: true,
+            ttl: DEFAULT_MSG_TTL,
+            service_id,
+            route,
+            stream_id,
+            from_node: None,
+            validate_code: None,
+        }
+    }
+
+    pub fn build_unreliable(service_id: u8, route: RouteRule, stream_id: u32) -> Self {
+        Self {
+            version: 0,
+            reliable: false,
             ttl: DEFAULT_MSG_TTL,
             service_id,
             route,
@@ -106,9 +110,9 @@ impl MsgHeader {
         };
         let route_type = bytes[0] & 7;
         let route = match route_type {
-            0 => MsgRoute::ToNode(NodeId::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]])),
-            1 => MsgRoute::ToService(u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]])),
-            2 => MsgRoute::ToKey(NodeId::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]])),
+            0 => RouteRule::ToNode(NodeId::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]])),
+            1 => RouteRule::ToService(u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]])),
+            2 => RouteRule::ToKey(NodeId::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]])),
             _ => return Err(MsgHeaderError::InvalidRoute),
         };
         let ttl = bytes[1];
@@ -143,22 +147,26 @@ impl MsgHeader {
             return None;
         }
         let route_type = match self.route {
-            MsgRoute::ToNode(_) => 0,
-            MsgRoute::ToService(_) => 1,
-            MsgRoute::ToKey(_) => 2,
+            RouteRule::Direct => 0,
+            RouteRule::ToNode(_) => 1,
+            RouteRule::ToService(_) => 2,
+            RouteRule::ToKey(_) => 3,
         };
         output[0] = (self.version << 5) | ((self.reliable as u8) << 4) | ((self.from_node.is_some() as u8) << 3) | ((self.validate_code.is_some() as u8) << 2) | route_type;
         output[1] = self.ttl;
         output[2] = self.service_id;
         output[3] = 0;
         match self.route {
-            MsgRoute::ToNode(node_id) => {
+            RouteRule::Direct => {
+                output[4..8].copy_from_slice(&(0 as u32).to_be_bytes());
+            }
+            RouteRule::ToNode(node_id) => {
                 output[4..8].copy_from_slice(&node_id.to_be_bytes());
             }
-            MsgRoute::ToService(service_meta) => {
+            RouteRule::ToService(service_meta) => {
                 output[4..8].copy_from_slice(&service_meta.to_be_bytes());
             }
-            MsgRoute::ToKey(key) => {
+            RouteRule::ToKey(key) => {
                 output[4..8].copy_from_slice(&key.to_be_bytes());
             }
         }
@@ -172,25 +180,29 @@ impl MsgHeader {
         Some(12 + if self.from_node.is_some() { 4 } else { 0 } + if self.validate_code.is_some() { 4 } else { 0 })
     }
 
-    pub fn rewrite_route(buf: &mut [u8], new_route: MsgRoute) -> Option<()> {
+    pub fn rewrite_route(buf: &mut [u8], new_route: RouteRule) -> Option<()> {
         if buf.len() < 16 {
             return None;
         }
         let route_type = match new_route {
-            MsgRoute::ToNode(_) => 0,
-            MsgRoute::ToService(_) => 1,
-            MsgRoute::ToKey(_) => 2,
+            RouteRule::Direct => 0,
+            RouteRule::ToNode(_) => 1,
+            RouteRule::ToService(_) => 2,
+            RouteRule::ToKey(_) => 3,
         };
         buf[0] &= 0b11111000;
         buf[0] |= route_type;
         match new_route {
-            MsgRoute::ToNode(node_id) => {
+            RouteRule::Direct => {
+                buf[4..8].copy_from_slice(&(0 as u32).to_be_bytes());
+            }
+            RouteRule::ToNode(node_id) => {
                 buf[4..8].copy_from_slice(&node_id.to_be_bytes());
             }
-            MsgRoute::ToService(service_meta) => {
+            RouteRule::ToService(service_meta) => {
                 buf[4..8].copy_from_slice(&service_meta.to_be_bytes());
             }
-            MsgRoute::ToKey(key) => {
+            RouteRule::ToKey(key) => {
                 buf[4..8].copy_from_slice(&key.to_be_bytes());
             }
         }
@@ -211,6 +223,36 @@ pub struct TransportMsg {
 }
 
 impl TransportMsg {
+    pub fn build_reliable(service_id: u8, route: RouteRule, stream_id: u32, payload: Vec<u8>) -> Self {
+        let header = MsgHeader::build_reliable(service_id, route, stream_id);
+        let header_size = header.serialize_size();
+        let mut buffer = Vec::with_capacity(header_size + payload.len());
+        header.to_bytes(&mut buffer);
+        buffer.extend_from_slice(&payload);
+        Self {
+            buffer,
+            header,
+            payload_start: header_size,
+        }
+    }
+
+    pub fn build_unreliable(service_id: u8, route: RouteRule, stream_id: u32, payload: Vec<u8>) -> Self {
+        let header = MsgHeader::build_unreliable(service_id, route, stream_id);
+        let header_size = header.serialize_size();
+        let mut buffer = Vec::with_capacity(header_size + payload.len());
+        header.to_bytes(&mut buffer);
+        buffer.extend_from_slice(&payload);
+        Self {
+            buffer,
+            header,
+            payload_start: header_size,
+        }
+    }
+
+    pub fn take(self) -> Vec<u8> {
+        self.buffer
+    }
+
     pub fn from_vec(buf: Vec<u8>) -> Result<Self, MsgHeaderError> {
         let (header, header_size) = MsgHeader::from_bytes(&buf).unwrap();
         Ok(Self {
@@ -228,7 +270,7 @@ impl TransportMsg {
         &self.buffer[self.payload_start..]
     }
 
-    pub fn rewrite_route(&mut self, new_route: MsgRoute) -> Option<()> {
+    pub fn rewrite_route(&mut self, new_route: RouteRule) -> Option<()> {
         MsgHeader::rewrite_route(&mut self.buffer, new_route)
     }
 
@@ -263,7 +305,7 @@ mod tests {
             reliable: false,
             ttl: 0,
             service_id: 0,
-            route: MsgRoute::ToNode(0),
+            route: RouteRule::ToNode(0),
             stream_id: 0,
             from_node: None,
             validate_code: None,
@@ -274,7 +316,7 @@ mod tests {
         assert_eq!(header.reliable, false);
         assert_eq!(header.ttl, 0);
         assert_eq!(header.service_id, 0);
-        assert_eq!(header.route, MsgRoute::ToNode(0));
+        assert_eq!(header.route, RouteRule::ToNode(0));
         assert_eq!(header.stream_id, 0);
         assert_eq!(header.from_node, None);
         assert_eq!(header.validate_code, None);
@@ -289,7 +331,7 @@ mod tests {
             reliable: false,
             ttl: 0,
             service_id: 0,
-            route: MsgRoute::ToNode(0),
+            route: RouteRule::ToNode(0),
             stream_id: 0,
             from_node: Some(0),
             validate_code: None,
@@ -300,7 +342,7 @@ mod tests {
         assert_eq!(header.reliable, false);
         assert_eq!(header.ttl, 0);
         assert_eq!(header.service_id, 0);
-        assert_eq!(header.route, MsgRoute::ToNode(0));
+        assert_eq!(header.route, RouteRule::ToNode(0));
         assert_eq!(header.stream_id, 0);
         assert_eq!(header.from_node, Some(0));
         assert_eq!(header.validate_code, None);
@@ -315,7 +357,7 @@ mod tests {
             reliable: false,
             ttl: 0,
             service_id: 0,
-            route: MsgRoute::ToNode(0),
+            route: RouteRule::ToNode(0),
             stream_id: 0,
             from_node: None,
             validate_code: Some(0),
@@ -326,7 +368,7 @@ mod tests {
         assert_eq!(header.reliable, false);
         assert_eq!(header.ttl, 0);
         assert_eq!(header.service_id, 0);
-        assert_eq!(header.route, MsgRoute::ToNode(0));
+        assert_eq!(header.route, RouteRule::ToNode(0));
         assert_eq!(header.stream_id, 0);
         assert_eq!(header.from_node, None);
         assert_eq!(header.validate_code, Some(0));
@@ -341,7 +383,7 @@ mod tests {
             reliable: false,
             ttl: 0,
             service_id: 0,
-            route: MsgRoute::ToNode(0),
+            route: RouteRule::ToNode(0),
             stream_id: 0,
             from_node: Some(0),
             validate_code: Some(0),
@@ -352,7 +394,7 @@ mod tests {
         assert_eq!(header.reliable, false);
         assert_eq!(header.ttl, 0);
         assert_eq!(header.service_id, 0);
-        assert_eq!(header.route, MsgRoute::ToNode(0));
+        assert_eq!(header.route, RouteRule::ToNode(0));
         assert_eq!(header.stream_id, 0);
         assert_eq!(header.from_node, Some(0));
         assert_eq!(header.validate_code, Some(0));
@@ -367,7 +409,7 @@ mod tests {
             reliable: false,
             ttl: 0,
             service_id: 0,
-            route: MsgRoute::ToNode(0),
+            route: RouteRule::ToNode(0),
             stream_id: 0,
             from_node: None,
             validate_code: None,

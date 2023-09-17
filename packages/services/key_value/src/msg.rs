@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use serde::{Serialize, Deserialize};
 use bluesea_identity::NodeId;
 use network::convert_enum;
 use utils::random::Random;
@@ -15,7 +16,7 @@ pub enum KeyValueBehaviorEvent {
 
 pub enum KeyValueHandlerEvent {}
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum KeyValueMsg {
     KeyValueServer(u64, NodeId, NodeId, KeyValueServerAction),
     KeyValueClient(u64, NodeId, NodeId, KeyValueClientEvent),

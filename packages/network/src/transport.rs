@@ -1,7 +1,5 @@
 use async_std::channel::{bounded, Receiver, Sender};
 use bluesea_identity::{ConnId, NodeAddr, NodeId};
-use serde::{Deserialize, Serialize};
-use std::net::SocketAddr;
 use std::sync::Arc;
 use thiserror::Error;
 use crate::msg::TransportMsg;

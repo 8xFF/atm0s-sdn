@@ -1,26 +1,26 @@
-use crate::connection::{VnetConnection, VnetConnectionReceiver, VnetConnectionSender};
+use crate::connection::{VnetConnectionReceiver, VnetConnectionSender};
 use crate::listener::{VnetListener, VnetListenerEvent};
 use async_std::channel::{unbounded, Sender};
-use bluesea_identity::{ConnDirection, ConnId, NodeAddr, NodeId};
+use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use network::transport::{AsyncConnectionAcceptor, ConnectionRejectReason, OutgoingConnectionError};
 use parking_lot::RwLock;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-pub(crate) struct Socket<MSG> {
+pub(crate) struct Socket {
     node: NodeId,
     addr: NodeAddr,
-    sender: Sender<VnetListenerEvent<MSG>>,
+    sender: Sender<VnetListenerEvent>,
 }
 
-pub struct VnetEarth<MSG> {
+pub struct VnetEarth {
     pub(crate) conn_id_seed: AtomicU64,
-    pub(crate) ports: RwLock<HashMap<u64, Socket<MSG>>>,
+    pub(crate) ports: RwLock<HashMap<u64, Socket>>,
     pub(crate) connections: Arc<RwLock<HashMap<ConnId, (NodeId, NodeId)>>>,
 }
 
-impl<MSG> Default for VnetEarth<MSG> {
+impl Default for VnetEarth {
     fn default() -> Self {
         Self {
             conn_id_seed: Default::default(),
@@ -30,11 +30,9 @@ impl<MSG> Default for VnetEarth<MSG> {
     }
 }
 
-impl<MSG> VnetEarth<MSG>
-where
-    MSG: Send + Sync + 'static,
+impl VnetEarth
 {
-    pub fn create_listener(&self, port: u64, node: NodeId, addr: NodeAddr) -> VnetListener<MSG> {
+    pub fn create_listener(&self, port: u64, node: NodeId, addr: NodeAddr) -> VnetListener {
         let (tx, rx) = unbounded();
         self.ports.write().insert(port, Socket { node, addr, sender: tx });
         VnetListener { rx }

@@ -1,4 +1,3 @@
-use crate::connection::VnetConnection;
 use crate::connector::VnetConnector;
 use crate::earth::VnetEarth;
 use crate::listener::{VnetListener, VnetListenerEvent};
@@ -6,18 +5,16 @@ use bluesea_identity::{NodeAddr, NodeId};
 use network::transport::{Transport, TransportConnector, TransportEvent};
 use std::sync::Arc;
 
-pub struct VnetTransport<MSG> {
+pub struct VnetTransport {
     port: u64,
-    earth: Arc<VnetEarth<MSG>>,
-    listener: VnetListener<MSG>,
-    connector: Arc<VnetConnector<MSG>>,
+    earth: Arc<VnetEarth>,
+    listener: VnetListener,
+    connector: Arc<VnetConnector>,
 }
 
-impl<MSG> VnetTransport<MSG>
-where
-    MSG: Send + Sync + 'static,
+impl VnetTransport
 {
-    pub fn new(earth: Arc<VnetEarth<MSG>>, port: u64, node: NodeId, addr: NodeAddr) -> Self {
+    pub fn new(earth: Arc<VnetEarth>, port: u64, node: NodeId, addr: NodeAddr) -> Self {
         Self {
             listener: earth.create_listener(port, node, addr),
             connector: Arc::new(VnetConnector { port, earth: earth.clone() }),
@@ -28,15 +25,13 @@ where
 }
 
 #[async_trait::async_trait]
-impl<MSG> Transport<MSG> for VnetTransport<MSG>
-where
-    MSG: Send + Sync + 'static,
+impl Transport for VnetTransport
 {
     fn connector(&self) -> Arc<dyn TransportConnector> {
         self.connector.clone()
     }
 
-    async fn recv(&mut self) -> Result<TransportEvent<MSG>, ()> {
+    async fn recv(&mut self) -> Result<TransportEvent, ()> {
         match self.listener.recv().await {
             None => Err(()),
             Some(VnetListenerEvent::IncomingRequest(node, conn, acceptor)) => Ok(TransportEvent::IncomingRequest(node, conn, acceptor)),

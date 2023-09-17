@@ -8,11 +8,11 @@ edition = "2021"
 [dependencies]
 async-trait = { workspace = true }
 bluesea-identity = { workspace = true }
+bluesea-router = { workspace = true }
 utils = { workspace = true }
 key-value-storage = { workspace = true }
 network = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
-router = { workspace = true }
 serde = { workspace = true }
 async-std = { workspace = true }

@@ -1,18 +1,16 @@
 use crate::behaviour::{ConnectionHandler, NetworkBehavior};
 use crate::internal::agent::{BehaviorAgent, ConnectionAgent};
 use crate::internal::cross_handler_gate::{CrossHandlerEvent, CrossHandlerGate};
-use crate::router::{RouteAction, RouterTable};
 use crate::transport::{
-    ConnectionEvent, ConnectionReceiver, ConnectionSender, OutgoingConnectionError, RpcAnswer, Transport, TransportConnector, TransportEvent, TransportConnectingOutgoing,
-    TransportRpc,
+    ConnectionEvent, ConnectionReceiver, ConnectionSender, 
+    RpcAnswer, Transport, TransportEvent, TransportRpc,
 };
-use async_std::channel::{bounded, unbounded, Receiver, Sender};
+use async_std::channel::{unbounded, Receiver, Sender};
 use async_std::stream::Interval;
-use bluesea_identity::{ConnId, NodeAddr, NodeId};
-use futures::{select, FutureExt, SinkExt, StreamExt};
+use bluesea_identity::{ConnId, NodeId};
+use bluesea_router::{RouterTable, RouteAction};
+use futures::{select, FutureExt, StreamExt};
 use parking_lot::RwLock;
-use std::collections::HashMap;
-use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use utils::init_vec::init_vec;
@@ -94,10 +92,10 @@ where
     }
 
     fn process_transport_event(&mut self, e: Result<TransportEvent, ()>) -> Result<(), ()> {
-        let (outgoing, sender, mut receiver, mut handlers, mut conn_internal_rx) = match e? {
+        let (outgoing, sender, mut receiver, mut handlers, conn_internal_rx) = match e? {
             TransportEvent::IncomingRequest(node, conn_id, acceptor) => {
                 for behaviour in &mut self.behaviors {
-                    if let Some((behaviour, agent)) = behaviour {
+                    if let Some((behaviour, _agent)) = behaviour {
                         if let Err(err) = behaviour.check_incoming_connection(node, conn_id) {
                             acceptor.reject(err);
                             return Ok(());
@@ -109,7 +107,7 @@ where
             }
             TransportEvent::OutgoingRequest(node, conn_id, acceptor) => {
                 for behaviour in &mut self.behaviors {
-                    if let Some((behaviour, agent)) = behaviour {
+                    if let Some((behaviour, _agent)) = behaviour {
                         if let Err(err) = behaviour.check_outgoing_connection(node, conn_id) {
                             acceptor.reject(err);
                             return Ok(());
@@ -201,7 +199,7 @@ where
             let mut tick_interval = async_std::stream::interval(Duration::from_millis(tick_ms));
             loop {
                 select! {
-                    e = tick_interval.next().fuse() => {
+                    _ = tick_interval.next().fuse() => {
                         let ts_ms = timer.now_ms();
                         for handler in &mut handlers {
                             if let Some((handler, conn_agent)) = handler {
@@ -239,6 +237,7 @@ where
                             process_conn_msg(event, &mut handlers, &sender, &receiver, &router);
                         }
                         Err(err) => {
+                            log::error!("{:?}", err);
                             break;
                         }
                     }
@@ -330,7 +329,7 @@ where
 fn process_conn_msg<BE, HE>(
     event: ConnectionEvent,
     handlers: &mut Vec<Option<(Box<dyn ConnectionHandler<BE, HE>>, ConnectionAgent<BE, HE>)>>,
-    sender: &Arc<dyn ConnectionSender>,
+    _sender: &Arc<dyn ConnectionSender>,
     receiver: &Box<dyn ConnectionReceiver + Send>,
     router: &Arc<dyn RouterTable>,
 ) {
@@ -350,7 +349,9 @@ fn process_conn_msg<BE, HE>(
                     debug_assert!(false, "service not found {}", msg.header.service_id);
                 }
             }
-            RouteAction::Remote(conn, node_id) => {}
+            RouteAction::Next(_conn, _node_id) => {
+                //TODO   
+            }
         },
         ConnectionEvent::Stats(stats) => {
             log::debug!("[NetworkPlane] fire handlers on_event network stats for conn ({}, {})", receiver.remote_node_id(), receiver.conn_id());

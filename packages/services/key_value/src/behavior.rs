@@ -1,14 +1,14 @@
 use crate::handler::KeyValueConnectionHandler;
 use crate::logic::key_value::client::KeyValueClient;
 use crate::logic::key_value::server::KeyValueServer;
-use crate::logic::key_value::KeyValueServerAction;
-use crate::msg::{KeyValueBehaviorEvent, KeyValueMsg, StorageAction, StorageActionRetryStrategy, StorageActionRouting, SubAction};
+use crate::msg::{KeyValueBehaviorEvent, KeyValueMsg, StorageAction};
 use crate::KEY_VALUE_SERVICE_ID;
 use bluesea_identity::{ConnId, NodeId};
+use bluesea_router::{RouterTable, RouteRule};
 use network::behaviour::{ConnectionHandler, NetworkBehavior};
-use network::transport::{ConnectionMsg, ConnectionRejectReason, ConnectionSender, MsgRoute, OutgoingConnectionError, RpcAnswer};
-use network::{BehaviorAgent, CrossHandlerRoute};
-use router::SharedRouter;
+use network::msg::{TransportMsg, MsgHeader};
+use network::transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer};
+use network::BehaviorAgent;
 use std::sync::Arc;
 use utils::hashmap::HashMap;
 use utils::random::Random;
@@ -20,15 +20,14 @@ struct ActionSlot {
 }
 
 pub struct KeyValueBehavior {
-    router: SharedRouter,
+    router: Arc<dyn RouterTable>,
     key_value_server: KeyValueServer,
     key_value_client: KeyValueClient,
     wait_actions: HashMap<u64, ActionSlot>,
 }
 
 impl KeyValueBehavior {
-    pub fn new(router: SharedRouter, random: Arc<dyn Random<u64>>, timer: Arc<dyn Timer>) -> Self {
-        let node_id = router.node_id();
+    pub fn new(node_id: NodeId, router: Arc<dyn RouterTable>, random: Arc<dyn Random<u64>>, timer: Arc<dyn Timer>) -> Self {
         Self {
             router: router.clone(),
             key_value_server: KeyValueServer::new(router, random.clone(), timer.clone()),
@@ -37,10 +36,8 @@ impl KeyValueBehavior {
         }
     }
 
-    fn process_key_value_msg<HE, Msg>(router: &SharedRouter, msg: KeyValueMsg, server: &mut KeyValueServer, wait_actions: &mut HashMap<u64, ActionSlot>, agent: &BehaviorAgent<HE, Msg>)
-    where
-        HE: Send + Sync + 'static,
-        Msg: From<KeyValueMsg> + TryInto<KeyValueMsg> + Send + Sync + 'static,
+    fn process_key_value_msg<HE>(router: &Arc<dyn RouterTable>, msg: KeyValueMsg, server: &mut KeyValueServer, wait_actions: &mut HashMap<u64, ActionSlot>, agent: &BehaviorAgent<HE>)
+    where HE: Send + Sync + 'static
     {
         let ack_dest = match msg {
             KeyValueMsg::KeyValueServer(action_id, _routing_to, sender, action) => {
@@ -59,28 +56,24 @@ impl KeyValueBehavior {
 
         if let Some((action_id, destination)) = ack_dest {
             agent.send_to_net(
-                MsgRoute::Node(destination),
-                10,
-                ConnectionMsg::Reliable {
-                    stream_id: 0,
-                    data: KeyValueMsg::Ack(action_id, destination).into(),
-                },
+                TransportMsg::from_payload_bincode(
+                    MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, RouteRule::ToNode(destination), 0), 
+                &KeyValueMsg::Ack(action_id, destination)).unwrap()
             );
         }
     }
 }
 
-impl<BE, HE, Msg, Req, Res> NetworkBehavior<BE, HE, Msg, Req, Res> for KeyValueBehavior
+impl<BE, HE, Req, Res> NetworkBehavior<BE, HE, Req, Res> for KeyValueBehavior
 where
     BE: From<KeyValueBehaviorEvent> + TryInto<KeyValueBehaviorEvent> + Send + Sync + 'static,
     HE: Send + Sync + 'static,
-    Msg: From<KeyValueMsg> + TryInto<KeyValueMsg> + Send + Sync + 'static,
 {
     fn service_id(&self) -> u8 {
         KEY_VALUE_SERVICE_ID
     }
 
-    fn on_tick(&mut self, agent: &BehaviorAgent<HE, Msg>, ts_ms: u64, interal_ms: u64) {
+    fn on_tick(&mut self, agent: &BehaviorAgent<HE>, ts_ms: u64, interal_ms: u64) {
         // self.key_value_server.tick();
         // self.key_value_client.tick();
         // while let Some(action) = self.key_value_server.poll() {
@@ -166,21 +159,21 @@ where
         Ok(())
     }
 
-    fn on_incoming_connection_connected(&mut self, agent: &BehaviorAgent<HE, Msg>, conn: Arc<dyn ConnectionSender<Msg>>) -> Option<Box<dyn ConnectionHandler<BE, HE, Msg>>> {
+    fn on_incoming_connection_connected(&mut self, agent: &BehaviorAgent<HE>, conn: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
         Some(Box::new(KeyValueConnectionHandler::new(self.router.clone())))
     }
 
-    fn on_outgoing_connection_connected(&mut self, agent: &BehaviorAgent<HE, Msg>, conn: Arc<dyn ConnectionSender<Msg>>) -> Option<Box<dyn ConnectionHandler<BE, HE, Msg>>> {
+    fn on_outgoing_connection_connected(&mut self, agent: &BehaviorAgent<HE>, conn: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
         Some(Box::new(KeyValueConnectionHandler::new(self.router.clone())))
     }
 
-    fn on_incoming_connection_disconnected(&mut self, agent: &BehaviorAgent<HE, Msg>, conn: Arc<dyn ConnectionSender<Msg>>) {}
+    fn on_incoming_connection_disconnected(&mut self, agent: &BehaviorAgent<HE>, conn: Arc<dyn ConnectionSender>) {}
 
-    fn on_outgoing_connection_disconnected(&mut self, agent: &BehaviorAgent<HE, Msg>, conn: Arc<dyn ConnectionSender<Msg>>) {}
+    fn on_outgoing_connection_disconnected(&mut self, agent: &BehaviorAgent<HE>, conn: Arc<dyn ConnectionSender>) {}
 
-    fn on_outgoing_connection_error(&mut self, agent: &BehaviorAgent<HE, Msg>, node_id: NodeId, conn_id: ConnId, err: &OutgoingConnectionError) {}
+    fn on_outgoing_connection_error(&mut self, agent: &BehaviorAgent<HE>, node_id: NodeId, conn_id: ConnId, err: &OutgoingConnectionError) {}
 
-    fn on_handler_event(&mut self, agent: &BehaviorAgent<HE, Msg>, node_id: NodeId, conn_id: ConnId, event: BE) {
+    fn on_handler_event(&mut self, agent: &BehaviorAgent<HE>, node_id: NodeId, conn_id: ConnId, event: BE) {
         if let Ok(msg) = event.try_into() {
             match msg {
                 KeyValueBehaviorEvent::FromNode(msg) => {
@@ -190,7 +183,7 @@ where
         }
     }
 
-    fn on_rpc(&mut self, agent: &BehaviorAgent<HE, Msg>, req: Req, res: Box<dyn RpcAnswer<Res>>) -> bool {
+    fn on_rpc(&mut self, agent: &BehaviorAgent<HE>, req: Req, res: Box<dyn RpcAnswer<Res>>) -> bool {
         todo!()
     }
 }
