@@ -1,11 +1,12 @@
 use crate::mock::MockOutput;
+use crate::msg::TransportMsg;
 use crate::transport::{ConnectionEvent, ConnectionSender};
 use async_std::channel::Sender;
 use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use parking_lot::Mutex;
 use std::collections::VecDeque;
 use std::sync::Arc;
-use crate::msg::TransportMsg;
+use utils::error_handle::ErrorUtils;
 
 pub struct MockConnectionSender {
     pub(crate) remote_node_id: NodeId,
@@ -33,6 +34,6 @@ impl ConnectionSender for MockConnectionSender {
     }
 
     fn close(&self) {
-        self.internal_sender.send_blocking(None);
+        self.internal_sender.send_blocking(None).print_error("Should send None for close MockConnectionSender");
     }
 }

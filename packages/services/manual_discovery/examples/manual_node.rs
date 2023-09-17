@@ -1,8 +1,8 @@
 use bluesea_identity::{NodeAddr, NodeAddrBuilder, Protocol};
 use clap::Parser;
 use layers_spread_router::SharedRouter;
-use manual_discovery::*;
 use layers_spread_router_sync::*;
+use manual_discovery::*;
 use network::convert_enum;
 use network::plane::{NetworkPlane, NetworkPlaneConfig};
 use serde::{Deserialize, Serialize};

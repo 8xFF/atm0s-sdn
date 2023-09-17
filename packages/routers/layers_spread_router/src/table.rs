@@ -24,8 +24,7 @@ pub struct Table {
 
 impl Table {
     pub fn new(node_id: NodeId, layer: u8) -> Self {
-        let mut dests = init_array!(Dest, 256, Default::default());
-
+        let dests = init_array!(Dest, 256, Default::default());
         Table { node_id, layer, dests, slots: vec![] }
     }
 

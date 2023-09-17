@@ -2,7 +2,7 @@ use crate::router::{Router, RouterSync};
 use crate::table::{Metric, Path};
 use crate::ServiceDestination;
 use bluesea_identity::{ConnId, NodeId};
-use bluesea_router::{RouterTable, RouteAction};
+use bluesea_router::{RouteAction, RouterTable};
 use parking_lot::RwLock;
 use std::sync::Arc;
 

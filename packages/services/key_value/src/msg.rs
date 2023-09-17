@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use serde::{Serialize, Deserialize};
 use bluesea_identity::NodeId;
 use network::convert_enum;
+use serde::{Deserialize, Serialize};
 use utils::random::Random;
 
 use crate::{

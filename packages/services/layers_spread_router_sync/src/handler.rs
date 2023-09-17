@@ -1,12 +1,12 @@
-use crate::FAST_PATH_ROUTE_SERVICE_ID;
 use crate::mgs::{LayersSpreadRouterSyncBehaviorEvent, LayersSpreadRouterSyncHandlerEvent, LayersSpreadRouterSyncMsg};
+use crate::FAST_PATH_ROUTE_SERVICE_ID;
 use bluesea_identity::{ConnId, NodeId};
 use bluesea_router::RouteRule;
+use layers_spread_router::{Metric, RouterSync, SharedRouter};
 use network::behaviour::ConnectionHandler;
 use network::msg::TransportMsg;
 use network::transport::ConnectionEvent;
 use network::ConnectionAgent;
-use layers_spread_router::{Metric, RouterSync, SharedRouter};
 
 pub struct LayersSpreadRouterSyncHandler {
     router: SharedRouter,
@@ -30,14 +30,12 @@ impl LayersSpreadRouterSyncHandler {
     {
         let sync = self.router.create_sync(agent.remote_node_id());
         log::debug!("[FastPathRouteHandler {} {}/{}] send RouterSync", agent.local_node_id(), agent.remote_node_id(), agent.conn_id());
-        agent.send_net(
-            TransportMsg::build_reliable(
-                FAST_PATH_ROUTE_SERVICE_ID, 
-                RouteRule::Direct, 
-                0,
-                bincode::serialize(&LayersSpreadRouterSyncMsg::Sync(sync)).unwrap()
-            )
-        );
+        agent.send_net(TransportMsg::build_reliable(
+            FAST_PATH_ROUTE_SERVICE_ID,
+            RouteRule::Direct,
+            0,
+            bincode::serialize(&LayersSpreadRouterSyncMsg::Sync(sync)).unwrap(),
+        ));
     }
 }
 
@@ -50,38 +48,36 @@ where
         self.send_sync(agent);
     }
 
-    fn on_tick(&mut self, agent: &ConnectionAgent<BE, HE>, ts_ms: u64, interal_ms: u64) {
+    fn on_tick(&mut self, agent: &ConnectionAgent<BE, HE>, _ts_ms: u64, _interal_ms: u64) {
         self.send_sync(agent);
     }
 
     fn on_event(&mut self, agent: &ConnectionAgent<BE, HE>, event: ConnectionEvent) {
         match event {
-            ConnectionEvent::Msg(msg) => {
-                match msg.get_payload_bincode::<LayersSpreadRouterSyncMsg>() {
-                    Ok(LayersSpreadRouterSyncMsg::Sync(sync)) => {
-                        if let Some(metric) = self.metric.clone() {
-                            log::debug!("[FastPathRouteHandler {} {}/{}] on received RouterSync", agent.local_node_id(), agent.remote_node_id(), agent.conn_id());
-                            self.router.apply_sync(agent.conn_id(), agent.remote_node_id(), metric, sync);
-                        } else {
-                            log::warn!(
-                                "[FastPathRouteHandler {} {}/{}] on received RouterSync but metric empty",
-                                agent.local_node_id(),
-                                agent.remote_node_id(),
-                                agent.conn_id()
-                            );
-                            self.wait_sync = Some(sync);
-                        }
-                    }
-                    Err(err) => {
-                        log::error!(
-                            "[FastPathRouteHandler {} {}/{}] on received invalid msg {}",
+            ConnectionEvent::Msg(msg) => match msg.get_payload_bincode::<LayersSpreadRouterSyncMsg>() {
+                Ok(LayersSpreadRouterSyncMsg::Sync(sync)) => {
+                    if let Some(metric) = self.metric.clone() {
+                        log::debug!("[FastPathRouteHandler {} {}/{}] on received RouterSync", agent.local_node_id(), agent.remote_node_id(), agent.conn_id());
+                        self.router.apply_sync(agent.conn_id(), agent.remote_node_id(), metric, sync);
+                    } else {
+                        log::warn!(
+                            "[FastPathRouteHandler {} {}/{}] on received RouterSync but metric empty",
                             agent.local_node_id(),
                             agent.remote_node_id(),
-                            agent.conn_id(),
-                            err
+                            agent.conn_id()
                         );
+                        self.wait_sync = Some(sync);
                     }
-                }          
+                }
+                Err(err) => {
+                    log::error!(
+                        "[FastPathRouteHandler {} {}/{}] on received invalid msg {}",
+                        agent.local_node_id(),
+                        agent.remote_node_id(),
+                        agent.conn_id(),
+                        err
+                    );
+                }
             },
             ConnectionEvent::Stats(stats) => {
                 log::debug!(
@@ -108,9 +104,9 @@ where
         }
     }
 
-    fn on_other_handler_event(&mut self, agent: &ConnectionAgent<BE, HE>, from_node: NodeId, from_conn: ConnId, event: HE) {}
+    fn on_other_handler_event(&mut self, _agent: &ConnectionAgent<BE, HE>, _from_node: NodeId, _from_conn: ConnId, _event: HE) {}
 
-    fn on_behavior_event(&mut self, agent: &ConnectionAgent<BE, HE>, event: HE) {}
+    fn on_behavior_event(&mut self, _agent: &ConnectionAgent<BE, HE>, _event: HE) {}
 
     fn on_closed(&mut self, agent: &ConnectionAgent<BE, HE>) {
         self.router.del_direct(agent.conn_id());

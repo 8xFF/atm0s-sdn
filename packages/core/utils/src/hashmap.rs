@@ -1,5 +1,4 @@
 use std::collections::HashMap as HashMapOrigin;
-use std::iter::Iterator;
 
 pub struct HashMap<K, V> {
     data: HashMapOrigin<K, V>,

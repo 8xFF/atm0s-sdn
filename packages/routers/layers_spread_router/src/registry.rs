@@ -31,6 +31,7 @@ impl Registry {
         self.local_destinations[service_id as usize] = true;
     }
 
+    #[allow(unused)]
     pub fn remove_service(&mut self, service_id: u8) {
         self.local_destinations[service_id as usize] = false;
     }
@@ -128,7 +129,7 @@ mod tests {
     use crate::registry::{Registry, RegistrySync, REGISTRY_LOCAL_BW};
     use crate::table::Metric;
     use crate::ServiceDestination;
-    use bluesea_identity::{ConnDirection, ConnId, NodeId};
+    use bluesea_identity::{ConnId, NodeId};
 
     #[test]
     fn create_manual() {
@@ -149,7 +150,7 @@ mod tests {
 
     #[test]
     fn del_direct() {
-        let conn0: ConnId = ConnId::from_out(0, 0x0);
+        //let conn0: ConnId = ConnId::from_out(0, 0x0);
         let node0: NodeId = 0x0;
 
         let conn1: ConnId = ConnId::from_out(0, 0x1);

@@ -24,6 +24,7 @@ mod tests {
     use network::plane::{NetworkPlane, NetworkPlaneConfig};
     use std::sync::Arc;
     use std::time::Duration;
+    use utils::option_handle::OptionUtils;
     use utils::SystemTimer;
 
     #[derive(convert_enum::From, convert_enum::TryInto, PartialEq, Debug)]
@@ -50,7 +51,7 @@ mod tests {
         let neighbour1_addr = NodeAddr::from(Protocol::Memory(1000));
 
         let (mock, faker, output) = MockTransport::new();
-        let (mock_rpc, faker_rpc, output_rpc) = MockTransportRpc::<ImplNetworkReq, ImplNetworkRes>::new();
+        let (mock_rpc, _faker_rpc, _output_rpc) = MockTransportRpc::<ImplNetworkReq, ImplNetworkRes>::new();
         let transport = Box::new(mock);
         let timer = Arc::new(SystemTimer());
 
@@ -85,7 +86,7 @@ mod tests {
                 TransportMsg::build_reliable(DISCOVERY_SERVICE_ID, RouteRule::ToNode(neighbour1), 0, bincode::serialize(&DiscoveryMsg::FindKey(0, 0)).unwrap())
             ))
         );
-        join.cancel();
+        join.cancel().await.print_none("Should cancel join");
     }
 
     #[async_std::test]
@@ -94,7 +95,7 @@ mod tests {
         let neighbour1_addr = NodeAddr::from(Protocol::Memory(1000));
 
         let (mock, faker, output) = MockTransport::new();
-        let (mock_rpc, faker_rpc, output_rpc) = MockTransportRpc::<ImplNetworkReq, ImplNetworkRes>::new();
+        let (mock_rpc, _faker_rpc, _output_rpc) = MockTransportRpc::<ImplNetworkReq, ImplNetworkRes>::new();
         let transport = Box::new(mock);
         let timer = Arc::new(SystemTimer());
 
@@ -127,6 +128,6 @@ mod tests {
                 TransportMsg::build_reliable(DISCOVERY_SERVICE_ID, RouteRule::ToNode(neighbour1), 0, bincode::serialize(&DiscoveryMsg::FindKey(0, 0)).unwrap())
             ))
         );
-        join.cancel();
+        join.cancel().await.print_none("Should cancel join");
     }
 }

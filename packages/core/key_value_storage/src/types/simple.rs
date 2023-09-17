@@ -11,6 +11,7 @@ pub enum OutputEvent<K, V, H> {
 }
 
 struct HandlerSlot {
+    #[allow(dead_code)]
     added_at: u64,
     expire_at: Option<u64>,
 }

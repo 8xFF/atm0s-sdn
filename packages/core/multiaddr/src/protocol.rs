@@ -1,7 +1,5 @@
 use crate::{Error, Result};
-use arrayref::array_ref;
-use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
-use data_encoding::BASE32;
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::{
     borrow::Cow,
     convert::From,
@@ -544,6 +542,7 @@ impl<'a> From<Ipv6Addr> for Protocol<'a> {
     }
 }
 
+#[allow(unused_macros)]
 macro_rules! read_onion_impl {
     ($name:ident, $len:expr, $encoded_len:expr) => {
         fn $name(s: &str) -> Result<([u8; $len], u16)> {

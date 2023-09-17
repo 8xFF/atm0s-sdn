@@ -38,6 +38,7 @@ pub struct DiscoveryLogic {
     refresh_bucket_index: u8,
 }
 
+#[allow(dead_code)]
 impl DiscoveryLogic {
     pub fn new(conf: DiscoveryLogicConf) -> Self {
         Self {
@@ -135,7 +136,7 @@ impl DiscoveryLogic {
                     //because of bucket_index from 1 to 32 but refresh_bucket_index from 0 to 31
                     let refresh_index = self.refresh_bucket_index + 1;
                     assert!(refresh_index >= 1 && refresh_index <= 32);
-                    let key = (u32::MAX >> (32 - refresh_index));
+                    let key = u32::MAX >> (32 - refresh_index);
                     self.locate_key(key & self.local_node_id);
                     self.refresh_bucket_index = (self.refresh_bucket_index + 1) % 32;
                 }
@@ -154,7 +155,7 @@ impl DiscoveryLogic {
                 DiscoveryMsg::FindKey(req_id, key) => {
                     let mut res = vec![];
                     let closest_nodes = self.table.closest_nodes(key);
-                    for (node, addr, connected) in closest_nodes {
+                    for (node, addr, _connected) in closest_nodes {
                         res.push((node, addr));
                     }
                     self.action_queues.push_back(Action::SendTo(from_node, DiscoveryMsg::FindKeyRes(req_id, res)));
@@ -179,7 +180,7 @@ impl DiscoveryLogic {
             Input::OnConnected(node, address) => {
                 if self.table.add_node_connected(node, address) {
                     let now_ms = self.timer.now_ms();
-                    for (req_id, req) in &mut self.request_memory {
+                    for (_req_id, req) in &mut self.request_memory {
                         if req.on_connected_node(now_ms, node) {
                             Self::process_request(now_ms, req, &mut self.table, &mut self.action_queues);
                         }

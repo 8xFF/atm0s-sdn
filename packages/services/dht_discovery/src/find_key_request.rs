@@ -1,6 +1,5 @@
 use crate::kbucket::K_BUCKET;
 use bluesea_identity::{NodeAddr, NodeId};
-use std::collections::{HashMap, VecDeque};
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum FindKeyRequestStatus {
@@ -15,6 +14,7 @@ impl FindKeyRequestStatus {
     }
 }
 
+#[allow(unused)]
 enum NodeState {
     Waiting { at: u64 },
     Connecting { at: u64 },
@@ -59,7 +59,7 @@ impl FindKeyRequest {
 
     pub fn status(&self, ts: u64) -> FindKeyRequestStatus {
         let mut waiting_count = 0;
-        let mut timeout_count = 0;
+        let mut error_count = 0;
         let mut finished_count = 0;
         let loop_len = K_BUCKET.min(self.nodes.len());
         for (_, _, state) in &self.nodes[0..loop_len] {
@@ -68,42 +68,42 @@ impl FindKeyRequest {
                     if *at + self.timeout > ts {
                         waiting_count += 1;
                     } else {
-                        timeout_count += 1;
+                        error_count += 1;
                     }
                 }
                 NodeState::Connecting { at, .. } => {
                     if *at + self.timeout > ts {
                         waiting_count += 1;
                     } else {
-                        timeout_count += 1;
+                        error_count += 1;
                     }
                 }
                 NodeState::Connected { at, .. } => {
                     if *at + self.timeout > ts {
                         waiting_count += 1;
                     } else {
-                        timeout_count += 1;
+                        error_count += 1;
                     }
                 }
                 NodeState::Requesting { at, .. } => {
                     if *at + self.timeout > ts {
                         waiting_count += 1;
                     } else {
-                        timeout_count += 1;
+                        error_count += 1;
                     }
                 }
                 NodeState::ReceivedAnswer { .. } => {
                     finished_count += 1;
                 }
                 NodeState::ConnectError { .. } => {
-                    timeout_count += 1;
+                    error_count += 1;
                 }
             }
         }
 
         if waiting_count == 0 && finished_count > 0 {
             FindKeyRequestStatus::Finished
-        } else if waiting_count == 0 && finished_count == 0 {
+        } else if waiting_count == 0 && finished_count == 0 && error_count > 0 {
             FindKeyRequestStatus::Timeout
         } else {
             FindKeyRequestStatus::Requesting
@@ -141,7 +141,7 @@ impl FindKeyRequest {
     }
 
     pub fn pop_request(&mut self, ts: u64) -> Option<NodeId> {
-        for (node, addr, state) in &mut self.nodes {
+        for (node, _addr, state) in &mut self.nodes {
             match state {
                 NodeState::Connected { .. } => {
                     *state = NodeState::Requesting { at: ts };
@@ -171,7 +171,7 @@ impl FindKeyRequest {
     }
 
     pub fn on_connect_error_node(&mut self, ts: u64, from_node: NodeId) -> bool {
-        for (node, addr, state) in &mut self.nodes {
+        for (node, _addr, state) in &mut self.nodes {
             match state {
                 NodeState::Connecting { .. } => {
                     if *node == from_node {
@@ -187,7 +187,7 @@ impl FindKeyRequest {
     }
 
     pub fn on_answered_node(&mut self, ts: u64, from_node: NodeId, res: Vec<(NodeId, NodeAddr, bool)>) -> bool {
-        for (node, addr, state) in &mut self.nodes {
+        for (node, _addr, state) in &mut self.nodes {
             match state {
                 NodeState::Requesting { .. } => {
                     if *node == from_node {
@@ -212,13 +212,11 @@ mod tests {
     use bluesea_identity::{NodeAddr, Protocol};
 
     #[derive(PartialEq, Debug)]
-    enum Msg {
-        Test,
-    }
+    enum Msg {}
 
     #[test]
     fn test_key() {
-        let mut list = FindKeyRequest::new(0, 102, 10000);
+        let list = FindKeyRequest::new(0, 102, 10000);
         assert_eq!(list.key(), 102);
     }
 

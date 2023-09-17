@@ -29,7 +29,7 @@ impl KeyValueServer {
             KeyValueServerAction::Set(key, value, version, ex) => {
                 self.storage.set(key, value, version, ex);
             }
-            KeyValueServerAction::Del(key, value) => {
+            KeyValueServerAction::Del(key, _value) => {
                 self.storage.del(&key);
             }
             KeyValueServerAction::Sub(key, dest_node, ex) => {

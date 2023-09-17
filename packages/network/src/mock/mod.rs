@@ -3,14 +3,11 @@ mod connection_sender;
 mod transport;
 mod transport_rpc;
 
-use std::sync::Arc;
-use std::collections::{HashMap, VecDeque};
+use crate::msg::TransportMsg;
+use crate::transport::OutgoingConnectionError;
 use bluesea_identity::{ConnId, NodeAddr, NodeId};
 pub use transport::MockTransport;
 pub use transport_rpc::MockTransportRpc;
-use crate::msg::TransportMsg;
-use crate::transport::{ConnectionSender, OutgoingConnectionError, Transport, TransportConnector, TransportEvent, TransportConnectingOutgoing};
-
 
 pub enum MockInput {
     FakeIncomingConnection(NodeId, ConnId, NodeAddr),

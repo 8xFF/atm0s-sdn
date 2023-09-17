@@ -9,11 +9,14 @@ pub use transport::VnetTransport;
 
 #[cfg(test)]
 mod tests {
-    use bluesea_router::RouteRule;
-    use serde::{Serialize, Deserialize};
     use crate::{VnetEarth, VnetTransport};
-    use bluesea_identity::{NodeAddr, Protocol, NodeId};
-    use network::{transport::{ConnectionEvent, OutgoingConnectionError, Transport, TransportEvent}, msg::TransportMsg};
+    use bluesea_identity::{NodeAddr, NodeId, Protocol};
+    use bluesea_router::RouteRule;
+    use network::{
+        msg::TransportMsg,
+        transport::{ConnectionEvent, OutgoingConnectionError, Transport, TransportEvent},
+    };
+    use serde::{Deserialize, Serialize};
     use std::sync::Arc;
 
     #[derive(PartialEq, Debug, Serialize, Deserialize)]
@@ -23,12 +26,7 @@ mod tests {
     }
 
     fn build_releadable(to_node: NodeId, msg: Msg) -> TransportMsg {
-        TransportMsg::build_reliable(
-            0, 
-            RouteRule::ToNode(to_node), 
-            0, 
-            bincode::serialize(&msg).unwrap()
-        )
+        TransportMsg::build_reliable(0, RouteRule::ToNode(to_node), 0, bincode::serialize(&msg).unwrap())
     }
 
     #[async_std::test]
@@ -89,17 +87,11 @@ mod tests {
 
         tran1_sender.send(build_releadable(1, Msg::Ping));
         let received_event = tran2_recv.poll().await.unwrap();
-        assert_eq!(
-            received_event,
-            ConnectionEvent::Msg(build_releadable(1, Msg::Ping))
-        );
+        assert_eq!(received_event, ConnectionEvent::Msg(build_releadable(1, Msg::Ping)));
 
         tran2_sender.send(build_releadable(1, Msg::Ping));
         let received_event = tran1_recv.poll().await.unwrap();
-        assert_eq!(
-            received_event,
-            ConnectionEvent::Msg(build_releadable(1, Msg::Ping))
-        );
+        assert_eq!(received_event, ConnectionEvent::Msg(build_releadable(1, Msg::Ping)));
 
         tran1_sender.close();
         assert_eq!(tran1_recv.poll().await, Err(()));

@@ -1,14 +1,11 @@
 use crate::behaviour::{ConnectionHandler, NetworkBehavior};
 use crate::internal::agent::{BehaviorAgent, ConnectionAgent};
 use crate::internal::cross_handler_gate::{CrossHandlerEvent, CrossHandlerGate};
-use crate::transport::{
-    ConnectionEvent, ConnectionReceiver, ConnectionSender, 
-    RpcAnswer, Transport, TransportEvent, TransportRpc,
-};
+use crate::transport::{ConnectionEvent, ConnectionReceiver, ConnectionSender, RpcAnswer, Transport, TransportEvent, TransportRpc};
 use async_std::channel::{unbounded, Receiver, Sender};
 use async_std::stream::Interval;
 use bluesea_identity::{ConnId, NodeId};
-use bluesea_router::{RouterTable, RouteAction};
+use bluesea_router::{RouteAction, RouterTable};
 use futures::{select, FutureExt, StreamExt};
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -43,6 +40,7 @@ pub struct NetworkPlane<BE, HE, Req, Res> {
     tick_ms: u64,
     behaviors: Vec<Option<(Box<dyn NetworkBehavior<BE, HE, Req, Res> + Send + Sync>, BehaviorAgent<HE>)>>,
     transport: Box<dyn Transport + Send + Sync>,
+    #[allow(dead_code)]
     transport_rpc: Box<dyn TransportRpc<Req, Res> + Send + Sync>,
     timer: Arc<dyn Timer>,
     router: Arc<dyn RouterTable>,
@@ -170,11 +168,7 @@ where
                     return Ok(());
                 }
             }
-            TransportEvent::OutgoingError {
-                node_id,
-                conn_id,
-                err,
-            } => {
+            TransportEvent::OutgoingError { node_id, conn_id, err } => {
                 log::info!("[NetworkPlane] received TransportEvent::OutgoingError({}, {})", node_id, conn_id);
                 for behaviour in &mut self.behaviors {
                     if let Some((behaviour, agent)) = behaviour {
@@ -189,6 +183,7 @@ where
         let tick_ms = self.tick_ms;
         let timer = self.timer.clone();
         let router = self.router.clone();
+        let cross_gate = self.cross_gate.clone();
         async_std::task::spawn(async move {
             log::info!("[NetworkPlane] fire handlers on_opened ({}, {})", receiver.remote_node_id(), receiver.conn_id());
             for handler in &mut handlers {
@@ -244,6 +239,8 @@ where
                 }
             }
             log::info!("[NetworkPlane] fire handlers on_closed ({}, {})", receiver.remote_node_id(), receiver.conn_id());
+            cross_gate.write().remove_conn(sender.remote_node_id(), sender.conn_id());
+
             for handler in &mut handlers {
                 if let Some((handler, conn_agent)) = handler {
                     handler.on_closed(&conn_agent);
@@ -263,6 +260,7 @@ where
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn process_transport_rpc_event(&mut self, e: Result<(u8, Req, Box<dyn RpcAnswer<Res>>), ()>) -> Result<(), ()> {
         let (service_id, req, res) = e?;
         if let Some(Some((behaviour, agent))) = self.behaviors.get_mut(service_id as usize) {
@@ -278,7 +276,7 @@ where
     pub async fn recv(&mut self) -> Result<(), ()> {
         log::debug!("[NetworkPlane] waiting event");
         select! {
-            e = self.tick_interval.next().fuse() => {
+            _ = self.tick_interval.next().fuse() => {
                 let ts_ms = self.timer.now_ms();
                 for behaviour in &mut self.behaviors {
                     if let Some((behaviour, agent)) = behaviour {
@@ -350,7 +348,7 @@ fn process_conn_msg<BE, HE>(
                 }
             }
             RouteAction::Next(_conn, _node_id) => {
-                //TODO   
+                //TODO
             }
         },
         ConnectionEvent::Stats(stats) => {

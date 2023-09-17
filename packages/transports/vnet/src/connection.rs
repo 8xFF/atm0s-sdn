@@ -17,8 +17,7 @@ pub struct VnetConnectionReceiver {
 }
 
 #[async_trait::async_trait]
-impl ConnectionReceiver for VnetConnectionReceiver
-{
+impl ConnectionReceiver for VnetConnectionReceiver {
     fn remote_node_id(&self) -> bluesea_identity::NodeId {
         self.remote_node_id
     }
@@ -51,8 +50,7 @@ pub struct VnetConnectionSender {
 }
 
 #[async_trait::async_trait]
-impl ConnectionSender for VnetConnectionSender
-{
+impl ConnectionSender for VnetConnectionSender {
     fn remote_node_id(&self) -> bluesea_identity::NodeId {
         self.remote_node_id
     }

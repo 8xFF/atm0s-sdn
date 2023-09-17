@@ -1,14 +1,12 @@
 use crate::mock::connection_receiver::MockConnectionReceiver;
 use crate::mock::connection_sender::MockConnectionSender;
 use crate::mock::{MockInput, MockOutput};
-use crate::transport::{
-    AsyncConnectionAcceptor, ConnectionEvent, ConnectionSender, OutgoingConnectionError, Transport, TransportConnector, TransportEvent, TransportConnectingOutgoing,
-};
-use async_std::channel::{bounded, unbounded, Receiver, Sender};
-use bluesea_identity::{ConnDirection, ConnId, NodeAddr, NodeId};
+use crate::transport::{AsyncConnectionAcceptor, ConnectionEvent, OutgoingConnectionError, Transport, TransportConnectingOutgoing, TransportConnector, TransportEvent};
+use async_std::channel::{unbounded, Receiver, Sender};
+use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use parking_lot::Mutex;
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 pub struct MockTransportConnector {
@@ -65,11 +63,11 @@ impl Transport for MockTransport {
     async fn recv(&mut self) -> Result<TransportEvent, ()> {
         loop {
             log::debug!("waiting mock transport event");
-            let input = self.receiver.recv().await.map_err(|e| ())?;
+            let input = self.receiver.recv().await.map_err(|_e| ())?;
             match input {
                 MockInput::FakeIncomingConnection(node, conn, addr) => {
                     let sender = self.sender.clone();
-                    let (acceptor, mut acceptor_recv) = AsyncConnectionAcceptor::new();
+                    let (acceptor, acceptor_recv) = AsyncConnectionAcceptor::new();
                     async_std::task::spawn(async move {
                         match acceptor_recv.recv().await {
                             Ok(Ok(_)) => {
@@ -89,7 +87,7 @@ impl Transport for MockTransport {
                 }
                 MockInput::FakeOutgoingConnection(node, conn, addr) => {
                     let sender = self.sender.clone();
-                    let (acceptor, mut acceptor_recv) = AsyncConnectionAcceptor::new();
+                    let (acceptor, acceptor_recv) = AsyncConnectionAcceptor::new();
                     async_std::task::spawn(async move {
                         match acceptor_recv.recv().await {
                             Ok(Ok(_)) => {
@@ -153,13 +151,9 @@ impl Transport for MockTransport {
                 MockInput::FakeIncomingMsg(conn, msg) => {
                     log::debug!("FakeIncomingMsg {} {}", msg.header.service_id, conn);
                     if let Some(sender) = self.in_conns.get(&conn) {
-                        sender
-                            .send_blocking(Some(ConnectionEvent::Msg(msg)))
-                            .unwrap();
+                        sender.send_blocking(Some(ConnectionEvent::Msg(msg))).unwrap();
                     } else if let Some(sender) = self.out_conns.get(&conn) {
-                        sender
-                            .send_blocking(Some(ConnectionEvent::Msg(msg)))
-                            .unwrap();
+                        sender.send_blocking(Some(ConnectionEvent::Msg(msg))).unwrap();
                     } else {
                         panic!("connection not found");
                     }

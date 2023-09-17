@@ -1,5 +1,5 @@
-use serde::{Serialize, Deserialize};
 use bluesea_identity::{NodeAddr, NodeId};
+use serde::{Deserialize, Serialize};
 
 pub enum DiscoveryBehaviorEvent {
     OnNetworkMessage(DiscoveryMsg),

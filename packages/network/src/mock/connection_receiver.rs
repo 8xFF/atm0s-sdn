@@ -24,7 +24,7 @@ impl ConnectionReceiver for MockConnectionReceiver {
     }
 
     async fn poll(&mut self) -> Result<ConnectionEvent, ()> {
-        let data = self.receiver.recv().await.map_err(|e| ())?;
+        let data = self.receiver.recv().await.map_err(|_e| ())?;
         if let Some(data) = data {
             Ok(data)
         } else {

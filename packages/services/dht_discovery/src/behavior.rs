@@ -10,6 +10,7 @@ use network::msg::TransportMsg;
 use network::transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer};
 use network::BehaviorAgent;
 use std::sync::Arc;
+use utils::error_handle::ErrorUtils;
 use utils::Timer;
 
 pub struct DiscoveryNetworkBehaviorOpts {
@@ -40,29 +41,23 @@ impl DiscoveryNetworkBehavior {
 
     fn process_logic_actions<HE>(&mut self, agent: &BehaviorAgent<HE>)
     where
-        HE: Send + Sync + 'static
+        HE: Send + Sync + 'static,
     {
         while let Some(action) = self.logic.poll_action() {
             match action {
                 Action::ConnectTo(node_id, addr) => {
-                    agent.connect_to(node_id, addr);
+                    agent.connect_to(node_id, addr).print_error("Should connect to node");
                 }
                 Action::SendTo(node_id, msg) => {
-                    agent.send_to_net(
-                        TransportMsg::build_reliable(
-                            DISCOVERY_SERVICE_ID, 
-                            RouteRule::ToNode(node_id), 
-                            0, 
-                            bincode::serialize(&msg).unwrap()
-                        )
-                    );
+                    agent.send_to_net(TransportMsg::build_reliable(DISCOVERY_SERVICE_ID, RouteRule::ToNode(node_id), 0, bincode::serialize(&msg).unwrap()));
                 }
             }
         }
     }
 
     fn add_connection_if_need<HE>(&mut self, agent: &BehaviorAgent<HE>, connection: Arc<dyn ConnectionSender>)
-    where HE: Send + Sync + 'static
+    where
+        HE: Send + Sync + 'static,
     {
         if self.connection_group.add(connection.remote_node_id(), connection.conn_id()) {
             self.logic.on_input(Input::OnConnected(connection.remote_node_id(), connection.remote_addr()));
@@ -71,7 +66,8 @@ impl DiscoveryNetworkBehavior {
     }
 
     fn remove_connection_if_need<HE>(&mut self, agent: &BehaviorAgent<HE>, connection: Arc<dyn ConnectionSender>)
-    where HE: Send + Sync + 'static
+    where
+        HE: Send + Sync + 'static,
     {
         if self.connection_group.remove(connection.remote_node_id(), connection.conn_id()) {
             self.logic.on_input(Input::OnDisconnected(connection.remote_node_id()));
@@ -89,7 +85,7 @@ where
         DISCOVERY_SERVICE_ID
     }
 
-    fn on_tick(&mut self, agent: &BehaviorAgent<HE>, ts_ms: u64, interal_ms: u64) {
+    fn on_tick(&mut self, agent: &BehaviorAgent<HE>, ts_ms: u64, _interal_ms: u64) {
         if let Some(bootstrap) = self.opts.bootstrap_addrs.take() {
             for (node, addr) in bootstrap {
                 self.logic.on_input(Input::AddNode(node, addr));
@@ -100,11 +96,11 @@ where
         self.process_logic_actions::<HE>(agent);
     }
 
-    fn check_incoming_connection(&mut self, node: NodeId, conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
+    fn check_incoming_connection(&mut self, _node: NodeId, _conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
         Ok(())
     }
 
-    fn check_outgoing_connection(&mut self, node: NodeId, conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
+    fn check_outgoing_connection(&mut self, _node: NodeId, _conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
         Ok(())
     }
 
@@ -126,7 +122,7 @@ where
         self.remove_connection_if_need(agent, connection);
     }
 
-    fn on_outgoing_connection_error(&mut self, agent: &BehaviorAgent<HE>, node_id: NodeId, connection_id: ConnId, err: &OutgoingConnectionError) {
+    fn on_outgoing_connection_error(&mut self, agent: &BehaviorAgent<HE>, node_id: NodeId, _connection_id: ConnId, _err: &OutgoingConnectionError) {
         self.logic.on_input(Input::OnConnectError(node_id));
         self.process_logic_actions::<HE>(agent);
     }
@@ -137,13 +133,13 @@ where
                 self.logic.on_input(Input::OnData(node_id, msg));
                 self.process_logic_actions::<HE>(agent);
             }
-            Err(e) => {
+            Err(_) => {
                 log::error!("cannot convert to DiscoveryBehaviorEvent");
             }
         }
     }
 
-    fn on_rpc(&mut self, agent: &BehaviorAgent<HE>, req: Req, res: Box<dyn RpcAnswer<Res>>) -> bool {
-        todo!()
+    fn on_rpc(&mut self, _agent: &BehaviorAgent<HE>, _req: Req, _res: Box<dyn RpcAnswer<Res>>) -> bool {
+        false
     }
 }

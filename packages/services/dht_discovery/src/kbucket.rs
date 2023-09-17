@@ -12,6 +12,7 @@ struct KBucketTable {
     buckets: [KBucket; KEY_BITS + 1],
 }
 
+#[allow(dead_code)]
 impl KBucketTable {
     pub fn new() -> Self {
         Self {
@@ -150,6 +151,7 @@ pub struct KBucketTableWrap {
     table: KBucketTable,
 }
 
+#[allow(dead_code)]
 impl KBucketTableWrap {
     pub fn new(local_node_id: NodeId) -> Self {
         Self {

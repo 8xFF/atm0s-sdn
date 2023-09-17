@@ -12,8 +12,7 @@ pub struct VnetTransport {
     connector: Arc<VnetConnector>,
 }
 
-impl VnetTransport
-{
+impl VnetTransport {
     pub fn new(earth: Arc<VnetEarth>, port: u64, node: NodeId, addr: NodeAddr) -> Self {
         Self {
             listener: earth.create_listener(port, node, addr),
@@ -25,8 +24,7 @@ impl VnetTransport
 }
 
 #[async_trait::async_trait]
-impl Transport for VnetTransport
-{
+impl Transport for VnetTransport {
     fn connector(&self) -> Arc<dyn TransportConnector> {
         self.connector.clone()
     }

@@ -1,7 +1,9 @@
 use bluesea_identity::{NodeAddr, NodeAddrBuilder, Protocol};
 use clap::Parser;
 use layers_spread_router::SharedRouter;
-use layers_spread_router_sync::{LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent, LayersSpreadRouterSyncHandlerEvent, LayersSpreadRouterSyncMsg, LayersSpreadRouterSyncReq, LayersSpreadRouterSyncRes};
+use layers_spread_router_sync::{
+    LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent, LayersSpreadRouterSyncHandlerEvent, LayersSpreadRouterSyncMsg, LayersSpreadRouterSyncReq, LayersSpreadRouterSyncRes,
+};
 use manual_discovery::{ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent, ManualMsg, ManualReq, ManualRes};
 use network::convert_enum;
 use network::plane::{NetworkPlane, NetworkPlaneConfig};

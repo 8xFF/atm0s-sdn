@@ -1,11 +1,11 @@
 use crate::internal::cross_handler_gate::{CrossHandlerEvent, CrossHandlerGate, CrossHandlerRoute};
+use crate::msg::TransportMsg;
 use crate::plane::NetworkPlaneInternalEvent;
-use crate::transport::{ConnectionSender, OutgoingConnectionError, TransportConnector, TransportConnectingOutgoing};
+use crate::transport::{ConnectionSender, OutgoingConnectionError, TransportConnectingOutgoing, TransportConnector};
 use async_std::channel::Sender;
 use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use parking_lot::RwLock;
 use std::sync::Arc;
-use crate::msg::TransportMsg;
 
 pub struct BehaviorAgent<HE> {
     service_id: u8,

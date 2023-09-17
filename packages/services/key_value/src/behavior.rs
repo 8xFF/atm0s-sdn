@@ -4,9 +4,9 @@ use crate::logic::key_value::server::KeyValueServer;
 use crate::msg::{KeyValueBehaviorEvent, KeyValueMsg, StorageAction};
 use crate::KEY_VALUE_SERVICE_ID;
 use bluesea_identity::{ConnId, NodeId};
-use bluesea_router::{RouterTable, RouteRule};
+use bluesea_router::{RouteRule, RouterTable};
 use network::behaviour::{ConnectionHandler, NetworkBehavior};
-use network::msg::{TransportMsg, MsgHeader};
+use network::msg::{MsgHeader, TransportMsg};
 use network::transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer};
 use network::BehaviorAgent;
 use std::sync::Arc;
@@ -14,11 +14,13 @@ use utils::hashmap::HashMap;
 use utils::random::Random;
 use utils::Timer;
 
+#[allow(unused)]
 struct ActionSlot {
     count: u32,
     action: StorageAction,
 }
 
+#[allow(unused)]
 pub struct KeyValueBehavior {
     router: Arc<dyn RouterTable>,
     key_value_server: KeyValueServer,
@@ -27,6 +29,7 @@ pub struct KeyValueBehavior {
 }
 
 impl KeyValueBehavior {
+    #[allow(unused)]
     pub fn new(node_id: NodeId, router: Arc<dyn RouterTable>, random: Arc<dyn Random<u64>>, timer: Arc<dyn Timer>) -> Self {
         Self {
             router: router.clone(),
@@ -36,8 +39,9 @@ impl KeyValueBehavior {
         }
     }
 
-    fn process_key_value_msg<HE>(router: &Arc<dyn RouterTable>, msg: KeyValueMsg, server: &mut KeyValueServer, wait_actions: &mut HashMap<u64, ActionSlot>, agent: &BehaviorAgent<HE>)
-    where HE: Send + Sync + 'static
+    fn process_key_value_msg<HE>(_router: &Arc<dyn RouterTable>, msg: KeyValueMsg, server: &mut KeyValueServer, wait_actions: &mut HashMap<u64, ActionSlot>, agent: &BehaviorAgent<HE>)
+    where
+        HE: Send + Sync + 'static,
     {
         let ack_dest = match msg {
             KeyValueMsg::KeyValueServer(action_id, _routing_to, sender, action) => {
@@ -57,13 +61,16 @@ impl KeyValueBehavior {
         if let Some((action_id, destination)) = ack_dest {
             agent.send_to_net(
                 TransportMsg::from_payload_bincode(
-                    MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, RouteRule::ToNode(destination), 0), 
-                &KeyValueMsg::Ack(action_id, destination)).unwrap()
+                    MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, RouteRule::ToNode(destination), 0),
+                    &KeyValueMsg::Ack(action_id, destination),
+                )
+                .unwrap(),
             );
         }
     }
 }
 
+#[allow(unused)]
 impl<BE, HE, Req, Res> NetworkBehavior<BE, HE, Req, Res> for KeyValueBehavior
 where
     BE: From<KeyValueBehaviorEvent> + TryInto<KeyValueBehaviorEvent> + Send + Sync + 'static,

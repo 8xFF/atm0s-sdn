@@ -23,6 +23,7 @@ impl Entry {
         matches!(&self.state, &EntryState::Connected { .. })
     }
 
+    #[allow(unused)]
     pub fn is_connecting(&self) -> bool {
         matches!(&self.state, &EntryState::Connecting { .. })
     }

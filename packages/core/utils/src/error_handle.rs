@@ -1,9 +1,19 @@
+use std::fmt::Debug;
+
 pub trait ErrorUtils {
-    fn print_error(&self);
+    fn print_error(&self, msg: &str);
 }
 
-impl ErrorUtils for Box<dyn std::error::Error> {
-    fn print_error(&self) {
-        log::error!("Error: {}", self);
+impl<T, E> ErrorUtils for Result<T, E>
+where
+    E: Debug,
+{
+    fn print_error(&self, msg: &str) {
+        match self {
+            Ok(_) => {}
+            Err(e) => {
+                log::error!("Error: {} {:?}", msg, e);
+            }
+        }
     }
 }

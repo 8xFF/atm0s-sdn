@@ -3,8 +3,8 @@ use multiaddr::*;
 use quickcheck::{Arbitrary, Gen, QuickCheck};
 use std::{
     borrow::Cow,
-    convert::{TryFrom, TryInto},
-    iter::{self, FromIterator},
+    convert::TryFrom,
+    iter::FromIterator,
     net::{Ipv4Addr, Ipv6Addr},
     str::FromStr,
 };

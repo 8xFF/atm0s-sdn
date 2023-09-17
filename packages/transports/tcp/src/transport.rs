@@ -1,14 +1,14 @@
-use crate::connection::{TcpConnectionSender, TcpConnectionReceiver};
+use crate::connection::{TcpConnectionReceiver, TcpConnectionSender};
 use crate::connector::TcpConnector;
 use crate::handshake::incoming_handshake;
 use crate::msg::TcpMsg;
 use async_bincode::futures::AsyncBincodeStream;
 use async_std::channel::{unbounded, Receiver, Sender};
 use async_std::net::TcpListener;
-use bluesea_identity::{NodeAddrBuilder, NodeId, Protocol, ConnId};
+use bluesea_identity::{ConnId, NodeAddrBuilder, NodeId, Protocol};
 use futures_util::FutureExt;
 use network::transport::{Transport, TransportConnector, TransportEvent};
-use std::net::{Ipv4Addr, SocketAddr, Shutdown};
+use std::net::{Ipv4Addr, Shutdown, SocketAddr};
 use std::sync::Arc;
 use utils::{SystemTimer, Timer};
 

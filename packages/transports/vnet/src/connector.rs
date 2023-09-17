@@ -1,6 +1,6 @@
 use crate::earth::VnetEarth;
 use bluesea_identity::Protocol;
-use network::transport::{OutgoingConnectionError, TransportConnector, TransportConnectingOutgoing};
+use network::transport::{OutgoingConnectionError, TransportConnectingOutgoing, TransportConnector};
 use std::sync::Arc;
 
 pub struct VnetConnector {
@@ -8,8 +8,7 @@ pub struct VnetConnector {
     pub(crate) earth: Arc<VnetEarth>,
 }
 
-impl TransportConnector for VnetConnector
-{
+impl TransportConnector for VnetConnector {
     fn connect_to(&self, node_id: bluesea_identity::NodeId, addr: bluesea_identity::NodeAddr) -> Result<TransportConnectingOutgoing, OutgoingConnectionError> {
         for protocol in &addr {
             match protocol {

@@ -1,8 +1,9 @@
+use crate::msg::TransportMsg;
 use async_std::channel::{bounded, Receiver, Sender};
 use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use std::sync::Arc;
 use thiserror::Error;
-use crate::msg::TransportMsg;
+use utils::error_handle::ErrorUtils;
 
 pub struct TransportConnectingOutgoing {
     pub conn_id: ConnId,
@@ -109,10 +110,10 @@ impl AsyncConnectionAcceptor {
 
 impl ConnectionAcceptor for AsyncConnectionAcceptor {
     fn accept(&self) {
-        self.sender.send_blocking(Ok(()));
+        self.sender.send_blocking(Ok(())).print_error("Should send accept");
     }
 
     fn reject(&self, err: ConnectionRejectReason) {
-        self.sender.send_blocking(Err(err));
+        self.sender.send_blocking(Err(err)).print_error("Should send reject");
     }
 }

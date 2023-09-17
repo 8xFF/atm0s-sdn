@@ -1,5 +1,5 @@
 use crate::internal::agent::{BehaviorAgent, ConnectionAgent};
-use crate::transport::{ConnectionAcceptor, ConnectionEvent, ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer};
+use crate::transport::{ConnectionEvent, ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer};
 use bluesea_identity::{ConnId, NodeId};
 use std::sync::Arc;
 

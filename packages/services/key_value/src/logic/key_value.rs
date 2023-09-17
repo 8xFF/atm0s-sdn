@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use bluesea_identity::NodeId;
+use serde::{Deserialize, Serialize};
 
 use crate::{KeyId, ValueType};
 

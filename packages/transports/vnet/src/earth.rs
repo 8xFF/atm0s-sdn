@@ -30,8 +30,7 @@ impl Default for VnetEarth {
     }
 }
 
-impl VnetEarth
-{
+impl VnetEarth {
     pub fn create_listener(&self, port: u64, node: NodeId, addr: NodeAddr) -> VnetListener {
         let (tx, rx) = unbounded();
         self.ports.write().insert(port, Socket { node, addr, sender: tx });

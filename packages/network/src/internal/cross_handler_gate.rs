@@ -1,10 +1,10 @@
+use crate::msg::TransportMsg;
 use crate::transport::ConnectionSender;
 use async_std::channel::{unbounded, Receiver, Sender};
 use bluesea_identity::{ConnId, NodeId};
 use bluesea_router::{RouteAction, RouterTable};
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::msg::TransportMsg;
 
 pub(crate) enum CrossHandlerEvent<HE> {
     FromBehavior(HE),
@@ -66,7 +66,7 @@ where
     }
 
     pub(crate) fn close_conn(&self, conn: ConnId) {
-        if let Some((s, c_s)) = self.conns.get(&conn) {
+        if let Some((_s, c_s)) = self.conns.get(&conn) {
             log::info!("[CrossHandlerGate] close_con {} {}", c_s.remote_node_id(), conn);
             c_s.close();
         } else {
@@ -76,7 +76,7 @@ where
 
     pub(crate) fn close_node(&self, node: NodeId) {
         if let Some(conns) = self.nodes.get(&node) {
-            for (_conn_id, (s, c_s)) in conns {
+            for (_conn_id, (_s, c_s)) in conns {
                 log::info!("[CrossHandlerGate] close_node {} {}", node, c_s.conn_id());
                 c_s.close();
             }
@@ -88,7 +88,7 @@ where
         match route {
             CrossHandlerRoute::NodeFirst(node_id) => {
                 if let Some(node) = self.nodes.get(&node_id) {
-                    if let Some((s, c_s)) = node.values().next() {
+                    if let Some((s, _c_s)) = node.values().next() {
                         if let Err(e) = s.send_blocking((service_id, event)) {
                             log::error!("[CrossHandlerGate] send to handle error {:?}", e);
                         } else {
@@ -102,7 +102,7 @@ where
                 }
             }
             CrossHandlerRoute::Conn(conn) => {
-                if let Some((s, c_s)) = self.conns.get(&conn) {
+                if let Some((s, _c_s)) = self.conns.get(&conn) {
                     if let Err(e) = s.send_blocking((service_id, event)) {
                         log::error!("[CrossHandlerGate] send to handle error {:?}", e);
                     } else {
@@ -123,7 +123,7 @@ where
             RouteAction::Local => {
                 todo!()
             }
-            RouteAction::Next(conn, node) => {
+            RouteAction::Next(conn, _node) => {
                 if let Some((_s, c_s)) = self.conns.get(&conn) {
                     c_s.send(msg);
                     return Some(());

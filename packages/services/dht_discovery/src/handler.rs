@@ -12,6 +12,7 @@ impl DiscoveryConnectionHandler {
     }
 }
 
+#[allow(unused_variables)]
 impl<BE, HE> ConnectionHandler<BE, HE> for DiscoveryConnectionHandler
 where
     BE: TryInto<DiscoveryBehaviorEvent> + From<DiscoveryBehaviorEvent> + Send + Sync + 'static,
@@ -27,7 +28,7 @@ where
                 // if let Ok(msg) = msg..try_into() {
                 //     agent.send_behavior(DiscoveryBehaviorEvent::OnNetworkMessage(msg).into());
                 // }
-            },
+            }
             ConnectionEvent::Stats(stats) => {}
         }
     }

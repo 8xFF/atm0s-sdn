@@ -5,7 +5,7 @@ use async_bincode::futures::AsyncBincodeStream;
 use async_std::channel::Sender;
 use async_std::net::{Shutdown, TcpStream};
 use bluesea_identity::{ConnId, NodeAddr, NodeAddrBuilder, NodeId, Protocol};
-use network::transport::{AsyncConnectionAcceptor, ConnectionRejectReason, OutgoingConnectionError, TransportConnector, TransportEvent, TransportConnectingOutgoing};
+use network::transport::{AsyncConnectionAcceptor, ConnectionRejectReason, OutgoingConnectionError, TransportConnectingOutgoing, TransportConnector, TransportEvent};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;

@@ -1,5 +1,5 @@
 use crate::transport::{RpcAnswer, TransportRpc};
-use async_std::channel::{unbounded, Receiver, RecvError, Sender};
+use async_std::channel::{unbounded, Receiver, Sender};
 use parking_lot::Mutex;
 use std::collections::VecDeque;
 use std::sync::Arc;

@@ -1,7 +1,7 @@
+use bluesea_identity::NodeId;
 use bluesea_router::RouteRule;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use bluesea_identity::NodeId;
 
 pub const DEFAULT_MSG_TTL: u8 = 64;
 
@@ -11,7 +11,6 @@ pub enum MsgHeaderError {
     InvalidRoute,
     TooSmall,
 }
-
 
 /// Fixed Header Fields
 ///     0                   1                   2                   3
@@ -137,7 +136,15 @@ impl MsgHeader {
                 from_node,
                 validate_code,
             },
-            12 + if from_node.is_some() { 4 } else { 0 } + if validate_code.is_some() { 4 } else { 0 },
+            12 + if from_node.is_some() {
+                4
+            } else {
+                0
+            } + if validate_code.is_some() {
+                4
+            } else {
+                0
+            },
         ))
     }
 
@@ -177,7 +184,17 @@ impl MsgHeader {
         if let Some(validate_code) = self.validate_code {
             output[16..20].copy_from_slice(&validate_code.to_be_bytes());
         }
-        Some(12 + if self.from_node.is_some() { 4 } else { 0 } + if self.validate_code.is_some() { 4 } else { 0 })
+        Some(
+            12 + if self.from_node.is_some() {
+                4
+            } else {
+                0
+            } + if self.validate_code.is_some() {
+                4
+            } else {
+                0
+            },
+        )
     }
 
     pub fn rewrite_route(buf: &mut [u8], new_route: RouteRule) -> Option<()> {
@@ -211,7 +228,15 @@ impl MsgHeader {
 
     // return actual size
     pub fn serialize_size(&self) -> usize {
-        12 + if self.from_node.is_some() { 4 } else { 0 } + if self.validate_code.is_some() { 4 } else { 0 }
+        12 + if self.from_node.is_some() {
+            4
+        } else {
+            0
+        } + if self.validate_code.is_some() {
+            4
+        } else {
+            0
+        }
     }
 }
 
@@ -426,11 +451,5 @@ mod tests {
         let buf = [0x04, 0x00, 0x00, 0x00];
         let err = MsgHeader::from_bytes(&buf).unwrap_err();
         assert_eq!(err, MsgHeaderError::InvalidRoute);
-    }
-
-    /// test seriaze TransportMsg then deseriaze with bincode
-    #[test]
-    fn test_serde() {
-        //TODO
     }
 }

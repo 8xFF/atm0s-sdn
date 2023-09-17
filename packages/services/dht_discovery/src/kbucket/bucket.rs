@@ -3,6 +3,7 @@ use crate::kbucket::K_BUCKET;
 use bluesea_identity::{NodeAddr, NodeId};
 
 pub struct KBucket {
+    #[allow(unused)]
     distance_bits: usize,
     slots: [Entry; K_BUCKET],
 }

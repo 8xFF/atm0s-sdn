@@ -9,10 +9,10 @@ pub use transport::TcpTransport;
 #[cfg(test)]
 mod tests {
     use crate::transport::TcpTransport;
-    use bluesea_identity::{NodeAddrBuilder, NodeAddr, Protocol};
+    use bluesea_identity::{NodeAddr, NodeAddrBuilder, Protocol};
     use bluesea_router::RouteRule;
     use network::msg::TransportMsg;
-    use network::transport::{ConnectionEvent, Transport, TransportEvent, OutgoingConnectionError};
+    use network::transport::{ConnectionEvent, OutgoingConnectionError, Transport, TransportEvent};
     use serde::{Deserialize, Serialize};
 
     use std::net::Ipv4Addr;
@@ -25,12 +25,7 @@ mod tests {
     }
 
     fn create_reliable(msg: Msg) -> TransportMsg {
-        TransportMsg::build_reliable(
-            0, 
-            RouteRule::Direct, 
-            0, 
-            bincode::serialize(&msg).unwrap()
-        )
+        TransportMsg::build_reliable(0, RouteRule::Direct, 0, bincode::serialize(&msg).unwrap())
     }
 
     #[async_std::test]
@@ -95,10 +90,7 @@ mod tests {
             }
             tran2_sender.send(create_reliable(Msg::Ping));
             let received_event = tran2_recv.poll().await.unwrap();
-            assert_eq!(
-                received_event,
-                ConnectionEvent::Msg(create_reliable(Msg::Ping))
-            );
+            assert_eq!(received_event, ConnectionEvent::Msg(create_reliable(Msg::Ping)));
             assert_eq!(tran2_recv.poll().await, Err(()));
         });
 
@@ -108,10 +100,7 @@ mod tests {
         }
 
         let received_event = tran1_recv.poll().await.unwrap();
-        assert_eq!(
-            received_event,
-            ConnectionEvent::Msg(create_reliable(Msg::Ping))
-        );
+        assert_eq!(received_event, ConnectionEvent::Msg(create_reliable(Msg::Ping)));
 
         tran1_sender.send(create_reliable(Msg::Ping));
 
