@@ -93,24 +93,20 @@ where
     fn process_transport_event(&mut self, e: Result<TransportEvent, ()>) -> Result<(), ()> {
         let (outgoing, sender, mut receiver, mut handlers, conn_internal_rx) = match e? {
             TransportEvent::IncomingRequest(node, conn_id, acceptor) => {
-                for behaviour in &mut self.behaviors {
-                    if let Some((behaviour, _agent)) = behaviour {
-                        if let Err(err) = behaviour.check_incoming_connection(node, conn_id) {
-                            acceptor.reject(err);
-                            return Ok(());
-                        }
+                for (behaviour, _agent) in self.behaviors.iter_mut().flatten() {
+                    if let Err(err) = behaviour.check_incoming_connection(node, conn_id) {
+                        acceptor.reject(err);
+                        return Ok(());
                     }
                 }
                 acceptor.accept();
                 return Ok(());
             }
             TransportEvent::OutgoingRequest(node, conn_id, acceptor) => {
-                for behaviour in &mut self.behaviors {
-                    if let Some((behaviour, _agent)) = behaviour {
-                        if let Err(err) = behaviour.check_outgoing_connection(node, conn_id) {
-                            acceptor.reject(err);
-                            return Ok(());
-                        }
+                for (behaviour, _agent) in self.behaviors.iter_mut().flatten() {
+                    if let Err(err) = behaviour.check_outgoing_connection(node, conn_id) {
+                        acceptor.reject(err);
+                        return Ok(());
                     }
                 }
                 acceptor.accept();
@@ -123,19 +119,17 @@ where
                 drop(cross_gate);
                 if let Some(rx) = rx {
                     let mut handlers: Vec<Option<(Box<dyn ConnectionHandler<BE, HE>>, ConnectionAgent<BE, HE>)>> = init_vec(256, || None);
-                    for behaviour in &mut self.behaviors {
-                        if let Some((behaviour, agent)) = behaviour {
-                            let conn_agent = ConnectionAgent::<BE, HE>::new(
-                                behaviour.service_id(),
-                                self.local_node_id,
-                                receiver.remote_node_id(),
-                                receiver.conn_id(),
-                                sender.clone(),
-                                self.internal_tx.clone(),
-                                self.cross_gate.clone(),
-                            );
-                            handlers[behaviour.service_id() as usize] = behaviour.on_incoming_connection_connected(agent, sender.clone()).map(|h| (h, conn_agent));
-                        }
+                    for (behaviour, agent) in self.behaviors.iter_mut().flatten() {
+                        let conn_agent = ConnectionAgent::<BE, HE>::new(
+                            behaviour.service_id(),
+                            self.local_node_id,
+                            receiver.remote_node_id(),
+                            receiver.conn_id(),
+                            sender.clone(),
+                            self.internal_tx.clone(),
+                            self.cross_gate.clone(),
+                        );
+                        handlers[behaviour.service_id() as usize] = behaviour.on_incoming_connection_connected(agent, sender.clone()).map(|h| (h, conn_agent));
                     }
                     (false, sender, receiver, handlers, rx)
                 } else {
@@ -149,19 +143,17 @@ where
                 drop(cross_gate);
                 if let Some(rx) = rx {
                     let mut handlers: Vec<Option<(Box<dyn ConnectionHandler<BE, HE>>, ConnectionAgent<BE, HE>)>> = init_vec(256, || None);
-                    for behaviour in &mut self.behaviors {
-                        if let Some((behaviour, agent)) = behaviour {
-                            let conn_agent = ConnectionAgent::<BE, HE>::new(
-                                behaviour.service_id(),
-                                self.local_node_id,
-                                receiver.remote_node_id(),
-                                receiver.conn_id(),
-                                sender.clone(),
-                                self.internal_tx.clone(),
-                                self.cross_gate.clone(),
-                            );
-                            handlers[behaviour.service_id() as usize] = behaviour.on_outgoing_connection_connected(agent, sender.clone()).map(|h| (h, conn_agent));
-                        }
+                    for (behaviour, agent) in self.behaviors.iter_mut().flatten() {
+                        let conn_agent = ConnectionAgent::<BE, HE>::new(
+                            behaviour.service_id(),
+                            self.local_node_id,
+                            receiver.remote_node_id(),
+                            receiver.conn_id(),
+                            sender.clone(),
+                            self.internal_tx.clone(),
+                            self.cross_gate.clone(),
+                        );
+                        handlers[behaviour.service_id() as usize] = behaviour.on_outgoing_connection_connected(agent, sender.clone()).map(|h| (h, conn_agent));
                     }
                     (true, sender, receiver, handlers, rx)
                 } else {
@@ -171,10 +163,8 @@ where
             }
             TransportEvent::OutgoingError { node_id, conn_id, err } => {
                 log::info!("[NetworkPlane] received TransportEvent::OutgoingError({}, {})", node_id, conn_id);
-                for behaviour in &mut self.behaviors {
-                    if let Some((behaviour, agent)) = behaviour {
-                        behaviour.on_outgoing_connection_error(agent, node_id, conn_id, &err);
-                    }
+                for (behaviour, agent) in self.behaviors.iter_mut().flatten() {
+                    behaviour.on_outgoing_connection_error(agent, node_id, conn_id, &err);
                 }
                 return Ok(());
             }
@@ -187,20 +177,18 @@ where
         let cross_gate = self.cross_gate.clone();
         async_std::task::spawn(async move {
             log::info!("[NetworkPlane] fire handlers on_opened ({}, {})", receiver.remote_node_id(), receiver.conn_id());
-            for handler in &mut handlers {
-                if let Some((handler, conn_agent)) = handler {
-                    handler.on_opened(conn_agent);
-                }
+
+            for (handler, conn_agent) in handlers.iter_mut().flatten() {
+                handler.on_opened(conn_agent);
             }
+
             let mut tick_interval = async_std::stream::interval(Duration::from_millis(tick_ms));
             loop {
                 select! {
                     _ = tick_interval.next().fuse() => {
                         let ts_ms = timer.now_ms();
-                        for handler in &mut handlers {
-                            if let Some((handler, conn_agent)) = handler {
-                                handler.on_tick(conn_agent, ts_ms, tick_ms);
-                            }
+                        for (handler, conn_agent) in handlers.iter_mut().flatten() {
+                            handler.on_tick(conn_agent, ts_ms, tick_ms);
                         }
                     }
                     e = conn_internal_rx.recv().fuse() => {
@@ -209,7 +197,7 @@ where
                                 CrossHandlerEvent::FromBehavior(e) => {
                                     log::debug!("[NetworkPlane] fire handlers on_behavior_event for conn ({}, {}) from service {}", receiver.remote_node_id(), receiver.conn_id(), service_id);
                                     if let Some((handler, conn_agent)) = &mut handlers[service_id as usize] {
-                                        handler.on_behavior_event(&conn_agent, e);
+                                        handler.on_behavior_event(conn_agent, e);
                                     } else {
                                         debug_assert!(false, "service not found {}", service_id);
                                     }
@@ -217,7 +205,7 @@ where
                                 CrossHandlerEvent::FromHandler(node, conn, e) => {
                                     log::debug!("[NetworkPlane] fire handlers on_other_handler_event for conn ({}, {}) from service {}", receiver.remote_node_id(), receiver.conn_id(), service_id);
                                     if let Some((handler, conn_agent)) = &mut handlers[service_id as usize] {
-                                        handler.on_other_handler_event(&conn_agent, node, conn, e);
+                                        handler.on_other_handler_event(conn_agent, node, conn, e);
                                     } else {
                                         debug_assert!(false, "service not found {}", service_id);
                                     }
@@ -242,19 +230,16 @@ where
             log::info!("[NetworkPlane] fire handlers on_closed ({}, {})", receiver.remote_node_id(), receiver.conn_id());
             cross_gate.write().remove_conn(sender.remote_node_id(), sender.conn_id());
 
-            for handler in &mut handlers {
-                if let Some((handler, conn_agent)) = handler {
-                    handler.on_closed(&conn_agent);
-                }
+            for (handler, conn_agent) in handlers.iter_mut().flatten() {
+                handler.on_closed(conn_agent);
             }
+
             if outgoing {
                 if let Err(err) = internal_tx.send(NetworkPlaneInternalEvent::IncomingDisconnected(sender)).await {
                     log::error!("Sending IncomingDisconnected error {:?}", err);
                 }
-            } else {
-                if let Err(err) = internal_tx.send(NetworkPlaneInternalEvent::OutgoingDisconnected(sender)).await {
-                    log::error!("Sending OutgoingDisconnected error {:?}", err);
-                }
+            } else if let Err(err) = internal_tx.send(NetworkPlaneInternalEvent::OutgoingDisconnected(sender)).await {
+                log::error!("Sending OutgoingDisconnected error {:?}", err);
             }
         });
 
@@ -279,10 +264,8 @@ where
         select! {
             _ = self.tick_interval.next().fuse() => {
                 let ts_ms = self.timer.now_ms();
-                for behaviour in &mut self.behaviors {
-                    if let Some((behaviour, agent)) = behaviour {
-                        behaviour.on_tick(agent, ts_ms, self.tick_ms);
-                    }
+                for (behaviour, agent) in self.behaviors.iter_mut().flatten() {
+                    behaviour.on_tick(agent, ts_ms, self.tick_ms);
                 }
                 Ok(())
             }
@@ -292,19 +275,15 @@ where
             e =  self.internal_rx.recv().fuse() => match e {
                 Ok(NetworkPlaneInternalEvent::IncomingDisconnected(sender)) => {
                     log::info!("[NetworkPlane] received NetworkPlaneInternalEvent::IncomingDisconnected({}, {})", sender.remote_node_id(), sender.conn_id());
-                    for behaviour in &mut self.behaviors {
-                        if let Some((behaviour, agent)) = behaviour {
-                            behaviour.on_incoming_connection_disconnected(agent, sender.clone());
-                        }
+                    for (behaviour, agent) in self.behaviors.iter_mut().flatten() {
+                        behaviour.on_incoming_connection_disconnected(agent, sender.clone());
                     }
                     Ok(())
                 },
                 Ok(NetworkPlaneInternalEvent::OutgoingDisconnected(sender)) => {
                     log::info!("[NetworkPlane] received NetworkPlaneInternalEvent::OutgoingDisconnected({}, {})", sender.remote_node_id(), sender.conn_id());
-                    for behaviour in &mut self.behaviors {
-                        if let Some((behaviour, agent)) = behaviour {
-                            behaviour.on_outgoing_connection_disconnected(agent, sender.clone());
-                        }
+                    for (behaviour, agent) in self.behaviors.iter_mut().flatten() {
+                        behaviour.on_outgoing_connection_disconnected(agent, sender.clone());
                     }
                     Ok(())
                 },
@@ -327,7 +306,7 @@ where
 
 fn process_conn_msg<BE, HE>(
     event: ConnectionEvent,
-    handlers: &mut Vec<Option<(Box<dyn ConnectionHandler<BE, HE>>, ConnectionAgent<BE, HE>)>>,
+    handlers: &mut [Option<(Box<dyn ConnectionHandler<BE, HE>>, ConnectionAgent<BE, HE>)>],
     _sender: &Arc<dyn ConnectionSender>,
     receiver: &Box<dyn ConnectionReceiver + Send>,
     router: &Arc<dyn RouterTable>,
@@ -347,7 +326,7 @@ fn process_conn_msg<BE, HE>(
                     msg.header.service_id
                 );
                 if let Some((handler, conn_agent)) = &mut handlers[msg.header.service_id as usize] {
-                    handler.on_event(&conn_agent, event);
+                    handler.on_event(conn_agent, event);
                 } else {
                     debug_assert!(false, "service not found {}", msg.header.service_id);
                 }
@@ -359,10 +338,8 @@ fn process_conn_msg<BE, HE>(
         },
         ConnectionEvent::Stats(stats) => {
             log::debug!("[NetworkPlane] fire handlers on_event network stats for conn ({}, {})", receiver.remote_node_id(), receiver.conn_id());
-            for handler in handlers {
-                if let Some((handler, conn_agent)) = handler {
-                    handler.on_event(&conn_agent, ConnectionEvent::Stats(stats.clone()));
-                }
+            for (handler, conn_agent) in handlers.iter_mut().flatten() {
+                handler.on_event(conn_agent, ConnectionEvent::Stats(stats.clone()));
             }
         }
     }

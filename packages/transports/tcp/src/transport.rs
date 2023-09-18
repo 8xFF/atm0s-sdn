@@ -35,10 +35,8 @@ impl TcpTransport {
         node_addr_builder.add_protocol(Protocol::Ip4(Ipv4Addr::new(127, 0, 0, 1)));
         if port != 0 {
             node_addr_builder.add_protocol(Protocol::Tcp(port));
-        } else {
-            if let Ok(addr) = listener.local_addr() {
-                node_addr_builder.add_protocol(Protocol::Tcp(addr.port()));
-            }
+        } else if let Ok(addr) = listener.local_addr() {
+            node_addr_builder.add_protocol(Protocol::Tcp(addr.port()));
         }
 
         Self {

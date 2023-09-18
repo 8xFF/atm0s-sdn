@@ -24,24 +24,15 @@ pub enum RouteAction {
 
 impl RouteAction {
     pub fn is_local(&self) -> bool {
-        match self {
-            RouteAction::Local => true,
-            _ => false,
-        }
+        matches!(self, RouteAction::Local)
     }
 
     pub fn is_reject(&self) -> bool {
-        match self {
-            RouteAction::Reject => true,
-            _ => false,
-        }
+        matches!(self, RouteAction::Reject)
     }
 
     pub fn is_remote(&self) -> bool {
-        match self {
-            RouteAction::Next(_, _) => true,
-            _ => false,
-        }
+        matches!(self, RouteAction::Next(_, _))
     }
 }
 

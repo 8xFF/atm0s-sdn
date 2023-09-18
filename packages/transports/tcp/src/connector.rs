@@ -84,7 +84,7 @@ impl TransportConnector for TcpConnector {
                 internal_tx
                     .send(TransportEvent::OutgoingError {
                         node_id: remote_node_id,
-                        conn_id: conn_id,
+                        conn_id,
                         err: OutgoingConnectionError::BehaviorRejected(ConnectionRejectReason::Custom("LocalReject".to_string())),
                     })
                     .await
@@ -118,7 +118,7 @@ impl TransportConnector for TcpConnector {
                             internal_tx
                                 .send(TransportEvent::OutgoingError {
                                     node_id: remote_node_id,
-                                    conn_id: conn_id,
+                                    conn_id,
                                     err: match err {
                                         OutgoingHandshakeError::SocketError => OutgoingConnectionError::DestinationNotFound,
                                         OutgoingHandshakeError::Timeout => OutgoingConnectionError::AuthenticationError,
@@ -137,7 +137,7 @@ impl TransportConnector for TcpConnector {
                     internal_tx
                         .send(TransportEvent::OutgoingError {
                             node_id: remote_node_id,
-                            conn_id: conn_id,
+                            conn_id,
                             err: OutgoingConnectionError::DestinationNotFound,
                         })
                         .await
@@ -145,6 +145,6 @@ impl TransportConnector for TcpConnector {
                 }
             }
         });
-        Ok(TransportConnectingOutgoing { conn_id: conn_id })
+        Ok(TransportConnectingOutgoing { conn_id })
     }
 }

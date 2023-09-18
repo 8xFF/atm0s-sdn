@@ -15,20 +15,11 @@ pub(crate) struct Socket {
     sender: Sender<VnetListenerEvent>,
 }
 
+#[derive(Default)]
 pub struct VnetEarth {
     pub(crate) conn_id_seed: AtomicU64,
     pub(crate) ports: RwLock<HashMap<u64, Socket>>,
     pub(crate) connections: Arc<RwLock<HashMap<ConnId, (NodeId, NodeId)>>>,
-}
-
-impl Default for VnetEarth {
-    fn default() -> Self {
-        Self {
-            conn_id_seed: Default::default(),
-            ports: Default::default(),
-            connections: Default::default(),
-        }
-    }
 }
 
 impl VnetEarth {

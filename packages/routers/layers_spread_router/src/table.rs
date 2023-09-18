@@ -103,7 +103,7 @@ impl Table {
             }
         }
 
-        for i in 0..=255 as u8 {
+        for i in 0..=255_u8 {
             if i == self.node_id.layer(self.layer) {
                 continue;
             }
@@ -155,12 +155,10 @@ impl Table {
 
     pub fn dump(&self) {
         let mut slots = vec![];
-        let mut index = 0;
-        for dest in &self.dests {
+        for (index, dest) in self.dests.iter().enumerate() {
             if !dest.is_empty() {
                 slots.push(index);
             }
-            index += 1;
         }
         log::info!("[Table {}/{}/{}] slots: {:?}", self.node_id, self.layer, self.node_id.layer(self.layer), slots);
     }

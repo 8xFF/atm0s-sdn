@@ -26,12 +26,7 @@ impl KBucket {
 
     /// Checking if has empty slot
     pub fn has_empty(&self) -> Option<usize> {
-        for i in 0..self.slots.len() {
-            if self.slots[i].is_empty() {
-                return Some(i);
-            }
-        }
-        return None;
+        self.slots.iter().position(|e| e.is_empty())
     }
 
     pub fn size(&self) -> u8 {
@@ -142,14 +137,11 @@ impl KBucket {
 
     pub fn remove_connecting_node(&mut self, new_distance: NodeId) -> bool {
         for slot in &mut self.slots {
-            match slot.state() {
-                EntryState::Connecting { distance, .. } => {
-                    if *distance == new_distance {
-                        slot.switch_state(EntryState::Empty);
-                        return true;
-                    }
+            if let EntryState::Connecting { distance, .. } = slot.state() {
+                if *distance == new_distance {
+                    slot.switch_state(EntryState::Empty);
+                    return true;
                 }
-                _ => {}
             }
         }
         false
@@ -157,14 +149,11 @@ impl KBucket {
 
     pub fn remove_connected_node(&mut self, new_distance: NodeId) -> bool {
         for slot in &mut self.slots {
-            match slot.state() {
-                EntryState::Connected { distance, .. } => {
-                    if *distance == new_distance {
-                        slot.switch_state(EntryState::Empty);
-                        return true;
-                    }
+            if let EntryState::Connected { distance, .. } = slot.state() {
+                if *distance == new_distance {
+                    slot.switch_state(EntryState::Empty);
+                    return true;
                 }
-                _ => {}
             }
         }
         false

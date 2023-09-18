@@ -143,9 +143,8 @@ where
 
     fn on_outgoing_connection_error(&mut self, _agent: &BehaviorAgent<HE>, node_id: NodeId, conn_id: ConnId, err: &OutgoingConnectionError) {
         if let Some(slot) = self.neighbours.get_mut(&node_id) {
-            match slot.outgoing {
-                OutgoingState::Connecting(_, _, count) => slot.outgoing = OutgoingState::ConnectError(self.timer.now_ms(), Some(conn_id), err.clone(), count),
-                _ => {}
+            if let OutgoingState::Connecting(_, _, count) = slot.outgoing {
+                slot.outgoing = OutgoingState::ConnectError(self.timer.now_ms(), Some(conn_id), err.clone(), count);
             }
         }
     }
@@ -179,14 +178,14 @@ where
                 }
                 ManualReq::GetNeighbors() => {
                     let mut addrs = vec![];
-                    for (_, slot) in &self.neighbours {
+                    for slot in self.neighbours.values() {
                         addrs.push(slot.addr.clone());
                     }
                     res.ok(ManualRes::GetNeighborsRes(addrs).into());
                 }
                 ManualReq::GetConnections() => {
                     let mut conns = vec![];
-                    for (_, slot) in &self.neighbours {
+                    for slot in self.neighbours.values() {
                         if let Some(conn) = slot.incoming {
                             conns.push((conn, slot.addr.clone(), ConnectionState::IncomingConnected));
                         }
@@ -197,10 +196,8 @@ where
                             OutgoingState::Connected(_, conn) => {
                                 conns.push((conn, slot.addr.clone(), ConnectionState::OutgoingConnected));
                             }
-                            OutgoingState::ConnectError(_, conn, _, _) => {
-                                if let Some(conn_id) = conn {
-                                    conns.push((conn_id, slot.addr.clone(), ConnectionState::OutgoingError));
-                                }
+                            OutgoingState::ConnectError(_, Some(conn_id), _, _) => {
+                                conns.push((conn_id, slot.addr.clone(), ConnectionState::OutgoingError));
                             }
                             _ => {}
                         }

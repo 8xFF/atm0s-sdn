@@ -128,12 +128,9 @@ impl FindKeyRequest {
 
     pub fn pop_connect(&mut self, ts: u64) -> Option<(NodeId, NodeAddr)> {
         for (node, addr, state) in &mut self.nodes {
-            match state {
-                NodeState::Waiting { .. } => {
-                    *state = NodeState::Connecting { at: ts };
-                    return Some((*node, addr.clone()));
-                }
-                _ => {}
+            if let NodeState::Waiting { .. } = state {
+                *state = NodeState::Connecting { at: ts };
+                return Some((*node, addr.clone()));
             }
         }
 
@@ -142,12 +139,9 @@ impl FindKeyRequest {
 
     pub fn pop_request(&mut self, ts: u64) -> Option<NodeId> {
         for (node, _addr, state) in &mut self.nodes {
-            match state {
-                NodeState::Connected { .. } => {
-                    *state = NodeState::Requesting { at: ts };
-                    return Some(*node);
-                }
-                _ => {}
+            if let NodeState::Connected { .. } = state {
+                *state = NodeState::Requesting { at: ts };
+                return Some(*node);
             }
         }
 
@@ -156,14 +150,11 @@ impl FindKeyRequest {
 
     pub fn on_connected_node(&mut self, ts: u64, from_node: NodeId) -> bool {
         for (node, _addr, state) in &mut self.nodes {
-            match state {
-                NodeState::Connecting { .. } => {
-                    if *node == from_node {
-                        *state = NodeState::Connected { at: ts };
-                        return true;
-                    }
+            if let NodeState::Connecting { .. } = state {
+                if *node == from_node {
+                    *state = NodeState::Connected { at: ts };
+                    return true;
                 }
-                _ => {}
             }
         }
 
@@ -172,14 +163,11 @@ impl FindKeyRequest {
 
     pub fn on_connect_error_node(&mut self, ts: u64, from_node: NodeId) -> bool {
         for (node, _addr, state) in &mut self.nodes {
-            match state {
-                NodeState::Connecting { .. } => {
-                    if *node == from_node {
-                        *state = NodeState::ConnectError { at: ts };
-                        return true;
-                    }
+            if let NodeState::Connecting { .. } = state {
+                if *node == from_node {
+                    *state = NodeState::ConnectError { at: ts };
+                    return true;
                 }
-                _ => {}
             }
         }
 
@@ -188,17 +176,14 @@ impl FindKeyRequest {
 
     pub fn on_answered_node(&mut self, ts: u64, from_node: NodeId, res: Vec<(NodeId, NodeAddr, bool)>) -> bool {
         for (node, _addr, state) in &mut self.nodes {
-            match state {
-                NodeState::Requesting { .. } => {
-                    if *node == from_node {
-                        *state = NodeState::ReceivedAnswer { at: ts };
-                        for (node, addr, connected) in res {
-                            self.push_node(ts, node, addr, connected);
-                        }
-                        return true;
+            if let NodeState::Requesting { .. } = state {
+                if *node == from_node {
+                    *state = NodeState::ReceivedAnswer { at: ts };
+                    for (node, addr, connected) in res {
+                        self.push_node(ts, node, addr, connected);
                     }
+                    return true;
                 }
-                _ => {}
             }
         }
 

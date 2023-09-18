@@ -191,7 +191,7 @@ impl KBucketTableWrap {
     pub fn remove_timeout_nodes(&mut self) -> Vec<NodeId> {
         let mut removed = self.table.remove_timeout_nodes();
         for key in &mut removed {
-            *key = *key ^ self.local_node_id
+            *key ^= self.local_node_id
         }
         removed
     }
@@ -199,7 +199,7 @@ impl KBucketTableWrap {
     pub fn closest_nodes(&self, key: NodeId) -> Vec<(NodeId, NodeAddr, bool)> {
         let mut closest = self.table.closest_nodes(key ^ self.local_node_id);
         for (key, _, _) in &mut closest {
-            *key = *key ^ self.local_node_id
+            *key ^= self.local_node_id
         }
         closest
     }

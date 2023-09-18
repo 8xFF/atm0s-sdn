@@ -1,4 +1,4 @@
-///! Implementation of [multiaddr](https://github.com/multiformats/multiaddr) in Rust.
+//! Implementation of [multiaddr](https://github.com/multiformats/multiaddr) in Rust.
 mod errors;
 mod protocol;
 
@@ -57,7 +57,7 @@ impl Multiaddr {
 
     /// Returns true if the length of this multiaddress is 0.
     pub fn is_empty(&self) -> bool {
-        self.bytes.len() == 0
+        self.bytes.is_empty()
     }
 
     /// Return a copy of this [`Multiaddr`]'s byte representation.

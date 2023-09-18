@@ -63,12 +63,12 @@ impl Registry {
             }
         }
 
-        for i in 0..=255 as u8 {
+        for i in 0..=255_u8 {
             let dest: &mut Dest = &mut self.remote_destinations[i as usize];
             match cached.remove(&i) {
                 None => {
                     if !dest.is_empty() {
-                        if let Some(_) = dest.del_path(src_conn) {
+                        if dest.del_path(src_conn).is_some() {
                             log::info!("[Registry] removed service {} from dest {} after sync", i, src);
                         }
                     }
@@ -102,23 +102,19 @@ impl Registry {
 
     pub fn dump(&self) {
         let mut local_services = vec![];
-        let mut index = 0;
-        for service_id in &self.local_destinations {
+        for (index, service_id) in self.local_destinations.iter().enumerate() {
             if *service_id {
                 local_services.push(index);
             }
-            index += 1;
         }
 
         let mut slots = vec![];
         let mut nexts = vec![];
-        let mut index = 0;
-        for dest in &self.remote_destinations {
+        for (index, dest) in self.remote_destinations.iter().enumerate() {
             if !dest.is_empty() {
                 slots.push(index);
                 nexts.push(dest.next(&vec![]));
             }
-            index += 1;
         }
         log::info!("[Registry {}] local services: {:?} remote services: {:?}, nexts {:?}", self.node_id, local_services, slots, nexts);
     }

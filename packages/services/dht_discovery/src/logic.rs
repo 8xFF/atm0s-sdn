@@ -120,10 +120,8 @@ impl DiscoveryLogic {
                 let mut ended_reqs = vec![];
                 for removed_node in removed_nodes {
                     for (req_id, req) in &mut self.request_memory {
-                        if req.on_connect_error_node(ts, removed_node) {
-                            if req.is_ended(ts) {
-                                ended_reqs.push(*req_id);
-                            }
+                        if req.on_connect_error_node(ts, removed_node) && req.is_ended(ts) {
+                            ended_reqs.push(*req_id);
                         }
                     }
                 }
@@ -132,10 +130,10 @@ impl DiscoveryLogic {
                 }
 
                 //If has other request => don't refresh
-                if self.table.connected_size() > 0 && self.request_memory.len() == 0 {
+                if self.table.connected_size() > 0 && self.request_memory.is_empty() {
                     //because of bucket_index from 1 to 32 but refresh_bucket_index from 0 to 31
                     let refresh_index = self.refresh_bucket_index + 1;
-                    assert!(refresh_index >= 1 && refresh_index <= 32);
+                    assert!((1..=32).contains(&refresh_index));
                     let key = u32::MAX >> (32 - refresh_index);
                     self.locate_key(key & self.local_node_id);
                     self.refresh_bucket_index = (self.refresh_bucket_index + 1) % 32;
@@ -180,7 +178,7 @@ impl DiscoveryLogic {
             Input::OnConnected(node, address) => {
                 if self.table.add_node_connected(node, address) {
                     let now_ms = self.timer.now_ms();
-                    for (_req_id, req) in &mut self.request_memory {
+                    for req in self.request_memory.values_mut() {
                         if req.on_connected_node(now_ms, node) {
                             Self::process_request(now_ms, req, &mut self.table, &mut self.action_queues);
                         }

@@ -51,11 +51,11 @@ impl NodeIdType for NodeId {
     }
 
     fn build(geo1: u8, geo2: u8, group: u8, index: u8) -> Self {
-        ((geo1 as u32) << 8 * 3) | ((geo2 as u32) << 8 * 2) | ((group as u32) << 8 * 1) | (index as u32)
+        ((geo1 as u32) << 8 * 3) | ((geo2 as u32) << 8 * 2) | ((group as u32) << 8) | (index as u32)
     }
 
     fn build2(zone_id: u16, group: u8, index: u8) -> Self {
-        ((zone_id as u32) << 16) | ((group as u32) << 8 * 1) | (index as u32)
+        ((zone_id as u32) << 16) | ((group as u32) << 8) | (index as u32)
     }
 
     fn geo1(&self) -> u8 {
@@ -67,7 +67,7 @@ impl NodeIdType for NodeId {
     }
 
     fn group(&self) -> u8 {
-        (*self >> 8 * 1) as u8
+        (*self >> 8) as u8
     }
 
     fn index(&self) -> u8 {
@@ -91,7 +91,7 @@ impl NodeIdType for NodeId {
             return 1;
         }
 
-        return 0;
+        0
     }
 }
 

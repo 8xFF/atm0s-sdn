@@ -70,7 +70,7 @@ impl TcpConnectionSender {
                 };
 
                 match msg {
-                    Ok(OutgoingEvent::Msg(msg)) => if let Err(_) = send_tcp_stream(&mut socket, msg).await {},
+                    Ok(OutgoingEvent::Msg(msg)) => send_tcp_stream(&mut socket, msg).await.print_error("Should send tcp stream"),
                     Ok(OutgoingEvent::CloseRequest) => {
                         if let Err(e) = socket.get_mut().shutdown(Shutdown::Both) {
                             log::error!("[TcpConnectionSender {} => {}] close sender error {}", node_id, remote_node_id, e);
@@ -90,7 +90,6 @@ impl TcpConnectionSender {
                 }
             }
             log::info!("[TcpConnectionSender {} => {}] stop sending loop", node_id, remote_node_id);
-            ()
         });
 
         (
@@ -127,12 +126,10 @@ impl ConnectionSender for TcpConnectionSender {
             } else {
                 log::debug!("[ConnectionSender] send reliable msg");
             }
+        } else if let Err(e) = self.unreliable_sender.try_send(OutgoingEvent::Msg(TcpMsg::Msg(msg.take()))) {
+            log::error!("[ConnectionSender] send unreliable msg error {:?}", e);
         } else {
-            if let Err(e) = self.unreliable_sender.try_send(OutgoingEvent::Msg(TcpMsg::Msg(msg.take()))) {
-                log::error!("[ConnectionSender] send unreliable msg error {:?}", e);
-            } else {
-                log::debug!("[ConnectionSender] send unreliable msg");
-            }
+            log::debug!("[ConnectionSender] send unreliable msg");
         }
     }
 

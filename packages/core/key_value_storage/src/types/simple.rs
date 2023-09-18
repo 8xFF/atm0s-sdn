@@ -146,7 +146,7 @@ where
     }
 
     pub fn subscribe(&mut self, key: &K, handler_uuid: H, ex: Option<u64>) {
-        match self.keys.get_mut(&key) {
+        match self.keys.get_mut(key) {
             Some(slot) => {
                 slot.listeners.insert(
                     handler_uuid,
@@ -176,7 +176,7 @@ where
     }
 
     pub fn unsubscribe(&mut self, key: &K, handler_uuid: &H) -> bool {
-        match self.keys.get_mut(&key) {
+        match self.keys.get_mut(key) {
             None => false,
             Some(slot) => {
                 if slot.listeners.remove(handler_uuid).is_some() {

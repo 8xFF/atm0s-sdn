@@ -91,11 +91,8 @@ impl Transport for MockTransport {
                     let sender = self.sender.clone();
                     let (acceptor, acceptor_recv) = AsyncConnectionAcceptor::new();
                     async_std::task::spawn(async move {
-                        match acceptor_recv.recv().await {
-                            Ok(Ok(_)) => {
-                                sender.send_blocking(MockInput::FakeOutgoingConnectionForce(node, conn, addr)).unwrap();
-                            }
-                            _ => {}
+                        if let Ok(Ok(_)) = acceptor_recv.recv().await {
+                            sender.send_blocking(MockInput::FakeOutgoingConnectionForce(node, conn, addr)).unwrap();
                         }
                     });
                     break Ok(TransportEvent::OutgoingRequest(node, conn, acceptor));
@@ -144,11 +141,7 @@ impl Transport for MockTransport {
                 }
                 MockInput::FakeOutgoingConnectionError(node_id, connection_id, err) => {
                     self.out_conns.remove(&connection_id);
-                    break Ok(TransportEvent::OutgoingError {
-                        node_id: node_id,
-                        conn_id: connection_id,
-                        err,
-                    });
+                    break Ok(TransportEvent::OutgoingError { node_id, conn_id: connection_id, err });
                 }
                 MockInput::FakeIncomingMsg(conn, msg) => {
                     log::debug!("FakeIncomingMsg {} {}", msg.header.service_id, conn);

@@ -2,15 +2,9 @@ use crate::table::metric::Metric;
 use crate::table::Path;
 use bluesea_identity::{ConnId, NodeId};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Dest {
     paths: Vec<Path>,
-}
-
-impl Default for Dest {
-    fn default() -> Self {
-        Dest { paths: Default::default() }
-    }
 }
 
 impl Dest {
@@ -46,7 +40,7 @@ impl Dest {
     }
 
     /// get next node to dest but not in excepts
-    pub fn next(&self, excepts: &Vec<NodeId>) -> Option<(ConnId, NodeId)> {
+    pub fn next(&self, excepts: &[NodeId]) -> Option<(ConnId, NodeId)> {
         for path in self.paths.iter() {
             if !excepts.contains(&path.1) {
                 return Some((path.0, path.1));
@@ -64,7 +58,7 @@ impl Dest {
         None
     }
 
-    pub fn next_path(&self, excepts: &Vec<NodeId>) -> Option<Path> {
+    pub fn next_path(&self, excepts: &[NodeId]) -> Option<Path> {
         for path in self.paths.iter() {
             if !excepts.contains(&path.1) {
                 return Some(path.clone());

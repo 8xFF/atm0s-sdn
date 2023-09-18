@@ -55,7 +55,7 @@ impl KeyValueServer {
                             &self.random,
                             StorageActionRouting::Node(dest_node),
                             key,
-                            KeyValueClientEvent::NotifySet(key, value, version).into(),
+                            KeyValueClientEvent::NotifySet(key, value, version),
                             StorageActionRetryStrategy::Retry(10),
                         ));
                     }
@@ -66,7 +66,7 @@ impl KeyValueServer {
                             &self.random,
                             StorageActionRouting::Node(dest_node),
                             key,
-                            KeyValueClientEvent::NotifyDel(key, version).into(),
+                            KeyValueClientEvent::NotifyDel(key, version),
                             StorageActionRetryStrategy::Retry(10),
                         ));
                     }

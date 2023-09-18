@@ -36,11 +36,11 @@ where
     }
 
     pub(crate) fn add_conn(&mut self, net_sender: Arc<dyn ConnectionSender>) -> Option<Receiver<(u8, CrossHandlerEvent<HE>)>> {
-        if !self.conns.contains_key(&net_sender.conn_id()) {
+        if let std::collections::hash_map::Entry::Vacant(e) = self.conns.entry(net_sender.conn_id()) {
             log::info!("[CrossHandlerGate] add_con {} {}", net_sender.remote_node_id(), net_sender.conn_id());
             let (tx, rx) = unbounded();
-            let entry = self.nodes.entry(net_sender.remote_node_id()).or_insert_with(|| HashMap::new());
-            self.conns.insert(net_sender.conn_id(), (tx.clone(), net_sender.clone()));
+            let entry = self.nodes.entry(net_sender.remote_node_id()).or_insert_with(HashMap::new);
+            e.insert((tx.clone(), net_sender.clone()));
             entry.insert(net_sender.conn_id(), (tx.clone(), net_sender.clone()));
             Some(rx)
         } else {
@@ -53,7 +53,7 @@ where
         if self.conns.contains_key(&conn) {
             log::info!("[CrossHandlerGate] remove_con {} {}", node, conn);
             self.conns.remove(&conn);
-            let entry = self.nodes.entry(node).or_insert_with(|| HashMap::new());
+            let entry = self.nodes.entry(node).or_insert_with(HashMap::new);
             entry.remove(&conn);
             if entry.is_empty() {
                 self.nodes.remove(&node);
@@ -76,7 +76,7 @@ where
 
     pub(crate) fn close_node(&self, node: NodeId) {
         if let Some(conns) = self.nodes.get(&node) {
-            for (_conn_id, (_s, c_s)) in conns {
+            for (_s, c_s) in conns.values() {
                 log::info!("[CrossHandlerGate] close_node {} {}", node, c_s.conn_id());
                 c_s.close();
             }
@@ -126,7 +126,7 @@ where
             RouteAction::Next(conn, _node) => {
                 if let Some((_s, c_s)) = self.conns.get(&conn) {
                     c_s.send(msg);
-                    return Some(());
+                    Some(())
                 } else {
                     log::warn!("[CrossHandlerGate] send_to_net conn not found {}", conn);
                     None
@@ -136,9 +136,9 @@ where
     }
 
     pub(crate) fn send_to_conn(&self, conn: &ConnId, msg: TransportMsg) -> Option<()> {
-        if let Some((_s, c_s)) = self.conns.get(&conn) {
+        if let Some((_s, c_s)) = self.conns.get(conn) {
             c_s.send(msg);
-            return Some(());
+            Some(())
         } else {
             log::warn!("[CrossHandlerGate] send_to_net conn not found {}", conn);
             None
