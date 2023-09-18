@@ -134,4 +134,14 @@ where
             }
         }
     }
+
+    pub(crate) fn send_to_conn(&self, conn: &ConnId, msg: TransportMsg) -> Option<()> {
+        if let Some((_s, c_s)) = self.conns.get(&conn) {
+            c_s.send(msg);
+            return Some(());
+        } else {
+            log::warn!("[CrossHandlerGate] send_to_net conn not found {}", conn);
+            None
+        }
+    }
 }

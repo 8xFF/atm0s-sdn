@@ -4,6 +4,7 @@ mod handshake;
 mod msg;
 mod transport;
 
+pub const TCP_PROTOCOL_ID: u8 = 2;
 pub use transport::TcpTransport;
 
 #[cfg(test)]
@@ -14,6 +15,7 @@ mod tests {
     use network::msg::TransportMsg;
     use network::transport::{ConnectionEvent, OutgoingConnectionError, Transport, TransportEvent};
     use serde::{Deserialize, Serialize};
+    use utils::option_handle::OptionUtils;
 
     use std::net::Ipv4Addr;
     use std::sync::Arc;
@@ -51,7 +53,7 @@ mod tests {
         }
 
         match tran2.recv().await.unwrap() {
-            TransportEvent::IncomingRequest(node, conn, acceptor) => {
+            TransportEvent::IncomingRequest(node, _conn, acceptor) => {
                 assert_eq!(node, 1);
                 acceptor.accept();
             }
@@ -85,7 +87,7 @@ mod tests {
 
         let task = async_std::task::spawn(async move {
             match tran2_recv.poll().await.unwrap() {
-                ConnectionEvent::Stats(stats) => {}
+                ConnectionEvent::Stats(_stats) => {}
                 e => panic!("Should received stats {:?}", e),
             }
             tran2_sender.send(create_reliable(Msg::Ping));
@@ -95,7 +97,7 @@ mod tests {
         });
 
         match tran1_recv.poll().await.unwrap() {
-            ConnectionEvent::Stats(stats) => {}
+            ConnectionEvent::Stats(_stats) => {}
             e => panic!("Should received stats {:?}", e),
         }
 
@@ -106,7 +108,7 @@ mod tests {
 
         tran1_sender.close();
         assert_eq!(tran1_recv.poll().await, Err(()));
-        task.cancel();
+        task.cancel().await.print_none("Should cancel task");
     }
 
     #[async_std::test]
@@ -114,13 +116,13 @@ mod tests {
         let node_addr_builder1 = Arc::new(NodeAddrBuilder::default());
         let mut tran1 = TcpTransport::new(1, 20001, node_addr_builder1.clone()).await;
         let connector1 = tran1.connector();
-        let conn_id = connector1
+        let _conn_id = connector1
             .connect_to(2, NodeAddr::from_iter(vec![Protocol::Ip4(Ipv4Addr::new(127, 0, 0, 1)), Protocol::Tcp(20002)]))
             .unwrap()
             .conn_id;
 
         match tran1.recv().await.unwrap() {
-            TransportEvent::OutgoingRequest(node, conn, acceptor) => {
+            TransportEvent::OutgoingRequest(_node, _conn, acceptor) => {
                 acceptor.accept();
             }
             _ => {
@@ -132,7 +134,7 @@ mod tests {
             TransportEvent::OutgoingError { err, .. } => {
                 assert_eq!(err, OutgoingConnectionError::DestinationNotFound);
             }
-            e => {
+            _ => {
                 panic!("Need OutgoingError")
             }
         };
@@ -147,12 +149,12 @@ mod tests {
         let mut tran2 = TcpTransport::new(2, 30002, node_addr_builder2.clone()).await;
 
         let connector1 = tran1.connector();
-        let conn_id = connector1.connect_to(3, node_addr_builder2.addr()).unwrap().conn_id;
+        let _conn_id = connector1.connect_to(3, node_addr_builder2.addr()).unwrap().conn_id;
 
         let join = async_std::task::spawn(async move { while tran2.recv().await.is_ok() {} });
 
         match tran1.recv().await.unwrap() {
-            TransportEvent::OutgoingRequest(node, conn, acceptor) => {
+            TransportEvent::OutgoingRequest(_node, _conn, acceptor) => {
                 acceptor.accept();
             }
             _ => {
@@ -169,6 +171,6 @@ mod tests {
             }
         };
 
-        join.cancel();
+        join.cancel().await.print_none("Should cancel join");
     }
 }

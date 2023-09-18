@@ -9,6 +9,8 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
+use super::MOCK_PROTOCOL_ID;
+
 pub struct MockTransportConnector {
     output: Arc<Mutex<VecDeque<MockOutput>>>,
     conn_id: Arc<AtomicU64>,
@@ -17,7 +19,7 @@ pub struct MockTransportConnector {
 impl TransportConnector for MockTransportConnector {
     fn connect_to(&self, node_id: NodeId, dest: NodeAddr) -> Result<TransportConnectingOutgoing, OutgoingConnectionError> {
         let conn_seed = self.conn_id.fetch_add(1, Ordering::Relaxed);
-        let conn_id = ConnId::from_out(0, conn_seed);
+        let conn_id = ConnId::from_out(MOCK_PROTOCOL_ID, conn_seed);
         self.output.lock().push_back(MockOutput::ConnectTo(node_id, dest));
         Ok(TransportConnectingOutgoing { conn_id })
     }

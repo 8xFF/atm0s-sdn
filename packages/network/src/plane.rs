@@ -11,6 +11,7 @@ use parking_lot::RwLock;
 use std::sync::Arc;
 use std::time::Duration;
 use utils::init_vec::init_vec;
+use utils::option_handle::OptionUtils;
 use utils::Timer;
 
 pub enum NetworkPlaneInternalEvent<BE> {
@@ -229,7 +230,7 @@ where
                     }
                     e = receiver.poll().fuse() => match e {
                         Ok(event) => {
-                            process_conn_msg(event, &mut handlers, &sender, &receiver, &router);
+                            process_conn_msg(event, &mut handlers, &sender, &receiver, &router, &cross_gate);
                         }
                         Err(err) => {
                             log::error!("{:?}", err);
@@ -330,7 +331,11 @@ fn process_conn_msg<BE, HE>(
     _sender: &Arc<dyn ConnectionSender>,
     receiver: &Box<dyn ConnectionReceiver + Send>,
     router: &Arc<dyn RouterTable>,
-) {
+    cross_gate: &Arc<RwLock<CrossHandlerGate<HE>>>,
+) where
+    HE: Send + Sync + 'static,
+    BE: Send + Sync + 'static,
+{
     match &event {
         ConnectionEvent::Msg(msg) => match router.path_to(&msg.header.route, msg.header.service_id) {
             RouteAction::Reject => {}
@@ -347,8 +352,9 @@ fn process_conn_msg<BE, HE>(
                     debug_assert!(false, "service not found {}", msg.header.service_id);
                 }
             }
-            RouteAction::Next(_conn, _node_id) => {
-                //TODO
+            RouteAction::Next(conn, _node_id) => {
+                let c_gate = cross_gate.read();
+                c_gate.send_to_conn(&conn, msg.clone()).print_none("Should send to conn");
             }
         },
         ConnectionEvent::Stats(stats) => {

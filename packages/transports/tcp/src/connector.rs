@@ -1,6 +1,7 @@
 use crate::connection::{TcpConnectionReceiver, TcpConnectionSender};
 use crate::handshake::{outgoing_handshake, OutgoingHandshakeError};
 use crate::msg::TcpMsg;
+use crate::TCP_PROTOCOL_ID;
 use async_bincode::futures::AsyncBincodeStream;
 use async_std::channel::Sender;
 use async_std::net::{Shutdown, TcpStream};
@@ -9,6 +10,7 @@ use network::transport::{AsyncConnectionAcceptor, ConnectionRejectReason, Outgoi
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use utils::error_handle::ErrorUtils;
 use utils::Timer;
 
 pub struct TcpConnector {
@@ -60,6 +62,7 @@ async fn wait_accept(remote_node: NodeId, conn_id: ConnId, internal_tx: &Sender<
         .map_err(|_| OutgoingHandshakeError::InternalError)?;
     log::info!("[TcpConnector] connect to {} wait local accept", remote_node);
     if let Err(e) = recv.recv().await.map_err(|_| OutgoingHandshakeError::InternalError)? {
+        log::error!("Connection rejected {:?}", e);
         return Err(OutgoingHandshakeError::Rejected);
     }
     Ok(())
@@ -73,17 +76,19 @@ impl TransportConnector for TcpConnector {
         let node_addr = self.node_addr_builder.addr();
         let remote_addr = Self::multiaddr_to_socketaddr(remote_node_addr.clone()).map_err(|_| OutgoingConnectionError::UnsupportedProtocol)?;
         let conn_seed = self.seed.fetch_add(1, Ordering::Relaxed);
-        let conn_id = ConnId::from_out(1, conn_seed);
+        let conn_id = ConnId::from_out(TCP_PROTOCOL_ID, conn_seed);
         let internal_tx = self.internal_tx.clone();
         async_std::task::spawn(async move {
             if let Err(e) = wait_accept(remote_node_id, conn_id, &internal_tx).await {
+                log::error!("Outgoing handshake error {:?}", e);
                 internal_tx
                     .send(TransportEvent::OutgoingError {
                         node_id: remote_node_id,
                         conn_id: conn_id,
                         err: OutgoingConnectionError::BehaviorRejected(ConnectionRejectReason::Custom("LocalReject".to_string())),
                     })
-                    .await;
+                    .await
+                    .print_error("Should send Outgoing Error");
                 return;
             }
 

@@ -17,7 +17,7 @@ mod tests {
     use crate::msg::{DiscoveryBehaviorEvent, DiscoveryHandlerEvent, DiscoveryMsg};
     use crate::DISCOVERY_SERVICE_ID;
     use bluesea_identity::{ConnId, NodeAddr, Protocol};
-    use bluesea_router::{ForceLocalRouter, RouteRule};
+    use bluesea_router::{ForceNodeRouter, RouteRule};
     use network::convert_enum;
     use network::mock::{MockInput, MockOutput, MockTransport, MockTransportRpc};
     use network::msg::TransportMsg;
@@ -68,7 +68,7 @@ mod tests {
             transport,
             transport_rpc: Box::new(mock_rpc),
             timer,
-            router: Arc::new(ForceLocalRouter()),
+            router: Arc::new(ForceNodeRouter(ConnId::from_in(0, 0), neighbour1)),
         });
 
         let join = async_std::task::spawn(async move { while let Ok(_) = plane.recv().await {} });
@@ -112,7 +112,7 @@ mod tests {
             transport,
             transport_rpc: Box::new(mock_rpc),
             timer,
-            router: Arc::new(ForceLocalRouter()),
+            router: Arc::new(ForceNodeRouter(ConnId::from_in(0, 0), neighbour1)),
         });
 
         let join = async_std::task::spawn(async move { while let Ok(_) = plane.recv().await {} });

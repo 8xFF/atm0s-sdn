@@ -4,6 +4,7 @@ mod earth;
 mod listener;
 mod transport;
 
+pub const VNET_PROTOCOL_ID: u8 = 1;
 pub use earth::VnetEarth;
 pub use transport::VnetTransport;
 

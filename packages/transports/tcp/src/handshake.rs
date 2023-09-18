@@ -59,6 +59,7 @@ pub async fn incoming_handshake(
     Ok((remote_node, remote_addr))
 }
 
+#[derive(Debug)]
 pub enum OutgoingHandshakeError {
     SocketError,
     Timeout,

@@ -10,11 +10,11 @@ use network::msg::TransportMsg;
 use network::transport::{ConnectionEvent, ConnectionReceiver, ConnectionSender, ConnectionStats};
 use std::sync::Arc;
 use std::time::Duration;
+use utils::error_handle::ErrorUtils;
+use utils::option_handle::OptionUtils;
 use utils::Timer;
 
 pub type AsyncBincodeStreamU16 = AsyncBincodeStream<TcpStream, TcpMsg, TcpMsg, AsyncDestination>;
-
-pub const BUFFER_LEN: usize = 16384;
 
 pub async fn send_tcp_stream(writer: &mut AsyncBincodeStreamU16, msg: TcpMsg) -> Result<(), ()> {
     match writer.send(msg).await {
@@ -51,26 +51,26 @@ impl TcpConnectionSender {
         mut socket: AsyncBincodeStreamU16,
         timer: Arc<dyn Timer>,
     ) -> (Self, Sender<OutgoingEvent>) {
-        let (reliable_sender, mut r_rx) = unbounded();
-        let (unreliable_sender, mut unr_rx) = bounded(unreliable_queue_size);
+        let (reliable_sender, r_rx) = unbounded();
+        let (unreliable_sender, unr_rx) = bounded(unreliable_queue_size);
 
         let task = async_std::task::spawn(async move {
             log::info!("[TcpConnectionSender {} => {}] start sending loop", node_id, remote_node_id);
             let mut tick_interval = async_std::stream::interval(Duration::from_millis(5000));
-            send_tcp_stream(&mut socket, TcpMsg::Ping(timer.now_ms())).await;
+            send_tcp_stream(&mut socket, TcpMsg::Ping(timer.now_ms())).await.print_error("Should send ping");
 
             loop {
                 let msg: Result<OutgoingEvent, RecvError> = select! {
                     e = r_rx.recv().fuse() => e,
                     e = unr_rx.recv().fuse() => e,
-                    e = tick_interval.next().fuse() => {
+                    _ = tick_interval.next().fuse() => {
                         log::debug!("[TcpConnectionSender {} => {}] sending Ping", node_id, remote_node_id);
                         Ok(OutgoingEvent::Msg(TcpMsg::Ping(timer.now_ms())))
                     }
                 };
 
                 match msg {
-                    Ok(OutgoingEvent::Msg(msg)) => if let Err(e) = send_tcp_stream(&mut socket, msg).await {},
+                    Ok(OutgoingEvent::Msg(msg)) => if let Err(_) = send_tcp_stream(&mut socket, msg).await {},
                     Ok(OutgoingEvent::CloseRequest) => {
                         if let Err(e) = socket.get_mut().shutdown(Shutdown::Both) {
                             log::error!("[TcpConnectionSender {} => {}] close sender error {}", node_id, remote_node_id, e);
@@ -147,8 +147,10 @@ impl ConnectionSender for TcpConnectionSender {
 
 impl Drop for TcpConnectionSender {
     fn drop(&mut self) {
-        if let Some(mut task) = self.task.take() {
-            task.cancel();
+        if let Some(task) = self.task.take() {
+            async_std::task::spawn(async move {
+                task.cancel().await.print_none("Should cancel task");
+            });
         }
     }
 }
@@ -191,14 +193,15 @@ impl ConnectionReceiver for TcpConnectionReceiver {
             match recv_tcp_stream(&mut self.socket).await {
                 Ok(msg) => {
                     match msg {
-                        TcpMsg::Msg(buf) => {
-                            if let Ok(msg) = TransportMsg::from_vec(buf) {
-                                break Ok(ConnectionEvent::Msg(msg));
+                        TcpMsg::Msg(buf) => match TransportMsg::from_vec(buf) {
+                            Ok(msg) => break Ok(ConnectionEvent::Msg(msg)),
+                            Err(e) => {
+                                log::error!("[ConnectionReceiver {} => {}] wrong msg format {:?}", self.node_id, self.remote_node_id, e);
                             }
-                        }
+                        },
                         TcpMsg::Ping(sent_ts) => {
                             log::debug!("[ConnectionReceiver {} => {}] on Ping => reply Pong", self.node_id, self.remote_node_id);
-                            self.reliable_sender.send_blocking(OutgoingEvent::Msg(TcpMsg::Pong(sent_ts)));
+                            self.reliable_sender.send_blocking(OutgoingEvent::Msg(TcpMsg::Pong(sent_ts))).print_error("Should send Pong");
                         }
                         TcpMsg::Pong(ping_sent_ts) => {
                             //TODO est speed and over_use state
@@ -216,9 +219,9 @@ impl ConnectionReceiver for TcpConnectionReceiver {
                         }
                     }
                 }
-                Err(e) => {
+                Err(_) => {
                     log::info!("[ConnectionReceiver {} => {}] stream closed", self.node_id, self.remote_node_id);
-                    self.reliable_sender.send_blocking(OutgoingEvent::ClosedNotify);
+                    self.reliable_sender.send_blocking(OutgoingEvent::ClosedNotify).print_error("Should send CloseNotify");
                     break Err(());
                 }
             }

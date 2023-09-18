@@ -9,6 +9,8 @@ use bluesea_identity::{ConnId, NodeAddr, NodeId};
 pub use transport::MockTransport;
 pub use transport_rpc::MockTransportRpc;
 
+pub const MOCK_PROTOCOL_ID: u8 = 0;
+
 pub enum MockInput {
     FakeIncomingConnection(NodeId, ConnId, NodeAddr),
     ///Dont use this manual

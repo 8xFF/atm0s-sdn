@@ -1,4 +1,9 @@
+mod force_local;
+mod force_node;
+
 use bluesea_identity::{ConnId, NodeId};
+pub use force_local::ForceLocalRouter;
+pub use force_node::ForceNodeRouter;
 
 /// ServiceMeta is using for determine which node will be routed, example node with lowest price or lowest latency, which for future use
 pub type ServiceMeta = u32;
@@ -51,21 +56,5 @@ pub trait RouterTable: Send + Sync {
             RouteRule::ToKey(key) => self.path_to_key(*key),
             RouteRule::ToService(_) => self.path_to_service(service_id),
         }
-    }
-}
-
-pub struct ForceLocalRouter();
-
-impl RouterTable for ForceLocalRouter {
-    fn path_to_node(&self, _dest: NodeId) -> RouteAction {
-        RouteAction::Local
-    }
-
-    fn path_to_key(&self, _key: NodeId) -> RouteAction {
-        RouteAction::Local
-    }
-
-    fn path_to_service(&self, _service_id: u8) -> RouteAction {
-        RouteAction::Local
     }
 }

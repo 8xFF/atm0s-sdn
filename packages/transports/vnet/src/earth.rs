@@ -1,5 +1,6 @@
 use crate::connection::{VnetConnectionReceiver, VnetConnectionSender};
 use crate::listener::{VnetListener, VnetListenerEvent};
+use crate::VNET_PROTOCOL_ID;
 use async_std::channel::{unbounded, Sender};
 use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use network::transport::{AsyncConnectionAcceptor, ConnectionRejectReason, OutgoingConnectionError};
@@ -41,7 +42,7 @@ impl VnetEarth {
         assert_ne!(from_port, to_port);
         let ports = self.ports.read();
         let from_socket = ports.get(&from_port)?;
-        let conn_id = ConnId::from_out(2, self.conn_id_seed.fetch_add(1, Ordering::Relaxed));
+        let conn_id = ConnId::from_out(VNET_PROTOCOL_ID, self.conn_id_seed.fetch_add(1, Ordering::Relaxed));
         if let Some(to_socket) = ports.get(&to_port) {
             if to_socket.node == to_node {
                 let (incoming_acceptor, mut incoming_acceptor_recv) = AsyncConnectionAcceptor::new();
