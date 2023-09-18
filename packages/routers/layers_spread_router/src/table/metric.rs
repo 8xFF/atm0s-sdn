@@ -7,15 +7,15 @@ pub const BANDWIDTH_LIMIT: u32 = 10000; //10Mbps
 const HOP_PLUS_RTT: u16 = 10; //10ms each hops
 
 /// Concatenate two hops array, with condition that the last hop of `a` is the first hop of `b`, if not return None
-pub fn concat_hops(a: &Vec<NodeId>, b: &Vec<NodeId>) -> Option<Vec<NodeId>> {
+pub fn concat_hops(a: &[NodeId], b: &[NodeId]) -> Option<Vec<NodeId>> {
     if a.is_empty() {
-        return Some(b.clone());
+        return Some(b.to_vec());
     }
     if b.is_empty() {
-        return Some(a.clone());
+        return Some(a.to_vec());
     }
     if a.last().unwrap() == b.first().unwrap() {
-        let mut ret = a.clone();
+        let mut ret = a.to_vec();
         ret.extend_from_slice(&b[1..]);
         return Some(ret);
     }
@@ -133,10 +133,10 @@ mod tests {
 
     #[test]
     fn concat_test() {
-        assert_eq!(concat_hops(&vec![1, 2], &vec![2, 3]), Some(vec![1, 2, 3]));
-        assert_eq!(concat_hops(&vec![1, 2], &vec![3, 4]), None);
-        assert_eq!(concat_hops(&vec![1, 2], &vec![]), Some(vec![1, 2]));
-        assert_eq!(concat_hops(&vec![], &vec![1, 2]), Some(vec![1, 2]));
+        assert_eq!(concat_hops(&[1, 2], &[2, 3]), Some(vec![1, 2, 3]));
+        assert_eq!(concat_hops(&[1, 2], &[3, 4]), None);
+        assert_eq!(concat_hops(&[1, 2], &[]), Some(vec![1, 2]));
+        assert_eq!(concat_hops(&[], &[1, 2]), Some(vec![1, 2]));
     }
 
     #[test]

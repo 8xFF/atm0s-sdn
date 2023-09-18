@@ -101,11 +101,11 @@ where
         // for (action_id, slot) in self.wait_actions.iter() {
         //     let next = match slot.action.routing {
         //         StorageActionRouting::Node(dest_node) => {
-        //             self.router.next(dest_node, &vec![])
+        //             self.router.next(dest_node, &[])
         //                 .map(|(next_conn, _)| next_conn)
         //         }
         //         StorageActionRouting::ClosestNode(routing_key) => {
-        //             self.router.closest_node(routing_key as u32, &vec![])
+        //             self.router.closest_node(routing_key as u32, &[])
         //                 .map(|(next_conn, _, _, _)| next_conn)
         //         }
         //     };

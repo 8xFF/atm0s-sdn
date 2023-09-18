@@ -67,17 +67,17 @@ impl Table {
         }
     }
 
-    pub fn next(&self, dest: NodeId, excepts: &Vec<NodeId>) -> Option<(ConnId, NodeId)> {
+    pub fn next(&self, dest: NodeId, excepts: &[NodeId]) -> Option<(ConnId, NodeId)> {
         let index = dest.layer(self.layer);
         self.dests[index as usize].next(excepts)
     }
 
-    pub fn next_path(&self, dest: NodeId, excepts: &Vec<NodeId>) -> Option<Path> {
+    pub fn next_path(&self, dest: NodeId, excepts: &[NodeId]) -> Option<Path> {
         let index = dest.layer(self.layer);
         self.dests[index as usize].next_path(excepts)
     }
 
-    pub fn closest_for(&self, key: u8, excepts: &Vec<NodeId>) -> Option<(u8, ConnId, NodeId)> {
+    pub fn closest_for(&self, key: u8, excepts: &[NodeId]) -> Option<(u8, ConnId, NodeId)> {
         let mut closest_distance: u16 = 256;
         let mut res = None;
         for slot in &self.slots {
@@ -188,13 +188,13 @@ mod tests {
 
         assert_eq!(table.slots(), vec![1, 2, 3]);
 
-        assert_eq!(table.next(node1, &vec![node2]), Some((conn1, node1)));
+        assert_eq!(table.next(node1, &[node2]), Some((conn1, node1)));
 
         assert_eq!(table.sync_for(node1), Some(TableSync(vec![(2, Metric::new(2, vec![2, 4, 0], 1)), (3, Metric::new(1, vec![3, 0], 1))])));
         assert_eq!(table.sync_for(4), Some(TableSync(vec![(1, Metric::new(1, vec![1, 0], 1)), (3, Metric::new(1, vec![3, 0], 1))])));
 
         table.del_direct(conn1);
-        assert_eq!(table.next(node1, &vec![node2]), None);
+        assert_eq!(table.next(node1, &[node2]), None);
     }
 
     #[test]
@@ -214,7 +214,7 @@ mod tests {
     //     table.apply_sync(node0, Metric::new(1, vec![0], 1), TableSync(sync));
     //
     //     assert_eq!(table.slots(), vec![0]);
-    //     assert_eq!(table.next(node0, &vec![node0]), None);
+    //     assert_eq!(table.next(node0, &[node0]), None);
     // }
 
     #[test]
@@ -235,15 +235,15 @@ mod tests {
         table.apply_sync(conn1, node1, Metric::new(1, vec![1, 0], 2), TableSync(sync));
 
         assert_eq!(table.slots(), vec![1, 2, 3]);
-        assert_eq!(table.next_path(node1, &vec![node2]), Some(Path(conn1, node1, Metric::new(1, vec![1, 0], 1))));
-        assert_eq!(table.next_path(node2, &vec![node2]), Some(Path(conn1, node1, Metric::new(2, vec![2, 1, 0], 1))));
-        assert_eq!(table.next_path(node3, &vec![node2]), Some(Path(conn1, node1, Metric::new(2, vec![3, 1, 0], 1))));
+        assert_eq!(table.next_path(node1, &[node2]), Some(Path(conn1, node1, Metric::new(1, vec![1, 0], 1))));
+        assert_eq!(table.next_path(node2, &[node2]), Some(Path(conn1, node1, Metric::new(2, vec![2, 1, 0], 1))));
+        assert_eq!(table.next_path(node3, &[node2]), Some(Path(conn1, node1, Metric::new(2, vec![3, 1, 0], 1))));
 
         let sync = vec![(3, Metric::new(1, vec![3, 1], 1))];
         table.apply_sync(conn1, node1, Metric::new(1, vec![1, 0], 1), TableSync(sync));
-        assert_eq!(table.next(node1, &vec![node2]), Some((conn1, node1)));
-        assert_eq!(table.next(node2, &vec![node2]), None);
-        assert_eq!(table.next(node3, &vec![node2]), Some((conn1, node1)));
+        assert_eq!(table.next(node1, &[node2]), Some((conn1, node1)));
+        assert_eq!(table.next(node2, &[node2]), None);
+        assert_eq!(table.next(node3, &[node2]), Some((conn1, node1)));
     }
 
     #[test]
@@ -275,9 +275,9 @@ mod tests {
         let sync2 = vec![(node_b.layer(0), Metric::new(2, vec![node_b, node_c], 2)), (node_d.layer(0), Metric::new(1, vec![node_d, node_c], 1))];
         table_a.apply_sync(conn_c, node_c, Metric::new(1, vec![node_c, node_a], 1), TableSync(sync2));
 
-        assert_eq!(table_a.next_path(node_b, &vec![]), Some(Path(conn_b, node_b, Metric::new(1, vec![node_b, node_a], 1))));
-        assert_eq!(table_a.next(node_c, &vec![]), Some((conn_c, node_c)));
-        assert_eq!(table_a.next(node_d, &vec![]), Some((conn_c, node_c)));
+        assert_eq!(table_a.next_path(node_b, &[]), Some(Path(conn_b, node_b, Metric::new(1, vec![node_b, node_a], 1))));
+        assert_eq!(table_a.next(node_c, &[]), Some((conn_c, node_c)));
+        assert_eq!(table_a.next(node_d, &[]), Some((conn_c, node_c)));
 
         /**
         A --- B -2- D
@@ -289,9 +289,9 @@ mod tests {
         let sync2 = vec![(node_b.layer(0), Metric::new(2, vec![node_b, node_c], 1))];
         table_a.apply_sync(conn_c, node_c, Metric::new(1, vec![node_c, node_a], 1), TableSync(sync2));
 
-        assert_eq!(table_a.next(node_b, &vec![]), Some((conn_b, node_b)));
-        assert_eq!(table_a.next(node_c, &vec![]), Some((conn_c, node_c)));
-        assert_eq!(table_a.next(node_d, &vec![]), Some((conn_b, node_b)));
+        assert_eq!(table_a.next(node_b, &[]), Some((conn_b, node_b)));
+        assert_eq!(table_a.next(node_c, &[]), Some((conn_c, node_c)));
+        assert_eq!(table_a.next(node_d, &[]), Some((conn_b, node_b)));
     }
 
     #[test]
@@ -299,8 +299,8 @@ mod tests {
         let node0: NodeId = 0x0;
         let mut table = Table::new(node0, 0);
 
-        assert_eq!(table.closest_for(0, &vec![]), None);
-        assert_eq!(table.closest_for(100, &vec![]), None);
+        assert_eq!(table.closest_for(0, &[]), None);
+        assert_eq!(table.closest_for(100, &[]), None);
 
         let conn1 = ConnId::from_out(0, 1);
         let conn5 = ConnId::from_out(0, 5);
@@ -310,15 +310,15 @@ mod tests {
         table.add_direct(conn5, 5, Metric::new(1, vec![5, 0], 1));
         table.add_direct(conn40, 40, Metric::new(1, vec![40, 0], 1));
 
-        assert_eq!(table.closest_for(0, &vec![]), Some((1, conn1, 1)));
-        assert_eq!(table.closest_for(3, &vec![]), Some((1, conn1, 1)));
-        assert_eq!(table.closest_for(3, &vec![1]), Some((5, conn5, 5)));
+        assert_eq!(table.closest_for(0, &[]), Some((1, conn1, 1)));
+        assert_eq!(table.closest_for(3, &[]), Some((1, conn1, 1)));
+        assert_eq!(table.closest_for(3, &[1]), Some((5, conn5, 5)));
 
-        assert_eq!(table.closest_for(4, &vec![]), Some((5, conn5, 5)));
-        assert_eq!(table.closest_for(20, &vec![]), Some((5, conn5, 5)));
-        assert_eq!(table.closest_for(40, &vec![]), Some((40, conn40, 40)));
-        assert_eq!(table.closest_for(41, &vec![]), Some((40, conn40, 40)));
+        assert_eq!(table.closest_for(4, &[]), Some((5, conn5, 5)));
+        assert_eq!(table.closest_for(20, &[]), Some((5, conn5, 5)));
+        assert_eq!(table.closest_for(40, &[]), Some((40, conn40, 40)));
+        assert_eq!(table.closest_for(41, &[]), Some((40, conn40, 40)));
 
-        assert_eq!(table.closest_for(254, &vec![]), Some((40, conn40, 40)));
+        assert_eq!(table.closest_for(254, &[]), Some((40, conn40, 40)));
     }
 }

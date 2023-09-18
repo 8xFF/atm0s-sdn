@@ -32,7 +32,7 @@ impl SharedRouter {
         self.router.write().register_service(service_id)
     }
 
-    pub fn service_next(&self, service_id: u8, excepts: &Vec<NodeId>) -> Option<ServiceDestination> {
+    pub fn service_next(&self, service_id: u8, excepts: &[NodeId]) -> Option<ServiceDestination> {
         self.router.read().service_next(service_id, excepts)
     }
 
@@ -44,15 +44,15 @@ impl SharedRouter {
         self.router.write().del_direct(over);
     }
 
-    pub fn next(&self, dest: NodeId, excepts: &Vec<NodeId>) -> Option<(ConnId, NodeId)> {
+    pub fn next(&self, dest: NodeId, excepts: &[NodeId]) -> Option<(ConnId, NodeId)> {
         self.router.read().next(dest, excepts)
     }
 
-    pub fn next_path(&self, dest: NodeId, excepts: &Vec<NodeId>) -> Option<Path> {
+    pub fn next_path(&self, dest: NodeId, excepts: &[NodeId]) -> Option<Path> {
         self.router.read().next_path(dest, excepts)
     }
 
-    pub fn closest_node(&self, key: NodeId, excepts: &Vec<NodeId>) -> Option<(ConnId, NodeId, u8, u8)> {
+    pub fn closest_node(&self, key: NodeId, excepts: &[NodeId]) -> Option<(ConnId, NodeId, u8, u8)> {
         self.router.read().closest_node(key, excepts)
     }
 
@@ -74,21 +74,21 @@ impl RouterTable for SharedRouter {
         if self.node_id == dest {
             return RouteAction::Local;
         }
-        match self.next(dest, &vec![]) {
+        match self.next(dest, &[]) {
             Some((conn, node)) => RouteAction::Next(conn, node),
             None => RouteAction::Reject,
         }
     }
 
     fn path_to_key(&self, key: NodeId) -> RouteAction {
-        match self.next(key, &vec![]) {
+        match self.next(key, &[]) {
             Some((conn, node)) => RouteAction::Next(conn, node),
             None => RouteAction::Local,
         }
     }
 
     fn path_to_service(&self, service_id: u8) -> RouteAction {
-        match self.service_next(service_id, &vec![]) {
+        match self.service_next(service_id, &[]) {
             Some(dest) => match dest {
                 ServiceDestination::Local => RouteAction::Local,
                 ServiceDestination::Remote(conn, node) => RouteAction::Next(conn, node),

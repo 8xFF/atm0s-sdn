@@ -68,6 +68,9 @@ impl Dest {
     }
 
     fn index_of(&self, goal: ConnId) -> Option<usize> {
+        if self.paths.is_empty() {
+            return None;
+        }
         for index in 0..self.paths.len() {
             match self.paths.get(index) {
                 Some(path) => {
@@ -88,7 +91,7 @@ impl Dest {
 #[cfg(test)]
 mod tests {
     use crate::table::{Dest, Metric, Path};
-    use bluesea_identity::{ConnDirection, ConnId, NodeId};
+    use bluesea_identity::{ConnId, NodeId};
 
     #[test]
     fn push_sort() {
@@ -98,19 +101,19 @@ mod tests {
         let conn2: ConnId = ConnId::from_out(0, 0x2);
         let node2: NodeId = 0x2;
 
-        let conn3: ConnId = ConnId::from_out(0, 0x3);
+        let _conn3: ConnId = ConnId::from_out(0, 0x3);
         let node3: NodeId = 0x3;
 
         let mut dest = Dest::default();
         dest.set_path(conn1, node1, Metric::new(1, vec![4, 1], 1)); //directed connection
         dest.set_path(conn2, node2, Metric::new(2, vec![4, 2], 1));
 
-        assert_eq!(dest.next(&vec![]), Some((conn1, node1)));
-        assert_eq!(dest.next_path(&vec![node1]), Some(Path(conn2, node2, Metric::new(2, vec![4, 2], 1))));
-        assert_eq!(dest.next_path(&vec![node2]), Some(Path(conn1, node1, Metric::new(1, vec![4, 1], 1))));
-        assert_eq!(dest.next_path(&vec![node3]), Some(Path(conn1, node1, Metric::new(1, vec![4, 1], 1))));
-        assert_eq!(dest.next(&vec![node1, node2]), None);
-        assert_eq!(dest.next_path(&vec![node1, node2]), None);
+        assert_eq!(dest.next(&[]), Some((conn1, node1)));
+        assert_eq!(dest.next_path(&[node1]), Some(Path(conn2, node2, Metric::new(2, vec![4, 2], 1))));
+        assert_eq!(dest.next_path(&[node2]), Some(Path(conn1, node1, Metric::new(1, vec![4, 1], 1))));
+        assert_eq!(dest.next_path(&[node3]), Some(Path(conn1, node1, Metric::new(1, vec![4, 1], 1))));
+        assert_eq!(dest.next(&[node1, node2]), None);
+        assert_eq!(dest.next_path(&[node1, node2]), None);
     }
 
     #[test]
@@ -131,10 +134,10 @@ mod tests {
 
         dest.del_path(conn1);
 
-        assert_eq!(dest.next(&vec![]), Some((conn2, node2)));
-        assert_eq!(dest.next_path(&vec![node1]), Some(Path(conn2, node2, Metric::new(2, vec![4, 6, 2], 1))));
-        assert_eq!(dest.next_path(&vec![node2]), Some(Path(conn3, node3, Metric::new(3, vec![4, 6, 2, 3], 1))));
-        assert_eq!(dest.next_path(&vec![node3]), Some(Path(conn2, node2, Metric::new(2, vec![4, 6, 2], 1))));
+        assert_eq!(dest.next(&[]), Some((conn2, node2)));
+        assert_eq!(dest.next_path(&[node1]), Some(Path(conn2, node2, Metric::new(2, vec![4, 6, 2], 1))));
+        assert_eq!(dest.next_path(&[node2]), Some(Path(conn3, node3, Metric::new(3, vec![4, 6, 2, 3], 1))));
+        assert_eq!(dest.next_path(&[node3]), Some(Path(conn2, node2, Metric::new(2, vec![4, 6, 2], 1))));
     }
 
     #[test]
@@ -142,13 +145,13 @@ mod tests {
         let conn1: ConnId = ConnId::from_out(0, 0x1);
         let node1: NodeId = 0x1;
 
-        let conn2: ConnId = ConnId::from_out(0, 0x2);
+        let _conn2: ConnId = ConnId::from_out(0, 0x2);
         let node2: NodeId = 0x2;
 
-        let conn3: ConnId = ConnId::from_out(0, 0x3);
-        let node3: NodeId = 0x3;
+        let _conn3: ConnId = ConnId::from_out(0, 0x3);
+        let _node3: NodeId = 0x3;
 
-        let conn4: ConnId = ConnId::from_out(0, 0x4);
+        let _conn4: ConnId = ConnId::from_out(0, 0x4);
         let node4: NodeId = 0x4;
 
         let mut dest = Dest::default();
