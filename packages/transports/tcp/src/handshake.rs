@@ -4,6 +4,7 @@ use async_std::channel::Sender;
 use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use network::transport::{AsyncConnectionAcceptor, TransportEvent};
 use std::time::Duration;
+use utils::error_handle::ErrorUtils;
 
 pub enum IncomingHandshakeError {
     SocketError,
@@ -11,7 +12,6 @@ pub enum IncomingHandshakeError {
     WrongMsg,
     InternalError,
     Rejected,
-    NetError,
     ValidateError,
 }
 
@@ -35,7 +35,9 @@ pub async fn incoming_handshake(
                 (node, addr)
             } else {
                 log::warn!("[TcpTransport] handshake from wrong node info {} vs {}", my_node_2, my_node);
-                send_tcp_stream(socket, TcpMsg::ConnectResponse(Err("WrongNode".to_string()))).await;
+                send_tcp_stream(socket, TcpMsg::ConnectResponse(Err("WrongNode".to_string())))
+                    .await
+                    .print_error("Should send handshake response error: Wrong node");
                 return Err(IncomingHandshakeError::ValidateError);
             }
         }
@@ -51,10 +53,15 @@ pub async fn incoming_handshake(
         .await
         .map_err(|_| IncomingHandshakeError::InternalError)?;
     if let Err(e) = recv.recv().await.map_err(|_| IncomingHandshakeError::InternalError)? {
-        send_tcp_stream(socket, TcpMsg::ConnectResponse(Err("Rejected".to_string()))).await;
+        log::error!("handshake rejected {:?}", e);
+        send_tcp_stream(socket, TcpMsg::ConnectResponse(Err("Rejected".to_string())))
+            .await
+            .print_error("Should send handshake response error: Rejected");
         return Err(IncomingHandshakeError::Rejected);
     }
-    send_tcp_stream(socket, TcpMsg::ConnectResponse(Ok((my_node, my_addr)))).await;
+    send_tcp_stream(socket, TcpMsg::ConnectResponse(Ok((my_node, my_addr))))
+        .await
+        .print_error("Should send handshake response error: Ok");
 
     Ok((remote_node, remote_addr))
 }
@@ -66,7 +73,6 @@ pub enum OutgoingHandshakeError {
     WrongMsg,
     InternalError,
     Rejected,
-    NetError,
 }
 
 pub async fn outgoing_handshake(
@@ -74,8 +80,8 @@ pub async fn outgoing_handshake(
     my_node: NodeId,
     my_node_addr: NodeAddr,
     socket: &mut AsyncBincodeStreamU16,
-    conn_id: ConnId,
-    internal_tx: &Sender<TransportEvent>,
+    _conn_id: ConnId,
+    _internal_tx: &Sender<TransportEvent>,
 ) -> Result<(), OutgoingHandshakeError> {
     log::info!("[TcpTransport] outgoing_handshake send ConnectRequest to {}", remote_node);
     send_tcp_stream(socket, TcpMsg::ConnectRequest(remote_node, my_node, my_node_addr))

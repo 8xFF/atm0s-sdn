@@ -95,7 +95,7 @@ impl TransportConnector for TcpConnector {
             match TcpStream::connect(remote_addr).await {
                 Ok(socket) => {
                     let mut socket_read = AsyncBincodeStream::<_, TcpMsg, TcpMsg, _>::from(socket.clone()).for_async();
-                    let mut socket_write = AsyncBincodeStream::<_, TcpMsg, TcpMsg, _>::from(socket.clone()).for_async();
+                    let socket_write = AsyncBincodeStream::<_, TcpMsg, TcpMsg, _>::from(socket.clone()).for_async();
                     match outgoing_handshake(remote_node_id, node_id, node_addr, &mut socket_read, conn_id, &internal_tx).await {
                         Ok(_) => {
                             let (connection_sender, reliable_sender) = TcpConnectionSender::new(node_id, remote_node_id, remote_node_addr.clone(), conn_id, 1000, socket_write, timer.clone());
@@ -108,10 +108,13 @@ impl TransportConnector for TcpConnector {
                                 timer,
                                 reliable_sender,
                             });
-                            internal_tx.send(TransportEvent::Outgoing(Arc::new(connection_sender), connection_receiver)).await;
+                            internal_tx
+                                .send(TransportEvent::Outgoing(Arc::new(connection_sender), connection_receiver))
+                                .await
+                                .print_error("Should send Outgoing");
                         }
                         Err(err) => {
-                            socket.shutdown(Shutdown::Both);
+                            socket.shutdown(Shutdown::Both).print_error("Should shutdown socket");
                             internal_tx
                                 .send(TransportEvent::OutgoingError {
                                     node_id: remote_node_id,
@@ -122,21 +125,23 @@ impl TransportConnector for TcpConnector {
                                         OutgoingHandshakeError::WrongMsg => OutgoingConnectionError::AuthenticationError,
                                         OutgoingHandshakeError::InternalError => OutgoingConnectionError::AuthenticationError,
                                         OutgoingHandshakeError::Rejected => OutgoingConnectionError::AuthenticationError,
-                                        OutgoingHandshakeError::NetError => OutgoingConnectionError::DestinationNotFound,
                                     },
                                 })
-                                .await;
+                                .await
+                                .print_error("Should send OutgoingError");
                         }
                     }
                 }
                 Err(err) => {
+                    log::error!("TcpStream connect error {}", err);
                     internal_tx
                         .send(TransportEvent::OutgoingError {
                             node_id: remote_node_id,
                             conn_id: conn_id,
                             err: OutgoingConnectionError::DestinationNotFound,
                         })
-                        .await;
+                        .await
+                        .print_error("Should send OutgoingError::DestinationNotFound");
                 }
             }
         });

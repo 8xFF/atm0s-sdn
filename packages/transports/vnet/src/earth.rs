@@ -45,8 +45,8 @@ impl VnetEarth {
         let conn_id = ConnId::from_out(VNET_PROTOCOL_ID, self.conn_id_seed.fetch_add(1, Ordering::Relaxed));
         if let Some(to_socket) = ports.get(&to_port) {
             if to_socket.node == to_node {
-                let (incoming_acceptor, mut incoming_acceptor_recv) = AsyncConnectionAcceptor::new();
-                let (outgoing_acceptor, mut outgoing_acceptor_recv) = AsyncConnectionAcceptor::new();
+                let (incoming_acceptor, incoming_acceptor_recv) = AsyncConnectionAcceptor::new();
+                let (outgoing_acceptor, outgoing_acceptor_recv) = AsyncConnectionAcceptor::new();
                 let from_socket_sender = from_socket.sender.clone();
                 let from_socket_node = from_socket.node;
                 let from_socket_addr = from_socket.addr.clone();
@@ -69,7 +69,9 @@ impl VnetEarth {
                     };
 
                     if let Some(err) = err {
-                        from_socket_sender.send_blocking(VnetListenerEvent::OutgoingErr(to_node, conn_id, OutgoingConnectionError::BehaviorRejected(err)));
+                        from_socket_sender
+                            .send_blocking(VnetListenerEvent::OutgoingErr(to_node, conn_id, OutgoingConnectionError::BehaviorRejected(err)))
+                            .expect("Should send OutgoingErr");
                     } else {
                         from_socket_sender
                             .send_blocking(VnetListenerEvent::Outgoing((
@@ -109,17 +111,25 @@ impl VnetEarth {
                             .unwrap();
                     }
                 });
-                from_socket.sender.send_blocking(VnetListenerEvent::OutgoingRequest(to_node, conn_id, outgoing_acceptor));
-                to_socket.sender.send_blocking(VnetListenerEvent::IncomingRequest(from_socket_node, conn_id, incoming_acceptor));
+                from_socket
+                    .sender
+                    .send_blocking(VnetListenerEvent::OutgoingRequest(to_node, conn_id, outgoing_acceptor))
+                    .expect("Should send OutgoingRequest");
+                to_socket
+                    .sender
+                    .send_blocking(VnetListenerEvent::IncomingRequest(from_socket_node, conn_id, incoming_acceptor))
+                    .expect("Should send IncomingRequest");
             } else {
                 from_socket
                     .sender
-                    .send_blocking(VnetListenerEvent::OutgoingErr(to_node, conn_id, OutgoingConnectionError::AuthenticationError));
+                    .send_blocking(VnetListenerEvent::OutgoingErr(to_node, conn_id, OutgoingConnectionError::AuthenticationError))
+                    .expect("Should send OutgoingErr::AuthenticationError");
             }
         } else {
             from_socket
                 .sender
-                .send_blocking(VnetListenerEvent::OutgoingErr(to_node, conn_id, OutgoingConnectionError::DestinationNotFound));
+                .send_blocking(VnetListenerEvent::OutgoingErr(to_node, conn_id, OutgoingConnectionError::DestinationNotFound))
+                .expect("Should send OutgoingErr::DestinationNotFound");
         }
 
         Some(conn_id)

@@ -6,7 +6,9 @@ use network::transport::{Transport, TransportConnector, TransportEvent};
 use std::sync::Arc;
 
 pub struct VnetTransport {
+    #[allow(unused)]
     port: u64,
+    #[allow(unused)]
     earth: Arc<VnetEarth>,
     listener: VnetListener,
     connector: Arc<VnetConnector>,

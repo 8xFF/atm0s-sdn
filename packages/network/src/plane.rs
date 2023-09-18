@@ -233,7 +233,7 @@ where
                             process_conn_msg(event, &mut handlers, &sender, &receiver, &router, &cross_gate);
                         }
                         Err(err) => {
-                            log::error!("{:?}", err);
+                            log::warn!("[NetworkPlane] connection ({}, {}) error {:?}", receiver.remote_node_id(), receiver.conn_id(), err);
                             break;
                         }
                     }

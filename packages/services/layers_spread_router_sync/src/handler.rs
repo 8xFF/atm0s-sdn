@@ -29,7 +29,7 @@ impl LayersSpreadRouterSyncHandler {
         HE: From<LayersSpreadRouterSyncHandlerEvent> + TryInto<LayersSpreadRouterSyncHandlerEvent> + Send + Sync + 'static,
     {
         let sync = self.router.create_sync(agent.remote_node_id());
-        log::debug!("[FastPathRouteHandler {} {}/{}] send RouterSync", agent.local_node_id(), agent.remote_node_id(), agent.conn_id());
+        log::info!("[LayersSpreadRouterHander {} {}/{}] send RouterSync", agent.local_node_id(), agent.remote_node_id(), agent.conn_id());
         agent.send_net(TransportMsg::build_reliable(
             FAST_PATH_ROUTE_SERVICE_ID,
             RouteRule::Direct,
@@ -57,11 +57,16 @@ where
             ConnectionEvent::Msg(msg) => match msg.get_payload_bincode::<LayersSpreadRouterSyncMsg>() {
                 Ok(LayersSpreadRouterSyncMsg::Sync(sync)) => {
                     if let Some(metric) = self.metric.clone() {
-                        log::debug!("[FastPathRouteHandler {} {}/{}] on received RouterSync", agent.local_node_id(), agent.remote_node_id(), agent.conn_id());
+                        log::debug!(
+                            "[LayersSpreadRouterHander {} {}/{}] on received RouterSync",
+                            agent.local_node_id(),
+                            agent.remote_node_id(),
+                            agent.conn_id()
+                        );
                         self.router.apply_sync(agent.conn_id(), agent.remote_node_id(), metric, sync);
                     } else {
                         log::warn!(
-                            "[FastPathRouteHandler {} {}/{}] on received RouterSync but metric empty",
+                            "[LayersSpreadRouterHander {} {}/{}] on received RouterSync but metric empty",
                             agent.local_node_id(),
                             agent.remote_node_id(),
                             agent.conn_id()
@@ -71,7 +76,7 @@ where
                 }
                 Err(err) => {
                     log::error!(
-                        "[FastPathRouteHandler {} {}/{}] on received invalid msg {}",
+                        "[LayersSpreadRouterHander {} {}/{}] on received invalid msg {}",
                         agent.local_node_id(),
                         agent.remote_node_id(),
                         agent.conn_id(),
@@ -81,7 +86,7 @@ where
             },
             ConnectionEvent::Stats(stats) => {
                 log::debug!(
-                    "[FastPathRouteHandler {} {}/{}] on stats rtt_ms {}",
+                    "[LayersSpreadRouterHander {} {}/{}] on stats rtt_ms {}",
                     agent.local_node_id(),
                     agent.remote_node_id(),
                     agent.conn_id(),
@@ -91,8 +96,8 @@ where
                 self.router.set_direct(agent.conn_id(), agent.remote_node_id(), metric.clone());
                 if let Some(sync) = self.wait_sync.take() {
                     //first time => send sync
-                    log::debug!(
-                        "[FastPathRouteHandler {} {}/{}] on received stats and has remain sync => apply",
+                    log::info!(
+                        "[LayersSpreadRouterHander {} {}/{}] on received stats and has remain sync => apply",
                         agent.local_node_id(),
                         agent.remote_node_id(),
                         agent.conn_id()

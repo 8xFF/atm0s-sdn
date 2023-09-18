@@ -10,6 +10,7 @@ use futures_util::FutureExt;
 use network::transport::{Transport, TransportConnector, TransportEvent};
 use std::net::{Ipv4Addr, Shutdown, SocketAddr};
 use std::sync::Arc;
+use utils::error_handle::ErrorUtils;
 use utils::{SystemTimer, Timer};
 
 pub struct TcpTransport {
@@ -69,7 +70,7 @@ impl Transport for TcpTransport {
         loop {
             futures_util::select! {
                 e = self.listener.accept().fuse() => match e {
-                    Ok((mut socket, addr)) => {
+                    Ok((socket, addr)) => {
                         log::info!("[TcpTransport] incoming connect from {}", addr);
                         let internal_tx = self.internal_tx.clone();
                         let timer = self.timer.clone();
@@ -80,7 +81,7 @@ impl Transport for TcpTransport {
 
                         async_std::task::spawn(async move {
                             let mut socket_read = AsyncBincodeStream::<_, TcpMsg, TcpMsg, _>::from(socket.clone()).for_async();
-                            let mut socket_write = AsyncBincodeStream::<_, TcpMsg, TcpMsg, _>::from(socket.clone()).for_async();
+                            let socket_write = AsyncBincodeStream::<_, TcpMsg, TcpMsg, _>::from(socket.clone()).for_async();
 
                             match incoming_handshake(node_id, node_addr, &mut socket_read, conn_id, &internal_tx).await {
                                 Ok((remote_node_id, remote_addr)) => {
@@ -105,7 +106,7 @@ impl Transport for TcpTransport {
                                     internal_tx.send(TransportEvent::Incoming(
                                         Arc::new(connection_sender),
                                         connection_receiver,
-                                    )).await;
+                                    )).await.print_error("Should send Incoming connection");
                                 }
                                 Err(_) => {
                                     if let Err(e) = socket.shutdown(Shutdown::Both) {

@@ -84,5 +84,5 @@ async fn main() {
         timer: Arc::new(SystemTimer()),
     });
 
-    while let Ok(e) = plane.recv().await {}
+    while let Ok(_) = plane.recv().await {}
 }

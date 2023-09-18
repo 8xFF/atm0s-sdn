@@ -31,7 +31,7 @@ impl ConnectionReceiver for VnetConnectionReceiver {
     }
 
     async fn poll(&mut self) -> Result<ConnectionEvent, ()> {
-        if let Some(msg) = self.recv.recv().await.map_err(|e| ())? {
+        if let Some(msg) = self.recv.recv().await.map_err(|_e| ())? {
             Ok(ConnectionEvent::Msg(msg))
         } else {
             //disconnected
