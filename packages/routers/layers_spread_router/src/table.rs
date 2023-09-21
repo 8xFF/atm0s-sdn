@@ -183,7 +183,7 @@ mod tests {
 
         table.add_direct(conn1, node1, Metric::new(1, vec![1, 0], 1));
         table.add_direct(conn2, node2, Metric::new(2, vec![2, 4, 0], 1));
-        ///fake
+        // fake
         table.add_direct(conn3, node3, Metric::new(1, vec![3, 0], 1));
 
         assert_eq!(table.slots(), vec![1, 2, 3]);
@@ -226,8 +226,8 @@ mod tests {
         let node3: NodeId = 0x3;
 
         let conn1: ConnId = ConnId::from_out(0, 0x1);
-        let conn2: ConnId = ConnId::from_out(0, 0x2);
-        let conn3: ConnId = ConnId::from_out(0, 0x3);
+        let _conn2: ConnId = ConnId::from_out(0, 0x2);
+        let _conn3: ConnId = ConnId::from_out(0, 0x3);
 
         table.add_direct(conn1, node1, Metric::new(1, vec![1, 0], 1));
 
@@ -248,13 +248,13 @@ mod tests {
 
     #[test]
     fn apply_sync_multi() {
-        /**
-        A --- B -2- D
-        |     |    |
-        |     2    |
-        |     |    |
-        | --- C --
-        **/
+        
+        // A --- B -2- D
+        // |     |    |
+        // |     2    |
+        // |     |    |
+        // | --- C ---
+        
         let node_a: NodeId = 0x0;
         let node_b: NodeId = 0x1;
         let node_c: NodeId = 0x2;
@@ -262,7 +262,7 @@ mod tests {
 
         let conn_b: ConnId = ConnId::from_out(0, 0x1);
         let conn_c: ConnId = ConnId::from_out(0, 0x2);
-        let conn_d: ConnId = ConnId::from_out(0, 0x3);
+        let _conn_d: ConnId = ConnId::from_out(0, 0x3);
 
         let mut table_a = Table::new(node_a, 0);
 
@@ -279,13 +279,13 @@ mod tests {
         assert_eq!(table_a.next(node_c, &[]), Some((conn_c, node_c)));
         assert_eq!(table_a.next(node_d, &[]), Some((conn_c, node_c)));
 
-        /**
-        A --- B -2- D
-        |     |
-        |     2
-        |     |
-        | --- C
-        **/
+        
+        // A --- B -2- D
+        // |     |
+        // |     2
+        // |     |
+        // | --- C
+        
         let sync2 = vec![(node_b.layer(0), Metric::new(2, vec![node_b, node_c], 1))];
         table_a.apply_sync(conn_c, node_c, Metric::new(1, vec![node_c, node_a], 1), TableSync(sync2));
 

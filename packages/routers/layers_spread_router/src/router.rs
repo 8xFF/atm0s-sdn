@@ -170,7 +170,7 @@ mod tests {
     use crate::router::{Router, RouterSync};
     use crate::table::{Metric, Path, TableSync};
     use crate::ServiceDestination;
-    use bluesea_identity::{ConnDirection, ConnId, NodeId, NodeIdType};
+    use bluesea_identity::{ConnId, NodeId, NodeIdType};
 
     #[test]
     fn create_manual_multi_layers() {
@@ -202,11 +202,9 @@ mod tests {
 
     #[test]
     fn complex_sync_same_zone() {
-        /**
-        A -1- B -1- C -1- F
-        |1    |1
-        D -2- E
-        **/
+        // A -1- B -1- C -1- F
+        // |1    |1
+        // D -2- E
         let (node_a, conn_a, mut router_a) = create_router(0x01);
         let (node_b, conn_b, mut router_b) = create_router(0x02);
         let (node_c, conn_c, mut router_c) = create_router(0x03);
@@ -290,11 +288,10 @@ mod tests {
             router_c.apply_sync(conn_f, node_f, Metric::new(1, vec![node_f, node_c], 1), sync_f_c);
         }
 
-        /**
-        A -1- B -1- C -1- F
-        |1    |1
-        D -2- E
-        **/
+        
+        //A -1- B -1- C -1- F
+        //|1    |1
+        //D -2- E
 
         assert_eq!(router_a.next_path(node_b, &[]), Some(Path(conn_b, node_b, Metric::new(1, vec![node_b, node_a], 1))));
         assert_eq!(router_a.next_path(node_c, &[]), Some(Path(conn_b, node_b, Metric::new(2, vec![node_c, node_b, node_a], 1))));
@@ -307,11 +304,12 @@ mod tests {
         assert_eq!(router_e.service_next(1, &[]), Some(ServiceDestination::Remote(conn_b, node_b)));
         assert_eq!(router_d.service_next(1, &[]), Some(ServiceDestination::Remote(conn_a, node_a)));
 
-        /** remove A - B
-        A     B -1- C -1- F
-        |1    |1
-        D -2- E
-        **/
+        //remove A - B
+        //
+        //A     B -1- C -1- F
+        //|1    |1
+        //D -2- E
+
         router_a.del_direct(conn_b);
         router_b.del_direct(conn_a);
 
@@ -349,11 +347,11 @@ mod tests {
             router_c.apply_sync(conn_f, node_f, Metric::new(1, vec![node_f, node_c], 1), sync_f_c);
         }
 
-        /** remove A - B
-        A     B -1- C -1- F
-        |1    |1
-        D -2- E
-        **/
+        // remove A - B
+        // A     B -1- C -1- F
+        // |1    |1
+        // D -2- E
+
         assert_eq!(
             router_a.next_path(node_b, &[node_a]),
             Some(Path(conn_d, node_d, Metric::new(4, vec![node_b, node_e, node_d, node_a], 1)))
@@ -372,9 +370,9 @@ mod tests {
 
     #[test]
     fn closest_node() {
-        let (node_A, conn_A, mut router_A) = create_router(NodeId::build(0, 0, 0, 1));
+        let (node_a, _conn_a, mut router_a) = create_router(NodeId::build(0, 0, 0, 1));
 
-        assert_eq!(router_A.closest_node(0x01, &[]), None);
+        assert_eq!(router_a.closest_node(0x01, &[]), None);
 
         let node_5000 = NodeId::build(5, 0, 0, 1);
         let node_0500 = NodeId::build(0, 5, 0, 1);
@@ -382,17 +380,17 @@ mod tests {
         let conn_5000 = ConnId::from_out(0, 5000);
         let conn_0500 = ConnId::from_out(0, 500);
 
-        router_A.set_direct(conn_5000, node_5000, Metric::new(1, vec![node_5000, node_A], 1));
-        router_A.set_direct(conn_0500, node_0500, Metric::new(1, vec![node_0500, node_A], 1));
+        router_a.set_direct(conn_5000, node_5000, Metric::new(1, vec![node_5000, node_a], 1));
+        router_a.set_direct(conn_0500, node_0500, Metric::new(1, vec![node_0500, node_a], 1));
 
-        assert_eq!(router_A.closest_node(NodeId::build(1, 0, 0, 0), &[]), None);
-        assert_eq!(router_A.closest_node(NodeId::build(4, 0, 0, 0), &[]), Some((conn_5000, node_5000, 3, 5)));
-        assert_eq!(router_A.closest_node(NodeId::build(6, 0, 0, 0), &[]), Some((conn_5000, node_5000, 3, 5)));
+        assert_eq!(router_a.closest_node(NodeId::build(1, 0, 0, 0), &[]), None);
+        assert_eq!(router_a.closest_node(NodeId::build(4, 0, 0, 0), &[]), Some((conn_5000, node_5000, 3, 5)));
+        assert_eq!(router_a.closest_node(NodeId::build(6, 0, 0, 0), &[]), Some((conn_5000, node_5000, 3, 5)));
 
-        assert_eq!(router_A.closest_node(NodeId::build(0, 1, 0, 0), &[]), None);
-        assert_eq!(router_A.closest_node(NodeId::build(0, 6, 0, 0), &[]), Some((conn_0500, node_0500, 2, 5)));
-        assert_eq!(router_A.closest_node(NodeId::build(2, 1, 0, 0), &[]), None);
-        assert_eq!(router_A.closest_node(NodeId::build(2, 6, 0, 0), &[]), Some((conn_0500, node_0500, 2, 5)));
+        assert_eq!(router_a.closest_node(NodeId::build(0, 1, 0, 0), &[]), None);
+        assert_eq!(router_a.closest_node(NodeId::build(0, 6, 0, 0), &[]), Some((conn_0500, node_0500, 2, 5)));
+        assert_eq!(router_a.closest_node(NodeId::build(2, 1, 0, 0), &[]), None);
+        assert_eq!(router_a.closest_node(NodeId::build(2, 6, 0, 0), &[]), Some((conn_0500, node_0500, 2, 5)));
     }
 
     #[test]

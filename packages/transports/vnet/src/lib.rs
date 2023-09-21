@@ -106,7 +106,7 @@ mod tests {
 
         let mut tran1 = VnetTransport::new(vnet.clone(), 1, 1, NodeAddr::from(Protocol::Memory(1)));
         let connector1 = tran1.connector();
-        let conn_id = connector1.connect_to(2, NodeAddr::from(Protocol::Memory(2))).unwrap().conn_id;
+        let _conn_id = connector1.connect_to(2, NodeAddr::from(Protocol::Memory(2))).unwrap().conn_id;
         match tran1.recv().await.unwrap() {
             TransportEvent::OutgoingError { err, .. } => {
                 assert_eq!(err, OutgoingConnectionError::DestinationNotFound);
@@ -122,9 +122,9 @@ mod tests {
         let vnet = Arc::new(VnetEarth::default());
 
         let mut tran1 = VnetTransport::new(vnet.clone(), 1, 1, NodeAddr::from(Protocol::Memory(1)));
-        let mut tran2 = VnetTransport::new(vnet.clone(), 2, 2, NodeAddr::from(Protocol::Memory(2)));
+        let mut _tran2 = VnetTransport::new(vnet.clone(), 2, 2, NodeAddr::from(Protocol::Memory(2)));
         let connector1 = tran1.connector();
-        let conn_id = connector1.connect_to(3, NodeAddr::from(Protocol::Memory(2))).unwrap().conn_id;
+        let _conn_id = connector1.connect_to(3, NodeAddr::from(Protocol::Memory(2))).unwrap().conn_id;
         match tran1.recv().await.unwrap() {
             TransportEvent::OutgoingError { err, .. } => {
                 assert_eq!(err, OutgoingConnectionError::AuthenticationError);
