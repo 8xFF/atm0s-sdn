@@ -1,11 +1,17 @@
-use std::{time::Duration, sync::Arc};
 use async_std::channel::{Receiver, Sender};
-use bluesea_router::{RouterTable, RouteAction};
+use bluesea_router::{RouteAction, RouterTable};
 use futures::{select, FutureExt, StreamExt};
 use parking_lot::RwLock;
-use utils::{Timer, option_handle::OptionUtils};
+use std::{sync::Arc, time::Duration};
+use utils::{option_handle::OptionUtils, Timer};
 
-use crate::{behaviour::ConnectionHandler, ConnectionAgent, transport::{ConnectionReceiver, ConnectionEvent, ConnectionSender}, internal::cross_handler_gate::{CrossHandlerGate, CrossHandlerEvent}, plane::NetworkPlaneInternalEvent};
+use crate::{
+    behaviour::ConnectionHandler,
+    internal::cross_handler_gate::{CrossHandlerEvent, CrossHandlerGate},
+    plane::NetworkPlaneInternalEvent,
+    transport::{ConnectionEvent, ConnectionReceiver, ConnectionSender},
+    ConnectionAgent,
+};
 
 fn process_conn_msg<BE, HE>(
     event: ConnectionEvent,
@@ -65,7 +71,7 @@ impl<BE, HE> PlaneSingleConn<BE, HE>
 where
     BE: Send + Sync + 'static,
     HE: Send + Sync + 'static,
-    {
+{
     pub async fn run(&mut self) {
         log::info!("[NetworkPlane] fire handlers on_opened ({}, {})", self.receiver.remote_node_id(), self.receiver.conn_id());
 
