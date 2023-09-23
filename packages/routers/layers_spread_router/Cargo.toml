@@ -13,6 +13,7 @@ serde = { workspace = true }
 log = { workspace = true }
 parking_lot = { workspace = true }
 
+
 [dev-dependencies]
 criterion = { version = "0.3.4" }
 
