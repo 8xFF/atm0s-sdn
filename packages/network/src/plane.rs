@@ -94,7 +94,7 @@ where
     }
 
     fn process_transport_event(&mut self, e: Result<TransportEvent, ()>) -> Result<(), ()> {
-        let (outgoing, sender, mut receiver, handlers, conn_internal_rx) = match e? {
+        let (outgoing, sender, receiver, handlers, conn_internal_rx) = match e? {
             TransportEvent::IncomingRequest(node, conn_id, acceptor) => {
                 for (behaviour, _agent) in self.behaviors.iter_mut().flatten() {
                     if let Err(err) = behaviour.check_incoming_connection(node, conn_id) {
