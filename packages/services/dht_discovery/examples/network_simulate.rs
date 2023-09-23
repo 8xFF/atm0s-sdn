@@ -21,7 +21,7 @@
 
 // async fn start_node(node_id: NodeId, earth: Arc<VnetEarth>) {
 //     let timer = Arc::new(SystemTimer());
-    
+
 //     let behavior = Box::new(DiscoveryNetworkBehavior::new(
 //         DiscoveryNetworkBehaviorOpts {
 //             local_node_id: node_id,
@@ -29,7 +29,7 @@
 //             timer: timer.clone(),
 //         },
 //     ));
-    
+
 //     let mut plane = NetworkPlane::<ImplBehaviorEvent, ImplHandlerEvent, ImplNetworkMsg>::new(
 //         NetworkPlaneConfig {
 //             local_node_id: 0,
@@ -39,12 +39,12 @@
 //             timer,
 //         },
 //     );
-    
+
 //     let join = async_std::task::spawn(async move { while let Ok(_) = plane.run().await {} });
 // }
 
 #[async_std::main]
 async fn main() {
-//     env_logger::init();
-//     //let earth = Arc::new(VnetEarth::default());
+    //     env_logger::init();
+    //     //let earth = Arc::new(VnetEarth::default());
 }

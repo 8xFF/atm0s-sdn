@@ -6,7 +6,8 @@ mod shared;
 mod table;
 mod utils;
 
-pub use crate::router::RouterSync;
+pub use crate::registry::{Registry, RegistrySync};
+pub use crate::router::{Router, RouterSync};
 pub use crate::shared::SharedRouter;
 pub use crate::table::{Metric, Path};
 

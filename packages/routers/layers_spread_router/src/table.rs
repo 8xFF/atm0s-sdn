@@ -248,13 +248,12 @@ mod tests {
 
     #[test]
     fn apply_sync_multi() {
-        
         // A --- B -2- D
         // |     |    |
         // |     2    |
         // |     |    |
         // | --- C ---
-        
+
         let node_a: NodeId = 0x0;
         let node_b: NodeId = 0x1;
         let node_c: NodeId = 0x2;
@@ -279,13 +278,12 @@ mod tests {
         assert_eq!(table_a.next(node_c, &[]), Some((conn_c, node_c)));
         assert_eq!(table_a.next(node_d, &[]), Some((conn_c, node_c)));
 
-        
         // A --- B -2- D
         // |     |
         // |     2
         // |     |
         // | --- C
-        
+
         let sync2 = vec![(node_b.layer(0), Metric::new(2, vec![node_b, node_c], 1))];
         table_a.apply_sync(conn_c, node_c, Metric::new(1, vec![node_c, node_a], 1), TableSync(sync2));
 

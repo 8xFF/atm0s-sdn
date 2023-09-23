@@ -6,7 +6,7 @@ use crate::table::{Metric, Path, Table, TableSync};
 use crate::ServiceDestination;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
-pub struct RouterSync(pub(crate) RegistrySync, pub(crate) [Option<TableSync>; 4]);
+pub struct RouterSync(pub RegistrySync, pub [Option<TableSync>; 4]);
 
 pub struct Router {
     local_node_id: NodeId,
@@ -288,7 +288,6 @@ mod tests {
             router_c.apply_sync(conn_f, node_f, Metric::new(1, vec![node_f, node_c], 1), sync_f_c);
         }
 
-        
         //A -1- B -1- C -1- F
         //|1    |1
         //D -2- E
