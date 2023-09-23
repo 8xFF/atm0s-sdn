@@ -4,7 +4,7 @@ use bluesea_identity::ConnId;
 use criterion::{criterion_group, criterion_main, Criterion};
 use layers_spread_router::{Metric, RegistrySync, Router, RouterSync, SharedRouter};
 
-criterion_group!(benches, benchmark_full, benchmark_full_shared);
+criterion_group!(benches, benchmark_empty, benchmark_single, benchmark_full, benchmark_full_shared);
 criterion_main!(benches);
 
 fn benchmark_empty(c: &mut Criterion) {
