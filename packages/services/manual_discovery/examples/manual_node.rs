@@ -81,5 +81,7 @@ async fn main() {
         router: Arc::new(router),
     });
 
+    plane.started();
     while let Ok(_) = plane.recv().await {}
+    plane.stopped();
 }

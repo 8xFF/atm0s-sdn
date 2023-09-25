@@ -89,6 +89,10 @@ mod tests {
         fn on_rpc(&mut self, _agent: &BehaviorAgent<HE>, _req: Req, _res: Box<dyn RpcAnswer<Res>>) -> bool {
             false
         }
+
+        fn on_started(&mut self, agent: &BehaviorAgent<HE>) {}
+
+        fn on_stopped(&mut self, agent: &BehaviorAgent<HE>) {}
     }
 
     impl<BE, HE> ConnectionHandler<BE, HE> for TestCrossNetworkHandler
@@ -136,7 +140,11 @@ mod tests {
             router: Arc::new(ForceLocalRouter()),
         });
 
-        let join = async_std::task::spawn(async move { while let Ok(_) = plane.recv().await {} });
+        let join = async_std::task::spawn(async move { 
+            plane.started();
+            while let Ok(_) = plane.recv().await {} 
+            plane.stopped();
+        });
 
         faker.send(MockInput::FakeIncomingConnection(1, ConnId::from_in(0, 1), NodeAddr::from(Protocol::Udp(1)))).await.unwrap();
         async_std::task::sleep(Duration::from_millis(1000)).await;

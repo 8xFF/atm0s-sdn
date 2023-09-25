@@ -208,4 +208,8 @@ where
         }
         true
     }
+
+    fn on_started(&mut self, _agent: &BehaviorAgent<HE>) {}
+
+    fn on_stopped(&mut self, _agent: &BehaviorAgent<HE>) {}
 }

@@ -49,7 +49,7 @@ impl DiscoveryNetworkBehavior {
                     agent.connect_to(node_id, addr).print_error("Should connect to node");
                 }
                 Action::SendTo(node_id, msg) => {
-                    agent.send_to_net(TransportMsg::build_reliable(DISCOVERY_SERVICE_ID, RouteRule::ToNode(node_id), 0, bincode::serialize(&msg).unwrap()));
+                    agent.send_to_net(TransportMsg::build_reliable(DISCOVERY_SERVICE_ID, RouteRule::ToNode(node_id), 0, &bincode::serialize(&msg).unwrap()));
                 }
             }
         }
@@ -142,4 +142,8 @@ where
     fn on_rpc(&mut self, _agent: &BehaviorAgent<HE>, _req: Req, _res: Box<dyn RpcAnswer<Res>>) -> bool {
         false
     }
+
+    fn on_started(&mut self, _agent: &BehaviorAgent<HE>) {}
+
+    fn on_stopped(&mut self, _agent: &BehaviorAgent<HE>) {}
 }

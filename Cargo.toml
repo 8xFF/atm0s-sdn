@@ -11,6 +11,7 @@ members = [
     "packages/services/manual_discovery",
     "packages/services/layers_spread_router_sync",
     "packages/services/key_value",
+    "packages/services/tun_tap",
     "packages/transports/vnet",
     "packages/transports/tcp",
     "packages/transports/http_rpc",
@@ -30,6 +31,7 @@ network = { package = "network", path = "packages/network" }
 manual-discovery = { package = "manual-discovery", path = "packages/services/manual_discovery" }
 dht-discovery = { package = "dht-discovery", path = "packages/services/dht_discovery" }
 layers-spread-router-sync = { package = "layers-spread-router-sync", path = "packages/services/layers_spread_router_sync" }
+tun-tap = { package = "tun-tap", path = "packages/services/tun_tap" }
 key-value = { package = "key-value", path = "packages/services/key_value" }
 transport-vnet = { package = "vnet", path = "packages/transports/vnet" }
 transport-tcp = { package = "tcp", path = "packages/transports/tcp" }

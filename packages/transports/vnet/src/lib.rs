@@ -27,7 +27,7 @@ mod tests {
     }
 
     fn build_releadable(to_node: NodeId, msg: Msg) -> TransportMsg {
-        TransportMsg::build_reliable(0, RouteRule::ToNode(to_node), 0, bincode::serialize(&msg).unwrap())
+        TransportMsg::build_reliable(0, RouteRule::ToNode(to_node), 0, &bincode::serialize(&msg).unwrap())
     }
 
     #[async_std::test]

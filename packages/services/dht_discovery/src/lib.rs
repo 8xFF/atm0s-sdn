@@ -71,7 +71,12 @@ mod tests {
             router: Arc::new(ForceNodeRouter(ConnId::from_in(0, 0), neighbour1)),
         });
 
-        let join = async_std::task::spawn(async move { while let Ok(_) = plane.recv().await {} });
+        let join = async_std::task::spawn(async move { 
+            plane.started();
+            while let Ok(_) = plane.recv().await {} 
+            plane.stopped();
+        });
+
         async_std::task::sleep(Duration::from_millis(1000)).await;
         assert_eq!(output.lock().pop_front(), Some(MockOutput::ConnectTo(neighbour1, neighbour1_addr.clone())));
         faker
@@ -83,7 +88,7 @@ mod tests {
             Some(MockOutput::SendTo(
                 neighbour1,
                 ConnId::from_out(0, 0),
-                TransportMsg::build_reliable(DISCOVERY_SERVICE_ID, RouteRule::ToNode(neighbour1), 0, bincode::serialize(&DiscoveryMsg::FindKey(0, 0)).unwrap())
+                TransportMsg::build_reliable(DISCOVERY_SERVICE_ID, RouteRule::ToNode(neighbour1), 0, &bincode::serialize(&DiscoveryMsg::FindKey(0, 0)).unwrap())
             ))
         );
         join.cancel().await.print_none("Should cancel join");
@@ -115,7 +120,12 @@ mod tests {
             router: Arc::new(ForceNodeRouter(ConnId::from_in(0, 0), neighbour1)),
         });
 
-        let join = async_std::task::spawn(async move { while let Ok(_) = plane.recv().await {} });
+        let join = async_std::task::spawn(async move { 
+            plane.started();
+            while let Ok(_) = plane.recv().await {} 
+            plane.stopped();
+        });
+        
         faker
             .send_blocking(MockInput::FakeIncomingConnection(neighbour1, ConnId::from_in(0, 0), neighbour1_addr.clone()))
             .unwrap();
@@ -125,7 +135,7 @@ mod tests {
             Some(MockOutput::SendTo(
                 neighbour1,
                 ConnId::from_in(0, 0),
-                TransportMsg::build_reliable(DISCOVERY_SERVICE_ID, RouteRule::ToNode(neighbour1), 0, bincode::serialize(&DiscoveryMsg::FindKey(0, 0)).unwrap())
+                TransportMsg::build_reliable(DISCOVERY_SERVICE_ID, RouteRule::ToNode(neighbour1), 0, &bincode::serialize(&DiscoveryMsg::FindKey(0, 0)).unwrap())
             ))
         );
         join.cancel().await.print_none("Should cancel join");

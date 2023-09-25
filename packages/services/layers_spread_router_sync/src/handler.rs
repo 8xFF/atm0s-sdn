@@ -34,7 +34,7 @@ impl LayersSpreadRouterSyncHandler {
             FAST_PATH_ROUTE_SERVICE_ID,
             RouteRule::Direct,
             0,
-            bincode::serialize(&LayersSpreadRouterSyncMsg::Sync(sync)).unwrap(),
+            &bincode::serialize(&LayersSpreadRouterSyncMsg::Sync(sync)).unwrap(),
         ));
     }
 }

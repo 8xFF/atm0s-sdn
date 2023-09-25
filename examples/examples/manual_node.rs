@@ -1,44 +1,40 @@
 use bluesea_identity::{NodeAddr, NodeAddrBuilder, Protocol};
 use clap::Parser;
 use layers_spread_router::SharedRouter;
-use layers_spread_router_sync::{
-    LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent, LayersSpreadRouterSyncHandlerEvent, LayersSpreadRouterSyncMsg, LayersSpreadRouterSyncReq, LayersSpreadRouterSyncRes,
-};
-use manual_discovery::{ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent, ManualMsg, ManualReq, ManualRes};
+use layers_spread_router_sync::{LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent, LayersSpreadRouterSyncHandlerEvent, LayersSpreadRouterSyncReq, LayersSpreadRouterSyncRes};
+use manual_discovery::{ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent, ManualReq, ManualRes};
 use network::convert_enum;
 use network::plane::{NetworkPlane, NetworkPlaneConfig};
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tun_tap::{TunTapBehaviorEvent, TunTapHandlerEvent, TunTapReq, TunTapRes};
 use utils::SystemTimer;
 
 #[derive(convert_enum::From, convert_enum::TryInto)]
 enum NodeBehaviorEvent {
     Manual(ManualBehaviorEvent),
     LayersSpreadRouterSync(LayersSpreadRouterSyncBehaviorEvent),
+    TunTap(TunTapBehaviorEvent),
 }
 
 #[derive(convert_enum::From, convert_enum::TryInto)]
 enum NodeHandleEvent {
     Manual(ManualHandlerEvent),
     LayersSpreadRouterSync(LayersSpreadRouterSyncHandlerEvent),
-}
-
-#[derive(convert_enum::From, convert_enum::TryInto, Serialize, Deserialize)]
-enum NodeMsg {
-    Manual(ManualMsg),
-    LayersSpreadRouterSync(LayersSpreadRouterSyncMsg),
+    TunTap(TunTapHandlerEvent),
 }
 
 #[derive(convert_enum::From, convert_enum::TryInto)]
 enum NodeRpcReq {
     Manual(ManualReq),
     LayersSpreadRouterSync(LayersSpreadRouterSyncReq),
+    TunTap(TunTapReq),
 }
 
 #[derive(convert_enum::From, convert_enum::TryInto)]
 enum NodeRpcRes {
     Manual(ManualRes),
     LayersSpreadRouterSync(LayersSpreadRouterSyncRes),
+    TunTap(TunTapRes),
 }
 
 /// Node with manual network builder
@@ -72,17 +68,22 @@ async fn main() {
         timer: Arc::new(SystemTimer()),
     });
 
+    let tun_tap = tun_tap::TunTapBehavior::default();
     let spreads_layer_router = LayersSpreadRouterSyncBehavior::new(router.clone());
 
     let mut plane = NetworkPlane::<NodeBehaviorEvent, NodeHandleEvent, NodeRpcReq, NodeRpcRes>::new(NetworkPlaneConfig {
         router: Arc::new(router),
         local_node_id: args.node_id,
         tick_ms: 1000,
-        behavior: vec![Box::new(manual), Box::new(spreads_layer_router)],
+        behavior: vec![Box::new(manual), Box::new(spreads_layer_router), Box::new(tun_tap)],
         transport: Box::new(transport),
         transport_rpc: Box::new(transport_rpc),
         timer: Arc::new(SystemTimer()),
     });
 
+    plane.started();
+
     while let Ok(_) = plane.recv().await {}
+
+    plane.stopped();
 }

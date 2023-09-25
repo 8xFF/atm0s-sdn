@@ -191,6 +191,10 @@ where
     }
 
     fn on_rpc(&mut self, agent: &BehaviorAgent<HE>, req: Req, res: Box<dyn RpcAnswer<Res>>) -> bool {
-        todo!()
+        false
     }
+
+    fn on_started(&mut self, _agent: &BehaviorAgent<HE>) {}
+
+    fn on_stopped(&mut self, _agent: &BehaviorAgent<HE>) {}
 }
