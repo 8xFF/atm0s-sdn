@@ -1,53 +1,41 @@
 use crate::mock::connection_receiver::MockConnectionReceiver;
 use crate::mock::connection_sender::MockConnectionSender;
 use crate::mock::{MockInput, MockOutput};
-use crate::transport::{
-    AsyncConnectionAcceptor, ConnectionEvent, ConnectionMsg, ConnectionSender,
-    OutgoingConnectionError, Transport, TransportConnector, TransportEvent,
-    TransportPendingOutgoing,
-};
-use async_std::channel::{bounded, unbounded, Receiver, Sender};
-use bluesea_identity::{ConnDirection, ConnId, NodeAddr, NodeId};
+use crate::transport::{AsyncConnectionAcceptor, ConnectionEvent, OutgoingConnectionError, Transport, TransportConnectingOutgoing, TransportConnector, TransportEvent};
+use async_std::channel::{unbounded, Receiver, Sender};
+use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use parking_lot::Mutex;
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-pub struct MockTransportConnector<M: Send + Sync> {
-    output: Arc<Mutex<VecDeque<MockOutput<M>>>>,
+use super::MOCK_PROTOCOL_ID;
+
+pub struct MockTransportConnector {
+    output: Arc<Mutex<VecDeque<MockOutput>>>,
     conn_id: Arc<AtomicU64>,
 }
 
-impl<M: Send + Sync> TransportConnector for MockTransportConnector<M> {
-    fn connect_to(
-        &self,
-        node_id: NodeId,
-        dest: NodeAddr,
-    ) -> Result<TransportPendingOutgoing, OutgoingConnectionError> {
+impl TransportConnector for MockTransportConnector {
+    fn connect_to(&self, node_id: NodeId, dest: NodeAddr) -> Result<TransportConnectingOutgoing, OutgoingConnectionError> {
         let conn_seed = self.conn_id.fetch_add(1, Ordering::Relaxed);
-        let conn_id = ConnId::from_out(0, conn_seed);
-        self.output
-            .lock()
-            .push_back(MockOutput::ConnectTo(node_id, dest));
-        Ok(TransportPendingOutgoing { conn_id })
+        let conn_id = ConnId::from_out(MOCK_PROTOCOL_ID, conn_seed);
+        self.output.lock().push_back(MockOutput::ConnectTo(node_id, dest));
+        Ok(TransportConnectingOutgoing { conn_id })
     }
 }
 
-pub struct MockTransport<M> {
-    sender: Sender<MockInput<M>>,
-    receiver: Receiver<MockInput<M>>,
-    output: Arc<Mutex<VecDeque<MockOutput<M>>>>,
-    in_conns: HashMap<ConnId, Sender<Option<ConnectionEvent<M>>>>,
-    out_conns: HashMap<ConnId, Sender<Option<ConnectionEvent<M>>>>,
+pub struct MockTransport {
+    sender: Sender<MockInput>,
+    receiver: Receiver<MockInput>,
+    output: Arc<Mutex<VecDeque<MockOutput>>>,
+    in_conns: HashMap<ConnId, Sender<Option<ConnectionEvent>>>,
+    out_conns: HashMap<ConnId, Sender<Option<ConnectionEvent>>>,
     conn_id: Arc<AtomicU64>,
 }
 
-impl<M> MockTransport<M> {
-    pub fn new() -> (
-        Self,
-        Sender<MockInput<M>>,
-        Arc<Mutex<VecDeque<MockOutput<M>>>>,
-    ) {
+impl MockTransport {
+    pub fn new() -> (Self, Sender<MockInput>, Arc<Mutex<VecDeque<MockOutput>>>) {
         let (sender, receiver) = unbounded();
         let output = Arc::new(Mutex::new(VecDeque::new()));
         (
@@ -66,7 +54,7 @@ impl<M> MockTransport<M> {
 }
 
 #[async_trait::async_trait]
-impl<M: Send + Sync + 'static> Transport<M> for MockTransport<M> {
+impl Transport for MockTransport {
     fn connector(&self) -> Arc<dyn TransportConnector> {
         Arc::new(MockTransportConnector {
             output: self.output.clone(),
@@ -74,30 +62,22 @@ impl<M: Send + Sync + 'static> Transport<M> for MockTransport<M> {
         })
     }
 
-    async fn recv(&mut self) -> Result<TransportEvent<M>, ()> {
+    async fn recv(&mut self) -> Result<TransportEvent, ()> {
         loop {
             log::debug!("waiting mock transport event");
-            let input = self.receiver.recv().await.map_err(|e| ())?;
+            let input = self.receiver.recv().await.map_err(|_e| ())?;
             match input {
                 MockInput::FakeIncomingConnection(node, conn, addr) => {
                     let sender = self.sender.clone();
-                    let (acceptor, mut acceptor_recv) = AsyncConnectionAcceptor::new();
+                    let (acceptor, acceptor_recv) = AsyncConnectionAcceptor::new();
                     async_std::task::spawn(async move {
                         match acceptor_recv.recv().await {
                             Ok(Ok(_)) => {
-                                sender
-                                    .send_blocking(MockInput::FakeIncomingConnectionForce(
-                                        node, conn, addr,
-                                    ))
-                                    .unwrap();
+                                sender.send_blocking(MockInput::FakeIncomingConnectionForce(node, conn, addr)).unwrap();
                             }
                             Ok(Err(err)) => {
                                 sender
-                                    .send_blocking(MockInput::FakeOutgoingConnectionError(
-                                        node,
-                                        conn,
-                                        OutgoingConnectionError::BehaviorRejected(err),
-                                    ))
+                                    .send_blocking(MockInput::FakeOutgoingConnectionError(node, conn, OutgoingConnectionError::BehaviorRejected(err)))
                                     .unwrap();
                             }
                             _ => {
@@ -109,17 +89,10 @@ impl<M: Send + Sync + 'static> Transport<M> for MockTransport<M> {
                 }
                 MockInput::FakeOutgoingConnection(node, conn, addr) => {
                     let sender = self.sender.clone();
-                    let (acceptor, mut acceptor_recv) = AsyncConnectionAcceptor::new();
+                    let (acceptor, acceptor_recv) = AsyncConnectionAcceptor::new();
                     async_std::task::spawn(async move {
-                        match acceptor_recv.recv().await {
-                            Ok(Ok(_)) => {
-                                sender
-                                    .send_blocking(MockInput::FakeOutgoingConnectionForce(
-                                        node, conn, addr,
-                                    ))
-                                    .unwrap();
-                            }
-                            _ => {}
+                        if let Ok(Ok(_)) = acceptor_recv.recv().await {
+                            sender.send_blocking(MockInput::FakeOutgoingConnectionForce(node, conn, addr)).unwrap();
                         }
                     });
                     break Ok(TransportEvent::OutgoingRequest(node, conn, acceptor));
@@ -127,7 +100,7 @@ impl<M: Send + Sync + 'static> Transport<M> for MockTransport<M> {
                 MockInput::FakeIncomingConnectionForce(node, conn, addr) => {
                     log::debug!("FakeIncomingConnectionForce {} {} {}", node, conn, addr);
                     let (sender, receiver) = unbounded();
-                    let conn_sender: MockConnectionSender<M> = MockConnectionSender {
+                    let conn_sender = MockConnectionSender {
                         remote_node_id: node,
                         conn_id: conn,
                         remote_addr: addr.clone(),
@@ -135,7 +108,7 @@ impl<M: Send + Sync + 'static> Transport<M> for MockTransport<M> {
                         internal_sender: sender.clone(),
                     };
 
-                    let conn_recv: MockConnectionReceiver<M> = MockConnectionReceiver {
+                    let conn_recv = MockConnectionReceiver {
                         remote_node_id: node,
                         conn_id: conn,
                         remote_addr: addr.clone(),
@@ -143,15 +116,12 @@ impl<M: Send + Sync + 'static> Transport<M> for MockTransport<M> {
                     };
 
                     self.in_conns.insert(conn, sender);
-                    break Ok(TransportEvent::Incoming(
-                        Arc::new(conn_sender),
-                        Box::new(conn_recv),
-                    ));
+                    break Ok(TransportEvent::Incoming(Arc::new(conn_sender), Box::new(conn_recv)));
                 }
                 MockInput::FakeOutgoingConnectionForce(node, conn, addr) => {
                     log::debug!("FakeOutgoingConnectionForce {} {} {}", node, conn, addr);
                     let (sender, receiver) = unbounded();
-                    let conn_sender: MockConnectionSender<M> = MockConnectionSender {
+                    let conn_sender = MockConnectionSender {
                         remote_node_id: node,
                         conn_id: conn,
                         remote_addr: addr.clone(),
@@ -159,7 +129,7 @@ impl<M: Send + Sync + 'static> Transport<M> for MockTransport<M> {
                         internal_sender: sender.clone(),
                     };
 
-                    let conn_recv: MockConnectionReceiver<M> = MockConnectionReceiver {
+                    let conn_recv = MockConnectionReceiver {
                         remote_node_id: node,
                         conn_id: conn,
                         remote_addr: addr.clone(),
@@ -167,29 +137,18 @@ impl<M: Send + Sync + 'static> Transport<M> for MockTransport<M> {
                     };
 
                     self.out_conns.insert(conn, sender);
-                    break Ok(TransportEvent::Outgoing(
-                        Arc::new(conn_sender),
-                        Box::new(conn_recv),
-                    ));
+                    break Ok(TransportEvent::Outgoing(Arc::new(conn_sender), Box::new(conn_recv)));
                 }
                 MockInput::FakeOutgoingConnectionError(node_id, connection_id, err) => {
                     self.out_conns.remove(&connection_id);
-                    break Ok(TransportEvent::OutgoingError {
-                        node_id: node_id,
-                        conn_id: connection_id,
-                        err,
-                    });
+                    break Ok(TransportEvent::OutgoingError { node_id, conn_id: connection_id, err });
                 }
-                MockInput::FakeIncomingMsg(service_id, conn, msg) => {
-                    log::debug!("FakeIncomingMsg {} {}", service_id, conn);
+                MockInput::FakeIncomingMsg(conn, msg) => {
+                    log::debug!("FakeIncomingMsg {} {}", msg.header.service_id, conn);
                     if let Some(sender) = self.in_conns.get(&conn) {
-                        sender
-                            .send_blocking(Some(ConnectionEvent::Msg { service_id, msg }))
-                            .unwrap();
+                        sender.send_blocking(Some(ConnectionEvent::Msg(msg))).unwrap();
                     } else if let Some(sender) = self.out_conns.get(&conn) {
-                        sender
-                            .send_blocking(Some(ConnectionEvent::Msg { service_id, msg }))
-                            .unwrap();
+                        sender.send_blocking(Some(ConnectionEvent::Msg(msg))).unwrap();
                     } else {
                         panic!("connection not found");
                     }

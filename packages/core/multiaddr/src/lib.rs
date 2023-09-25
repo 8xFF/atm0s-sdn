@@ -1,4 +1,4 @@
-///! Implementation of [multiaddr](https://github.com/multiformats/multiaddr) in Rust.
+//! Implementation of [multiaddr](https://github.com/multiformats/multiaddr) in Rust.
 mod errors;
 mod protocol;
 
@@ -40,9 +40,7 @@ pub struct Multiaddr {
 impl Multiaddr {
     /// Create a new, empty multiaddress.
     pub fn empty() -> Self {
-        Self {
-            bytes: Arc::new(Vec::new()),
-        }
+        Self { bytes: Arc::new(Vec::new()) }
     }
 
     /// Create a new, empty multiaddress with the given capacity.
@@ -59,7 +57,7 @@ impl Multiaddr {
 
     /// Returns true if the length of this multiaddress is 0.
     pub fn is_empty(&self) -> bool {
-        self.bytes.len() == 0
+        self.bytes.is_empty()
     }
 
     /// Return a copy of this [`Multiaddr`]'s byte representation.
@@ -82,8 +80,7 @@ impl Multiaddr {
     pub fn push(&mut self, p: Protocol<'_>) {
         let mut w = io::Cursor::<&mut Vec<u8>>::new(Arc::make_mut(&mut self.bytes));
         w.set_position(w.get_ref().len() as u64);
-        p.write_bytes(&mut w)
-            .expect("Writing to a `io::Cursor<&mut Vec<u8>>` never fails.")
+        p.write_bytes(&mut w).expect("Writing to a `io::Cursor<&mut Vec<u8>>` never fails.")
     }
 
     /// Pops the last `Protocol` of this multiaddr, or `None` if the multiaddr is empty.
@@ -117,8 +114,7 @@ impl Multiaddr {
     pub fn with(mut self, p: Protocol<'_>) -> Self {
         let mut w = io::Cursor::<&mut Vec<u8>>::new(Arc::make_mut(&mut self.bytes));
         w.set_position(w.get_ref().len() as u64);
-        p.write_bytes(&mut w)
-            .expect("Writing to a `io::Cursor<&mut Vec<u8>>` never fails.");
+        p.write_bytes(&mut w).expect("Writing to a `io::Cursor<&mut Vec<u8>>` never fails.");
         self
     }
 
@@ -244,12 +240,9 @@ impl<'a> FromIterator<Protocol<'a>> for Multiaddr {
     {
         let mut writer = Vec::new();
         for cmp in iter {
-            cmp.write_bytes(&mut writer)
-                .expect("Writing to a `Vec` never fails.");
+            cmp.write_bytes(&mut writer).expect("Writing to a `Vec` never fails.");
         }
-        Multiaddr {
-            bytes: Arc::new(writer),
-        }
+        Multiaddr { bytes: Arc::new(writer) }
     }
 }
 
@@ -267,13 +260,10 @@ impl FromStr for Multiaddr {
 
         while parts.peek().is_some() {
             let p = Protocol::from_str_parts(&mut parts)?;
-            p.write_bytes(&mut writer)
-                .expect("Writing to a `Vec` never fails.");
+            p.write_bytes(&mut writer).expect("Writing to a `Vec` never fails.");
         }
 
-        Ok(Multiaddr {
-            bytes: Arc::new(writer),
-        })
+        Ok(Multiaddr { bytes: Arc::new(writer) })
     }
 }
 
@@ -288,8 +278,7 @@ impl<'a> Iterator for Iter<'a> {
             return None;
         }
 
-        let (p, next_data) =
-            Protocol::from_bytes(self.0).expect("`Multiaddr` is known to be valid.");
+        let (p, next_data) = Protocol::from_bytes(self.0).expect("`Multiaddr` is known to be valid.");
 
         self.0 = next_data;
         Some(p)
@@ -311,8 +300,7 @@ impl<'a> Iterator for ProtoStackIter<'a> {
 impl<'a> From<Protocol<'a>> for Multiaddr {
     fn from(p: Protocol<'a>) -> Multiaddr {
         let mut w = Vec::new();
-        p.write_bytes(&mut w)
-            .expect("Writing to a `Vec` never fails.");
+        p.write_bytes(&mut w).expect("Writing to a `Vec` never fails.");
         Multiaddr { bytes: Arc::new(w) }
     }
 }
@@ -396,12 +384,8 @@ impl<'de> Deserialize<'de> for Multiaddr {
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("multiaddress")
             }
-            fn visit_seq<A: de::SeqAccess<'de>>(
-                self,
-                mut seq: A,
-            ) -> StdResult<Self::Value, A::Error> {
-                let mut buf: Vec<u8> =
-                    Vec::with_capacity(std::cmp::min(seq.size_hint().unwrap_or(0), 4096));
+            fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> StdResult<Self::Value, A::Error> {
+                let mut buf: Vec<u8> = Vec::with_capacity(std::cmp::min(seq.size_hint().unwrap_or(0), 4096));
                 while let Some(e) = seq.next_element()? {
                     buf.push(e);
                 }
@@ -433,13 +417,9 @@ impl<'de> Deserialize<'de> for Multiaddr {
         }
 
         if deserializer.is_human_readable() {
-            deserializer.deserialize_str(Visitor {
-                is_human_readable: true,
-            })
+            deserializer.deserialize_str(Visitor { is_human_readable: true })
         } else {
-            deserializer.deserialize_bytes(Visitor {
-                is_human_readable: false,
-            })
+            deserializer.deserialize_bytes(Visitor { is_human_readable: false })
         }
     }
 }

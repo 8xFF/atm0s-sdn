@@ -1,5 +1,5 @@
 [package]
-name = "router"
+name = "bluesea-router"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,7 +7,3 @@ edition = "2021"
 
 [dependencies]
 bluesea-identity = { workspace = true }
-utils = { workspace = true }
-serde = { workspace = true }
-log = { workspace = true }
-parking_lot = { workspace = true }

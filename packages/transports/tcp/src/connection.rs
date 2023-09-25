@@ -1,31 +1,22 @@
 use crate::msg::TcpMsg;
 use async_bincode::futures::AsyncBincodeStream;
 use async_bincode::AsyncDestination;
-use async_std::channel::{bounded, unbounded, Receiver, RecvError, Sender};
+use async_std::channel::{bounded, unbounded, RecvError, Sender};
 use async_std::net::{Shutdown, TcpStream};
 use async_std::task::JoinHandle;
 use bluesea_identity::{ConnId, NodeAddr, NodeId};
-use futures_util::io::{ReadHalf, WriteHalf};
-use futures_util::{
-    select, sink::Sink, AsyncReadExt, AsyncWriteExt, FutureExt, SinkExt, StreamExt,
-};
-use network::transport::{
-    ConnectionEvent, ConnectionMsg, ConnectionReceiver, ConnectionSender, ConnectionStats,
-};
-use serde::{de::DeserializeOwned, Serialize};
+use futures_util::{select, FutureExt, SinkExt, StreamExt};
+use network::msg::TransportMsg;
+use network::transport::{ConnectionEvent, ConnectionReceiver, ConnectionSender, ConnectionStats};
 use std::sync::Arc;
 use std::time::Duration;
+use utils::error_handle::ErrorUtils;
+use utils::option_handle::OptionUtils;
 use utils::Timer;
 
-pub type AsyncBincodeStreamU16<MSG> =
-    AsyncBincodeStream<TcpStream, TcpMsg<MSG>, TcpMsg<MSG>, AsyncDestination>;
+pub type AsyncBincodeStreamU16 = AsyncBincodeStream<TcpStream, TcpMsg, TcpMsg, AsyncDestination>;
 
-pub const BUFFER_LEN: usize = 16384;
-
-pub async fn send_tcp_stream<MSG: Serialize>(
-    writer: &mut AsyncBincodeStreamU16<MSG>,
-    msg: TcpMsg<MSG>,
-) -> Result<(), ()> {
+pub async fn send_tcp_stream(writer: &mut AsyncBincodeStreamU16, msg: TcpMsg) -> Result<(), ()> {
     match writer.send(msg).await {
         Ok(_) => Ok(()),
         Err(err) => {
@@ -35,102 +26,70 @@ pub async fn send_tcp_stream<MSG: Serialize>(
     }
 }
 
-pub enum OutgoingEvent<MSG> {
-    Msg(TcpMsg<MSG>),
+pub enum OutgoingEvent {
+    Msg(TcpMsg),
     CloseRequest,
     ClosedNotify,
 }
 
-pub struct TcpConnectionSender<MSG> {
+pub struct TcpConnectionSender {
     remote_node_id: NodeId,
     remote_addr: NodeAddr,
     conn_id: ConnId,
-    reliable_sender: Sender<OutgoingEvent<MSG>>,
-    unreliable_sender: Sender<OutgoingEvent<MSG>>,
+    reliable_sender: Sender<OutgoingEvent>,
+    unreliable_sender: Sender<OutgoingEvent>,
     task: Option<JoinHandle<()>>,
 }
 
-impl<MSG> TcpConnectionSender<MSG>
-where
-    MSG: Serialize + Send + Sync + 'static,
-{
+impl TcpConnectionSender {
     pub fn new(
         node_id: NodeId,
         remote_node_id: NodeId,
         remote_addr: NodeAddr,
         conn_id: ConnId,
         unreliable_queue_size: usize,
-        mut socket: AsyncBincodeStreamU16<MSG>,
+        mut socket: AsyncBincodeStreamU16,
         timer: Arc<dyn Timer>,
-    ) -> (Self, Sender<OutgoingEvent<MSG>>) {
-        let (reliable_sender, mut r_rx) = unbounded();
-        let (unreliable_sender, mut unr_rx) = bounded(unreliable_queue_size);
+    ) -> (Self, Sender<OutgoingEvent>) {
+        let (reliable_sender, r_rx) = unbounded();
+        let (unreliable_sender, unr_rx) = bounded(unreliable_queue_size);
 
         let task = async_std::task::spawn(async move {
-            log::info!(
-                "[TcpConnectionSender {} => {}] start sending loop",
-                node_id,
-                remote_node_id
-            );
+            log::info!("[TcpConnectionSender {} => {}] start sending loop", node_id, remote_node_id);
             let mut tick_interval = async_std::stream::interval(Duration::from_millis(5000));
-            send_tcp_stream(&mut socket, TcpMsg::<MSG>::Ping(timer.now_ms())).await;
+            send_tcp_stream(&mut socket, TcpMsg::Ping(timer.now_ms())).await.print_error("Should send ping");
 
             loop {
-                let msg: Result<OutgoingEvent<MSG>, RecvError> = select! {
+                let msg: Result<OutgoingEvent, RecvError> = select! {
                     e = r_rx.recv().fuse() => e,
                     e = unr_rx.recv().fuse() => e,
-                    e = tick_interval.next().fuse() => {
+                    _ = tick_interval.next().fuse() => {
                         log::debug!("[TcpConnectionSender {} => {}] sending Ping", node_id, remote_node_id);
                         Ok(OutgoingEvent::Msg(TcpMsg::Ping(timer.now_ms())))
                     }
                 };
 
                 match msg {
-                    Ok(OutgoingEvent::Msg(msg)) => {
-                        if let Err(e) = send_tcp_stream(&mut socket, msg).await {}
-                    }
+                    Ok(OutgoingEvent::Msg(msg)) => send_tcp_stream(&mut socket, msg).await.print_error("Should send tcp stream"),
                     Ok(OutgoingEvent::CloseRequest) => {
                         if let Err(e) = socket.get_mut().shutdown(Shutdown::Both) {
-                            log::error!(
-                                "[TcpConnectionSender {} => {}] close sender error {}",
-                                node_id,
-                                remote_node_id,
-                                e
-                            );
+                            log::error!("[TcpConnectionSender {} => {}] close sender error {}", node_id, remote_node_id, e);
                         } else {
-                            log::info!(
-                                "[TcpConnectionSender {} => {}] close sender loop",
-                                node_id,
-                                remote_node_id
-                            );
+                            log::info!("[TcpConnectionSender {} => {}] close sender loop", node_id, remote_node_id);
                         }
                         break;
                     }
                     Ok(OutgoingEvent::ClosedNotify) => {
-                        log::info!(
-                            "[TcpConnectionSender {} => {}] socket closed",
-                            node_id,
-                            remote_node_id
-                        );
+                        log::info!("[TcpConnectionSender {} => {}] socket closed", node_id, remote_node_id);
                         break;
                     }
                     Err(err) => {
-                        log::error!(
-                            "[TcpConnectionSender {} => {}] channel error {:?}",
-                            node_id,
-                            remote_node_id,
-                            err
-                        );
+                        log::error!("[TcpConnectionSender {} => {}] channel error {:?}", node_id, remote_node_id, err);
                         break;
                     }
                 }
             }
-            log::info!(
-                "[TcpConnectionSender {} => {}] stop sending loop",
-                node_id,
-                remote_node_id
-            );
-            ()
+            log::info!("[TcpConnectionSender {} => {}] stop sending loop", node_id, remote_node_id);
         });
 
         (
@@ -147,10 +106,7 @@ where
     }
 }
 
-impl<MSG> ConnectionSender<MSG> for TcpConnectionSender<MSG>
-where
-    MSG: Send + Sync + 'static,
-{
+impl ConnectionSender for TcpConnectionSender {
     fn remote_node_id(&self) -> NodeId {
         self.remote_node_id
     }
@@ -163,36 +119,22 @@ where
         self.remote_addr.clone()
     }
 
-    fn send(&self, service_id: u8, msg: ConnectionMsg<MSG>) {
-        match &msg {
-            ConnectionMsg::Reliable { .. } => {
-                if let Err(e) = self
-                    .reliable_sender
-                    .send_blocking(OutgoingEvent::Msg(TcpMsg::Msg(service_id, msg)))
-                {
-                    log::error!("[ConnectionSender] send reliable msg error {:?}", e);
-                } else {
-                    log::debug!("[ConnectionSender] send reliable msg");
-                }
+    fn send(&self, msg: TransportMsg) {
+        if msg.header.reliable {
+            if let Err(e) = self.reliable_sender.send_blocking(OutgoingEvent::Msg(TcpMsg::Msg(msg.take()))) {
+                log::error!("[ConnectionSender] send reliable msg error {:?}", e);
+            } else {
+                log::debug!("[ConnectionSender] send reliable msg");
             }
-            ConnectionMsg::Unreliable { .. } => {
-                if let Err(e) = self
-                    .unreliable_sender
-                    .try_send(OutgoingEvent::Msg(TcpMsg::Msg(service_id, msg)))
-                {
-                    log::error!("[ConnectionSender] send unreliable msg error {:?}", e);
-                } else {
-                    log::debug!("[ConnectionSender] send unreliable msg");
-                }
-            }
+        } else if let Err(e) = self.unreliable_sender.try_send(OutgoingEvent::Msg(TcpMsg::Msg(msg.take()))) {
+            log::error!("[ConnectionSender] send unreliable msg error {:?}", e);
+        } else {
+            log::debug!("[ConnectionSender] send unreliable msg");
         }
     }
 
     fn close(&self) {
-        if let Err(e) = self
-            .unreliable_sender
-            .send_blocking(OutgoingEvent::CloseRequest)
-        {
+        if let Err(e) = self.unreliable_sender.send_blocking(OutgoingEvent::CloseRequest) {
             log::error!("[ConnectionSender] send Close request error {:?}", e);
         } else {
             log::info!("[ConnectionSender] sent close request");
@@ -200,17 +142,17 @@ where
     }
 }
 
-impl<MSG> Drop for TcpConnectionSender<MSG> {
+impl Drop for TcpConnectionSender {
     fn drop(&mut self) {
-        if let Some(mut task) = self.task.take() {
-            task.cancel();
+        if let Some(task) = self.task.take() {
+            async_std::task::spawn(async move {
+                task.cancel().await.print_none("Should cancel task");
+            });
         }
     }
 }
 
-pub async fn recv_tcp_stream<MSG: DeserializeOwned>(
-    reader: &mut AsyncBincodeStreamU16<MSG>,
-) -> Result<TcpMsg<MSG>, ()> {
+pub async fn recv_tcp_stream(reader: &mut AsyncBincodeStreamU16) -> Result<TcpMsg, ()> {
     if let Some(res) = reader.next().await {
         res.map_err(|_| ())
     } else {
@@ -218,21 +160,18 @@ pub async fn recv_tcp_stream<MSG: DeserializeOwned>(
     }
 }
 
-pub struct TcpConnectionReceiver<MSG> {
+pub struct TcpConnectionReceiver {
     pub(crate) node_id: NodeId,
     pub(crate) remote_node_id: NodeId,
     pub(crate) remote_addr: NodeAddr,
     pub(crate) conn_id: ConnId,
-    pub(crate) socket: AsyncBincodeStreamU16<MSG>,
+    pub(crate) socket: AsyncBincodeStreamU16,
     pub(crate) timer: Arc<dyn Timer>,
-    pub(crate) reliable_sender: Sender<OutgoingEvent<MSG>>,
+    pub(crate) reliable_sender: Sender<OutgoingEvent>,
 }
 
 #[async_trait::async_trait]
-impl<MSG> ConnectionReceiver<MSG> for TcpConnectionReceiver<MSG>
-where
-    MSG: Serialize + DeserializeOwned + Send + Sync + 'static,
-{
+impl ConnectionReceiver for TcpConnectionReceiver {
     fn remote_node_id(&self) -> NodeId {
         self.remote_node_id
     }
@@ -245,35 +184,25 @@ where
         self.remote_addr.clone()
     }
 
-    async fn poll(&mut self) -> Result<ConnectionEvent<MSG>, ()> {
+    async fn poll(&mut self) -> Result<ConnectionEvent, ()> {
         loop {
-            log::debug!(
-                "[ConnectionReceiver {} => {}] waiting event",
-                self.node_id,
-                self.remote_node_id
-            );
-            match recv_tcp_stream::<MSG>(&mut self.socket).await {
+            log::debug!("[ConnectionReceiver {} => {}] waiting event", self.node_id, self.remote_node_id);
+            match recv_tcp_stream(&mut self.socket).await {
                 Ok(msg) => {
                     match msg {
-                        TcpMsg::Msg(service_id, msg) => {
-                            break Ok(ConnectionEvent::Msg { service_id, msg });
-                        }
+                        TcpMsg::Msg(buf) => match TransportMsg::from_vec(buf) {
+                            Ok(msg) => break Ok(ConnectionEvent::Msg(msg)),
+                            Err(e) => {
+                                log::error!("[ConnectionReceiver {} => {}] wrong msg format {:?}", self.node_id, self.remote_node_id, e);
+                            }
+                        },
                         TcpMsg::Ping(sent_ts) => {
-                            log::debug!(
-                                "[ConnectionReceiver {} => {}] on Ping => reply Pong",
-                                self.node_id,
-                                self.remote_node_id
-                            );
-                            self.reliable_sender
-                                .send_blocking(OutgoingEvent::Msg(TcpMsg::<MSG>::Pong(sent_ts)));
+                            log::debug!("[ConnectionReceiver {} => {}] on Ping => reply Pong", self.node_id, self.remote_node_id);
+                            self.reliable_sender.send_blocking(OutgoingEvent::Msg(TcpMsg::Pong(sent_ts))).print_error("Should send Pong");
                         }
                         TcpMsg::Pong(ping_sent_ts) => {
                             //TODO est speed and over_use state
-                            log::debug!(
-                                "[ConnectionReceiver {} => {}] on Pong",
-                                self.node_id,
-                                self.remote_node_id
-                            );
+                            log::debug!("[ConnectionReceiver {} => {}] on Pong", self.node_id, self.remote_node_id);
                             break Ok(ConnectionEvent::Stats(ConnectionStats {
                                 rtt_ms: (self.timer.now_ms() - ping_sent_ts) as u16,
                                 sending_kbps: 0,
@@ -287,14 +216,9 @@ where
                         }
                     }
                 }
-                Err(e) => {
-                    log::info!(
-                        "[ConnectionReceiver {} => {}] stream closed",
-                        self.node_id,
-                        self.remote_node_id
-                    );
-                    self.reliable_sender
-                        .send_blocking(OutgoingEvent::ClosedNotify);
+                Err(_) => {
+                    log::info!("[ConnectionReceiver {} => {}] stream closed", self.node_id, self.remote_node_id);
+                    self.reliable_sender.send_blocking(OutgoingEvent::ClosedNotify).print_error("Should send CloseNotify");
                     break Err(());
                 }
             }

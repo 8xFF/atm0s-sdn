@@ -41,7 +41,7 @@ use crate::{
     KeyId, ValueType,
 };
 
-use super::KeyValueServerActions;
+use super::KeyValueServerAction;
 
 struct Slot {
     value: ValueType,
@@ -77,7 +77,7 @@ impl KeyValueClient {
     }
 
     /// Insert with version is current time in miliseconds, after inserted, create 3 Set actions with 3 sync keys
-    pub fn set(&mut self, key: u64, value: Vec<u8>, ex: Option<u64>) {
+    pub fn set(&mut self, key: u64, value: ValueType, ex: Option<u64>) {
         let version = self.timer.now_ms();
         let slot = Slot {
             value: value.clone(),
@@ -86,35 +86,30 @@ impl KeyValueClient {
             fired_at: self.timer.now_ms(),
         };
         self.storage.insert(key, slot);
+
         //TODO generate replicate keys
-        let routing_keys = vec![key];
-        for routing_key in routing_keys {
-            let event: StorageAction = StorageAction::make::<KeyValueServerActions>(
-                &self.rand,
-                StorageActionRouting::ClosestNode(routing_key),
-                key,
-                KeyValueServerActions::Set(key, value.clone(), version, ex),
-                StorageActionRetryStrategy::Retry(10),
-            );
-            self.events.push_back(event);
-        }
+        let event: StorageAction = StorageAction::make::<KeyValueServerAction>(
+            &self.rand,
+            StorageActionRouting::ClosestNode(key),
+            key,
+            KeyValueServerAction::Set(key, value.clone(), version, ex),
+            StorageActionRetryStrategy::Retry(10),
+        );
+        self.events.push_back(event);
     }
 
     /// Delete value in local mode and create 3 Del actions with 3 sync keys
-    pub fn del(&mut self, key: &u64) -> Option<(Vec<u8>, u64)> {
+    pub fn del(&mut self, key: &u64) -> Option<(ValueType, u64)> {
         if let Some(slot) = self.storage.remove(key) {
             //TODO generate replicate keys
-            let routing_keys = vec![*key];
-            for routing_key in routing_keys {
-                let event = StorageAction::make::<KeyValueServerActions>(
-                    &self.rand,
-                    StorageActionRouting::ClosestNode(routing_key),
-                    *key,
-                    KeyValueServerActions::Del(*key, slot.version),
-                    StorageActionRetryStrategy::Retry(10),
-                );
-                self.events.push_back(event);
-            }
+            let event = StorageAction::make::<KeyValueServerAction>(
+                &self.rand,
+                StorageActionRouting::ClosestNode(*key),
+                *key,
+                KeyValueServerAction::Del(*key, slot.version),
+                StorageActionRetryStrategy::Retry(10),
+            );
+            self.events.push_back(event);
             Some((slot.value, slot.version))
         } else {
             None
@@ -124,40 +119,29 @@ impl KeyValueClient {
     /// Subscribe to a key
     pub fn subscribe(&mut self, key: &u64, ex: Option<u64>) {
         //TODO generate replicate keys
-        let routing_keys = vec![*key];
-        for routing_key in routing_keys {
-            let event = StorageAction::make::<KeyValueServerActions>(
-                &self.rand,
-                StorageActionRouting::ClosestNode(routing_key),
-                *key,
-                KeyValueServerActions::Sub(*key, self.local_node_id, ex),
-                StorageActionRetryStrategy::Retry(10),
-            );
-            self.events.push_back(event);
-        }
-        self.subscribes.insert(
+        let event = StorageAction::make::<KeyValueServerAction>(
+            &self.rand,
+            StorageActionRouting::ClosestNode(*key),
             *key,
-            SubSlot {
-                ex,
-                fired_at: self.timer.now_ms(),
-            },
+            KeyValueServerAction::Sub(*key, self.local_node_id, ex),
+            StorageActionRetryStrategy::Retry(10),
         );
+        self.events.push_back(event);
+
+        self.subscribes.insert(*key, SubSlot { ex, fired_at: self.timer.now_ms() });
     }
 
     /// Unsubscribe to a key
     pub fn unsubscribe(&mut self, key: &u64) {
         //TODO generate replicate keys
-        let routing_keys = vec![*key];
-        for routing_key in routing_keys {
-            let event = StorageAction::make::<KeyValueServerActions>(
-                &self.rand,
-                StorageActionRouting::ClosestNode(routing_key),
-                *key,
-                KeyValueServerActions::UnSub(*key, self.local_node_id),
-                StorageActionRetryStrategy::Retry(10),
-            );
-            self.events.push_back(event);
-        }
+        let event = StorageAction::make::<KeyValueServerAction>(
+            &self.rand,
+            StorageActionRouting::ClosestNode(*key),
+            *key,
+            KeyValueServerAction::UnSub(*key, self.local_node_id),
+            StorageActionRetryStrategy::Retry(10),
+        );
+        self.events.push_back(event);
         self.subscribes.remove(key);
     }
 
@@ -166,11 +150,11 @@ impl KeyValueClient {
         let now_ms = self.timer.now_ms();
         for (key, slot) in self.storage.iter_mut() {
             if now_ms - slot.fired_at > 10_000 {
-                let event = StorageAction::make::<KeyValueServerActions>(
+                let event = StorageAction::make::<KeyValueServerAction>(
                     &self.rand,
                     StorageActionRouting::ClosestNode(*key),
                     *key,
-                    KeyValueServerActions::Set(*key, slot.value.clone(), slot.version, slot.ex),
+                    KeyValueServerAction::Set(*key, slot.value.clone(), slot.version, slot.ex),
                     StorageActionRetryStrategy::Retry(10),
                 );
                 self.events.push_back(event);
@@ -181,11 +165,11 @@ impl KeyValueClient {
         // In each 10 seconds resend Sub action for all subscribed keys
         for (key, slot) in self.subscribes.iter_mut() {
             if now_ms - slot.fired_at > 10_000 {
-                let event = StorageAction::make::<KeyValueServerActions>(
+                let event = StorageAction::make::<KeyValueServerAction>(
                     &self.rand,
                     StorageActionRouting::ClosestNode(*key),
                     *key,
-                    KeyValueServerActions::Sub(*key, self.local_node_id, slot.ex),
+                    KeyValueServerAction::Sub(*key, self.local_node_id, slot.ex),
                     StorageActionRetryStrategy::Retry(10),
                 );
                 self.events.push_back(event);
@@ -226,11 +210,11 @@ mod tests {
         // Check that the event is a Set action for the stored key
         assert_eq!(
             event,
-            Some(StorageAction::make::<KeyValueServerActions>(
+            Some(StorageAction::make::<KeyValueServerAction>(
                 &random,
                 StorageActionRouting::ClosestNode(key),
                 key,
-                KeyValueServerActions::Set(key, value, 0, ex),
+                KeyValueServerAction::Set(key, value, 0, ex),
                 StorageActionRetryStrategy::Retry(10),
             ))
         );
@@ -262,11 +246,11 @@ mod tests {
         // Check that the event is a Del action for the removed key
         assert_eq!(
             event,
-            Some(StorageAction::make::<KeyValueServerActions>(
+            Some(StorageAction::make::<KeyValueServerAction>(
                 &random,
                 StorageActionRouting::ClosestNode(key),
                 key,
-                KeyValueServerActions::Del(key, 0),
+                KeyValueServerAction::Del(key, 0),
                 StorageActionRetryStrategy::Retry(10),
             ))
         );
@@ -291,11 +275,11 @@ mod tests {
         // Check that the event is a Sub action for the subscribed key
         assert_eq!(
             event,
-            Some(StorageAction::make::<KeyValueServerActions>(
+            Some(StorageAction::make::<KeyValueServerAction>(
                 &random,
                 StorageActionRouting::ClosestNode(key),
                 key,
-                KeyValueServerActions::Sub(key, client.local_node_id, ex),
+                KeyValueServerAction::Sub(key, client.local_node_id, ex),
                 StorageActionRetryStrategy::Retry(10),
             ))
         );
@@ -326,11 +310,11 @@ mod tests {
         // Check that the event is an Unsub action for the unsubscribed key
         assert_eq!(
             event,
-            Some(StorageAction::make::<KeyValueServerActions>(
+            Some(StorageAction::make::<KeyValueServerAction>(
                 &random,
                 StorageActionRouting::ClosestNode(key),
                 key,
-                KeyValueServerActions::UnSub(key, client.local_node_id),
+                KeyValueServerAction::UnSub(key, client.local_node_id),
                 StorageActionRetryStrategy::Retry(10),
             ))
         );
@@ -358,16 +342,11 @@ mod tests {
         // Check that the Set action was added to the events queue
         assert_eq!(
             client.events.pop_front(),
-            Some(StorageAction::make::<KeyValueServerActions>(
+            Some(StorageAction::make::<KeyValueServerAction>(
                 &random,
                 StorageActionRouting::ClosestNode(key),
                 key,
-                KeyValueServerActions::Set(
-                    key,
-                    value,
-                    client.storage.get(&key).unwrap().version,
-                    ex
-                ),
+                KeyValueServerAction::Set(key, value, client.storage.get(&key).unwrap().version, ex),
                 StorageActionRetryStrategy::Retry(10),
             ))
         );

@@ -3,20 +3,20 @@ use async_std::channel::Receiver;
 use bluesea_identity::{ConnId, NodeId};
 use network::transport::{ConnectionAcceptor, OutgoingConnectionError};
 
-pub enum VnetListenerEvent<MSG> {
+pub enum VnetListenerEvent {
     IncomingRequest(NodeId, ConnId, Box<dyn ConnectionAcceptor>),
     OutgoingRequest(NodeId, ConnId, Box<dyn ConnectionAcceptor>),
-    Incoming(VnetConnection<MSG>),
-    Outgoing(VnetConnection<MSG>),
+    Incoming(VnetConnection),
+    Outgoing(VnetConnection),
     OutgoingErr(NodeId, ConnId, OutgoingConnectionError),
 }
 
-pub struct VnetListener<MSG> {
-    pub(crate) rx: Receiver<VnetListenerEvent<MSG>>,
+pub struct VnetListener {
+    pub(crate) rx: Receiver<VnetListenerEvent>,
 }
 
-impl<MSG> VnetListener<MSG> {
-    pub async fn recv(&mut self) -> Option<VnetListenerEvent<MSG>> {
+impl VnetListener {
+    pub async fn recv(&mut self) -> Option<VnetListenerEvent> {
         self.rx.recv().await.ok()
     }
 }

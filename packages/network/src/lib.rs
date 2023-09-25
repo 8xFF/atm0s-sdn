@@ -1,6 +1,7 @@
 pub mod behaviour;
 mod internal;
 pub mod mock;
+pub mod msg;
 pub mod plane;
 mod plane_tests;
 pub mod transport;

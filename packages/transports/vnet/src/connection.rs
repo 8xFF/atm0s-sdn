@@ -1,28 +1,23 @@
 use async_std::channel::{Receiver, Sender};
 use bluesea_identity::{ConnId, NodeAddr, NodeId};
-use network::transport::{ConnectionEvent, ConnectionMsg, ConnectionReceiver, ConnectionSender};
+use network::msg::TransportMsg;
+use network::transport::{ConnectionEvent, ConnectionReceiver, ConnectionSender};
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-pub type VnetConnection<MSG> = (
-    Arc<VnetConnectionSender<MSG>>,
-    Box<VnetConnectionReceiver<MSG>>,
-);
+pub type VnetConnection = (Arc<VnetConnectionSender>, Box<VnetConnectionReceiver>);
 
-pub struct VnetConnectionReceiver<MSG> {
+pub struct VnetConnectionReceiver {
     pub(crate) remote_node_id: NodeId,
     pub(crate) conn_id: ConnId,
     pub(crate) remote_addr: NodeAddr,
-    pub(crate) recv: Receiver<Option<(u8, ConnectionMsg<MSG>)>>,
+    pub(crate) recv: Receiver<Option<TransportMsg>>,
     pub(crate) connections: Arc<RwLock<HashMap<ConnId, (NodeId, NodeId)>>>,
 }
 
 #[async_trait::async_trait]
-impl<MSG> ConnectionReceiver<MSG> for VnetConnectionReceiver<MSG>
-where
-    MSG: Send + Sync,
-{
+impl ConnectionReceiver for VnetConnectionReceiver {
     fn remote_node_id(&self) -> bluesea_identity::NodeId {
         self.remote_node_id
     }
@@ -35,9 +30,9 @@ where
         self.remote_addr.clone()
     }
 
-    async fn poll(&mut self) -> Result<ConnectionEvent<MSG>, ()> {
-        if let Some((service_id, msg)) = self.recv.recv().await.map_err(|e| ())? {
-            Ok(ConnectionEvent::Msg { msg, service_id })
+    async fn poll(&mut self) -> Result<ConnectionEvent, ()> {
+        if let Some(msg) = self.recv.recv().await.map_err(|_e| ())? {
+            Ok(ConnectionEvent::Msg(msg))
         } else {
             //disconnected
             self.connections.write().remove(&self.conn_id);
@@ -46,19 +41,16 @@ where
     }
 }
 
-pub struct VnetConnectionSender<MSG> {
+pub struct VnetConnectionSender {
     pub(crate) remote_node_id: NodeId,
     pub(crate) conn_id: ConnId,
     pub(crate) remote_addr: NodeAddr,
-    pub(crate) sender: Sender<Option<(u8, ConnectionMsg<MSG>)>>,
-    pub(crate) remote_sender: Sender<Option<(u8, ConnectionMsg<MSG>)>>,
+    pub(crate) sender: Sender<Option<TransportMsg>>,
+    pub(crate) remote_sender: Sender<Option<TransportMsg>>,
 }
 
 #[async_trait::async_trait]
-impl<MSG> ConnectionSender<MSG> for VnetConnectionSender<MSG>
-where
-    MSG: Send + Sync,
-{
+impl ConnectionSender for VnetConnectionSender {
     fn remote_node_id(&self) -> bluesea_identity::NodeId {
         self.remote_node_id
     }
@@ -71,10 +63,8 @@ where
         self.remote_addr.clone()
     }
 
-    fn send(&self, service_id: u8, msg: ConnectionMsg<MSG>) {
-        self.remote_sender
-            .send_blocking(Some((service_id, msg)))
-            .unwrap();
+    fn send(&self, msg: TransportMsg) {
+        self.remote_sender.send_blocking(Some(msg)).unwrap();
     }
 
     fn close(&self) {

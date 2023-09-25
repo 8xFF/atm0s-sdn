@@ -6,9 +6,10 @@ members = [
     "packages/core/multiaddr",
     "packages/core/router",
     "packages/core/key_value_storage",
-    "packages/services/discovery",
-    "packages/services/manual",
-    "packages/services/fast_path_route",
+    "packages/routers/layers_spread_router",
+    "packages/services/dht_discovery",
+    "packages/services/manual_discovery",
+    "packages/services/layers_spread_router_sync",
     "packages/services/key_value",
     "packages/transports/vnet",
     "packages/transports/tcp",
@@ -19,14 +20,16 @@ members = [
 
 [workspace.dependencies]
 bluesea-identity = { path = "packages/core/identity" }
+bluesea-router = { path = "packages/core/router" }
+layers-spread-router = { path = "packages/routers/layers_spread_router" }
 multiaddr = { path = "packages/core/multiaddr" }
 utils = { package = "utils", path = "packages/core/utils" }
 router = { package = "router", path = "packages/core/router" }
 key-value-storage = { package = "key-value-storage", path = "packages/core/key_value_storage" }
 network = { package = "network", path = "packages/network" }
-manual = { package = "manual", path = "packages/services/manual" }
-discovery = { package = "discovery", path = "packages/services/discovery" }
-fast-path-route = { package = "fast-path-route", path = "packages/services/fast_path_route" }
+manual-discovery = { package = "manual-discovery", path = "packages/services/manual_discovery" }
+dht-discovery = { package = "dht-discovery", path = "packages/services/dht_discovery" }
+layers-spread-router-sync = { package = "layers-spread-router-sync", path = "packages/services/layers_spread_router_sync" }
 key-value = { package = "key-value", path = "packages/services/key_value" }
 transport-vnet = { package = "vnet", path = "packages/transports/vnet" }
 transport-tcp = { package = "tcp", path = "packages/transports/tcp" }

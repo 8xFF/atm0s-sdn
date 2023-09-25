@@ -2,21 +2,21 @@
 mod tests {
     use crate::behaviour::{ConnectionHandler, NetworkBehavior};
     use crate::mock::{MockInput, MockOutput, MockTransport, MockTransportRpc};
+    use crate::msg::{MsgHeader, TransportMsg};
     use crate::plane::{NetworkPlane, NetworkPlaneConfig};
-    use crate::transport::{
-        ConnectionEvent, ConnectionMsg, ConnectionRejectReason, ConnectionSender,
-        OutgoingConnectionError, RpcAnswer,
-    };
+    use crate::transport::{ConnectionEvent, ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer};
     use crate::{BehaviorAgent, ConnectionAgent};
     use bluesea_identity::{ConnId, NodeAddr, NodeId, Protocol};
+    use bluesea_router::{ForceLocalRouter, RouteRule};
     use parking_lot::Mutex;
+    use serde::{Deserialize, Serialize};
     use std::collections::VecDeque;
-    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+    use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
     use utils::SystemTimer;
 
-    #[derive(PartialEq, Debug)]
+    #[derive(Serialize, Deserialize, PartialEq, Debug)]
     enum Behavior1Msg {
         Ping,
         Pong,
@@ -29,15 +29,12 @@ mod tests {
     enum Behavior1Res {}
 
     #[derive(PartialEq, Debug)]
-    enum Behavior2Msg {
-        Ping,
-        Pong,
-    }
+    enum Behavior2Msg {}
 
     #[derive(PartialEq, Debug)]
-    enum DebugInput<MSG> {
+    enum DebugInput {
         Opened(NodeId, ConnId),
-        Msg(NodeId, ConnId, MSG),
+        Msg(NodeId, ConnId, ImplNetworkMsg),
         Closed(NodeId, ConnId),
     }
 
@@ -78,269 +75,141 @@ mod tests {
         Service2(Behavior2Res),
     }
 
-    struct Test1NetworkBehavior<MSG> {
+    struct Test1NetworkBehavior {
         conn_counter: Arc<AtomicU32>,
-        input: Arc<Mutex<VecDeque<DebugInput<MSG>>>>,
+        input: Arc<Mutex<VecDeque<DebugInput>>>,
     }
 
-    struct Test1NetworkHandler<MSG> {
-        input: Arc<Mutex<VecDeque<DebugInput<MSG>>>>,
+    struct Test1NetworkHandler {
+        input: Arc<Mutex<VecDeque<DebugInput>>>,
     }
 
     struct Test2NetworkBehavior {}
 
     struct Test2NetworkHandler {}
 
-    impl<BE, HE, MSG, Req, Res> NetworkBehavior<BE, HE, MSG, Req, Res> for Test1NetworkBehavior<MSG>
+    impl<BE, HE, Req, Res> NetworkBehavior<BE, HE, Req, Res> for Test1NetworkBehavior
     where
         BE: From<Behavior1Event> + TryInto<Behavior1Event> + Send + Sync + 'static,
         HE: From<Handler1Event> + TryInto<Handler1Event> + Send + Sync + 'static,
-        MSG: From<Behavior1Msg> + TryInto<Behavior1Msg> + Send + Sync + 'static,
     {
         fn service_id(&self) -> u8 {
             0
         }
-        fn on_tick(&mut self, agent: &BehaviorAgent<HE, MSG>, ts_ms: u64, interal_ms: u64) {}
+        fn on_tick(&mut self, _agent: &BehaviorAgent<HE>, _ts_ms: u64, _interal_ms: u64) {}
 
-        fn check_incoming_connection(
-            &mut self,
-            node: NodeId,
-            conn_id: ConnId,
-        ) -> Result<(), ConnectionRejectReason> {
+        fn check_incoming_connection(&mut self, _node: NodeId, _conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
             Ok(())
         }
 
-        fn check_outgoing_connection(
-            &mut self,
-            node: NodeId,
-            conn_id: ConnId,
-        ) -> Result<(), ConnectionRejectReason> {
+        fn check_outgoing_connection(&mut self, _node: NodeId, _conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
             Ok(())
         }
 
-        fn on_incoming_connection_connected(
-            &mut self,
-            agent: &BehaviorAgent<HE, MSG>,
-            connection: Arc<dyn ConnectionSender<MSG>>,
-        ) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
+        fn on_incoming_connection_connected(&mut self, _agent: &BehaviorAgent<HE>, _connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
             self.conn_counter.fetch_add(1, Ordering::SeqCst);
-            Some(Box::new(Test1NetworkHandler {
-                input: self.input.clone(),
-            }))
+            Some(Box::new(Test1NetworkHandler { input: self.input.clone() }))
         }
-        fn on_outgoing_connection_connected(
-            &mut self,
-            agent: &BehaviorAgent<HE, MSG>,
-            connection: Arc<dyn ConnectionSender<MSG>>,
-        ) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
+        fn on_outgoing_connection_connected(&mut self, _agent: &BehaviorAgent<HE>, _connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
             self.conn_counter.fetch_add(1, Ordering::SeqCst);
-            Some(Box::new(Test1NetworkHandler {
-                input: self.input.clone(),
-            }))
+            Some(Box::new(Test1NetworkHandler { input: self.input.clone() }))
         }
-        fn on_incoming_connection_disconnected(
-            &mut self,
-            agent: &BehaviorAgent<HE, MSG>,
-            conn: Arc<dyn ConnectionSender<MSG>>,
-        ) {
+        fn on_incoming_connection_disconnected(&mut self, _agent: &BehaviorAgent<HE>, _conn: Arc<dyn ConnectionSender>) {
             self.conn_counter.fetch_sub(1, Ordering::SeqCst);
         }
-        fn on_outgoing_connection_disconnected(
-            &mut self,
-            agent: &BehaviorAgent<HE, MSG>,
-            conn: Arc<dyn ConnectionSender<MSG>>,
-        ) {
+        fn on_outgoing_connection_disconnected(&mut self, _agent: &BehaviorAgent<HE>, _conn: Arc<dyn ConnectionSender>) {
             self.conn_counter.fetch_sub(1, Ordering::SeqCst);
         }
-        fn on_outgoing_connection_error(
-            &mut self,
-            agent: &BehaviorAgent<HE, MSG>,
-            node_id: NodeId,
-            conn_id: ConnId,
-            err: &OutgoingConnectionError,
-        ) {
-        }
-        fn on_handler_event(
-            &mut self,
-            agent: &BehaviorAgent<HE, MSG>,
-            node_id: NodeId,
-            conn_id: ConnId,
-            event: BE,
-        ) {
-        }
+        fn on_outgoing_connection_error(&mut self, _agent: &BehaviorAgent<HE>, _node_id: NodeId, _conn_id: ConnId, _err: &OutgoingConnectionError) {}
+        fn on_handler_event(&mut self, _agent: &BehaviorAgent<HE>, _node_id: NodeId, _conn_id: ConnId, _event: BE) {}
 
-        fn on_rpc(
-            &mut self,
-            agent: &BehaviorAgent<HE, MSG>,
-            req: Req,
-            res: Box<dyn RpcAnswer<Res>>,
-        ) -> bool {
-            todo!()
+        fn on_rpc(&mut self, _agent: &BehaviorAgent<HE>, _req: Req, _res: Box<dyn RpcAnswer<Res>>) -> bool {
+            false
         }
     }
 
-    impl<BE, HE, MSG> ConnectionHandler<BE, HE, MSG> for Test1NetworkHandler<MSG>
+    impl<BE, HE> ConnectionHandler<BE, HE> for Test1NetworkHandler
     where
         BE: From<Behavior1Event> + TryInto<Behavior1Event> + Send + Sync + 'static,
         HE: From<Handler1Event> + TryInto<Handler1Event> + Send + Sync + 'static,
-        MSG: From<Behavior1Msg> + TryInto<Behavior1Msg> + Send + Sync + 'static,
     {
-        fn on_opened(&mut self, agent: &ConnectionAgent<BE, HE, MSG>) {
-            self.input
-                .lock()
-                .push_back(DebugInput::Opened(agent.remote_node_id(), agent.conn_id()));
+        fn on_opened(&mut self, agent: &ConnectionAgent<BE, HE>) {
+            self.input.lock().push_back(DebugInput::Opened(agent.remote_node_id(), agent.conn_id()));
         }
-        fn on_tick(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, ts_ms: u64, interal_ms: u64) {}
-        fn on_event(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, event: ConnectionEvent<MSG>) {
+        fn on_tick(&mut self, _agent: &ConnectionAgent<BE, HE>, _ts_ms: u64, _interal_ms: u64) {}
+        fn on_event(&mut self, agent: &ConnectionAgent<BE, HE>, event: ConnectionEvent) {
             match event {
-                ConnectionEvent::Msg { msg, .. } => match msg {
-                    ConnectionMsg::Reliable { data, stream_id } => {
-                        if let Ok(msg) = data.try_into() {
-                            match msg {
-                                Behavior1Msg::Ping => {
-                                    agent.send_net(ConnectionMsg::Reliable {
-                                        stream_id,
-                                        data: Behavior1Msg::Pong.into(),
-                                    });
-                                    self.input.lock().push_back(DebugInput::Msg(
-                                        agent.remote_node_id(),
-                                        agent.conn_id(),
-                                        Behavior1Msg::Ping.into(),
-                                    ));
-                                }
-                                Behavior1Msg::Pong => {
-                                    self.input.lock().push_back(DebugInput::Msg(
-                                        agent.remote_node_id(),
-                                        agent.conn_id(),
-                                        Behavior1Msg::Pong.into(),
-                                    ));
-                                }
+                ConnectionEvent::Msg(msg) => {
+                    if let Ok(msg) = msg.get_payload_bincode::<Behavior1Msg>() {
+                        match msg {
+                            Behavior1Msg::Ping => {
+                                agent.send_net(TransportMsg::from_payload_bincode(MsgHeader::build_reliable(0, RouteRule::ToNode(1), 0), &Behavior1Msg::Pong).unwrap());
+                                self.input.lock().push_back(DebugInput::Msg(agent.remote_node_id(), agent.conn_id(), Behavior1Msg::Ping.into()));
+                            }
+                            Behavior1Msg::Pong => {
+                                self.input.lock().push_back(DebugInput::Msg(agent.remote_node_id(), agent.conn_id(), Behavior1Msg::Pong.into()));
                             }
                         }
                     }
-                    ConnectionMsg::Unreliable { data, .. } => if let Ok(msg) = data.try_into() {},
-                },
+                }
                 ConnectionEvent::Stats(_) => {}
             }
         }
 
-        fn on_other_handler_event(
-            &mut self,
-            agent: &ConnectionAgent<BE, HE, MSG>,
-            from_node: NodeId,
-            from_conn: ConnId,
-            event: HE,
-        ) {
-        }
+        fn on_other_handler_event(&mut self, _agent: &ConnectionAgent<BE, HE>, _from_node: NodeId, _from_conn: ConnId, _event: HE) {}
 
-        fn on_behavior_event(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, event: HE) {}
+        fn on_behavior_event(&mut self, _agent: &ConnectionAgent<BE, HE>, _event: HE) {}
 
-        fn on_closed(&mut self, agent: &ConnectionAgent<BE, HE, MSG>) {
-            self.input
-                .lock()
-                .push_back(DebugInput::Closed(agent.remote_node_id(), agent.conn_id()));
+        fn on_closed(&mut self, agent: &ConnectionAgent<BE, HE>) {
+            self.input.lock().push_back(DebugInput::Closed(agent.remote_node_id(), agent.conn_id()));
         }
     }
 
-    impl<BE, HE, MSG, Req, Res> NetworkBehavior<BE, HE, MSG, Req, Res> for Test2NetworkBehavior
+    impl<BE, HE, Req, Res> NetworkBehavior<BE, HE, Req, Res> for Test2NetworkBehavior
     where
         BE: From<Behavior2Event> + TryInto<Behavior2Event>,
         HE: From<Handler2Event> + TryInto<Handler2Event>,
-        MSG: From<Behavior2Msg> + TryInto<Behavior2Msg> + Send + Sync,
     {
         fn service_id(&self) -> u8 {
             1
         }
-        fn on_tick(&mut self, agent: &BehaviorAgent<HE, MSG>, ts_ms: u64, interal_ms: u64) {}
+        fn on_tick(&mut self, _agent: &BehaviorAgent<HE>, _ts_ms: u64, _interal_ms: u64) {}
 
-        fn check_incoming_connection(
-            &mut self,
-            node: NodeId,
-            conn_id: ConnId,
-        ) -> Result<(), ConnectionRejectReason> {
+        fn check_incoming_connection(&mut self, _node: NodeId, _conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
             Ok(())
         }
 
-        fn check_outgoing_connection(
-            &mut self,
-            node: NodeId,
-            conn_id: ConnId,
-        ) -> Result<(), ConnectionRejectReason> {
+        fn check_outgoing_connection(&mut self, _node: NodeId, _conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
             Ok(())
         }
 
-        fn on_incoming_connection_connected(
-            &mut self,
-            agent: &BehaviorAgent<HE, MSG>,
-            conn: Arc<dyn ConnectionSender<MSG>>,
-        ) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
+        fn on_incoming_connection_connected(&mut self, _agent: &BehaviorAgent<HE>, _conn: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
             Some(Box::new(Test2NetworkHandler {}))
         }
-        fn on_outgoing_connection_connected(
-            &mut self,
-            agent: &BehaviorAgent<HE, MSG>,
-            conn: Arc<dyn ConnectionSender<MSG>>,
-        ) -> Option<Box<dyn ConnectionHandler<BE, HE, MSG>>> {
+        fn on_outgoing_connection_connected(&mut self, _agent: &BehaviorAgent<HE>, _conn: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
             Some(Box::new(Test2NetworkHandler {}))
         }
-        fn on_incoming_connection_disconnected(
-            &mut self,
-            agent: &BehaviorAgent<HE, MSG>,
-            conn: Arc<dyn ConnectionSender<MSG>>,
-        ) {
-        }
-        fn on_outgoing_connection_disconnected(
-            &mut self,
-            agent: &BehaviorAgent<HE, MSG>,
-            conn: Arc<dyn ConnectionSender<MSG>>,
-        ) {
-        }
-        fn on_outgoing_connection_error(
-            &mut self,
-            agent: &BehaviorAgent<HE, MSG>,
-            node_id: NodeId,
-            conn_id: ConnId,
-            err: &OutgoingConnectionError,
-        ) {
-        }
-        fn on_handler_event(
-            &mut self,
-            agent: &BehaviorAgent<HE, MSG>,
-            node_id: NodeId,
-            conn_id: ConnId,
-            event: BE,
-        ) {
-        }
+        fn on_incoming_connection_disconnected(&mut self, _agent: &BehaviorAgent<HE>, _conn: Arc<dyn ConnectionSender>) {}
+        fn on_outgoing_connection_disconnected(&mut self, _agent: &BehaviorAgent<HE>, _conn: Arc<dyn ConnectionSender>) {}
+        fn on_outgoing_connection_error(&mut self, _agent: &BehaviorAgent<HE>, _node_id: NodeId, _conn_id: ConnId, _err: &OutgoingConnectionError) {}
+        fn on_handler_event(&mut self, _agent: &BehaviorAgent<HE>, _node_id: NodeId, _conn_id: ConnId, _event: BE) {}
 
-        fn on_rpc(
-            &mut self,
-            agent: &BehaviorAgent<HE, MSG>,
-            req: Req,
-            res: Box<dyn RpcAnswer<Res>>,
-        ) -> bool {
+        fn on_rpc(&mut self, _agent: &BehaviorAgent<HE>, _req: Req, _res: Box<dyn RpcAnswer<Res>>) -> bool {
             todo!()
         }
     }
 
-    impl<BE, HE, MSG> ConnectionHandler<BE, HE, MSG> for Test2NetworkHandler
+    impl<BE, HE> ConnectionHandler<BE, HE> for Test2NetworkHandler
     where
         BE: From<Behavior2Event> + TryInto<Behavior2Event>,
         HE: From<Handler2Event> + TryInto<Handler2Event>,
-        MSG: From<Behavior2Msg> + TryInto<Behavior2Msg>,
     {
-        fn on_opened(&mut self, agent: &ConnectionAgent<BE, HE, MSG>) {}
-        fn on_tick(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, ts_ms: u64, interal_ms: u64) {}
-        fn on_event(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, event: ConnectionEvent<MSG>) {}
-        fn on_other_handler_event(
-            &mut self,
-            agent: &ConnectionAgent<BE, HE, MSG>,
-            from_node: NodeId,
-            from_conn: ConnId,
-            event: HE,
-        ) {
-        }
-        fn on_behavior_event(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, event: HE) {}
-        fn on_closed(&mut self, agent: &ConnectionAgent<BE, HE, MSG>) {}
+        fn on_opened(&mut self, _agent: &ConnectionAgent<BE, HE>) {}
+        fn on_tick(&mut self, _agent: &ConnectionAgent<BE, HE>, _ts_ms: u64, _interal_ms: u64) {}
+        fn on_event(&mut self, _agent: &ConnectionAgent<BE, HE>, _event: ConnectionEvent) {}
+        fn on_other_handler_event(&mut self, _agent: &ConnectionAgent<BE, HE>, _from_node: NodeId, _from_conn: ConnId, _event: HE) {}
+        fn on_behavior_event(&mut self, _agent: &ConnectionAgent<BE, HE>, _event: HE) {}
+        fn on_closed(&mut self, _agent: &ConnectionAgent<BE, HE>) {}
     }
 
     #[async_std::test]
@@ -354,79 +223,45 @@ mod tests {
         });
         let behavior2 = Box::new(Test2NetworkBehavior {});
 
-        let (mock, faker, output) = MockTransport::<ImplNetworkMsg>::new();
-        let (mock_rpc, faker_rpc, output_rpc) =
-            MockTransportRpc::<ImplNetworkReq, ImplNetworkRes>::new();
+        let (mock, faker, output) = MockTransport::new();
+        let (mock_rpc, _faker_rpc, _output_rpc) = MockTransportRpc::<ImplNetworkReq, ImplNetworkRes>::new();
         let transport = Box::new(mock);
         let timer = Arc::new(SystemTimer());
 
-        let mut plane = NetworkPlane::<
-            ImplNetworkBehaviorEvent,
-            ImplNetworkHandlerEvent,
-            ImplNetworkMsg,
-            ImplNetworkReq,
-            ImplNetworkRes,
-        >::new(NetworkPlaneConfig {
+        let mut plane = NetworkPlane::<ImplNetworkBehaviorEvent, ImplNetworkHandlerEvent, ImplNetworkReq, ImplNetworkRes>::new(NetworkPlaneConfig {
             local_node_id: 0,
             tick_ms: 1000,
             behavior: vec![behavior1, behavior2],
             transport,
             transport_rpc: Box::new(mock_rpc),
             timer,
+            router: Arc::new(ForceLocalRouter()),
         });
 
         async_std::task::spawn(async move { while let Ok(_) = plane.recv().await {} });
 
-        faker
-            .send(MockInput::FakeIncomingConnection(
-                1,
-                ConnId::from_in(0, 1),
-                NodeAddr::from(Protocol::Udp(1)),
-            ))
-            .await
-            .unwrap();
+        faker.send(MockInput::FakeIncomingConnection(1, ConnId::from_in(0, 1), NodeAddr::from(Protocol::Udp(1)))).await.unwrap();
         async_std::task::sleep(Duration::from_millis(100)).await;
         faker
             .send(MockInput::FakeIncomingMsg(
-                0,
                 ConnId::from_in(0, 1),
-                ConnectionMsg::Reliable {
-                    stream_id: 0,
-                    data: ImplNetworkMsg::Service1(Behavior1Msg::Ping),
-                },
+                TransportMsg::from_payload_bincode(MsgHeader::build_reliable(0, RouteRule::ToNode(1), 0), &Behavior1Msg::Ping).unwrap(),
             ))
             .await
             .unwrap();
         async_std::task::sleep(Duration::from_millis(100)).await;
-        assert_eq!(
-            input.lock().pop_front(),
-            Some(DebugInput::Opened(1, ConnId::from_in(0, 1)))
-        );
-        assert_eq!(
-            input.lock().pop_front(),
-            Some(DebugInput::Msg(
-                1,
-                ConnId::from_in(0, 1),
-                ImplNetworkMsg::Service1(Behavior1Msg::Ping)
-            ))
-        );
+        assert_eq!(input.lock().pop_front(), Some(DebugInput::Opened(1, ConnId::from_in(0, 1))));
+        assert_eq!(input.lock().pop_front(), Some(DebugInput::Msg(1, ConnId::from_in(0, 1), ImplNetworkMsg::Service1(Behavior1Msg::Ping))));
         assert_eq!(conn_counter.load(Ordering::SeqCst), 1);
         assert_eq!(
             output.lock().pop_front(),
             Some(MockOutput::SendTo(
-                0,
                 1,
                 ConnId::from_in(0, 1),
-                ConnectionMsg::Reliable {
-                    stream_id: 0,
-                    data: ImplNetworkMsg::Service1(Behavior1Msg::Pong),
-                }
+                TransportMsg::from_payload_bincode(MsgHeader::build_reliable(0, RouteRule::ToNode(1), 0), &Behavior1Msg::Pong).unwrap(),
             ))
         );
-        faker
-            .send(MockInput::FakeDisconnectIncoming(1, ConnId::from_in(0, 1)))
-            .await
-            .unwrap();
+        faker.send(MockInput::FakeDisconnectIncoming(1, ConnId::from_in(0, 1))).await.unwrap();
         async_std::task::sleep(Duration::from_millis(1000)).await;
         assert_eq!(conn_counter.load(Ordering::SeqCst), 0);
     }

@@ -1,32 +1,30 @@
-use crate::connection::{recv_tcp_stream, TcpConnectionReceiver, TcpConnectionSender, BUFFER_LEN};
+use crate::connection::{TcpConnectionReceiver, TcpConnectionSender};
 use crate::connector::TcpConnector;
-use crate::handshake::{incoming_handshake, IncomingHandshakeError};
+use crate::handshake::incoming_handshake;
 use crate::msg::TcpMsg;
 use async_bincode::futures::AsyncBincodeStream;
-use async_std::channel::{bounded, unbounded, Receiver, Sender};
-use async_std::net::{Shutdown, TcpListener};
-use bluesea_identity::{ConnDirection, ConnId, NodeAddrBuilder, NodeId, Protocol};
-use futures_util::{select, AsyncReadExt, AsyncWriteExt, FutureExt};
-use network::transport::{AsyncConnectionAcceptor, Transport, TransportConnector, TransportEvent};
-use serde::{de::DeserializeOwned, Serialize};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::atomic::AtomicU32;
+use async_std::channel::{unbounded, Receiver, Sender};
+use async_std::net::TcpListener;
+use bluesea_identity::{ConnId, NodeAddrBuilder, NodeId, Protocol};
+use futures_util::FutureExt;
+use network::transport::{Transport, TransportConnector, TransportEvent};
+use std::net::{Ipv4Addr, Shutdown, SocketAddr};
 use std::sync::Arc;
-use std::time::Duration;
+use utils::error_handle::ErrorUtils;
 use utils::{SystemTimer, Timer};
 
-pub struct TcpTransport<MSG> {
+pub struct TcpTransport {
     node_id: NodeId,
     node_addr_builder: Arc<NodeAddrBuilder>,
     listener: TcpListener,
-    internal_tx: Sender<TransportEvent<MSG>>,
-    internal_rx: Receiver<TransportEvent<MSG>>,
+    internal_tx: Sender<TransportEvent>,
+    internal_rx: Receiver<TransportEvent>,
     seed: u64,
-    connector: Arc<TcpConnector<MSG>>,
+    connector: Arc<TcpConnector>,
     timer: Arc<dyn Timer>,
 }
 
-impl<MSG> TcpTransport<MSG> {
+impl TcpTransport {
     pub async fn new(node_id: NodeId, port: u16, node_addr_builder: Arc<NodeAddrBuilder>) -> Self {
         let (internal_tx, internal_rx) = unbounded();
         let addr_str = format!("0.0.0.0:{}", port);
@@ -37,10 +35,8 @@ impl<MSG> TcpTransport<MSG> {
         node_addr_builder.add_protocol(Protocol::Ip4(Ipv4Addr::new(127, 0, 0, 1)));
         if port != 0 {
             node_addr_builder.add_protocol(Protocol::Tcp(port));
-        } else {
-            if let Ok(addr) = listener.local_addr() {
-                node_addr_builder.add_protocol(Protocol::Tcp(addr.port()));
-            }
+        } else if let Ok(addr) = listener.local_addr() {
+            node_addr_builder.add_protocol(Protocol::Tcp(addr.port()));
         }
 
         Self {
@@ -63,19 +59,16 @@ impl<MSG> TcpTransport<MSG> {
 }
 
 #[async_trait::async_trait]
-impl<MSG> Transport<MSG> for TcpTransport<MSG>
-where
-    MSG: Send + Sync + Serialize + DeserializeOwned + 'static,
-{
+impl Transport for TcpTransport {
     fn connector(&self) -> Arc<dyn TransportConnector> {
         self.connector.clone()
     }
 
-    async fn recv(&mut self) -> Result<TransportEvent<MSG>, ()> {
+    async fn recv(&mut self) -> Result<TransportEvent, ()> {
         loop {
-            select! {
+            futures_util::select! {
                 e = self.listener.accept().fuse() => match e {
-                    Ok((mut socket, addr)) => {
+                    Ok((socket, addr)) => {
                         log::info!("[TcpTransport] incoming connect from {}", addr);
                         let internal_tx = self.internal_tx.clone();
                         let timer = self.timer.clone();
@@ -85,10 +78,10 @@ where
                         self.seed += 1;
 
                         async_std::task::spawn(async move {
-                            let mut socket_read = AsyncBincodeStream::<_, TcpMsg<MSG>, TcpMsg<MSG>, _>::from(socket.clone()).for_async();
-                            let mut socket_write = AsyncBincodeStream::<_, TcpMsg<MSG>, TcpMsg<MSG>, _>::from(socket.clone()).for_async();
+                            let mut socket_read = AsyncBincodeStream::<_, TcpMsg, TcpMsg, _>::from(socket.clone()).for_async();
+                            let socket_write = AsyncBincodeStream::<_, TcpMsg, TcpMsg, _>::from(socket.clone()).for_async();
 
-                            match incoming_handshake::<MSG>(node_id, node_addr, &mut socket_read, conn_id, &internal_tx).await {
+                            match incoming_handshake(node_id, node_addr, &mut socket_read, conn_id, &internal_tx).await {
                                 Ok((remote_node_id, remote_addr)) => {
                                     let (connection_sender, reliable_sender) = TcpConnectionSender::new(
                                         node_id,
@@ -111,7 +104,7 @@ where
                                     internal_tx.send(TransportEvent::Incoming(
                                         Arc::new(connection_sender),
                                         connection_receiver,
-                                    )).await;
+                                    )).await.print_error("Should send Incoming connection");
                                 }
                                 Err(_) => {
                                     if let Err(e) = socket.shutdown(Shutdown::Both) {

@@ -1,23 +1,22 @@
 use crate::mock::MockOutput;
-use crate::transport::{ConnectionEvent, ConnectionMsg, ConnectionSender};
+use crate::msg::TransportMsg;
+use crate::transport::{ConnectionEvent, ConnectionSender};
 use async_std::channel::Sender;
 use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use parking_lot::Mutex;
 use std::collections::VecDeque;
 use std::sync::Arc;
+use utils::error_handle::ErrorUtils;
 
-pub struct MockConnectionSender<MSG> {
+pub struct MockConnectionSender {
     pub(crate) remote_node_id: NodeId,
     pub(crate) conn_id: ConnId,
     pub(crate) remote_addr: NodeAddr,
-    pub(crate) output: Arc<Mutex<VecDeque<MockOutput<MSG>>>>,
-    pub(crate) internal_sender: Sender<Option<ConnectionEvent<MSG>>>,
+    pub(crate) output: Arc<Mutex<VecDeque<MockOutput>>>,
+    pub(crate) internal_sender: Sender<Option<ConnectionEvent>>,
 }
 
-impl<MSG> ConnectionSender<MSG> for MockConnectionSender<MSG>
-where
-    MSG: Send + Sync,
-{
+impl ConnectionSender for MockConnectionSender {
     fn remote_node_id(&self) -> NodeId {
         self.remote_node_id
     }
@@ -30,16 +29,11 @@ where
         self.remote_addr.clone()
     }
 
-    fn send(&self, service_id: u8, msg: ConnectionMsg<MSG>) {
-        self.output.lock().push_back(MockOutput::SendTo(
-            service_id,
-            self.remote_node_id,
-            self.conn_id,
-            msg,
-        ));
+    fn send(&self, msg: TransportMsg) {
+        self.output.lock().push_back(MockOutput::SendTo(self.remote_node_id, self.conn_id, msg));
     }
 
     fn close(&self) {
-        self.internal_sender.send_blocking(None);
+        self.internal_sender.send_blocking(None).print_error("Should send None for close MockConnectionSender");
     }
 }

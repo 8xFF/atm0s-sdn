@@ -10,9 +10,8 @@ pub trait NodeAddrType {
 impl NodeAddrType for NodeAddr {
     fn node_id(&self) -> Option<NodeId> {
         for protocol in self.iter() {
-            match protocol {
-                Protocol::P2p(node_id) => return Some(node_id),
-                _ => {}
+            if let Protocol::P2p(node_id) = protocol {
+                return Some(node_id);
             }
         }
         None
@@ -25,9 +24,7 @@ pub struct NodeAddrBuilder {
 
 impl Default for NodeAddrBuilder {
     fn default() -> Self {
-        Self {
-            addr: Mutex::new(NodeAddr::empty()),
-        }
+        Self { addr: Mutex::new(NodeAddr::empty()) }
     }
 }
 

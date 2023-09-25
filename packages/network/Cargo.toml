@@ -15,7 +15,10 @@ log = { workspace = true }
 utils = { workspace = true }
 thiserror = { workspace = true }
 bluesea-identity = { workspace = true }
+bluesea-router = { workspace = true }
 serde = { workspace = true }
+bytes = "1.4.0"
+bincode = "1.3.3"
 
 [dev-dependencies]
 env_logger = { workspace = true }

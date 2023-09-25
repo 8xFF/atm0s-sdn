@@ -3,15 +3,15 @@ mod connection_sender;
 mod transport;
 mod transport_rpc;
 
-use crate::transport::{
-    ConnectionMsg, ConnectionSender, OutgoingConnectionError, Transport, TransportConnector,
-    TransportEvent, TransportPendingOutgoing,
-};
+use crate::msg::TransportMsg;
+use crate::transport::OutgoingConnectionError;
 use bluesea_identity::{ConnId, NodeAddr, NodeId};
-use std::collections::{HashMap, VecDeque};
-use std::sync::Arc;
+pub use transport::MockTransport;
+pub use transport_rpc::MockTransportRpc;
 
-pub enum MockInput<M> {
+pub const MOCK_PROTOCOL_ID: u8 = 0;
+
+pub enum MockInput {
     FakeIncomingConnection(NodeId, ConnId, NodeAddr),
     ///Dont use this manual
     FakeIncomingConnectionForce(NodeId, ConnId, NodeAddr),
@@ -19,16 +19,13 @@ pub enum MockInput<M> {
     ///Dont use this manual
     FakeOutgoingConnectionForce(NodeId, ConnId, NodeAddr),
     FakeOutgoingConnectionError(NodeId, ConnId, OutgoingConnectionError),
-    FakeIncomingMsg(u8, ConnId, ConnectionMsg<M>),
+    FakeIncomingMsg(ConnId, TransportMsg),
     FakeDisconnectIncoming(NodeId, ConnId),
     FakeDisconnectOutgoing(NodeId, ConnId),
 }
 
 #[derive(PartialEq, Debug)]
-pub enum MockOutput<M> {
+pub enum MockOutput {
     ConnectTo(NodeId, NodeAddr),
-    SendTo(u8, NodeId, ConnId, ConnectionMsg<M>),
+    SendTo(NodeId, ConnId, TransportMsg),
 }
-
-pub use transport::MockTransport;
-pub use transport_rpc::MockTransportRpc;

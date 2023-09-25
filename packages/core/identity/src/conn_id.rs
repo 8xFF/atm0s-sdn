@@ -1,8 +1,8 @@
+use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
-use std::path::Display;
 
-#[derive(Copy, Clone)]
+#[derive(Deserialize, Serialize, Copy, Clone)]
 pub struct ConnId {
     value: u64,
 }
@@ -54,24 +54,14 @@ impl ConnId {
 
 impl std::fmt::Display for ConnId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let str = format!(
-            "Conn({:?},{},{})",
-            self.direction(),
-            self.protocol(),
-            self.uuid()
-        );
+        let str = format!("Conn({:?},{},{})", self.direction(), self.protocol(), self.uuid());
         std::fmt::Display::fmt(&str, f)
     }
 }
 
 impl Debug for ConnId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let str = format!(
-            "Conn({:?},{},{})",
-            self.direction(),
-            self.protocol(),
-            self.uuid()
-        );
+        let str = format!("Conn({:?},{},{})", self.direction(), self.protocol(), self.uuid());
         Debug::fmt(&str, f)
     }
 }

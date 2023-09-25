@@ -1,6 +1,8 @@
+pub mod error_handle;
 pub mod hashmap;
 pub mod init_array;
 pub mod init_vec;
+pub mod option_handle;
 pub mod random;
 pub mod vec_dequeue;
 
@@ -18,10 +20,7 @@ pub struct SystemTimer();
 impl Timer for SystemTimer {
     fn now_ms(&self) -> u64 {
         let start = SystemTime::now();
-        start
-            .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards")
-            .as_millis() as u64
+        start.duration_since(UNIX_EPOCH).expect("Time went backwards").as_millis() as u64
     }
 }
 

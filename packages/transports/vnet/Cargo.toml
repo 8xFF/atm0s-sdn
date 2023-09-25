@@ -11,3 +11,8 @@ async-trait = { workspace = true }
 parking_lot = { workspace = true }
 bluesea-identity = { workspace = true }
 async-std = { workspace = true }
+
+[dev-dependencies]
+bincode = { workspace = true }
+serde = { workspace = true }
+bluesea-router = { workspace = true }

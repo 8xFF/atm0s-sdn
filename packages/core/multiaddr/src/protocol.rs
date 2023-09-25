@@ -1,7 +1,5 @@
 use crate::{Error, Result};
-use arrayref::array_ref;
-use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
-use data_encoding::BASE32;
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::{
     borrow::Cow,
     convert::From,
@@ -230,19 +228,13 @@ impl<'a> Protocol<'a> {
             DNSADDR => {
                 let (n, input) = decode::usize(input)?;
                 let (data, rest) = split_at(n, input)?;
-                Ok((
-                    Protocol::Dnsaddr(Cow::Borrowed(str::from_utf8(data)?)),
-                    rest,
-                ))
+                Ok((Protocol::Dnsaddr(Cow::Borrowed(str::from_utf8(data)?)), rest))
             }
             HTTP => Ok((Protocol::Http, input)),
             HTTPS => Ok((Protocol::Https, input)),
             IP4 => {
                 let (data, rest) = split_at(4, input)?;
-                Ok((
-                    Protocol::Ip4(Ipv4Addr::new(data[0], data[1], data[2], data[3])),
-                    rest,
-                ))
+                Ok((Protocol::Ip4(Ipv4Addr::new(data[0], data[1], data[2], data[3])), rest))
             }
             IP6 => {
                 let (data, rest) = split_at(16, input)?;
@@ -253,9 +245,7 @@ impl<'a> Protocol<'a> {
                     *x = rdr.read_u16::<BigEndian>()?;
                 }
 
-                let addr = Ipv6Addr::new(
-                    seg[0], seg[1], seg[2], seg[3], seg[4], seg[5], seg[6], seg[7],
-                );
+                let addr = Ipv6Addr::new(seg[0], seg[1], seg[2], seg[3], seg[4], seg[5], seg[6], seg[7]);
 
                 Ok((Protocol::Ip6(addr), rest))
             }
@@ -516,13 +506,11 @@ impl<'a> fmt::Display for Protocol<'a> {
             Udp(port) => write!(f, "/{port}"),
             Unix(s) => write!(f, "/{s}"),
             Ws(s) if s != "/" => {
-                let encoded =
-                    percent_encoding::percent_encode(s.as_bytes(), PATH_SEGMENT_ENCODE_SET);
+                let encoded = percent_encoding::percent_encode(s.as_bytes(), PATH_SEGMENT_ENCODE_SET);
                 write!(f, "/{encoded}")
             }
             Wss(s) if s != "/" => {
-                let encoded =
-                    percent_encoding::percent_encode(s.as_bytes(), PATH_SEGMENT_ENCODE_SET);
+                let encoded = percent_encoding::percent_encode(s.as_bytes(), PATH_SEGMENT_ENCODE_SET);
                 write!(f, "/{encoded}")
             }
             _ => Ok(()),
@@ -554,6 +542,7 @@ impl<'a> From<Ipv6Addr> for Protocol<'a> {
     }
 }
 
+#[allow(unused_macros)]
 macro_rules! read_onion_impl {
     ($name:ident, $len:expr, $encoded_len:expr) => {
         fn $name(s: &str) -> Result<([u8; $len], u16)> {
@@ -566,10 +555,7 @@ macro_rules! read_onion_impl {
             }
 
             // port number
-            let port = parts
-                .next()
-                .ok_or(Error::InvalidMultiaddr)
-                .and_then(|p| str::parse(p).map_err(From::from))?;
+            let port = parts.next().ok_or(Error::InvalidMultiaddr).and_then(|p| str::parse(p).map_err(From::from))?;
 
             // port == 0 is not valid for onion
             if port == 0 {
@@ -581,18 +567,12 @@ macro_rules! read_onion_impl {
                 return Err(Error::InvalidMultiaddr);
             }
 
-            if $len
-                != BASE32
-                    .decode_len(b32.len())
-                    .map_err(|_| Error::InvalidMultiaddr)?
-            {
+            if $len != BASE32.decode_len(b32.len()).map_err(|_| Error::InvalidMultiaddr)? {
                 return Err(Error::InvalidMultiaddr);
             }
 
             let mut buf = [0u8; $len];
-            BASE32
-                .decode_mut(b32.as_bytes(), &mut buf)
-                .map_err(|_| Error::InvalidMultiaddr)?;
+            BASE32.decode_mut(b32.as_bytes(), &mut buf).map_err(|_| Error::InvalidMultiaddr)?;
 
             Ok((buf, port))
         }

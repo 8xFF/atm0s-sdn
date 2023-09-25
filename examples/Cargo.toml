@@ -11,10 +11,10 @@ utils = { workspace = true }
 network = { workspace = true }
 thiserror = { workspace = true }
 async-std = { workspace = true }
-router = { workspace = true }
-manual = { workspace = true }
+layers-spread-router = { workspace = true }
+manual-discovery = { workspace = true }
 transport-tcp = { workspace = true }
-fast-path-route = { workspace = true }
+layers-spread-router-sync = { workspace = true }
 
 env_logger = { workspace = true }
 async-trait = { workspace = true }
