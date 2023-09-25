@@ -92,9 +92,9 @@ mod tests {
         fn on_rpc(&mut self, _agent: &BehaviorAgent<HE>, _req: Req, _res: Box<dyn RpcAnswer<Res>>) -> bool {
             false
         }
-        fn on_started(&mut self, agent: &BehaviorAgent<HE>) {}
+        fn on_started(&mut self, _agent: &BehaviorAgent<HE>) {}
 
-        fn on_stopped(&mut self, agent: &BehaviorAgent<HE>) {}
+        fn on_stopped(&mut self, _agent: &BehaviorAgent<HE>) {}
     }
 
     impl<BE, HE> ConnectionHandler<BE, HE> for TestCrossNetworkHandler

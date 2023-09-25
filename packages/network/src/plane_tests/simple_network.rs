@@ -127,9 +127,9 @@ mod tests {
             false
         }
 
-        fn on_started(&mut self, agent: &BehaviorAgent<HE>) {}
+        fn on_started(&mut self, _agent: &BehaviorAgent<HE>) {}
 
-        fn on_stopped(&mut self, agent: &BehaviorAgent<HE>) {}
+        fn on_stopped(&mut self, _agent: &BehaviorAgent<HE>) {}
     }
 
     impl<BE, HE> ConnectionHandler<BE, HE> for Test1NetworkHandler
@@ -202,9 +202,9 @@ mod tests {
             false
         }
 
-        fn on_started(&mut self, agent: &BehaviorAgent<HE>) {}
+        fn on_started(&mut self, _agent: &BehaviorAgent<HE>) {}
 
-        fn on_stopped(&mut self, agent: &BehaviorAgent<HE>) {}
+        fn on_stopped(&mut self, _agent: &BehaviorAgent<HE>) {}
     }
 
     impl<BE, HE> ConnectionHandler<BE, HE> for Test2NetworkHandler
@@ -276,5 +276,7 @@ mod tests {
         faker.send(MockInput::FakeDisconnectIncoming(1, ConnId::from_in(0, 1))).await.unwrap();
         async_std::task::sleep(Duration::from_millis(1000)).await;
         assert_eq!(conn_counter.load(Ordering::SeqCst), 0);
+
+        join.cancel().await;
     }
 }
