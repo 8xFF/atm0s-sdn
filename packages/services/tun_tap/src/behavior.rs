@@ -8,7 +8,7 @@ use async_std::{
     fs::File,
     io::{ReadExt, WriteExt},
 };
-use bluesea_identity::{ConnId, NodeId};
+use bluesea_identity::{ConnId, NodeId, NodeIdType};
 use bluesea_router::RouteRule;
 use futures::{select, FutureExt};
 use network::{
@@ -51,32 +51,43 @@ where
 
     fn on_started(&mut self, agent: &BehaviorAgent<HE>) {
         if let Some(rx) = self.local_rx.take() {
-            let mut config = tun::Configuration::default();
-            config
-                .address((10, 0, 0, (agent.local_node_id() % 256) as u8)) //TODO using ipv6 instead
-                .netmask((255, 255, 255, 0))
-                .mtu(1180)
-                .up();
-
-            #[cfg(target_os = "linux")]
-            config.platform(|config| {
-                config.packet_information(true);
-            });
-
-            let dev = tun::create(&config).unwrap();
-            let mut async_file = unsafe { File::from_raw_fd(dev.as_raw_fd()) };
-            let mut buf = [0; 4096];
-
             let agent = agent.clone();
             let join = async_std::task::spawn(async move {
+                let mut config = tun::Configuration::default();
+                let node_id = agent.local_node_id();
+
+                config
+                    .address((10, 33, node_id.layer(1), node_id.layer(0))) //TODO using ipv6 instead
+                    .destination((10, 33, node_id.layer(1), node_id.layer(0)))
+                    .netmask((255, 255, 0, 0))
+                    .mtu(1180)
+                    .up();
+
+                #[cfg(target_os = "linux")]
+                config.platform(|config| {
+                    config.packet_information(true);
+                });
+
+                let dev = tun::create(&config).unwrap();
+                log::info!("created tun device fd {}", dev.as_raw_fd());
+                let mut async_file = unsafe { File::from_raw_fd(dev.as_raw_fd()) };
+                let mut buf = [0; 4096];
+                
                 let agent = agent.clone();
                 loop {
                     select! {
                         e = async_file.read(&mut buf).fuse() => match e {
                             Ok(amount) => {
                                 let to_ip = &buf[20..24];
-                                let dest = NodeId::from(to_ip[3] as u32);
-                                agent.send_to_net(TransportMsg::build_unreliable(TUNTAP_SERVICE_ID, RouteRule::ToNode(dest), 0, &buf[0..amount]));
+                                let dest = NodeId::build(0, 0, to_ip[2], to_ip[3]);
+                                if dest == agent.local_node_id() {
+                                    log::info!("write local tun {} bytes", amount);
+                                    async_file.write(&buf[0..amount]).await.print_error("write tun error");
+                                    continue;
+                                } else {
+                                    log::info!("forward tun {:?} bytes to {}", &buf[0..amount], dest);
+                                    agent.send_to_net(TransportMsg::build_unreliable(TUNTAP_SERVICE_ID, RouteRule::ToNode(dest), 0, &buf[0..amount]));
+                                }
                             },
                             Err(e) => {
                                 log::error!("read tun error {}", e);
@@ -85,6 +96,7 @@ where
                         },
                         msg = rx.recv().fuse() => {
                             if let Ok(msg) = msg {
+                                log::info!("write tun {:?} bytes", msg.payload());
                                 async_file.write(msg.payload()).await.print_error("write tun error");
                             } else {
                                 break;
