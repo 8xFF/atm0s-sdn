@@ -52,11 +52,13 @@ struct Args {
 
 #[async_std::main]
 async fn main() {
-    env_logger::init();
+    env_logger::builder()
+        .format_timestamp_millis()
+        .init();
     let args: Args = Args::parse();
     let node_addr_builder = Arc::new(NodeAddrBuilder::default());
     node_addr_builder.add_protocol(Protocol::P2p(args.node_id));
-    let transport = transport_tcp::TcpTransport::new(args.node_id, 0, node_addr_builder.clone()).await;
+    let transport = transport_tcp::TcpTransport::new(args.node_id, 50000 + args.node_id as u16, node_addr_builder.clone()).await;
     let (transport_rpc, _, _) = network::mock::MockTransportRpc::new();
     let node_addr = node_addr_builder.addr();
     log::info!("Listen on addr {}", node_addr);

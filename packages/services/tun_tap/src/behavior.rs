@@ -1,12 +1,13 @@
 use std::{
     os::fd::{AsRawFd, FromRawFd},
     sync::Arc,
+    io::Write,
 };
 
 use async_std::{
     channel::{Receiver, Sender},
     fs::File,
-    io::{ReadExt, WriteExt},
+    io::ReadExt,
 };
 use bluesea_identity::{ConnId, NodeId, NodeIdType};
 use bluesea_router::RouteRule;
@@ -68,7 +69,7 @@ where
                     config.packet_information(true);
                 });
 
-                let dev = tun::create(&config).unwrap();
+                let mut dev = tun::create(&config).unwrap();
                 log::info!("created tun device fd {}", dev.as_raw_fd());
                 let mut async_file = unsafe { File::from_raw_fd(dev.as_raw_fd()) };
                 let mut buf = [0; 4096];
@@ -81,11 +82,11 @@ where
                                 let to_ip = &buf[20..24];
                                 let dest = NodeId::build(0, 0, to_ip[2], to_ip[3]);
                                 if dest == agent.local_node_id() {
-                                    log::info!("write local tun {} bytes", amount);
-                                    async_file.write(&buf[0..amount]).await.print_error("write tun error");
+                                    log::debug!("write local tun {} bytes",  amount);
+                                    dev.write(&buf[0..amount]).print_error("write tun error");
                                     continue;
                                 } else {
-                                    log::info!("forward tun {:?} bytes to {}", &buf[0..amount], dest);
+                                    log::debug!("forward tun {} bytes to {}", amount, dest);
                                     agent.send_to_net(TransportMsg::build_unreliable(TUNTAP_SERVICE_ID, RouteRule::ToNode(dest), 0, &buf[0..amount]));
                                 }
                             },
@@ -95,10 +96,22 @@ where
                             }
                         },
                         msg = rx.recv().fuse() => {
-                            if let Ok(msg) = msg {
-                                log::info!("write tun {:?} bytes", msg.payload());
-                                async_file.write(msg.payload()).await.print_error("write tun error");
+                            if let Ok(mut msg) = msg {
+                                let payload = msg.payload_mut();
+                                #[cfg(any(target_os = "macos", target_os = "ios"))]
+                                {
+                                    payload[2] = 0;
+                                    payload[3] = 2;
+                                }
+                                #[cfg(any(target_os = "linux", target_os = "android"))]
+                                {
+                                    payload[2] = 8;
+                                    payload[3] = 0;
+                                }
+                                log::debug!("write tun {} bytes", payload.len());
+                                dev.write(payload).print_error("write tun error");
                             } else {
+                                log::error!("read incoming msg error");
                                 break;
                             }
                         }

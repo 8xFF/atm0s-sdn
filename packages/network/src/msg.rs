@@ -347,6 +347,10 @@ impl TransportMsg {
         &self.buffer[self.payload_start..]
     }
 
+    pub fn payload_mut(&mut self) -> &mut [u8] {
+        &mut self.buffer[self.payload_start..]
+    }
+
     pub fn rewrite_route(&mut self, new_route: RouteRule) -> Option<()> {
         MsgHeader::rewrite_route(&mut self.buffer, new_route)
     }
