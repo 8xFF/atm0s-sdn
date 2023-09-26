@@ -159,9 +159,9 @@ mod tests {
             router: Arc::new(ForceLocalRouter()),
         });
 
-        let join = async_std::task::spawn(async move { 
+        let join = async_std::task::spawn(async move {
             plane.started();
-            while let Ok(_) = plane.recv().await {} 
+            while let Ok(_) = plane.recv().await {}
             plane.stopped();
         });
 
@@ -200,9 +200,9 @@ mod tests {
             router: Arc::new(ForceLocalRouter()),
         });
 
-        let join = async_std::task::spawn(async move { 
+        let join = async_std::task::spawn(async move {
             plane.started();
-            while let Ok(_) = plane.recv().await {} 
+            while let Ok(_) = plane.recv().await {}
             plane.stopped();
         });
 

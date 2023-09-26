@@ -52,9 +52,7 @@ struct Args {
 
 #[async_std::main]
 async fn main() {
-    env_logger::builder()
-        .format_timestamp_millis()
-        .init();
+    env_logger::builder().format_timestamp_millis().init();
     let args: Args = Args::parse();
     let node_addr_builder = Arc::new(NodeAddrBuilder::default());
     node_addr_builder.add_protocol(Protocol::P2p(args.node_id));

@@ -71,9 +71,9 @@ mod tests {
             router: Arc::new(ForceNodeRouter(ConnId::from_in(0, 0), neighbour1)),
         });
 
-        let join = async_std::task::spawn(async move { 
+        let join = async_std::task::spawn(async move {
             plane.started();
-            while let Ok(_) = plane.recv().await {} 
+            while let Ok(_) = plane.recv().await {}
             plane.stopped();
         });
 
@@ -120,12 +120,12 @@ mod tests {
             router: Arc::new(ForceNodeRouter(ConnId::from_in(0, 0), neighbour1)),
         });
 
-        let join = async_std::task::spawn(async move { 
+        let join = async_std::task::spawn(async move {
             plane.started();
-            while let Ok(_) = plane.recv().await {} 
+            while let Ok(_) = plane.recv().await {}
             plane.stopped();
         });
-        
+
         faker
             .send_blocking(MockInput::FakeIncomingConnection(neighbour1, ConnId::from_in(0, 0), neighbour1_addr.clone()))
             .unwrap();
