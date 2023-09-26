@@ -1,13 +1,15 @@
 use std::{
+    io::Write,
+    net::{IpAddr, Ipv4Addr},
     os::fd::{AsRawFd, FromRawFd},
     sync::Arc,
-    io::Write,
 };
 
 use async_std::{
     channel::{Receiver, Sender},
     fs::File,
     io::ReadExt,
+    process::Command,
 };
 use bluesea_identity::{ConnId, NodeId, NodeIdType};
 use bluesea_router::RouteRule;
@@ -56,10 +58,11 @@ where
             let join = async_std::task::spawn(async move {
                 let mut config = tun::Configuration::default();
                 let node_id = agent.local_node_id();
+                let ip_addr: IpAddr = IpAddr::V4(Ipv4Addr::new(10, 33, node_id.layer(1), node_id.layer(0)));
 
                 config
-                    .address((10, 33, node_id.layer(1), node_id.layer(0))) //TODO using ipv6 instead
-                    .destination((10, 33, node_id.layer(1), node_id.layer(0)))
+                    .address(ip_addr.clone()) //TODO using ipv6 instead
+                    .destination(ip_addr.clone())
                     .netmask((255, 255, 0, 0))
                     .mtu(1180)
                     .up();
@@ -71,9 +74,27 @@ where
 
                 let mut dev = tun::create(&config).unwrap();
                 log::info!("created tun device fd {}", dev.as_raw_fd());
+
+                #[cfg(any(target_os = "macos", target_os = "ios"))]
+                {
+                    let output = Command::new("route").args(&["-n", "add", "-net", "10.33.0.0/16", &format!("{}", ip_addr)]).output().await;
+                    match output {
+                        Ok(output) => {
+                            if !output.status.success() {
+                                log::error!("add route error {}", String::from_utf8_lossy(&output.stderr));
+                            } else {
+                                log::info!("add route success");
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("add route error {}", e);
+                        }
+                    }
+                }
+
                 let mut async_file = unsafe { File::from_raw_fd(dev.as_raw_fd()) };
                 let mut buf = [0; 4096];
-                
+
                 let agent = agent.clone();
                 loop {
                     select! {
