@@ -11,10 +11,10 @@ pub use transport::UdpTransport;
 #[cfg(test)]
 mod tests {
     use crate::transport::UdpTransport;
-    use bluesea_identity::{NodeAddrBuilder, Protocol, NodeAddr};
+    use bluesea_identity::{NodeAddr, NodeAddrBuilder, Protocol};
     use bluesea_router::RouteRule;
     use network::msg::TransportMsg;
-    use network::transport::{ConnectionEvent, Transport, TransportEvent, OutgoingConnectionError};
+    use network::transport::{ConnectionEvent, OutgoingConnectionError, Transport, TransportEvent};
     use serde::{Deserialize, Serialize};
     use utils::option_handle::OptionUtils;
 
@@ -155,7 +155,7 @@ mod tests {
         let connector1 = tran1.connector();
         let _conn_id = connector1.connect_to(3, node_addr_builder2.addr()).unwrap().conn_id;
 
-        let join = async_std::task::spawn(async move { 
+        let join = async_std::task::spawn(async move {
             loop {
                 match tran2.recv().await {
                     Ok(msg) => match msg {
@@ -164,9 +164,10 @@ mod tests {
                         }
                         _ => {}
                     },
-                    Err(_) => break
+                    Err(_) => break,
                 }
-            }});
+            }
+        });
 
         match tran1.recv().await.unwrap() {
             TransportEvent::OutgoingRequest(_node, _conn, acceptor) => {

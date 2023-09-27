@@ -3,7 +3,7 @@ use bluesea_router::{RouteAction, RouterTable};
 use futures::{select, FutureExt, StreamExt};
 use parking_lot::RwLock;
 use std::{sync::Arc, time::Duration};
-use utils::{option_handle::OptionUtils, Timer, error_handle::ErrorUtils};
+use utils::{error_handle::ErrorUtils, option_handle::OptionUtils, Timer};
 
 use crate::{
     behaviour::ConnectionHandler,
@@ -132,9 +132,15 @@ where
         }
 
         if self.outgoing {
-            self.internal_tx.send(NetworkPlaneInternalEvent::OutgoingDisconnected(self.sender.clone())).await.print_error("Should send disconnect event");
+            self.internal_tx
+                .send(NetworkPlaneInternalEvent::OutgoingDisconnected(self.sender.clone()))
+                .await
+                .print_error("Should send disconnect event");
         } else {
-            self.internal_tx.send(NetworkPlaneInternalEvent::IncomingDisconnected(self.sender.clone())).await.print_error("Should send disconnect event");
+            self.internal_tx
+                .send(NetworkPlaneInternalEvent::IncomingDisconnected(self.sender.clone()))
+                .await
+                .print_error("Should send disconnect event");
         }
     }
 }

@@ -1,5 +1,6 @@
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 
+use crate::msg::{build_control_msg, HandshakeResult, UdpTransportMsg};
 use async_std::{
     channel::{Receiver, Sender},
     net::UdpSocket,
@@ -9,7 +10,6 @@ use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use futures_util::{select, FutureExt};
 use network::transport::{AsyncConnectionAcceptor, TransportEvent};
 use utils::error_handle::ErrorUtils;
-use crate::msg::{build_control_msg, UdpTransportMsg, HandshakeResult};
 
 /// Connection handshake flow
 /// Client -> Server: ConnectRequest
@@ -137,7 +137,7 @@ pub async fn outgoing_handshake(socket: &UdpSocket, local_node_id: NodeId, local
         .await
         .map_err(|_| OutgoingHandshakeError::SocketError)?;
 
-        log::info!("[OutgoingHandshake {}] send handshake connect request", to_node_id);
+    log::info!("[OutgoingHandshake {}] send handshake connect request", to_node_id);
 
     loop {
         select! {
