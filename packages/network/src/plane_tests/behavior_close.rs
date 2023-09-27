@@ -55,7 +55,8 @@ mod tests {
     }
 
     struct TestCrossNetworkBehavior {
-        behaviour_conn_counter: Arc<AtomicU32>,
+        incomming_conn_counter: Arc<AtomicU32>,
+        outgoing_conn_counter: Arc<AtomicU32>,
         handler_conn_counter: Arc<AtomicU32>,
     }
     struct TestCrossNetworkHandler {
@@ -81,26 +82,24 @@ mod tests {
         }
 
         fn on_incoming_connection_connected(&mut self, _agent: &BehaviorAgent<HE>, _connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
-            self.behaviour_conn_counter.fetch_add(1, Ordering::Relaxed);
+            self.incomming_conn_counter.fetch_add(1, Ordering::Relaxed);
             Some(Box::new(TestCrossNetworkHandler {
                 conn_counter: self.handler_conn_counter.clone(),
             }))
         }
         fn on_outgoing_connection_connected(&mut self, _agent: &BehaviorAgent<HE>, _connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
-            self.behaviour_conn_counter.fetch_add(1, Ordering::Relaxed);
+            self.outgoing_conn_counter.fetch_add(1, Ordering::Relaxed);
             Some(Box::new(TestCrossNetworkHandler {
                 conn_counter: self.handler_conn_counter.clone(),
             }))
         }
         fn on_incoming_connection_disconnected(&mut self, _agent: &BehaviorAgent<HE>, _conn: Arc<dyn ConnectionSender>) {
-            self.behaviour_conn_counter.fetch_sub(1, Ordering::Relaxed);
+            self.incomming_conn_counter.fetch_sub(1, Ordering::Relaxed);
         }
         fn on_outgoing_connection_disconnected(&mut self, _agent: &BehaviorAgent<HE>, _connection: Arc<dyn ConnectionSender>) {
-            self.behaviour_conn_counter.fetch_sub(1, Ordering::Relaxed);
+            self.outgoing_conn_counter.fetch_sub(1, Ordering::Relaxed);
         }
-        fn on_outgoing_connection_error(&mut self, _agent: &BehaviorAgent<HE>, _node_id: NodeId, _conn_id: ConnId, _err: &OutgoingConnectionError) {
-            self.behaviour_conn_counter.fetch_sub(1, Ordering::Relaxed);
-        }
+        fn on_outgoing_connection_error(&mut self, _agent: &BehaviorAgent<HE>, _node_id: NodeId, _conn_id: ConnId, _err: &OutgoingConnectionError) {}
         fn on_handler_event(&mut self, agent: &BehaviorAgent<HE>, _node_id: NodeId, _conn_id: ConnId, event: BE) {
             if let Ok(event) = event.try_into() {
                 match event {
@@ -163,10 +162,12 @@ mod tests {
 
     #[async_std::test]
     async fn test_behaviour_close_conn() {
-        let behaviour_conn_counter: Arc<AtomicU32> = Default::default();
+        let incomming_conn_counter: Arc<AtomicU32> = Default::default();
+        let outgoing_conn_counter: Arc<AtomicU32> = Default::default();
         let handler_conn_counter: Arc<AtomicU32> = Default::default();
         let behavior = Box::new(TestCrossNetworkBehavior {
-            behaviour_conn_counter: behaviour_conn_counter.clone(),
+            incomming_conn_counter: incomming_conn_counter.clone(),
+            outgoing_conn_counter: outgoing_conn_counter.clone(),
             handler_conn_counter: handler_conn_counter.clone(),
         });
 
@@ -193,7 +194,7 @@ mod tests {
 
         faker.send(MockInput::FakeIncomingConnection(1, ConnId::from_in(0, 1), NodeAddr::from(Protocol::Udp(1)))).await.unwrap();
         async_std::task::sleep(Duration::from_millis(100)).await;
-        assert_eq!(behaviour_conn_counter.load(Ordering::Relaxed), 1);
+        assert_eq!(incomming_conn_counter.load(Ordering::Relaxed), 1);
         assert_eq!(handler_conn_counter.load(Ordering::Relaxed), 1);
         faker
             .send(MockInput::FakeIncomingMsg(
@@ -203,12 +204,12 @@ mod tests {
             .await
             .unwrap();
         async_std::task::sleep(Duration::from_millis(100)).await;
-        assert_eq!(behaviour_conn_counter.load(Ordering::Relaxed), 0);
+        assert_eq!(incomming_conn_counter.load(Ordering::Relaxed), 0);
         assert_eq!(handler_conn_counter.load(Ordering::Relaxed), 0);
 
         faker.send(MockInput::FakeIncomingConnection(1, ConnId::from_in(0, 2), NodeAddr::from(Protocol::Udp(1)))).await.unwrap();
         async_std::task::sleep(Duration::from_millis(100)).await;
-        assert_eq!(behaviour_conn_counter.load(Ordering::Relaxed), 1);
+        assert_eq!(incomming_conn_counter.load(Ordering::Relaxed), 1);
         assert_eq!(handler_conn_counter.load(Ordering::Relaxed), 1);
         faker
             .send(MockInput::FakeIncomingMsg(
@@ -218,12 +219,12 @@ mod tests {
             .await
             .unwrap();
         async_std::task::sleep(Duration::from_millis(100)).await;
-        assert_eq!(behaviour_conn_counter.load(Ordering::Relaxed), 0);
+        assert_eq!(incomming_conn_counter.load(Ordering::Relaxed), 0);
         assert_eq!(handler_conn_counter.load(Ordering::Relaxed), 0);
 
-        faker.send(MockInput::FakeIncomingConnection(1, ConnId::from_in(0, 3), NodeAddr::from(Protocol::Udp(1)))).await.unwrap();
+        faker.send(MockInput::FakeOutgoingConnection(1, ConnId::from_in(0, 3), NodeAddr::from(Protocol::Udp(1)))).await.unwrap();
         async_std::task::sleep(Duration::from_millis(100)).await;
-        assert_eq!(behaviour_conn_counter.load(Ordering::Relaxed), 1);
+        assert_eq!(outgoing_conn_counter.load(Ordering::Relaxed), 1);
         assert_eq!(handler_conn_counter.load(Ordering::Relaxed), 1);
         faker
             .send(MockInput::FakeIncomingMsg(
@@ -233,7 +234,7 @@ mod tests {
             .await
             .unwrap();
         async_std::task::sleep(Duration::from_millis(100)).await;
-        assert_eq!(behaviour_conn_counter.load(Ordering::Relaxed), 0);
+        assert_eq!(outgoing_conn_counter.load(Ordering::Relaxed), 0);
         assert_eq!(handler_conn_counter.load(Ordering::Relaxed), 0);
 
         join.cancel().await.print_none("Should can join");
