@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 pub enum HandshakeResult {
     Success,
     AuthenticationError,
-    DestinationError,
     Rejected,
 }
 

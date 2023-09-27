@@ -18,7 +18,7 @@ pub enum TransportEvent {
 }
 
 #[async_trait::async_trait]
-pub trait Transport {
+pub trait Transport: Send {
     fn connector(&self) -> Arc<dyn TransportConnector>;
     async fn recv(&mut self) -> Result<TransportEvent, ()>;
 }

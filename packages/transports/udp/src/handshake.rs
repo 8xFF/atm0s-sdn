@@ -32,7 +32,6 @@ pub enum IncomingHandshakeError {
 
 #[derive(Debug)]
 pub enum OutgoingHandshakeError {
-    DestinationError,
     SocketError,
     AuthenticationError,
     Timeout,
@@ -76,7 +75,7 @@ pub async fn incoming_handshake(
                         UdpTransportMsg::ConnectRequest(node, addr, to_node) => {
                             if to_node != local_node_id {
                                 log::warn!("[IncomingHandshake] received from {} {} but wrong dest {} vs {}", node, addr, to_node, local_node_id);
-                                socket.send_to(&build_control_msg(&UdpTransportMsg::ConnectResponse(HandshakeResult::DestinationError)), remote_addr).await.map_err(|_| IncomingHandshakeError::SocketError)?;
+                                socket.send_to(&build_control_msg(&UdpTransportMsg::ConnectResponse(HandshakeResult::AuthenticationError)), remote_addr).await.map_err(|_| IncomingHandshakeError::SocketError)?;
                                 return Err(IncomingHandshakeError::Rejected);
                             }
                             log::info!("[IncomingHandshake] received from {} {}", node, addr);
@@ -100,7 +99,7 @@ pub async fn incoming_handshake(
                                 result = Some((node, addr));
                             } else {
                                 log::warn!("[IncomingHandshake] {} {} handshake rejected wrong addr", node, addr);
-                                socket.send_to(&build_control_msg(&UdpTransportMsg::ConnectResponse(HandshakeResult::DestinationError)), remote_addr).await.map_err(|_| IncomingHandshakeError::SocketError)?;
+                                socket.send_to(&build_control_msg(&UdpTransportMsg::ConnectResponse(HandshakeResult::AuthenticationError)), remote_addr).await.map_err(|_| IncomingHandshakeError::SocketError)?;
                                 return Err(IncomingHandshakeError::Rejected);
                             }
                         }
@@ -163,9 +162,6 @@ pub async fn outgoing_handshake(socket: &UdpSocket, local_node_id: NodeId, local
                                 HandshakeResult::Success => {
                                     socket.send(&build_control_msg(&UdpTransportMsg::ConnectResponseAck(true))).await.map_err(|_| OutgoingHandshakeError::SocketError)?;
                                     return Ok(());
-                                }
-                                HandshakeResult::DestinationError => {
-                                    return Err(OutgoingHandshakeError::DestinationError);
                                 }
                                 HandshakeResult::AuthenticationError => {
                                     return Err(OutgoingHandshakeError::AuthenticationError);

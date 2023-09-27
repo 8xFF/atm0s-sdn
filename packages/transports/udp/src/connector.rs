@@ -112,7 +112,6 @@ impl TransportConnector for UdpConnector {
                             OutgoingHandshakeError::WrongMsg => OutgoingConnectionError::AuthenticationError,
                             OutgoingHandshakeError::InternalError => OutgoingConnectionError::AuthenticationError,
                             OutgoingHandshakeError::Rejected => OutgoingConnectionError::AuthenticationError,
-                            OutgoingHandshakeError::DestinationError => OutgoingConnectionError::DestinationNotFound,
                             OutgoingHandshakeError::AuthenticationError => OutgoingConnectionError::AuthenticationError,
                         },
                     })
