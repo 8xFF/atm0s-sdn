@@ -7,12 +7,14 @@ edition = "2021"
 
 [dependencies]
 bluesea-identity = { workspace = true }
+bluesea-router = { workspace = true }
 utils = { workspace = true }
 network = { workspace = true }
 thiserror = { workspace = true }
 async-std = { workspace = true }
 layers-spread-router = { workspace = true }
 manual-discovery = { workspace = true }
+transport-udp = { workspace = true }
 transport-tcp = { workspace = true }
 layers-spread-router-sync = { workspace = true }
 tun-tap = { workspace = true }
