@@ -23,6 +23,7 @@ impl UdpTransport {
         let (tx, rx) = async_std::channel::bounded(1024);
         let addr_str = format!("0.0.0.0:{}", port);
         let addr: SocketAddr = addr_str.as_str().parse().expect("Should parse ip address");
+        //TODO increase udp buffer
         let socket = Arc::new(UdpSocket::bind(addr).expect("Should bind udp socket"));
 
         log::info!("[UdpTransport] Listening on port {}", socket.local_addr().unwrap().port());

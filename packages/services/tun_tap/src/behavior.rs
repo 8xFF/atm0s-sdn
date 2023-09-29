@@ -32,7 +32,7 @@ pub struct TunTapBehavior {
 
 impl Default for TunTapBehavior {
     fn default() -> Self {
-        let (local_tx, local_rx) = async_std::channel::bounded(100);
+        let (local_tx, local_rx) = async_std::channel::bounded(1000);
         Self {
             join: None,
             local_tx,

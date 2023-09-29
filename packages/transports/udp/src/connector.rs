@@ -89,6 +89,7 @@ impl TransportConnector for UdpConnector {
                 return;
             }
 
+            //TODO increase udp buffer
             let socket = Arc::new(std::net::UdpSocket::bind("0.0.0.0:0").expect("Should bind a address"));
             socket.connect(remote_addr).print_error("Should connect to remote addr");
             let async_socket = unsafe { Arc::new(async_std::net::UdpSocket::from_raw_fd(socket.as_raw_fd())) };
