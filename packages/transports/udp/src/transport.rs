@@ -24,7 +24,12 @@ impl UdpTransport {
         let addr_str = format!("0.0.0.0:{}", port);
         let addr: SocketAddr = addr_str.as_str().parse().expect("Should parse ip address");
         //TODO increase udp buffer
-        let socket = Arc::new(UdpSocket::bind(addr).expect("Should bind udp socket"));
+        let socket = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::DGRAM, None).expect("Should create socket");
+        socket.bind(&addr.into()).expect("Should bind address");
+        socket.set_recv_buffer_size(1024 * 1024).expect("Should set recv buffer size");
+        socket.set_send_buffer_size(1024 * 1024).expect("Should set recv buffer size");
+        let socket: UdpSocket = socket.into();
+        let socket = Arc::new(socket);
 
         log::info!("[UdpTransport] Listening on port {}", socket.local_addr().unwrap().port());
 
