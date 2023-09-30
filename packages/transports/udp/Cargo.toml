@@ -17,6 +17,7 @@ bincode = { workspace = true }
 serde = { workspace = true }
 futures-util = "0.3"
 async-notify = { workspace = true }
+socket2 = "0.5.4"
 
 [dev-dependencies]
 bluesea-router = { workspace = true }
