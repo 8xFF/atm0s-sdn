@@ -1,20 +1,15 @@
-use std::sync::Arc;
-
 use crate::msg::{KeyValueBehaviorEvent, KeyValueMsg};
 use bluesea_identity::{ConnId, NodeId};
-use bluesea_router::RouterTable;
 use network::behaviour::ConnectionHandler;
 use network::transport::ConnectionEvent;
 use network::ConnectionAgent;
 
 pub struct KeyValueConnectionHandler {
-    #[allow(unused)]
-    router: Arc<dyn RouterTable>,
 }
 
 impl KeyValueConnectionHandler {
-    pub fn new(router: Arc<dyn RouterTable>) -> Self {
-        Self { router }
+    pub fn new() -> Self {
+        Self { }
     }
 }
 
@@ -31,7 +26,7 @@ where
         match event {
             ConnectionEvent::Msg(msg) => match msg.get_payload_bincode::<KeyValueMsg>() {
                 Ok(kv_msg) => {
-                    agent.send_behavior(KeyValueBehaviorEvent::FromNode(kv_msg).into());
+                    agent.send_behavior(KeyValueBehaviorEvent::FromNode(msg.header, kv_msg).into());
                 }
                 Err(e) => {
                     log::error!("Error on get_payload_bincode: {:?}", e);

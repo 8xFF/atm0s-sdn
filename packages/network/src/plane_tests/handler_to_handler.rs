@@ -171,7 +171,7 @@ mod tests {
         faker
             .send(MockInput::FakeIncomingMsg(
                 ConnId::from_in(0, 1),
-                TransportMsg::from_payload_bincode(MsgHeader::build_reliable(0, RouteRule::ToNode(1), 0), &TestCrossNetworkMsg::PingToConn(ConnId::from_in(0, 2))).unwrap(),
+                TransportMsg::from_payload_bincode(MsgHeader::build_reliable(0, RouteRule::ToNode(1), 0), &TestCrossNetworkMsg::PingToConn(ConnId::from_in(0, 2))),
             ))
             .await
             .unwrap();
@@ -212,7 +212,7 @@ mod tests {
         faker
             .send(MockInput::FakeIncomingMsg(
                 ConnId::from_in(0, 1),
-                TransportMsg::from_payload_bincode(MsgHeader::build_reliable(0, RouteRule::ToNode(1), 0), &TestCrossNetworkMsg::PingToNode(2)).unwrap(),
+                TransportMsg::from_payload_bincode(MsgHeader::build_reliable(0, RouteRule::ToNode(1), 0), &TestCrossNetworkMsg::PingToNode(2)),
             ))
             .await
             .unwrap();

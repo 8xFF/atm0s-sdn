@@ -19,6 +19,8 @@ pub enum MsgHeaderError {
 }
 
 /// Fixed Header Fields
+/// 
+/// ```text
 ///     0                   1                   2                   3
 ///     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -32,29 +34,33 @@ pub enum MsgHeaderError {
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ///    |                         ValidateCode (Option)                 |
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 ///
 /// In there
-/// version (V) : 2 bits (now is 0)
-/// reliable (R): 1 bits
-/// from (F)    : 1 bits
-///     If this bit is set, from node_id will occupy 32 bits in header
-/// validation (V): 1 bits
-/// route type (S): 3 bits
-///     0: Direct : which node received this msg will handle it, no route destionation
-///     1: ToNode : which node received this msg will route it to node_id
-///     2: ToService : which node received this msg will route it to service meta
-///     3: ToKey : which node received this msg will route it to key
-///     4-7: Reserved
-/// ttl (TTL): 8 bits
-/// service id (Service): 8 bits
-/// meta (M): 8 bits (not used yet)
-/// route destination (Route Destination): 32 bits (if S is not Direct)
-///     If route type is ToNode, this field is 32bit node_id
-///     If route type is ToService, this field is service meta
-///     If route type is ToKey, this field is 32bit key
-/// stream id (Stream ID): 32 bits
-/// from_id (FromNodeId): 32 bits (optional if F bit is set)
-/// validate_code (ValidateCode): 32 bits (optional if V bit is set)
+/// 
+/// - version (V) : 2 bits (now is 0)
+/// - reliable (R): 1 bits
+/// - from (F)    : 1 bits, If this bit is set, from node_id will occupy 32 bits in header
+/// - validation (V): 1 bits
+/// - route type (S): 3 bits
+/// 
+///     - 0: Direct : which node received this msg will handle it, no route destionation
+///     - 1: ToNode : which node received this msg will route it to node_id
+///     - 2: ToService : which node received this msg will route it to service meta
+///     - 3: ToKey : which node received this msg will route it to key
+///     - 4-7: Reserved
+/// - ttl (TTL): 8 bits
+/// - service id (Service): 8 bits
+/// - meta (M): 8 bits (not used yet)
+/// - route destination (Route Destination): 32 bits (if S is not Direct)
+/// 
+///     - If route type is ToNode, this field is 32bit node_id
+///     - If route type is ToService, this field is service meta
+///     - If route type is ToKey, this field is 32bit key
+/// - stream id (Stream ID): 32 bits
+/// - from_id (FromNodeId): 32 bits (optional if F bit is set)
+/// - validate_code (ValidateCode): 32 bits (optional if V bit is set)
+/// 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MsgHeader {
     pub version: u8,
@@ -359,17 +365,17 @@ impl TransportMsg {
         bincode::deserialize::<M>(self.payload())
     }
 
-    pub fn from_payload_bincode<M: Serialize>(header: MsgHeader, msg: &M) -> Result<Self, bincode::Error> {
+    pub fn from_payload_bincode<M: Serialize>(header: MsgHeader, msg: &M) -> Self {
         let header_size = header.serialize_size();
-        let payload_size = bincode::serialized_size(msg)?;
+        let payload_size = bincode::serialized_size(msg).expect("Should serialize payload");
         let mut buffer = Vec::with_capacity(header_size + payload_size as usize);
         header.to_bytes(&mut buffer);
-        bincode::serialize_into(&mut buffer, msg)?;
-        Ok(Self {
+        bincode::serialize_into(&mut buffer, msg).expect("Should serialize payload");
+        Self {
             buffer,
             header,
             payload_start: header_size,
-        })
+        }
     }
 }
 

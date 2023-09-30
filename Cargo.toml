@@ -5,7 +5,6 @@ members = [
     "packages/core/identity",
     "packages/core/multiaddr",
     "packages/core/router",
-    "packages/core/key_value_storage",
     "packages/routers/layers_spread_router",
     "packages/services/dht_discovery",
     "packages/services/manual_discovery",
@@ -27,7 +26,6 @@ layers-spread-router = { path = "packages/routers/layers_spread_router" }
 multiaddr = { path = "packages/core/multiaddr" }
 utils = { package = "utils", path = "packages/core/utils" }
 router = { package = "router", path = "packages/core/router" }
-key-value-storage = { package = "key-value-storage", path = "packages/core/key_value_storage" }
 network = { package = "network", path = "packages/network" }
 manual-discovery = { package = "manual-discovery", path = "packages/services/manual_discovery" }
 dht-discovery = { package = "dht-discovery", path = "packages/services/dht_discovery" }

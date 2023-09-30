@@ -147,7 +147,7 @@ mod tests {
                     if let Ok(msg) = msg.get_payload_bincode::<Behavior1Msg>() {
                         match msg {
                             Behavior1Msg::Ping => {
-                                agent.send_net(TransportMsg::from_payload_bincode(MsgHeader::build_reliable(0, RouteRule::ToNode(1), 0), &Behavior1Msg::Pong).unwrap());
+                                agent.send_net(TransportMsg::from_payload_bincode(MsgHeader::build_reliable(0, RouteRule::ToNode(1), 0), &Behavior1Msg::Pong));
                                 self.input.lock().push_back(DebugInput::Msg(agent.remote_node_id(), agent.conn_id(), Behavior1Msg::Ping.into()));
                             }
                             Behavior1Msg::Pong => {
@@ -257,7 +257,7 @@ mod tests {
         faker
             .send(MockInput::FakeIncomingMsg(
                 ConnId::from_in(0, 1),
-                TransportMsg::from_payload_bincode(MsgHeader::build_reliable(0, RouteRule::ToNode(1), 0), &Behavior1Msg::Ping).unwrap(),
+                TransportMsg::from_payload_bincode(MsgHeader::build_reliable(0, RouteRule::ToNode(1), 0), &Behavior1Msg::Ping),
             ))
             .await
             .unwrap();
@@ -270,7 +270,7 @@ mod tests {
             Some(MockOutput::SendTo(
                 1,
                 ConnId::from_in(0, 1),
-                TransportMsg::from_payload_bincode(MsgHeader::build_reliable(0, RouteRule::ToNode(1), 0), &Behavior1Msg::Pong).unwrap(),
+                TransportMsg::from_payload_bincode(MsgHeader::build_reliable(0, RouteRule::ToNode(1), 0), &Behavior1Msg::Pong),
             ))
         );
         faker.send(MockInput::FakeDisconnectIncoming(1, ConnId::from_in(0, 1))).await.unwrap();

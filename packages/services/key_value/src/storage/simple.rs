@@ -52,12 +52,14 @@ where
         for (key, slot) in self.keys.iter_mut() {
             if let Some(expire_at) = slot.expire_at {
                 if expire_at <= now {
-                    expired_keys.push(key.clone());
+                    if let Some((_, version)) = &slot.value {
+                        expired_keys.push((key.clone(), *version));
+                    }
                 }
             }
         }
-        for key in expired_keys {
-            self.del(&key);
+        for (key, version) in expired_keys {
+            self.del(&key, version);
         }
 
         // Clear expired handlers
@@ -127,19 +129,25 @@ where
         }
     }
 
-    pub fn del(&mut self, key: &K) -> Option<(V, u64)> {
+    pub fn del(&mut self, key: &K, request_version: u64) -> Option<(V, u64)> {
         if let Some(slot) = self.keys.get_mut(key) {
-            if slot.value.is_some() {
-                Self::fire_del_events(key, slot, &mut self.events);
-                let (value, version) = slot.value.take().expect("cannot happend");
-                slot.expire_at = None;
-                if slot.listeners.is_empty() {
-                    self.keys.remove(key);
-                }
-                Some((value, version))
-            } else {
-                None
+            if slot.value.is_none() {
+                return None;
             }
+
+            if let Some((_, version)) = &slot.value {
+                if *version > request_version {
+                    return None
+                }
+            }
+            
+            Self::fire_del_events(key, slot, &mut self.events);
+            let (value, version) = slot.value.take().expect("cannot happend");
+            slot.expire_at = None;
+            if slot.listeners.is_empty() {
+                self.keys.remove(key);
+            }
+            Some((value, version))
         } else {
             None
         }
@@ -260,7 +268,8 @@ mod tests {
         let value = 2;
         let version = 1;
         assert!(store.set(key, value, version, None));
-        assert_eq!(store.del(&key), Some((value, version)));
+        assert_eq!(store.del(&key, 0), None);
+        assert_eq!(store.del(&key, version), Some((value, version)));
         assert_eq!(store.get(&key), None);
     }
 
@@ -346,7 +355,7 @@ mod tests {
         let handler = 1;
         store.subscribe(&key, handler, None);
         assert!(store.set(key, value, version, None));
-        assert_eq!(store.del(&key), Some((value, version)));
+        assert_eq!(store.del(&key, version), Some((value, version)));
         assert_eq!(store.poll(), Some(OutputEvent::NotifySet(key, value, version, handler)));
         assert_eq!(store.poll(), Some(OutputEvent::NotifyDel(key, value, version, handler)));
         assert_eq!(store.poll(), None);
@@ -364,7 +373,7 @@ mod tests {
         store.subscribe(&key, handler, None);
         assert!(store.unsubscribe(&key, &handler));
         assert!(store.set(key, value, version, None));
-        assert_eq!(store.del(&key), Some((value, version)));
+        assert_eq!(store.del(&key, version), Some((value, version)));
         assert_eq!(store.poll(), None);
     }
 
@@ -401,7 +410,7 @@ mod tests {
         assert_eq!(store.poll(), Some(OutputEvent::NotifySet(key, value, version, handler)));
         timer.fake(100);
         store.tick();
-        assert_eq!(store.del(&key), Some((value, version)));
+        assert_eq!(store.del(&key, version), Some((value, version)));
         assert_eq!(store.poll(), None);
     }
 
@@ -419,7 +428,7 @@ mod tests {
         let value1 = 2;
         let version1 = 1;
         assert!(store.set(key1, value1, version1, None));
-        assert_eq!(store.del(&key1), Some((value1, version1)));
+        assert_eq!(store.del(&key1, version1), Some((value1, version1)));
         assert_eq!(store.keys.len(), 0);
         assert_eq!(store.events.len(), 0);
 
@@ -508,7 +517,7 @@ mod tests {
         let stats = dhat::HeapStats::get();
 
         assert!(store.set(key1, value1, version1, None));
-        assert_eq!(store.del(&key1), Some((value1, version1)));
+        assert_eq!(store.del(&key1, version1), Some((value1, version1)));
 
         assert_eq!(store.poll(), Some(OutputEvent::NotifySet(key1, value1, version1, handler1)));
         assert_eq!(store.poll(), Some(OutputEvent::NotifyDel(key1, value1, version1, handler1)));

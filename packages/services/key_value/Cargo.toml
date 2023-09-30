@@ -10,9 +10,13 @@ async-trait = { workspace = true }
 bluesea-identity = { workspace = true }
 bluesea-router = { workspace = true }
 utils = { workspace = true }
-key-value-storage = { workspace = true }
 network = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }
 async-std = { workspace = true }
+parking_lot = { workspace = true }
+
+[dev-dependencies]
+dhat = { workspace = true }
+utils = { workspace = true, features = ["auto-clear"] }
