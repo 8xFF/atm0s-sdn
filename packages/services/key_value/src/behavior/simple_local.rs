@@ -37,6 +37,7 @@ struct KeySlotSubscribe {
     last_sync: u64,
     sub: bool,
     acked: bool,
+    handler: Box<dyn FnMut(KeyId, Option<Vec<u8>>, KeyVersion) + Send + Sync>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -48,7 +49,7 @@ pub enum SimpleKeyValueGetError {
 
 struct KeySlotGetCallback {
     timeout_after_ts: u64,
-    callback: Box<dyn FnOnce(Result<Option<(ValueType, KeyVersion)>, SimpleKeyValueGetError>)>,
+    callback: Box<dyn FnOnce(Result<Option<(ValueType, KeyVersion)>, SimpleKeyValueGetError>) + Send + Sync>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -239,9 +240,19 @@ impl LocalStorage {
             }
             LocalEvent::OnKeySet(req_id, key, value, version) => {
                 self.output_events.push(LocalStorageAction(RemoteEvent::OnKeySetAck(req_id), RouteRule::ToNode(from)));
+                if let Some(slot) = self.subscribe.get_mut(&key) {
+                    if slot.sub {
+                        (slot.handler)(key, Some(value), version);
+                    }
+                }
             }
             LocalEvent::OnKeyDel(req_id, key, version) => {
                 self.output_events.push(LocalStorageAction(RemoteEvent::OnKeyDelAck(req_id), RouteRule::ToNode(from)));
+                if let Some(slot) = self.subscribe.get_mut(&key) {
+                    if slot.sub {
+                        (slot.handler)(key, None, version);
+                    }
+                }
             }
         }
     }
@@ -268,7 +279,7 @@ impl LocalStorage {
             .push(LocalStorageAction(RemoteEvent::Set(req_id, key, value, version, ex), RouteRule::ToKey(key as u32)));
     }
 
-    pub fn get(&mut self, key: KeyId, callback: Box<dyn FnOnce(Result<Option<(ValueType, KeyVersion)>, SimpleKeyValueGetError>)>, timeout_ms: u64) {
+    pub fn get(&mut self, key: KeyId, callback: Box<dyn FnOnce(Result<Option<(ValueType, KeyVersion)>, SimpleKeyValueGetError>) + Send + Sync>, timeout_ms: u64) {
         let req_id = self.gen_req_id();
         self.get_queue.insert(
             req_id,
@@ -291,7 +302,7 @@ impl LocalStorage {
         }
     }
 
-    pub fn subscribe(&mut self, key: KeyId, ex: Option<u64>) {
+    pub fn subscribe(&mut self, key: KeyId, ex: Option<u64>, handler: Box<dyn FnMut(KeyId, Option<Vec<u8>>, KeyVersion) + Send + Sync>) {
         if self.subscribe.contains_key(&key) {
             return;
         }
@@ -304,6 +315,7 @@ impl LocalStorage {
                 last_sync: 0,
                 sub: true,
                 acked: false,
+                handler,
             },
         );
         self.output_events.push(LocalStorageAction(RemoteEvent::Sub(req_id, key, ex), RouteRule::ToKey(key as u32)));
@@ -500,7 +512,7 @@ mod tests {
         let timer = Arc::new(utils::MockTimer::default());
         let mut storage = LocalStorage::new(timer.clone(), 10000);
 
-        storage.subscribe(1, None);
+        storage.subscribe(1, None, Box::new(|_, _, _| {}));
         assert_eq!(storage.pop_action(), Some(LocalStorageAction(RemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
@@ -511,11 +523,40 @@ mod tests {
     }
 
     #[test]
+    fn sub_event_test() {
+        let timer = Arc::new(utils::MockTimer::default());
+        let mut storage = LocalStorage::new(timer.clone(), 10000);
+        let received_events = Arc::new(Mutex::new(Vec::new()));
+
+        let received_events_clone = received_events.clone();
+        storage.subscribe(
+            1,
+            None,
+            Box::new(move |key, value, version| {
+                received_events_clone.lock().push((key, value, version));
+            }),
+        );
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction(RemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), None);
+
+        storage.on_event(2, LocalEvent::SubAck(0, 1));
+
+        storage.tick();
+        assert_eq!(storage.pop_action(), None);
+
+        // fake incoming event
+        storage.on_event(2, LocalEvent::OnKeySet(0, 1, vec![1], 0));
+        storage.on_event(2, LocalEvent::OnKeyDel(0, 1, 0));
+
+        assert_eq!(*received_events.lock(), vec![(1, Some(vec![1]), 0), (1, None, 0),]);
+    }
+
+    #[test]
     fn sub_should_retry_after_tick_and_not_received_ack() {
         let timer = Arc::new(utils::MockTimer::default());
         let mut storage = LocalStorage::new(timer.clone(), 10000);
 
-        storage.subscribe(1, None);
+        storage.subscribe(1, None, Box::new(|_, _, _| {}));
         assert_eq!(storage.pop_action(), Some(LocalStorageAction(RemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
@@ -528,7 +569,7 @@ mod tests {
         let timer = Arc::new(utils::MockTimer::default());
         let mut storage = LocalStorage::new(timer.clone(), 10000);
 
-        storage.subscribe(1, None);
+        storage.subscribe(1, None, Box::new(|_, _, _| {}));
         assert_eq!(storage.pop_action(), Some(LocalStorageAction(RemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
@@ -548,7 +589,7 @@ mod tests {
         let timer = Arc::new(utils::MockTimer::default());
         let mut storage = LocalStorage::new(timer.clone(), 10000);
 
-        storage.subscribe(1, None);
+        storage.subscribe(1, None, Box::new(|_, _, _| {}));
         assert!(storage.pop_action().is_some());
         assert!(storage.pop_action().is_none());
 
@@ -570,7 +611,7 @@ mod tests {
         let timer = Arc::new(utils::MockTimer::default());
         let mut storage = LocalStorage::new(timer.clone(), 10000);
 
-        storage.subscribe(1, None);
+        storage.subscribe(1, None, Box::new(|_, _, _| {}));
         assert!(storage.pop_action().is_some());
         assert!(storage.pop_action().is_none());
 
