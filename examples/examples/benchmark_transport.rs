@@ -2,7 +2,10 @@ use std::{sync::Arc, time::Duration};
 
 use bluesea_identity::NodeAddrBuilder;
 use bluesea_router::RouteRule;
-use network::{transport::{Transport, TransportEvent, ConnectionEvent}, msg::TransportMsg};
+use network::{
+    msg::TransportMsg,
+    transport::{ConnectionEvent, Transport, TransportEvent},
+};
 use utils::error_handle::ErrorUtils;
 
 #[async_std::main]
@@ -20,7 +23,7 @@ async fn main() {
                 Ok(TransportEvent::IncomingRequest(_, _, acceptor)) => {
                     log::info!("[Transport2] IncomingRequest");
                     acceptor.accept();
-                },
+                }
                 Ok(TransportEvent::Incoming(trans2_sender, mut trans2_receiver)) => {
                     while let Ok(msg) = trans2_receiver.poll().await {
                         match msg {
@@ -29,10 +32,10 @@ async fn main() {
                             }
                             ConnectionEvent::Stats(stats) => {
                                 log::info!("[Transport2] rtt_ms {}", stats.rtt_ms);
-                            } 
+                            }
                         }
                     }
-                },
+                }
                 _ => panic!("Unexpected event"),
             }
         }
@@ -48,7 +51,7 @@ async fn main() {
             Ok(TransportEvent::OutgoingRequest(_, _, acceptor)) => {
                 log::info!("[Transport1] OutgoingRequest");
                 acceptor.accept();
-            },
+            }
             Ok(TransportEvent::Outgoing(trans1_sender, mut trans1_receiver)) => {
                 let mut msg_count = 0;
                 trans1_sender.send(TransportMsg::build_reliable(0, RouteRule::Direct, 0, &[0; 10]));
@@ -65,12 +68,12 @@ async fn main() {
                         }
                         Ok(ConnectionEvent::Stats(stats)) => {
                             log::info!("[Transport1] rtt_ms {}", stats.rtt_ms);
-                        } 
+                        }
                         _ => panic!("Unexpected event"),
                     }
                 }
                 break;
-            },
+            }
             _ => panic!("Unexpected event"),
         }
     }

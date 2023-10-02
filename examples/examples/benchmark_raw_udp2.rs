@@ -1,4 +1,7 @@
-use std::{time::Duration, os::fd::{FromRawFd, AsRawFd}};
+use std::{
+    os::fd::{AsRawFd, FromRawFd},
+    time::Duration,
+};
 
 use async_std::net::UdpSocket;
 use utils::error_handle::ErrorUtils;
@@ -7,13 +10,9 @@ use utils::error_handle::ErrorUtils;
 async fn main() {
     env_logger::builder().format_timestamp_millis().filter_level(log::LevelFilter::Info).init();
     let udp_server = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
-    let udp_server_async =  unsafe {
-        UdpSocket::from_raw_fd(udp_server.as_raw_fd())
-    };
+    let udp_server_async = unsafe { UdpSocket::from_raw_fd(udp_server.as_raw_fd()) };
     let udp_client = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
-    let udp_client_async = unsafe {
-        UdpSocket::from_raw_fd(udp_client.as_raw_fd())
-    };
+    let udp_client_async = unsafe { UdpSocket::from_raw_fd(udp_client.as_raw_fd()) };
 
     async_std::task::sleep(Duration::from_secs(1)).await;
     log::info!("Connect to {}", udp_server.local_addr().unwrap());
@@ -30,7 +29,7 @@ async fn main() {
             }
         }
     });
-    
+
     let mut msg_count = 0;
     udp_client.send(&[0; 10]).print_error("Should send");
     let mut last_send = std::time::Instant::now();
@@ -47,7 +46,7 @@ async fn main() {
             }
             _ => panic!("Unexpected event"),
         }
-    }           
-                
+    }
+
     task.cancel().await;
 }

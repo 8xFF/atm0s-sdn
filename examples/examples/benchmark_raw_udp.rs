@@ -24,7 +24,7 @@ async fn main() {
             }
         }
     });
-    
+
     let mut msg_count = 0;
     udp_client.send(&[0; 10]).await.print_error("Should send");
     let mut last_send = std::time::Instant::now();
@@ -41,7 +41,7 @@ async fn main() {
             }
             _ => panic!("Unexpected event"),
         }
-    }           
-                
+    }
+
     task.cancel().await;
 }
