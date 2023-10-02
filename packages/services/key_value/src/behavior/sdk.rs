@@ -9,10 +9,8 @@ pub struct KeyValueSdk {
 }
 
 impl KeyValueSdk {
-    pub fn new(local: Arc<RwLock<LocalStorage>>,) -> Self {
-        Self {
-            local
-        }
+    pub fn new(local: Arc<RwLock<LocalStorage>>) -> Self {
+        Self { local }
     }
 
     pub fn set(&mut self, key: String, value: Vec<u8>, version: u64, ex: Option<u64>) -> bool {
@@ -23,15 +21,9 @@ impl KeyValueSdk {
         None
     }
 
-    pub fn del(&mut self, key: &String) {
+    pub fn del(&mut self, key: &String) {}
 
-    }
+    pub fn subscribe(&mut self, key: &String, from: u64, ex: Option<u64>) {}
 
-    pub fn subscribe(&mut self, key: &String, from: u64, ex: Option<u64>) {
-
-    }
-
-    pub fn unsubscribe(&mut self, key: &String, from: &u64) {
-
-    }
+    pub fn unsubscribe(&mut self, key: &String, from: &u64) {}
 }

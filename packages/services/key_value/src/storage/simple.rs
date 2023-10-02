@@ -42,6 +42,10 @@ where
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.keys.len()
+    }
+
     /// This function is call in each tick miliseconds, this function will check all expire time
     /// and clear all expired data, and fire all expire events
     /// It also clear expired handlers
@@ -137,10 +141,10 @@ where
 
             if let Some((_, version)) = &slot.value {
                 if *version > request_version {
-                    return None
+                    return None;
                 }
             }
-            
+
             Self::fire_del_events(key, slot, &mut self.events);
             let (value, version) = slot.value.take().expect("cannot happend");
             slot.expire_at = None;

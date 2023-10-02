@@ -14,9 +14,9 @@ use self::simple_local::LocalStorage;
 use self::simple_remote::RemoteStorage;
 
 mod event_acks;
-mod simple_remote;
-mod simple_local;
 mod sdk;
+mod simple_local;
+mod simple_remote;
 
 #[allow(unused)]
 pub struct KeyValueBehavior {
@@ -30,27 +30,31 @@ impl KeyValueBehavior {
         let simple_local = Arc::new(RwLock::new(LocalStorage::new(timer.clone(), sync_each_ms)));
         let sdk = sdk::KeyValueSdk::new(simple_local.clone());
 
-        (Self {
-            simple_remote: RemoteStorage::new(timer),
-            simple_local,
-        }, sdk)
+        (
+            Self {
+                simple_remote: RemoteStorage::new(timer),
+                simple_local,
+            },
+            sdk,
+        )
     }
 
-    fn pop_all_events<HE>(&mut self, agent: &BehaviorAgent<HE>) where HE: Send + Sync + 'static {
+    fn pop_all_events<HE>(&mut self, agent: &BehaviorAgent<HE>)
+    where
+        HE: Send + Sync + 'static,
+    {
         while let Some(action) = self.simple_remote.pop_action() {
-            agent.send_to_net(TransportMsg::from_payload_bincode(
-                MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, action.1, 0),
-            &action.0));
+            agent.send_to_net(TransportMsg::from_payload_bincode(MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, action.1, 0), &action.0));
         }
 
         while let Some(action) = self.simple_local.write().pop_action() {
-            agent.send_to_net(TransportMsg::from_payload_bincode(
-                MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, action.1, 0),
-            &action.0));
+            agent.send_to_net(TransportMsg::from_payload_bincode(MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, action.1, 0), &action.0));
         }
     }
 
-    fn process_key_value_msg<HE>(&mut self, header: MsgHeader, msg: KeyValueMsg, agent: &BehaviorAgent<HE>) where HE: Send + Sync + 'static,
+    fn process_key_value_msg<HE>(&mut self, header: MsgHeader, msg: KeyValueMsg, agent: &BehaviorAgent<HE>)
+    where
+        HE: Send + Sync + 'static,
     {
         match msg {
             KeyValueMsg::Remote(msg) => {

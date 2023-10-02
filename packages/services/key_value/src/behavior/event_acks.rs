@@ -7,7 +7,10 @@ pub struct EventAckManager<T: Clone> {
     actions: Vec<T>,
 }
 
-impl<T> EventAckManager<T> where T: Clone {
+impl<T> EventAckManager<T>
+where
+    T: Clone,
+{
     pub fn new() -> Self {
         Self {
             events: Default::default(),
@@ -15,7 +18,9 @@ impl<T> EventAckManager<T> where T: Clone {
         }
     }
 
+    // add to queue and auto retry each tick
     pub fn add_event(&mut self, req_id: ReqId, event: T, retry_count: u8) {
+        self.actions.push(event.clone());
         self.events.insert(req_id, (event, retry_count));
     }
 
@@ -24,10 +29,9 @@ impl<T> EventAckManager<T> where T: Clone {
     }
 
     pub fn tick(&mut self) {
-        for (_req_id, (event , retry_count)) in self.events.iter_mut() {
+        for (_req_id, (event, retry_count)) in self.events.iter_mut() {
             if *retry_count > 0 {
                 *retry_count -= 1;
-            } else {
                 self.actions.push(event.clone());
             }
         }

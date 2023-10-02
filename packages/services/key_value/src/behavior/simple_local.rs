@@ -1,20 +1,28 @@
+use crate::{
+    msg::{LocalEvent, RemoteEvent},
+    KeyId, KeyVersion, ReqId, ValueType,
+};
+use bluesea_identity::NodeId;
+use bluesea_router::RouteRule;
 /// This simple local storage is used for storing and act with remote storage
 /// Main idea is we using sdk to act with local storage, and local storage will sync that data to remote
 /// Local storage allow us to set/get/del/subscribe/unsubscribe
-/// 
+///
 /// With Set, we will send Set event to remote storage, and wait for ack. If acked, we will set acked flag to true
 /// With Del, we will send Del event to remote storage, and wait for ack. If acked, we will set acked flag to true
-/// 
+///
 /// If we not received ack in time, we will resend event to remote storage in tick
-/// 
+///
 /// With acked data we also sync data to remote storage in tick each sync_each_ms
 /// Same with subscribe/unsubscribe
-
-use std::{collections::HashMap, sync::{Arc, atomic::{AtomicU64, Ordering}}};
-use bluesea_identity::NodeId;
-use bluesea_router::RouteRule;
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+};
 use utils::Timer;
-use crate::{msg::{LocalEvent, RemoteEvent}, KeyId, ValueType, KeyVersion, ReqId};
 
 struct KeySlotData {
     value: Option<Vec<u8>>,
@@ -93,13 +101,10 @@ impl LocalStorage {
                 if let Some(value) = &slot.value {
                     self.output_events.push(LocalStorageAction(
                         RemoteEvent::Set(req_id, *key, value.clone(), slot.version, slot.ex.clone()),
-                        RouteRule::ToKey(*key as u32)
+                        RouteRule::ToKey(*key as u32),
                     ));
                 } else {
-                    self.output_events.push(LocalStorageAction(
-                        RemoteEvent::Del(req_id, *key, slot.version),
-                        RouteRule::ToKey(*key as u32)
-                    ));
+                    self.output_events.push(LocalStorageAction(RemoteEvent::Del(req_id, *key, slot.version), RouteRule::ToKey(*key as u32)));
                 }
             }
         }
@@ -109,15 +114,10 @@ impl LocalStorage {
             if !slot.acked {
                 let req_id = self.gen_req_id();
                 if slot.sub {
-                    self.output_events.push(LocalStorageAction(
-                        RemoteEvent::Sub(req_id, *key, slot.ex.clone()),
-                        RouteRule::ToKey(*key as u32)
-                    ));
+                    self.output_events
+                        .push(LocalStorageAction(RemoteEvent::Sub(req_id, *key, slot.ex.clone()), RouteRule::ToKey(*key as u32)));
                 } else {
-                    self.output_events.push(LocalStorageAction(
-                        RemoteEvent::Unsub(req_id, *key),
-                        RouteRule::ToKey(*key as u32)
-                    ));
+                    self.output_events.push(LocalStorageAction(RemoteEvent::Unsub(req_id, *key), RouteRule::ToKey(*key as u32)));
                 }
             }
         }
@@ -130,7 +130,7 @@ impl LocalStorage {
                 if let Some(value) = &slot.value {
                     self.output_events.push(LocalStorageAction(
                         RemoteEvent::Set(req_id, *key, value.clone(), slot.version, slot.ex.clone()),
-                        RouteRule::ToKey(*key as u32)
+                        RouteRule::ToKey(*key as u32),
                     ));
                 } else {
                     // Just removed if acked and no data
@@ -145,10 +145,8 @@ impl LocalStorage {
             if slot.acked && now - slot.last_sync >= self.sync_each_ms {
                 let req_id = self.gen_req_id();
                 if slot.sub {
-                    self.output_events.push(LocalStorageAction(
-                        RemoteEvent::Sub(req_id, *key, slot.ex.clone()),
-                        RouteRule::ToKey(*key as u32)
-                    ));
+                    self.output_events
+                        .push(LocalStorageAction(RemoteEvent::Sub(req_id, *key, slot.ex.clone()), RouteRule::ToKey(*key as u32)));
                 } else {
                     // Just remove if acked and unsub
                     unsub_keys.push(*key);
@@ -182,14 +180,24 @@ impl LocalStorage {
 
     pub fn on_event(&mut self, from: NodeId, event: LocalEvent) {
         match event {
-            LocalEvent::SetAck(_req_id, key, version) => {
-                if let Some(slot) = self.data.get_mut(&key) {
-                    // we acked if version match
-                    if slot.version == version {
-                        slot.acked = true;
+            LocalEvent::SetAck(_req_id, key, version, success) => {
+                if success {
+                    if let Some(slot) = self.data.get_mut(&key) {
+                        // we acked if version match
+                        if slot.version == version {
+                            slot.acked = true;
+                        }
+                    }
+                } else {
+                    let new_version = self.gen_version();
+                    if let Some(slot) = self.data.get_mut(&key) {
+                        // we regenete if version match, because of remote reject that version
+                        if slot.version == version {
+                            slot.version = new_version;
+                        }
                     }
                 }
-            },
+            }
             LocalEvent::GetAck(req_id, _key, value) => {
                 if let Some(slot) = self.get_queue.remove(&req_id) {
                     if let Some((value, version)) = value {
@@ -198,9 +206,8 @@ impl LocalStorage {
                         (slot.callback)(Err(SimpleKeyValueGetError::NotFound))
                     };
                 } else {
-
                 }
-            },
+            }
             LocalEvent::DelAck(_req_id, key, version) => {
                 if let Some(slot) = self.data.get_mut(&key) {
                     if let Some(deleted_version) = version {
@@ -212,28 +219,30 @@ impl LocalStorage {
                         // incase of NoneKeyVersion, we just acked
                         slot.acked = true;
                     }
-                }   
-            },
+                }
+            }
             LocalEvent::SubAck(_req_id, key_id) => {
                 if let Some(slot) = self.subscribe.get_mut(&key_id) {
                     if slot.sub {
                         slot.acked = true;
                     }
                 }
-            },
-            LocalEvent::UnsubAck(_req_id, key_id) => {
-                if let Some(slot) = self.subscribe.get_mut(&key_id) {
-                    if slot.sub == false {
-                        slot.acked = true;
+            }
+            LocalEvent::UnsubAck(_req_id, key_id, success) => {
+                if success {
+                    if let Some(slot) = self.subscribe.get_mut(&key_id) {
+                        if slot.sub == false {
+                            slot.acked = true;
+                        }
                     }
                 }
-            },
+            }
             LocalEvent::OnKeySet(req_id, key, value, version) => {
                 self.output_events.push(LocalStorageAction(RemoteEvent::OnKeySetAck(req_id), RouteRule::ToNode(from)));
-            },
+            }
             LocalEvent::OnKeyDel(req_id, key, version) => {
                 self.output_events.push(LocalStorageAction(RemoteEvent::OnKeyDelAck(req_id), RouteRule::ToNode(from)));
-            },
+            }
         }
     }
 
@@ -244,23 +253,30 @@ impl LocalStorage {
     pub fn set(&mut self, key: KeyId, value: ValueType, ex: Option<u64>) {
         let req_id = self.gen_req_id();
         let version = self.gen_version();
-        self.data.insert(key, KeySlotData { 
-            value: Some(value.clone()),
-            ex,
-            version,
-            last_sync: 0,
-            acked: false
-        });
-        
-        self.output_events.push(LocalStorageAction(RemoteEvent::Set(req_id, key, value, version, ex), RouteRule::ToKey(key as u32)));
+        self.data.insert(
+            key,
+            KeySlotData {
+                value: Some(value.clone()),
+                ex,
+                version,
+                last_sync: 0,
+                acked: false,
+            },
+        );
+
+        self.output_events
+            .push(LocalStorageAction(RemoteEvent::Set(req_id, key, value, version, ex), RouteRule::ToKey(key as u32)));
     }
 
     pub fn get(&mut self, key: KeyId, callback: Box<dyn FnOnce(Result<Option<(ValueType, KeyVersion)>, SimpleKeyValueGetError>)>, timeout_ms: u64) {
         let req_id = self.gen_req_id();
-        self.get_queue.insert(req_id, KeySlotGetCallback {
-            timeout_after_ts: self.timer.now_ms() + timeout_ms,
-            callback
-        });
+        self.get_queue.insert(
+            req_id,
+            KeySlotGetCallback {
+                timeout_after_ts: self.timer.now_ms() + timeout_ms,
+                callback,
+            },
+        );
         self.output_events.push(LocalStorageAction(RemoteEvent::Get(req_id, key), RouteRule::ToKey(key as u32)));
     }
 
@@ -281,12 +297,15 @@ impl LocalStorage {
         }
 
         let req_id = self.gen_req_id();
-        self.subscribe.insert(key, KeySlotSubscribe { 
-            ex,
-            last_sync: 0,
-            sub: true,
-            acked: false
-        });
+        self.subscribe.insert(
+            key,
+            KeySlotSubscribe {
+                ex,
+                last_sync: 0,
+                sub: true,
+                acked: false,
+            },
+        );
         self.output_events.push(LocalStorageAction(RemoteEvent::Sub(req_id, key, ex), RouteRule::ToKey(key as u32)));
     }
 
@@ -309,7 +328,10 @@ mod tests {
     use bluesea_router::RouteRule;
     use parking_lot::Mutex;
 
-    use crate::{behavior::simple_local::LocalStorageAction, msg::{RemoteEvent, LocalEvent}};
+    use crate::{
+        behavior::simple_local::LocalStorageAction,
+        msg::{LocalEvent, RemoteEvent},
+    };
 
     use super::LocalStorage;
 
@@ -322,9 +344,30 @@ mod tests {
         assert_eq!(storage.pop_action(), Some(LocalStorageAction(RemoteEvent::Set(0, 1, vec![1], 0, None), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
-        storage.on_event(2, LocalEvent::SetAck(0, 1, 0));
+        storage.on_event(2, LocalEvent::SetAck(0, 1, 0, true));
 
         //after received ack should not resend event
+        storage.tick();
+        assert_eq!(storage.pop_action(), None);
+    }
+
+    #[test]
+    fn should_renegerate_set_event_if_ack_failed() {
+        let timer = Arc::new(utils::MockTimer::default());
+        let mut storage = LocalStorage::new(timer.clone(), 10000);
+
+        storage.set(1, vec![1], None);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction(RemoteEvent::Set(0, 1, vec![1], 0, None), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), None);
+
+        storage.on_event(2, LocalEvent::SetAck(0, 1, 0, false));
+
+        //after received ack with failed => should regenerate new version
+        storage.tick();
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction(RemoteEvent::Set(1, 1, vec![1], 1, None), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), None);
+
+        storage.on_event(2, LocalEvent::SetAck(1, 1, 1, true));
         storage.tick();
         assert_eq!(storage.pop_action(), None);
     }
@@ -344,7 +387,7 @@ mod tests {
         assert_eq!(storage.pop_action(), Some(LocalStorageAction(RemoteEvent::Set(1, 1, vec![2], 65536001, None), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
-        storage.on_event(2, LocalEvent::SetAck(1, 1, 65536001));
+        storage.on_event(2, LocalEvent::SetAck(1, 1, 65536001, true));
 
         //after received ack should not resend event
         storage.tick();
@@ -375,7 +418,7 @@ mod tests {
         assert!(storage.pop_action().is_some());
         assert!(storage.pop_action().is_none());
 
-        storage.on_event(2, LocalEvent::SetAck(0, 1, 0));
+        storage.on_event(2, LocalEvent::SetAck(0, 1, 0, true));
 
         //after received ack should not resend event
         storage.tick();
@@ -395,7 +438,7 @@ mod tests {
         storage.set(1, vec![1], None);
         assert!(storage.pop_action().is_some());
         assert!(storage.pop_action().is_none());
-        storage.on_event(2, LocalEvent::SetAck(0, 1, 0));
+        storage.on_event(2, LocalEvent::SetAck(0, 1, 0, true));
 
         storage.del(1);
         assert_eq!(storage.pop_action(), Some(LocalStorageAction(RemoteEvent::Del(1, 1, 0), RouteRule::ToKey(1))));
@@ -415,14 +458,14 @@ mod tests {
         storage.set(1, vec![1], None);
         assert!(storage.pop_action().is_some());
         assert!(storage.pop_action().is_none());
-        storage.on_event(2, LocalEvent::SetAck(0, 1, 0));
+        storage.on_event(2, LocalEvent::SetAck(0, 1, 0, true));
 
         timer.fake(1000);
 
         storage.set(1, vec![2], None);
         assert!(storage.pop_action().is_some());
         assert!(storage.pop_action().is_none());
-        storage.on_event(2, LocalEvent::SetAck(0, 1, 0));
+        storage.on_event(2, LocalEvent::SetAck(0, 1, 0, true));
 
         storage.del(1);
         assert_eq!(storage.pop_action(), Some(LocalStorageAction(RemoteEvent::Del(2, 1, 65536001), RouteRule::ToKey(1))));
@@ -442,7 +485,7 @@ mod tests {
         storage.set(1, vec![1], None);
         assert!(storage.pop_action().is_some());
         assert!(storage.pop_action().is_none());
-        storage.on_event(2, LocalEvent::SetAck(0, 1, 0));
+        storage.on_event(2, LocalEvent::SetAck(0, 1, 0, true));
 
         storage.del(1);
         assert_eq!(storage.pop_action(), Some(LocalStorageAction(RemoteEvent::Del(1, 1, 0), RouteRule::ToKey(1))));
@@ -517,7 +560,7 @@ mod tests {
         assert_eq!(storage.pop_action(), None);
 
         //after received ack should not resend event
-        storage.on_event(2, LocalEvent::UnsubAck(1, 1));
+        storage.on_event(2, LocalEvent::UnsubAck(1, 1, true));
         storage.tick();
         assert_eq!(storage.pop_action(), None);
     }
@@ -550,9 +593,13 @@ mod tests {
 
         let got_value = Arc::new(Mutex::new(None));
         let got_value_clone = got_value.clone();
-        storage.get(1, Box::new(move |result| {
-            *got_value_clone.lock() = Some(result);
-        }), 1000);
+        storage.get(
+            1,
+            Box::new(move |result| {
+                *got_value_clone.lock() = Some(result);
+            }),
+            1000,
+        );
 
         assert_eq!(storage.pop_action(), Some(LocalStorageAction(RemoteEvent::Get(0, 1), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
@@ -569,9 +616,13 @@ mod tests {
 
         let got_value = Arc::new(Mutex::new(None));
         let got_value_clone = got_value.clone();
-        storage.get(1, Box::new(move |result| {
-            *got_value_clone.lock() = Some(result);
-        }), 1000);
+        storage.get(
+            1,
+            Box::new(move |result| {
+                *got_value_clone.lock() = Some(result);
+            }),
+            1000,
+        );
 
         assert_eq!(storage.pop_action(), Some(LocalStorageAction(RemoteEvent::Get(0, 1), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);

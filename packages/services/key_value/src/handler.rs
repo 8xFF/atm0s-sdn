@@ -4,12 +4,11 @@ use network::behaviour::ConnectionHandler;
 use network::transport::ConnectionEvent;
 use network::ConnectionAgent;
 
-pub struct KeyValueConnectionHandler {
-}
+pub struct KeyValueConnectionHandler {}
 
 impl KeyValueConnectionHandler {
     pub fn new() -> Self {
-        Self { }
+        Self {}
     }
 }
 

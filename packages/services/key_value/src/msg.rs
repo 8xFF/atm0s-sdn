@@ -1,6 +1,6 @@
+use crate::{KeyId, KeyVersion, ReqId, ValueType};
 use network::msg::MsgHeader;
 use serde::{Deserialize, Serialize};
-use crate::{ReqId, KeyId, ValueType, KeyVersion};
 pub enum KeyValueBehaviorEvent {
     FromNode(MsgHeader, KeyValueMsg),
 }
@@ -24,11 +24,13 @@ pub enum RemoteEvent {
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
 pub enum LocalEvent {
-    SetAck(ReqId, KeyId, KeyVersion),
+    /// Response set request with key and version, if success => true, otherwise => false
+    SetAck(ReqId, KeyId, KeyVersion, bool),
     GetAck(ReqId, KeyId, Option<(ValueType, KeyVersion)>),
     DelAck(ReqId, KeyId, Option<KeyVersion>),
     SubAck(ReqId, KeyId),
-    UnsubAck(ReqId, KeyId),
+    /// Response unsub request with key, if success => true, otherwise => false
+    UnsubAck(ReqId, KeyId, bool),
     OnKeySet(ReqId, KeyId, ValueType, KeyVersion),
     OnKeyDel(ReqId, KeyId, KeyVersion),
 }
