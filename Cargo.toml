@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "packages/generic_tests",
     "packages/network",
     "packages/core/utils",
     "packages/core/identity",
