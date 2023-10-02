@@ -8,3 +8,7 @@ mod behavior;
 mod handler;
 mod msg;
 mod storage;
+
+pub use behavior::KeyValueBehavior;
+pub use behavior::KeyValueSdk;
+pub use msg::{KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueMsg, KeyValueReq, KeyValueRes};

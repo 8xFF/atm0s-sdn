@@ -162,11 +162,11 @@ mod tests {
         let pre_stats = dhat::HeapStats::get();
 
         {
-            let (mut sub1, is_new) = pub_manager.subscribe(1, Box::new(|| {}));
+            let (sub1, is_new) = pub_manager.subscribe(1, Box::new(|| {}));
             assert!(is_new);
-            let (mut sub2, is_new) = pub_manager.subscribe(1, Box::new(|| {}));
+            let (sub2, is_new) = pub_manager.subscribe(1, Box::new(|| {}));
             assert!(!is_new);
-            let (mut sub3, is_new) = pub_manager.subscribe(2, Box::new(|| {}));
+            let (sub3, is_new) = pub_manager.subscribe(2, Box::new(|| {}));
             assert!(is_new);
 
             // drop sub1

@@ -18,6 +18,8 @@ mod sdk;
 mod simple_local;
 mod simple_remote;
 
+pub use sdk::KeyValueSdk;
+
 #[allow(unused)]
 pub struct KeyValueBehavior {
     simple_remote: RemoteStorage,
