@@ -71,7 +71,7 @@ mod tests {
         fn service_id(&self) -> u8 {
             0
         }
-        fn on_tick(&mut self, _agent: &BehaviorAgent<HE>, _ts_ms: u64, _interal_ms: u64) {}
+        fn on_tick(&mut self, _agent: &BehaviorAgent<BE, HE>, _ts_ms: u64, _interal_ms: u64) {}
 
         fn check_incoming_connection(&mut self, _node: NodeId, _conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
             Ok(())
@@ -81,26 +81,28 @@ mod tests {
             Ok(())
         }
 
-        fn on_incoming_connection_connected(&mut self, _agent: &BehaviorAgent<HE>, _connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
+        fn on_local_msg(&mut self, _agent: &BehaviorAgent<BE, HE>, _msg: TransportMsg) {}
+
+        fn on_incoming_connection_connected(&mut self, _agent: &BehaviorAgent<BE, HE>, _connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
             self.incomming_conn_counter.fetch_add(1, Ordering::Relaxed);
             Some(Box::new(TestCrossNetworkHandler {
                 conn_counter: self.handler_conn_counter.clone(),
             }))
         }
-        fn on_outgoing_connection_connected(&mut self, _agent: &BehaviorAgent<HE>, _connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
+        fn on_outgoing_connection_connected(&mut self, _agent: &BehaviorAgent<BE, HE>, _connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
             self.outgoing_conn_counter.fetch_add(1, Ordering::Relaxed);
             Some(Box::new(TestCrossNetworkHandler {
                 conn_counter: self.handler_conn_counter.clone(),
             }))
         }
-        fn on_incoming_connection_disconnected(&mut self, _agent: &BehaviorAgent<HE>, _conn: Arc<dyn ConnectionSender>) {
+        fn on_incoming_connection_disconnected(&mut self, _agent: &BehaviorAgent<BE, HE>, _conn: Arc<dyn ConnectionSender>) {
             self.incomming_conn_counter.fetch_sub(1, Ordering::Relaxed);
         }
-        fn on_outgoing_connection_disconnected(&mut self, _agent: &BehaviorAgent<HE>, _connection: Arc<dyn ConnectionSender>) {
+        fn on_outgoing_connection_disconnected(&mut self, _agent: &BehaviorAgent<BE, HE>, _connection: Arc<dyn ConnectionSender>) {
             self.outgoing_conn_counter.fetch_sub(1, Ordering::Relaxed);
         }
-        fn on_outgoing_connection_error(&mut self, _agent: &BehaviorAgent<HE>, _node_id: NodeId, _conn_id: ConnId, _err: &OutgoingConnectionError) {}
-        fn on_handler_event(&mut self, agent: &BehaviorAgent<HE>, _node_id: NodeId, _conn_id: ConnId, event: BE) {
+        fn on_outgoing_connection_error(&mut self, _agent: &BehaviorAgent<BE, HE>, _node_id: NodeId, _conn_id: ConnId, _err: &OutgoingConnectionError) {}
+        fn on_handler_event(&mut self, agent: &BehaviorAgent<BE, HE>, _node_id: NodeId, _conn_id: ConnId, event: BE) {
             if let Ok(event) = event.try_into() {
                 match event {
                     TestCrossBehaviorEvent::CloseConn(conn) => {
@@ -113,13 +115,13 @@ mod tests {
             }
         }
 
-        fn on_rpc(&mut self, _agent: &BehaviorAgent<HE>, _req: Req, _res: Box<dyn RpcAnswer<Res>>) -> bool {
+        fn on_rpc(&mut self, _agent: &BehaviorAgent<BE, HE>, _req: Req, _res: Box<dyn RpcAnswer<Res>>) -> bool {
             false
         }
 
-        fn on_started(&mut self, _agent: &BehaviorAgent<HE>) {}
+        fn on_started(&mut self, _agent: &BehaviorAgent<BE, HE>) {}
 
-        fn on_stopped(&mut self, _agent: &BehaviorAgent<HE>) {}
+        fn on_stopped(&mut self, _agent: &BehaviorAgent<BE, HE>) {}
     }
 
     impl<BE, HE> ConnectionHandler<BE, HE> for TestCrossNetworkHandler

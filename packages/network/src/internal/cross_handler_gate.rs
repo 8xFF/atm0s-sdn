@@ -1,10 +1,12 @@
 use crate::msg::TransportMsg;
+use crate::plane::NetworkPlaneInternalEvent;
 use crate::transport::ConnectionSender;
 use async_std::channel::{unbounded, Receiver, Sender};
 use bluesea_identity::{ConnId, NodeId};
 use bluesea_router::{RouteAction, RouterTable};
 use std::collections::HashMap;
 use std::sync::Arc;
+use utils::error_handle::ErrorUtils;
 
 pub(crate) enum CrossHandlerEvent<HE> {
     FromBehavior(HE),
@@ -17,18 +19,21 @@ pub enum CrossHandlerRoute {
     Conn(ConnId),
 }
 
-pub(crate) struct CrossHandlerGate<HE> {
+pub(crate) struct CrossHandlerGate<BE, HE> {
+    behaviour_tx: Sender<NetworkPlaneInternalEvent<BE>>,
     nodes: HashMap<NodeId, HashMap<ConnId, (Sender<(u8, CrossHandlerEvent<HE>)>, Arc<dyn ConnectionSender>)>>,
     conns: HashMap<ConnId, (Sender<(u8, CrossHandlerEvent<HE>)>, Arc<dyn ConnectionSender>)>,
     router: Arc<dyn RouterTable>,
 }
 
-impl<HE> CrossHandlerGate<HE>
+impl<HE, BE> CrossHandlerGate<BE, HE>
 where
+    BE: Send + Sync + 'static,
     HE: Send + Sync + 'static,
 {
-    pub fn new(router: Arc<dyn RouterTable>) -> Self {
+    pub fn new(router: Arc<dyn RouterTable>, behaviour_tx: Sender<NetworkPlaneInternalEvent<BE>>) -> Self {
         Self {
+            behaviour_tx,
             nodes: Default::default(),
             conns: Default::default(),
             router,
@@ -121,7 +126,14 @@ where
         match self.router.path_to(&msg.header.route, msg.header.service_id) {
             RouteAction::Reject => None,
             RouteAction::Local => {
-                todo!()
+                // TODO: may be have other way to send to local without serializing and deserializing
+                self.behaviour_tx
+                    .send_blocking(NetworkPlaneInternalEvent::ToBehaviourLocalMsg {
+                        service_id: msg.header.service_id,
+                        msg: msg,
+                    })
+                    .print_error("Should send to behaviour transport msg");
+                Some(())
             }
             RouteAction::Next(conn, _node) => {
                 if let Some((_s, c_s)) = self.conns.get(&conn) {

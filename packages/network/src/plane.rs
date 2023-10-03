@@ -3,6 +3,7 @@ mod single_conn;
 use crate::behaviour::{ConnectionHandler, NetworkBehavior};
 use crate::internal::agent::{BehaviorAgent, ConnectionAgent};
 use crate::internal::cross_handler_gate::CrossHandlerGate;
+use crate::msg::TransportMsg;
 use crate::transport::{ConnectionSender, RpcAnswer, Transport, TransportEvent, TransportRpc};
 use async_std::channel::{unbounded, Receiver, Sender};
 use async_std::stream::Interval;
@@ -19,6 +20,7 @@ use self::single_conn::PlaneSingleConn;
 
 pub enum NetworkPlaneInternalEvent<BE> {
     ToBehaviour { service_id: u8, node_id: NodeId, conn_id: ConnId, event: BE },
+    ToBehaviourLocalMsg { service_id: u8, msg: TransportMsg },
     IncomingDisconnected(Arc<dyn ConnectionSender>),
     OutgoingDisconnected(Arc<dyn ConnectionSender>),
 }
@@ -42,7 +44,7 @@ pub struct NetworkPlaneConfig<BE, HE, Req, Res> {
 pub struct NetworkPlane<BE, HE, Req, Res> {
     local_node_id: NodeId,
     tick_ms: u64,
-    behaviors: Vec<Option<(Box<dyn NetworkBehavior<BE, HE, Req, Res> + Send + Sync>, BehaviorAgent<HE>)>>,
+    behaviors: Vec<Option<(Box<dyn NetworkBehavior<BE, HE, Req, Res> + Send + Sync>, BehaviorAgent<BE, HE>)>>,
     transport: Box<dyn Transport + Send + Sync>,
     #[allow(dead_code)]
     transport_rpc: Box<dyn TransportRpc<Req, Res> + Send + Sync>,
@@ -50,7 +52,7 @@ pub struct NetworkPlane<BE, HE, Req, Res> {
     router: Arc<dyn RouterTable>,
     internal_tx: Sender<NetworkPlaneInternalEvent<BE>>,
     internal_rx: Receiver<NetworkPlaneInternalEvent<BE>>,
-    cross_gate: Arc<RwLock<CrossHandlerGate<HE>>>,
+    cross_gate: Arc<RwLock<CrossHandlerGate<BE, HE>>>,
     tick_interval: Interval,
 }
 
@@ -64,10 +66,10 @@ where
     /// Creating new network plane, after create need to run
     /// `while let Some(_) = plane.run().await {}`
     pub fn new(conf: NetworkPlaneConfig<BE, HE, Req, Res>) -> Self {
-        let cross_gate: Arc<RwLock<CrossHandlerGate<HE>>> = Arc::new(RwLock::new(CrossHandlerGate::new(conf.router.clone())));
-
         let (internal_tx, internal_rx) = unbounded();
-        let mut behaviors: Vec<Option<(Box<dyn NetworkBehavior<BE, HE, Req, Res> + Send + Sync>, BehaviorAgent<HE>)>> = init_vec(256, || None);
+
+        let cross_gate: Arc<RwLock<CrossHandlerGate<BE, HE>>> = Arc::new(RwLock::new(CrossHandlerGate::new(conf.router.clone(), internal_tx.clone())));
+        let mut behaviors: Vec<Option<(Box<dyn NetworkBehavior<BE, HE, Req, Res> + Send + Sync>, BehaviorAgent<BE, HE>)>> = init_vec(256, || None);
 
         for behavior in conf.behavior {
             let service_id = behavior.service_id() as usize;
@@ -254,6 +256,15 @@ where
                     }
                     Ok(())
                 },
+                Ok(NetworkPlaneInternalEvent::ToBehaviourLocalMsg { service_id, msg }) => {
+                    log::debug!("[NetworkPlane] received NetworkPlaneInternalEvent::ToBehaviourLocalMsg service: {}", service_id);
+                    if let Some((behaviour, agent)) = &mut self.behaviors[service_id as usize] {
+                        behaviour.on_local_msg(agent, msg);
+                    } else {
+                        debug_assert!(false, "service not found {}", service_id);
+                    }
+                    Ok(())
+                }
                 Err(_) => {
                     Err(())
                 }

@@ -1,26 +1,22 @@
 #[cfg(test)]
 mod tests {
     use crate::behaviour::{ConnectionHandler, NetworkBehavior};
-    use crate::mock::{MockInput, MockTransport, MockTransportRpc};
+    use crate::mock::{MockTransport, MockTransportRpc};
     use crate::msg::TransportMsg;
     use crate::plane::{NetworkPlane, NetworkPlaneConfig};
-    use crate::transport::{ConnectionEvent, ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer};
-    use crate::{BehaviorAgent, ConnectionAgent, CrossHandlerRoute};
-    use bluesea_identity::{ConnId, NodeAddr, NodeId, Protocol};
-    use bluesea_router::ForceLocalRouter;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use crate::transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer};
+    use crate::BehaviorAgent;
+    use bluesea_identity::{ConnId, NodeId};
+    use bluesea_router::{ForceLocalRouter, RouteRule};
+    use std::sync::atomic::{AtomicU16, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
     use utils::option_handle::OptionUtils;
     use utils::SystemTimer;
 
     enum TestCrossNetworkMsg {}
-    enum TestCrossBehaviorEvent {
-        Ping,
-    }
-    enum TestCrossHandleEvent {
-        Pong,
-    }
+    enum TestCrossBehaviorEvent {}
+    enum TestCrossHandleEvent {}
 
     #[derive(convert_enum::From, convert_enum::TryInto)]
     enum ImplTestCrossNetworkBehaviorEvent {
@@ -44,10 +40,7 @@ mod tests {
     enum ImplTestCrossNetworkRes {}
 
     struct TestCrossNetworkBehavior {
-        flag: Arc<AtomicBool>,
-    }
-    struct TestCrossNetworkHandler {
-        flag: Arc<AtomicBool>,
+        flag: Arc<AtomicU16>,
     }
 
     impl<BE, HE, Req, Res> NetworkBehavior<BE, HE, Req, Res> for TestCrossNetworkBehavior
@@ -68,67 +61,38 @@ mod tests {
             Ok(())
         }
 
-        fn on_local_msg(&mut self, _agent: &BehaviorAgent<BE, HE>, _msg: TransportMsg) {}
+        fn on_local_msg(&mut self, _agent: &BehaviorAgent<BE, HE>, _msg: TransportMsg) {
+            self.flag.fetch_add(1, Ordering::Relaxed);
+        }
 
         fn on_incoming_connection_connected(&mut self, _agent: &BehaviorAgent<BE, HE>, _connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
-            Some(Box::new(TestCrossNetworkHandler { flag: self.flag.clone() }))
+            None
         }
         fn on_outgoing_connection_connected(&mut self, _agent: &BehaviorAgent<BE, HE>, _connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
-            Some(Box::new(TestCrossNetworkHandler { flag: self.flag.clone() }))
+            None
         }
         fn on_incoming_connection_disconnected(&mut self, _agent: &BehaviorAgent<BE, HE>, _connection: Arc<dyn ConnectionSender>) {}
         fn on_outgoing_connection_disconnected(&mut self, _agent: &BehaviorAgent<BE, HE>, _connection: Arc<dyn ConnectionSender>) {}
         fn on_outgoing_connection_error(&mut self, _agent: &BehaviorAgent<BE, HE>, _node_id: NodeId, _conn_id: ConnId, _err: &OutgoingConnectionError) {}
-        fn on_handler_event(&mut self, agent: &BehaviorAgent<BE, HE>, _node_id: NodeId, conn_id: ConnId, event: BE) {
-            if let Ok(event) = event.try_into() {
-                match event {
-                    TestCrossBehaviorEvent::Ping => {
-                        agent.send_to_handler(CrossHandlerRoute::Conn(conn_id), TestCrossHandleEvent::Pong.into());
-                    }
-                }
-            }
-        }
+        fn on_handler_event(&mut self, _agent: &BehaviorAgent<BE, HE>, _node_id: NodeId, _conn_id: ConnId, _event: BE) {}
 
         fn on_rpc(&mut self, _agent: &BehaviorAgent<BE, HE>, _req: Req, _res: Box<dyn RpcAnswer<Res>>) -> bool {
             false
         }
 
-        fn on_started(&mut self, _agent: &BehaviorAgent<BE, HE>) {}
+        fn on_started(&mut self, agent: &BehaviorAgent<BE, HE>) {
+            agent.send_to_net(TransportMsg::build_reliable(1, RouteRule::ToKey(1), 0, &vec![1]));
+        }
 
         fn on_stopped(&mut self, _agent: &BehaviorAgent<BE, HE>) {}
     }
 
-    impl<BE, HE> ConnectionHandler<BE, HE> for TestCrossNetworkHandler
-    where
-        BE: From<TestCrossBehaviorEvent> + TryInto<TestCrossBehaviorEvent> + Send + Sync + 'static,
-        HE: From<TestCrossHandleEvent> + TryInto<TestCrossHandleEvent> + Send + Sync + 'static,
-    {
-        fn on_opened(&mut self, agent: &ConnectionAgent<BE, HE>) {
-            agent.send_behavior(TestCrossBehaviorEvent::Ping.into());
-        }
-        fn on_tick(&mut self, _agent: &ConnectionAgent<BE, HE>, _ts_ms: u64, _interal_ms: u64) {}
-        fn on_event(&mut self, _agent: &ConnectionAgent<BE, HE>, _event: ConnectionEvent) {}
-
-        fn on_other_handler_event(&mut self, _agent: &ConnectionAgent<BE, HE>, _from_node: NodeId, _from_conn: ConnId, _event: HE) {}
-
-        fn on_behavior_event(&mut self, _agent: &ConnectionAgent<BE, HE>, event: HE) {
-            if let Ok(event) = event.try_into() {
-                match event {
-                    TestCrossHandleEvent::Pong => {
-                        self.flag.store(true, Ordering::Relaxed);
-                    }
-                }
-            }
-        }
-        fn on_closed(&mut self, _agent: &ConnectionAgent<BE, HE>) {}
-    }
-
     #[async_std::test]
     async fn test_cross_behaviour_handler() {
-        let flag = Arc::new(AtomicBool::new(false));
+        let flag = Arc::new(AtomicU16::new(0));
         let behavior = Box::new(TestCrossNetworkBehavior { flag: flag.clone() });
 
-        let (mock, faker, _output) = MockTransport::new();
+        let (mock, _faker, _output) = MockTransport::new();
         let (mock_rpc, _faker_rpc, _output_rpc) = MockTransportRpc::<ImplTestCrossNetworkReq, ImplTestCrossNetworkRes>::new();
         let transport = Box::new(mock);
         let timer = Arc::new(SystemTimer());
@@ -149,9 +113,8 @@ mod tests {
             plane.stopped();
         });
 
-        faker.send(MockInput::FakeIncomingConnection(1, ConnId::from_in(0, 1), NodeAddr::from(Protocol::Udp(1)))).await.unwrap();
         async_std::task::sleep(Duration::from_millis(1000)).await;
-        assert_eq!(flag.load(Ordering::Relaxed), true);
+        assert_eq!(flag.load(Ordering::Relaxed), 1);
         join.cancel().await.print_none("Should cancel join");
     }
 }

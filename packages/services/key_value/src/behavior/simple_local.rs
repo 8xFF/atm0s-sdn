@@ -16,7 +16,7 @@ use bluesea_router::RouteRule;
 /// With acked data we also sync data to remote storage in tick each sync_each_ms
 /// Same with subscribe/unsubscribe
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -62,7 +62,7 @@ pub struct LocalStorage {
     sync_each_ms: u64,
     data: HashMap<KeyId, KeySlotData>,
     subscribe: HashMap<KeyId, KeySlotSubscribe>,
-    output_events: Vec<LocalStorageAction>,
+    output_events: VecDeque<LocalStorageAction>,
     get_queue: HashMap<ReqId, KeySlotGetCallback>,
 }
 
@@ -76,7 +76,7 @@ impl LocalStorage {
             sync_each_ms,
             data: HashMap::new(),
             subscribe: HashMap::new(),
-            output_events: Vec::new(),
+            output_events: VecDeque::new(),
             get_queue: HashMap::new(),
         }
     }
@@ -100,12 +100,15 @@ impl LocalStorage {
             if !slot.acked {
                 let req_id = self.gen_req_id();
                 if let Some(value) = &slot.value {
-                    self.output_events.push(LocalStorageAction(
+                    log::debug!("[SimpleLocal] resend set key {} with version {}", key, slot.version);
+                    self.output_events.push_back(LocalStorageAction(
                         RemoteEvent::Set(req_id, *key, value.clone(), slot.version, slot.ex.clone()),
                         RouteRule::ToKey(*key as u32),
                     ));
                 } else {
-                    self.output_events.push(LocalStorageAction(RemoteEvent::Del(req_id, *key, slot.version), RouteRule::ToKey(*key as u32)));
+                    log::debug!("[SimpleLocal] resend del key {} with version {}", key, slot.version);
+                    self.output_events
+                        .push_back(LocalStorageAction(RemoteEvent::Del(req_id, *key, slot.version), RouteRule::ToKey(*key as u32)));
                 }
             }
         }
@@ -115,10 +118,12 @@ impl LocalStorage {
             if !slot.acked {
                 let req_id = self.gen_req_id();
                 if slot.sub {
+                    log::debug!("[SimpleLocal] resend sub key {}", key);
                     self.output_events
-                        .push(LocalStorageAction(RemoteEvent::Sub(req_id, *key, slot.ex.clone()), RouteRule::ToKey(*key as u32)));
+                        .push_back(LocalStorageAction(RemoteEvent::Sub(req_id, *key, slot.ex.clone()), RouteRule::ToKey(*key as u32)));
                 } else {
-                    self.output_events.push(LocalStorageAction(RemoteEvent::Unsub(req_id, *key), RouteRule::ToKey(*key as u32)));
+                    log::debug!("[SimpleLocal] resend unsub key {}", key);
+                    self.output_events.push_back(LocalStorageAction(RemoteEvent::Unsub(req_id, *key), RouteRule::ToKey(*key as u32)));
                 }
             }
         }
@@ -129,11 +134,13 @@ impl LocalStorage {
             if slot.acked && now - slot.last_sync >= self.sync_each_ms {
                 let req_id = self.gen_req_id();
                 if let Some(value) = &slot.value {
-                    self.output_events.push(LocalStorageAction(
+                    log::debug!("[SimpleLocal] sync set key {} with version {}", key, slot.version);
+                    self.output_events.push_back(LocalStorageAction(
                         RemoteEvent::Set(req_id, *key, value.clone(), slot.version, slot.ex.clone()),
                         RouteRule::ToKey(*key as u32),
                     ));
                 } else {
+                    log::debug!("[SimpleLocal] del key {} with version {} after acked", key, slot.version);
                     // Just removed if acked and no data
                     removed_keys.push(*key);
                 }
@@ -146,9 +153,11 @@ impl LocalStorage {
             if slot.acked && now - slot.last_sync >= self.sync_each_ms {
                 let req_id = self.gen_req_id();
                 if slot.sub {
+                    log::debug!("[SimpleLocal] sync sub key {}", key);
                     self.output_events
-                        .push(LocalStorageAction(RemoteEvent::Sub(req_id, *key, slot.ex.clone()), RouteRule::ToKey(*key as u32)));
+                        .push_back(LocalStorageAction(RemoteEvent::Sub(req_id, *key, slot.ex.clone()), RouteRule::ToKey(*key as u32)));
                 } else {
+                    log::debug!("[SimpleLocal] remove sub key {} after acked", key);
                     // Just remove if acked and unsub
                     unsub_keys.push(*key);
                 }
@@ -166,6 +175,7 @@ impl LocalStorage {
         // we clear timeout getter
         for req_id in timeout_gets {
             if let Some(slot) = self.get_queue.remove(&req_id) {
+                log::debug!("[SimpleLocal] get key {} timeout", req_id);
                 (slot.callback)(Err(SimpleKeyValueGetError::Timeout));
             }
         }
@@ -180,6 +190,8 @@ impl LocalStorage {
     }
 
     pub fn on_event(&mut self, from: NodeId, event: LocalEvent) {
+        log::debug!("[SimpleLocal] on_event from {} {:?}", from, event);
+
         match event {
             LocalEvent::SetAck(_req_id, key, version, success) => {
                 if success {
@@ -239,7 +251,7 @@ impl LocalStorage {
                 }
             }
             LocalEvent::OnKeySet(req_id, key, value, version) => {
-                self.output_events.push(LocalStorageAction(RemoteEvent::OnKeySetAck(req_id), RouteRule::ToNode(from)));
+                self.output_events.push_back(LocalStorageAction(RemoteEvent::OnKeySetAck(req_id), RouteRule::ToNode(from)));
                 if let Some(slot) = self.subscribe.get_mut(&key) {
                     if slot.sub {
                         (slot.handler)(key, Some(value), version);
@@ -247,7 +259,7 @@ impl LocalStorage {
                 }
             }
             LocalEvent::OnKeyDel(req_id, key, version) => {
-                self.output_events.push(LocalStorageAction(RemoteEvent::OnKeyDelAck(req_id), RouteRule::ToNode(from)));
+                self.output_events.push_back(LocalStorageAction(RemoteEvent::OnKeyDelAck(req_id), RouteRule::ToNode(from)));
                 if let Some(slot) = self.subscribe.get_mut(&key) {
                     if slot.sub {
                         (slot.handler)(key, None, version);
@@ -258,12 +270,13 @@ impl LocalStorage {
     }
 
     pub fn pop_action(&mut self) -> Option<LocalStorageAction> {
-        self.output_events.pop()
+        self.output_events.pop_front()
     }
 
     pub fn set(&mut self, key: KeyId, value: ValueType, ex: Option<u64>) {
         let req_id = self.gen_req_id();
         let version = self.gen_version();
+        log::debug!("[SimpleLocal] set key {} with version {}", key, version);
         self.data.insert(
             key,
             KeySlotData {
@@ -276,11 +289,12 @@ impl LocalStorage {
         );
 
         self.output_events
-            .push(LocalStorageAction(RemoteEvent::Set(req_id, key, value, version, ex), RouteRule::ToKey(key as u32)));
+            .push_back(LocalStorageAction(RemoteEvent::Set(req_id, key, value, version, ex), RouteRule::ToKey(key as u32)));
     }
 
     pub fn get(&mut self, key: KeyId, callback: Box<dyn FnOnce(Result<Option<(ValueType, KeyVersion)>, SimpleKeyValueGetError>) + Send + Sync>, timeout_ms: u64) {
         let req_id = self.gen_req_id();
+        log::debug!("[SimpleLocal] get key {} with req_id {}", key, req_id);
         self.get_queue.insert(
             req_id,
             KeySlotGetCallback {
@@ -288,26 +302,30 @@ impl LocalStorage {
                 callback,
             },
         );
-        self.output_events.push(LocalStorageAction(RemoteEvent::Get(req_id, key), RouteRule::ToKey(key as u32)));
+        self.output_events.push_back(LocalStorageAction(RemoteEvent::Get(req_id, key), RouteRule::ToKey(key as u32)));
     }
 
     pub fn del(&mut self, key: KeyId) {
         let req_id = self.gen_req_id();
+        log::debug!("[SimpleLocal] del key {} with req_id {}", key, req_id);
         if let Some(slot) = self.data.get_mut(&key) {
             slot.value = None;
             slot.last_sync = 0;
             slot.acked = false;
 
-            self.output_events.push(LocalStorageAction(RemoteEvent::Del(req_id, key, slot.version), RouteRule::ToKey(key as u32)));
+            self.output_events
+                .push_back(LocalStorageAction(RemoteEvent::Del(req_id, key, slot.version), RouteRule::ToKey(key as u32)));
         }
     }
 
     pub fn subscribe(&mut self, key: KeyId, ex: Option<u64>, handler: Box<dyn FnMut(KeyId, Option<Vec<u8>>, KeyVersion) + Send + Sync>) {
         if self.subscribe.contains_key(&key) {
+            log::warn!("[SimpleLocal] subscribe key {} but already subscribed", key);
             return;
         }
 
         let req_id = self.gen_req_id();
+        log::debug!("[SimpleLocal] subscribe key {} with req_id {}", key, req_id);
         self.subscribe.insert(
             key,
             KeySlotSubscribe {
@@ -318,7 +336,7 @@ impl LocalStorage {
                 handler,
             },
         );
-        self.output_events.push(LocalStorageAction(RemoteEvent::Sub(req_id, key, ex), RouteRule::ToKey(key as u32)));
+        self.output_events.push_back(LocalStorageAction(RemoteEvent::Sub(req_id, key, ex), RouteRule::ToKey(key as u32)));
     }
 
     pub fn unsubscribe(&mut self, key: KeyId) {
@@ -328,7 +346,11 @@ impl LocalStorage {
             slot.last_sync = 0;
             slot.acked = false;
 
-            self.output_events.push(LocalStorageAction(RemoteEvent::Unsub(req_id, key), RouteRule::ToKey(key as u32)));
+            log::debug!("[SimpleLocal] unsubscribe key {} with req_id {}", key, req_id);
+
+            self.output_events.push_back(LocalStorageAction(RemoteEvent::Unsub(req_id, key), RouteRule::ToKey(key as u32)));
+        } else {
+            log::warn!("[SimpleLocal] unsubscribe key {} but not subscribed", key);
         }
     }
 }

@@ -42,6 +42,7 @@ where
         }
     }
 
+    #[allow(unused)]
     pub(crate) fn len(&self) -> usize {
         self.keys.len()
     }

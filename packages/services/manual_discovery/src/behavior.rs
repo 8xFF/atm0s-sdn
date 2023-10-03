@@ -65,7 +65,7 @@ where
         MANUAL_SERVICE_ID
     }
 
-    fn on_tick(&mut self, agent: &BehaviorAgent<HE>, ts_ms: u64, _interal_ms: u64) {
+    fn on_tick(&mut self, agent: &BehaviorAgent<BE, HE>, ts_ms: u64, _interal_ms: u64) {
         for (node_id, slot) in &mut self.neighbours {
             if slot.incoming.is_none() {
                 match &slot.outgoing {
@@ -109,7 +109,11 @@ where
         Ok(())
     }
 
-    fn on_incoming_connection_connected(&mut self, _agent: &BehaviorAgent<HE>, conn: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
+    fn on_local_msg(&mut self, _agent: &BehaviorAgent<BE, HE>, _msg: network::msg::TransportMsg) {
+        panic!("Should not happend");
+    }
+
+    fn on_incoming_connection_connected(&mut self, _agent: &BehaviorAgent<BE, HE>, conn: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
         let entry = self.neighbours.entry(conn.remote_node_id()).or_insert_with(|| NodeSlot {
             addr: conn.remote_addr(),
             incoming: None,
@@ -119,7 +123,7 @@ where
         Some(Box::new(ManualHandler {}))
     }
 
-    fn on_outgoing_connection_connected(&mut self, _agent: &BehaviorAgent<HE>, connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
+    fn on_outgoing_connection_connected(&mut self, _agent: &BehaviorAgent<BE, HE>, connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
         let entry = self.neighbours.entry(connection.remote_node_id()).or_insert_with(|| NodeSlot {
             addr: connection.remote_addr(),
             incoming: None,
@@ -129,19 +133,19 @@ where
         Some(Box::new(ManualHandler {}))
     }
 
-    fn on_incoming_connection_disconnected(&mut self, _agent: &BehaviorAgent<HE>, connection: Arc<dyn ConnectionSender>) {
+    fn on_incoming_connection_disconnected(&mut self, _agent: &BehaviorAgent<BE, HE>, connection: Arc<dyn ConnectionSender>) {
         if let Some(slot) = self.neighbours.get_mut(&connection.remote_node_id()) {
             slot.incoming = None;
         }
     }
 
-    fn on_outgoing_connection_disconnected(&mut self, _agent: &BehaviorAgent<HE>, connection: Arc<dyn ConnectionSender>) {
+    fn on_outgoing_connection_disconnected(&mut self, _agent: &BehaviorAgent<BE, HE>, connection: Arc<dyn ConnectionSender>) {
         if let Some(slot) = self.neighbours.get_mut(&connection.remote_node_id()) {
             slot.outgoing = OutgoingState::New;
         }
     }
 
-    fn on_outgoing_connection_error(&mut self, _agent: &BehaviorAgent<HE>, node_id: NodeId, conn_id: ConnId, err: &OutgoingConnectionError) {
+    fn on_outgoing_connection_error(&mut self, _agent: &BehaviorAgent<BE, HE>, node_id: NodeId, conn_id: ConnId, err: &OutgoingConnectionError) {
         if let Some(slot) = self.neighbours.get_mut(&node_id) {
             if let OutgoingState::Connecting(_, _, count) = slot.outgoing {
                 slot.outgoing = OutgoingState::ConnectError(self.timer.now_ms(), Some(conn_id), err.clone(), count);
@@ -149,9 +153,9 @@ where
         }
     }
 
-    fn on_handler_event(&mut self, _agent: &BehaviorAgent<HE>, _node_id: NodeId, _connection_id: ConnId, _event: BE) {}
+    fn on_handler_event(&mut self, _agent: &BehaviorAgent<BE, HE>, _node_id: NodeId, _connection_id: ConnId, _event: BE) {}
 
-    fn on_rpc(&mut self, _agent: &BehaviorAgent<HE>, req: Req, res: Box<dyn RpcAnswer<Res>>) -> bool {
+    fn on_rpc(&mut self, _agent: &BehaviorAgent<BE, HE>, req: Req, res: Box<dyn RpcAnswer<Res>>) -> bool {
         if let Ok(req) = req.try_into() {
             match req {
                 ManualReq::AddNeighbors(addrs) => {
@@ -209,7 +213,7 @@ where
         true
     }
 
-    fn on_started(&mut self, _agent: &BehaviorAgent<HE>) {}
+    fn on_started(&mut self, _agent: &BehaviorAgent<BE, HE>) {}
 
-    fn on_stopped(&mut self, _agent: &BehaviorAgent<HE>) {}
+    fn on_stopped(&mut self, _agent: &BehaviorAgent<BE, HE>) {}
 }

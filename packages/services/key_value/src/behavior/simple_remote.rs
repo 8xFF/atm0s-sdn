@@ -1,5 +1,6 @@
 use bluesea_identity::NodeId;
 use bluesea_router::RouteRule;
+use std::collections::VecDeque;
 /// This remote storage is a simple key value storage, it will store all key value in memory, and send event to other node when key value changed
 /// Each event is attached with a req_id and wait for ack, if ack not receive, it will resend the event each tick util ack received or tick_count is 0
 use std::sync::Arc;
@@ -22,7 +23,7 @@ pub struct RemoteStorage {
     req_id_seed: u64,
     storage: SimpleKeyValue<KeyId, ValueType, NodeId>,
     event_acks: EventAckManager<RemoteStorageAction>,
-    output_events: Vec<RemoteStorageAction>,
+    output_events: VecDeque<RemoteStorageAction>,
 }
 
 impl RemoteStorage {
@@ -31,7 +32,7 @@ impl RemoteStorage {
             req_id_seed: 0,
             storage: SimpleKeyValue::new(timer),
             event_acks: EventAckManager::new(),
-            output_events: Vec::new(),
+            output_events: VecDeque::new(),
         }
     }
 
@@ -43,33 +44,42 @@ impl RemoteStorage {
     pub fn on_event(&mut self, from: NodeId, event: RemoteEvent) {
         match event {
             RemoteEvent::Set(req_id, key, value, version, ex) => {
+                log::debug!("[RemoteStorage] receive set event from {} key {} value {:?} version {} ex {:?}", from, key, value, version, ex);
                 let setted = self.storage.set(key, value, version, ex);
-                self.output_events.push(RemoteStorageAction(LocalEvent::SetAck(req_id, key, version, setted), RouteRule::ToNode(from)));
+                self.output_events
+                    .push_back(RemoteStorageAction(LocalEvent::SetAck(req_id, key, version, setted), RouteRule::ToNode(from)));
             }
             RemoteEvent::Get(req_id, key) => {
                 if let Some((value, version)) = self.storage.get(&key) {
+                    log::debug!("[RemoteStorage] receive get event from {} key {} value {:?} version {}", from, key, value, version);
                     self.output_events
-                        .push(RemoteStorageAction(LocalEvent::GetAck(req_id, key, Some((value.clone(), version))), RouteRule::ToNode(from)));
+                        .push_back(RemoteStorageAction(LocalEvent::GetAck(req_id, key, Some((value.clone(), version))), RouteRule::ToNode(from)));
                 } else {
-                    self.output_events.push(RemoteStorageAction(LocalEvent::GetAck(req_id, key, None), RouteRule::ToNode(from)));
+                    log::debug!("[RemoteStorage] receive get event from {} key {} value None", from, key);
+                    self.output_events.push_back(RemoteStorageAction(LocalEvent::GetAck(req_id, key, None), RouteRule::ToNode(from)));
                 }
             }
             RemoteEvent::Del(req_id, key, req_version) => {
+                log::debug!("[RemoteStorage] receive del event from {} key {} version {:?}", from, key, req_version);
                 let version = self.storage.del(&key, req_version).map(|(_, version)| version);
-                self.output_events.push(RemoteStorageAction(LocalEvent::DelAck(req_id, key, version), RouteRule::ToNode(from)));
+                self.output_events.push_back(RemoteStorageAction(LocalEvent::DelAck(req_id, key, version), RouteRule::ToNode(from)));
             }
             RemoteEvent::Sub(req_id, key, ex) => {
+                log::debug!("[RemoteStorage] receive sub event from {} key {} ex {:?}", from, key, ex);
                 self.storage.subscribe(&key, from, ex);
-                self.output_events.push(RemoteStorageAction(LocalEvent::SubAck(req_id, key), RouteRule::ToNode(from)));
+                self.output_events.push_back(RemoteStorageAction(LocalEvent::SubAck(req_id, key), RouteRule::ToNode(from)));
             }
             RemoteEvent::Unsub(req_id, key) => {
+                log::debug!("[RemoteStorage] receive unsub event from {} key {}", from, key);
                 let success = self.storage.unsubscribe(&key, &from);
-                self.output_events.push(RemoteStorageAction(LocalEvent::UnsubAck(req_id, key, success), RouteRule::ToNode(from)));
+                self.output_events.push_back(RemoteStorageAction(LocalEvent::UnsubAck(req_id, key, success), RouteRule::ToNode(from)));
             }
             RemoteEvent::OnKeySetAck(req_id) => {
+                log::debug!("[RemoteStorage] receive on_key_set_ack event from {}, req_id {}", from, req_id);
                 self.event_acks.on_ack(req_id);
             }
             RemoteEvent::OnKeyDelAck(req_id) => {
+                log::debug!("[RemoteStorage] receive on_key_del_ack event from {}, req_id {}", from, req_id);
                 self.event_acks.on_ack(req_id);
             }
         }
@@ -77,7 +87,8 @@ impl RemoteStorage {
 
     pub fn pop_action(&mut self) -> Option<RemoteStorageAction> {
         //first pop from output_events, if not exits then pop from event_acks
-        if let Some(e) = self.output_events.pop() {
+        if let Some(e) = self.output_events.pop_front() {
+            log::debug!("[RemoteStorage] pop action from output_events: {:?}", e);
             Some(e)
         } else {
             if let Some(event) = self.storage.poll() {
@@ -87,6 +98,7 @@ impl RemoteStorage {
                     OutputEvent::NotifySet(key, value, version, handler) => RemoteStorageAction(LocalEvent::OnKeySet(req_id, key, value, version), RouteRule::ToNode(handler)),
                     OutputEvent::NotifyDel(key, _value, version, handler) => RemoteStorageAction(LocalEvent::OnKeyDel(req_id, key, version), RouteRule::ToNode(handler)),
                 };
+                log::debug!("[RemoteStorage] pop action from event_acks: {:?}, req_id {}", event, req_id);
                 self.event_acks.add_event(req_id, event, RETRY_COUNT);
             }
             self.event_acks.pop_action()

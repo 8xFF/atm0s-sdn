@@ -7,14 +7,14 @@ use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use parking_lot::RwLock;
 use std::sync::Arc;
 
-pub struct BehaviorAgent<HE> {
+pub struct BehaviorAgent<BE, HE> {
     service_id: u8,
     local_node_id: NodeId,
     connector: Arc<dyn TransportConnector>,
-    cross_gate: Arc<RwLock<CrossHandlerGate<HE>>>,
+    cross_gate: Arc<RwLock<CrossHandlerGate<BE, HE>>>,
 }
 
-impl<HE> Clone for BehaviorAgent<HE> {
+impl<BE, HE> Clone for BehaviorAgent<BE, HE> {
     fn clone(&self) -> Self {
         Self {
             service_id: self.service_id,
@@ -25,11 +25,12 @@ impl<HE> Clone for BehaviorAgent<HE> {
     }
 }
 
-impl<HE> BehaviorAgent<HE>
+impl<BE, HE> BehaviorAgent<BE, HE>
 where
+    BE: Send + Sync + 'static,
     HE: Send + Sync + 'static,
 {
-    pub(crate) fn new(service_id: u8, local_node_id: NodeId, connector: Arc<dyn TransportConnector>, cross_gate: Arc<RwLock<CrossHandlerGate<HE>>>) -> Self {
+    pub(crate) fn new(service_id: u8, local_node_id: NodeId, connector: Arc<dyn TransportConnector>, cross_gate: Arc<RwLock<CrossHandlerGate<BE, HE>>>) -> Self {
         Self {
             service_id,
             connector,
@@ -70,7 +71,7 @@ pub struct ConnectionAgent<BE, HE> {
     conn_id: ConnId,
     sender: Arc<dyn ConnectionSender>,
     internal_tx: Sender<NetworkPlaneInternalEvent<BE>>,
-    cross_gate: Arc<RwLock<CrossHandlerGate<HE>>>,
+    cross_gate: Arc<RwLock<CrossHandlerGate<BE, HE>>>,
 }
 
 impl<BE, HE> ConnectionAgent<BE, HE>
@@ -85,7 +86,7 @@ where
         conn_id: ConnId,
         sender: Arc<dyn ConnectionSender>,
         internal_tx: Sender<NetworkPlaneInternalEvent<BE>>,
-        cross_gate: Arc<RwLock<CrossHandlerGate<HE>>>,
+        cross_gate: Arc<RwLock<CrossHandlerGate<BE, HE>>>,
     ) -> Self {
         Self {
             service_id,

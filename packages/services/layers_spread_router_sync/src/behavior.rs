@@ -27,7 +27,7 @@ where
         FAST_PATH_ROUTE_SERVICE_ID
     }
 
-    fn on_tick(&mut self, _agent: &BehaviorAgent<HE>, _ts_ms: u64, _interal_ms: u64) {
+    fn on_tick(&mut self, _agent: &BehaviorAgent<BE, HE>, _ts_ms: u64, _interal_ms: u64) {
         self.router.dump();
     }
 
@@ -39,27 +39,31 @@ where
         Ok(())
     }
 
-    fn on_incoming_connection_connected(&mut self, _agent: &BehaviorAgent<HE>, _conn: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
+    fn on_local_msg(&mut self, _agent: &BehaviorAgent<BE, HE>, _msg: network::msg::TransportMsg) {
+        panic!("Should not happend");
+    }
+
+    fn on_incoming_connection_connected(&mut self, _agent: &BehaviorAgent<BE, HE>, _conn: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
         Some(Box::new(LayersSpreadRouterSyncHandler::new(self.router.clone())))
     }
 
-    fn on_outgoing_connection_connected(&mut self, _agent: &BehaviorAgent<HE>, _conn: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
+    fn on_outgoing_connection_connected(&mut self, _agent: &BehaviorAgent<BE, HE>, _conn: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
         Some(Box::new(LayersSpreadRouterSyncHandler::new(self.router.clone())))
     }
 
-    fn on_incoming_connection_disconnected(&mut self, _agent: &BehaviorAgent<HE>, _conn: Arc<dyn ConnectionSender>) {}
+    fn on_incoming_connection_disconnected(&mut self, _agent: &BehaviorAgent<BE, HE>, _conn: Arc<dyn ConnectionSender>) {}
 
-    fn on_outgoing_connection_disconnected(&mut self, _agent: &BehaviorAgent<HE>, _conn: Arc<dyn ConnectionSender>) {}
+    fn on_outgoing_connection_disconnected(&mut self, _agent: &BehaviorAgent<BE, HE>, _conn: Arc<dyn ConnectionSender>) {}
 
-    fn on_outgoing_connection_error(&mut self, _agent: &BehaviorAgent<HE>, _node_id: NodeId, _conn_id: ConnId, _err: &OutgoingConnectionError) {}
+    fn on_outgoing_connection_error(&mut self, _agent: &BehaviorAgent<BE, HE>, _node_id: NodeId, _conn_id: ConnId, _err: &OutgoingConnectionError) {}
 
-    fn on_handler_event(&mut self, _agent: &BehaviorAgent<HE>, _node_id: NodeId, _conn_id: ConnId, _event: BE) {}
+    fn on_handler_event(&mut self, _agent: &BehaviorAgent<BE, HE>, _node_id: NodeId, _conn_id: ConnId, _event: BE) {}
 
-    fn on_rpc(&mut self, _agent: &BehaviorAgent<HE>, _req: Req, _res: Box<dyn RpcAnswer<Res>>) -> bool {
+    fn on_rpc(&mut self, _agent: &BehaviorAgent<BE, HE>, _req: Req, _res: Box<dyn RpcAnswer<Res>>) -> bool {
         false
     }
 
-    fn on_started(&mut self, _agent: &BehaviorAgent<HE>) {}
+    fn on_started(&mut self, _agent: &BehaviorAgent<BE, HE>) {}
 
-    fn on_stopped(&mut self, _agent: &BehaviorAgent<HE>) {}
+    fn on_stopped(&mut self, _agent: &BehaviorAgent<BE, HE>) {}
 }
