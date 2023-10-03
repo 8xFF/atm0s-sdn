@@ -7,6 +7,7 @@ pub type ValueType = Vec<u8>;
 mod behavior;
 mod handler;
 mod msg;
+mod redis;
 mod storage;
 
 pub use behavior::KeyValueBehavior;
@@ -45,12 +46,11 @@ mod tests {
     /// Testing local storage
     #[async_std::test]
     async fn local_node() {
-        env_logger::builder().format_timestamp_millis().init();
         let (mock, _faker, _output) = MockTransport::new();
         let transport = Box::new(mock);
         let timer = Arc::new(SystemTimer());
 
-        let (behavior, sdk) = KeyValueBehavior::new(0, timer.clone(), 1000);
+        let (behavior, sdk) = KeyValueBehavior::new(0, timer.clone(), 1000, None);
 
         let mut plane = NetworkPlane::<ImplBehaviorEvent, ImplHandlerEvent>::new(NetworkPlaneConfig {
             local_node_id: 0,

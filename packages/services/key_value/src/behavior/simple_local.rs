@@ -44,7 +44,6 @@ struct KeySlotSubscribe {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum SimpleKeyValueGetError {
-    NotFound,
     NetworkError,
     Timeout,
 }
@@ -151,6 +150,13 @@ impl LocalStorage {
             }
         }
 
+        // we set last_sync here for avoid borrowed mutable Self twice
+        for (_key, slot) in self.data.iter_mut() {
+            if slot.acked && now - slot.last_sync >= self.sync_each_ms {
+                slot.last_sync = now;
+            }
+        }
+
         let mut unsub_keys = Vec::new();
         // we sync subscribe each sync_each_ms with each subscribe which acked
         for (key, slot) in self.subscribe.iter() {
@@ -165,6 +171,13 @@ impl LocalStorage {
                     // Just remove if acked and unsub
                     unsub_keys.push(*key);
                 }
+            }
+        }
+
+        // we set last_sync here for avoid borrowed mutable Self twice
+        for (_key, slot) in self.subscribe.iter_mut() {
+            if slot.acked && now - slot.last_sync >= self.sync_each_ms {
+                slot.last_sync = now;
             }
         }
 
@@ -206,22 +219,19 @@ impl LocalStorage {
                         }
                     }
                 } else {
-                    let new_version = self.gen_version();
-                    if let Some(slot) = self.data.get_mut(&key) {
-                        // we regenete if version match, because of remote reject that version
-                        if slot.version == version {
-                            slot.version = new_version;
-                        }
-                    }
+                    // TODO: we should avoid race condition here, when multiple node set with same key
+                    // let new_version = self.gen_version();
+                    // if let Some(slot) = self.data.get_mut(&key) {
+                    //     // we regenete if version match, because of remote reject that version
+                    //     if slot.version < version {
+                    //         slot.version = new_version;
+                    //     }
+                    // }
                 }
             }
             LocalEvent::GetAck(req_id, _key, value) => {
                 if let Some(slot) = self.get_queue.remove(&req_id) {
-                    if let Some((value, version)) = value {
-                        (slot.callback)(Ok(Some((value, version))))
-                    } else {
-                        (slot.callback)(Err(SimpleKeyValueGetError::NotFound))
-                    };
+                    (slot.callback)(Ok(value))
                 } else {
                 }
             }
@@ -400,27 +410,27 @@ mod tests {
         assert_eq!(storage.pop_action(), None);
     }
 
-    #[test]
-    fn should_renegerate_set_event_if_ack_failed() {
-        let timer = Arc::new(utils::MockTimer::default());
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = LocalStorage::new(timer.clone(), awake_notify, 10000);
+    // #[test]
+    // fn should_renegerate_set_event_if_ack_failed() {
+    //     let timer = Arc::new(utils::MockTimer::default());
+    //     let awake_notify = Arc::new(MockAwaker::default());
+    //     let mut storage = LocalStorage::new(timer.clone(), awake_notify, 10000);
 
-        storage.set(1, vec![1], None);
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(RemoteEvent::Set(0, 1, vec![1], 0, None), RouteRule::ToKey(1))));
-        assert_eq!(storage.pop_action(), None);
+    //     storage.set(1, vec![1], None);
+    //     assert_eq!(storage.pop_action(), Some(LocalStorageAction(RemoteEvent::Set(0, 1, vec![1], 0, None), RouteRule::ToKey(1))));
+    //     assert_eq!(storage.pop_action(), None);
 
-        storage.on_event(2, LocalEvent::SetAck(0, 1, 0, false));
+    //     storage.on_event(2, LocalEvent::SetAck(0, 1, 0, false));
 
-        //after received ack with failed => should regenerate new version
-        storage.tick();
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(RemoteEvent::Set(1, 1, vec![1], 1, None), RouteRule::ToKey(1))));
-        assert_eq!(storage.pop_action(), None);
+    //     //after received ack with failed => should regenerate new version
+    //     storage.tick();
+    //     assert_eq!(storage.pop_action(), Some(LocalStorageAction(RemoteEvent::Set(1, 1, vec![1], 1, None), RouteRule::ToKey(1))));
+    //     assert_eq!(storage.pop_action(), None);
 
-        storage.on_event(2, LocalEvent::SetAck(1, 1, 1, true));
-        storage.tick();
-        assert_eq!(storage.pop_action(), None);
-    }
+    //     storage.on_event(2, LocalEvent::SetAck(1, 1, 1, true));
+    //     storage.tick();
+    //     assert_eq!(storage.pop_action(), None);
+    // }
 
     #[test]
     fn set_should_generate_new_version() {

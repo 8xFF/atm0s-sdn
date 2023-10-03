@@ -1,10 +1,12 @@
 use bluesea_identity::{NodeAddr, NodeAddrBuilder, Protocol};
 use clap::Parser;
+use key_value::{KeyValueBehaviorEvent, KeyValueHandlerEvent};
 use layers_spread_router::SharedRouter;
 use layers_spread_router_sync::{LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent, LayersSpreadRouterSyncHandlerEvent};
 use manual_discovery::{ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent};
 use network::convert_enum;
 use network::plane::{NetworkPlane, NetworkPlaneConfig};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tun_tap::{TunTapBehaviorEvent, TunTapHandlerEvent};
 use utils::SystemTimer;
@@ -14,6 +16,7 @@ enum NodeBehaviorEvent {
     Manual(ManualBehaviorEvent),
     LayersSpreadRouterSync(LayersSpreadRouterSyncBehaviorEvent),
     TunTap(TunTapBehaviorEvent),
+    KeyValue(KeyValueBehaviorEvent),
 }
 
 #[derive(convert_enum::From, convert_enum::TryInto)]
@@ -21,6 +24,7 @@ enum NodeHandleEvent {
     Manual(ManualHandlerEvent),
     LayersSpreadRouterSync(LayersSpreadRouterSyncHandlerEvent),
     TunTap(TunTapHandlerEvent),
+    KeyValue(KeyValueHandlerEvent),
 }
 
 /// Node with manual network builder
@@ -34,6 +38,14 @@ struct Args {
     /// Neighbors
     #[arg(env, long)]
     neighbours: Vec<NodeAddr>,
+
+    /// Enable tun-tap
+    #[arg(env, long)]
+    tun_tap: bool,
+
+    /// Simple Redis KeyValue server
+    #[arg(env, long)]
+    redis_addr: Option<SocketAddr>,
 }
 
 #[async_std::main]
@@ -46,24 +58,32 @@ async fn main() {
     let node_addr = node_addr_builder.addr();
     log::info!("Listen on addr {}", node_addr);
 
+    let timer = Arc::new(SystemTimer());
     let router = SharedRouter::new(args.node_id);
 
     let manual = ManualBehavior::new(ManualBehaviorConf {
         neighbours: args.neighbours.clone(),
-        timer: Arc::new(SystemTimer()),
+        timer: timer.clone(),
     });
 
-    let tun_tap = tun_tap::TunTapBehavior::default();
     let spreads_layer_router = LayersSpreadRouterSyncBehavior::new(router.clone());
+    let (key_value, _) = key_value::KeyValueBehavior::new(args.node_id, timer.clone(), 10000, args.redis_addr);
 
-    let mut plane = NetworkPlane::<NodeBehaviorEvent, NodeHandleEvent>::new(NetworkPlaneConfig {
+    let mut plan_cfg = NetworkPlaneConfig {
         router: Arc::new(router),
         local_node_id: args.node_id,
         tick_ms: 1000,
-        behavior: vec![Box::new(manual), Box::new(spreads_layer_router), Box::new(tun_tap)],
+        behavior: vec![Box::new(manual), Box::new(spreads_layer_router), Box::new(key_value)],
         transport: Box::new(transport),
-        timer: Arc::new(SystemTimer()),
-    });
+        timer,
+    };
+
+    if args.tun_tap {
+        let tun_tap = tun_tap::TunTapBehavior::default();
+        plan_cfg.behavior.push(Box::new(tun_tap));
+    }
+
+    let mut plane = NetworkPlane::<NodeBehaviorEvent, NodeHandleEvent>::new(plan_cfg);
 
     plane.started();
 
