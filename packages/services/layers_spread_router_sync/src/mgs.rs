@@ -9,7 +9,3 @@ pub enum LayersSpreadRouterSyncHandlerEvent {}
 pub enum LayersSpreadRouterSyncMsg {
     Sync(RouterSync),
 }
-
-pub enum LayersSpreadRouterSyncReq {}
-
-pub enum LayersSpreadRouterSyncRes {}

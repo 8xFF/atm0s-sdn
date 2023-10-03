@@ -1,3 +1,4 @@
+use super::{CrossHandlerEvent, CrossHandlerGate, CrossHandlerRoute};
 use crate::msg::TransportMsg;
 use crate::plane::NetworkPlaneInternalEvent;
 use crate::transport::ConnectionSender;
@@ -8,25 +9,14 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use utils::error_handle::ErrorUtils;
 
-pub(crate) enum CrossHandlerEvent<HE> {
-    FromBehavior(HE),
-    FromHandler(NodeId, ConnId, HE),
-}
-
-#[derive(Debug)]
-pub enum CrossHandlerRoute {
-    NodeFirst(NodeId),
-    Conn(ConnId),
-}
-
-pub(crate) struct CrossHandlerGate<BE, HE> {
+pub(crate) struct CrossHandlerGateIplm<BE, HE> {
     behaviour_tx: Sender<NetworkPlaneInternalEvent<BE>>,
     nodes: HashMap<NodeId, HashMap<ConnId, (Sender<(u8, CrossHandlerEvent<HE>)>, Arc<dyn ConnectionSender>)>>,
     conns: HashMap<ConnId, (Sender<(u8, CrossHandlerEvent<HE>)>, Arc<dyn ConnectionSender>)>,
     router: Arc<dyn RouterTable>,
 }
 
-impl<HE, BE> CrossHandlerGate<BE, HE>
+impl<HE, BE> CrossHandlerGateIplm<BE, HE>
 where
     BE: Send + Sync + 'static,
     HE: Send + Sync + 'static,
@@ -70,7 +60,23 @@ where
         }
     }
 
-    pub(crate) fn close_conn(&self, conn: ConnId) {
+    pub(crate) fn send_to_conn(&self, conn: &ConnId, msg: TransportMsg) -> Option<()> {
+        if let Some((_s, c_s)) = self.conns.get(conn) {
+            c_s.send(msg);
+            Some(())
+        } else {
+            log::warn!("[CrossHandlerGate] send_to_net conn not found {}", conn);
+            None
+        }
+    }
+}
+
+impl<BE, HE> CrossHandlerGate<BE, HE> for CrossHandlerGateIplm<BE, HE>
+where
+    BE: Send + Sync + 'static,
+    HE: Send + Sync + 'static,
+{
+    fn close_conn(&self, conn: ConnId) {
         if let Some((_s, c_s)) = self.conns.get(&conn) {
             log::info!("[CrossHandlerGate] close_con {} {}", c_s.remote_node_id(), conn);
             c_s.close();
@@ -79,7 +85,7 @@ where
         }
     }
 
-    pub(crate) fn close_node(&self, node: NodeId) {
+    fn close_node(&self, node: NodeId) {
         if let Some(conns) = self.nodes.get(&node) {
             for (_s, c_s) in conns.values() {
                 log::info!("[CrossHandlerGate] close_node {} {}", node, c_s.conn_id());
@@ -88,7 +94,7 @@ where
         }
     }
 
-    pub(crate) fn send_to_behaviour(&self, service_id: u8, event: BE) -> Option<()> {
+    fn send_to_behaviour(&self, service_id: u8, event: BE) -> Option<()> {
         if let Err(e) = self.behaviour_tx.send_blocking(NetworkPlaneInternalEvent::ToBehaviourLocalEvent { service_id, event }) {
             log::error!("[CrossHandlerGate] send to behaviour error {:?}", e);
             None
@@ -97,7 +103,7 @@ where
         }
     }
 
-    pub(crate) fn send_to_handler(&self, service_id: u8, route: CrossHandlerRoute, event: CrossHandlerEvent<HE>) -> Option<()> {
+    fn send_to_handler(&self, service_id: u8, route: CrossHandlerRoute, event: CrossHandlerEvent<HE>) -> Option<()> {
         log::debug!("[CrossHandlerGate] send_to_handler service: {} route: {:?}", service_id, route);
         match route {
             CrossHandlerRoute::NodeFirst(node_id) => {
@@ -130,7 +136,7 @@ where
         None
     }
 
-    pub(crate) fn send_to_net(&self, msg: TransportMsg) -> Option<()> {
+    fn send_to_net(&self, msg: TransportMsg) -> Option<()> {
         log::debug!("[CrossHandlerGate] send_to_net service: {} route: {:?}", msg.header.service_id, msg.header.route);
         match self.router.path_to(&msg.header.route, msg.header.service_id) {
             RouteAction::Reject => None,
@@ -153,16 +159,6 @@ where
                     None
                 }
             }
-        }
-    }
-
-    pub(crate) fn send_to_conn(&self, conn: &ConnId, msg: TransportMsg) -> Option<()> {
-        if let Some((_s, c_s)) = self.conns.get(conn) {
-            c_s.send(msg);
-            Some(())
-        } else {
-            log::warn!("[CrossHandlerGate] send_to_net conn not found {}", conn);
-            None
         }
     }
 }

@@ -7,7 +7,7 @@ use utils::{error_handle::ErrorUtils, option_handle::OptionUtils, Timer};
 
 use crate::{
     behaviour::ConnectionHandler,
-    internal::cross_handler_gate::{CrossHandlerEvent, CrossHandlerGate},
+    internal::{cross_handler_gate::CrossHandlerGateIplm, CrossHandlerEvent, CrossHandlerGate},
     plane::NetworkPlaneInternalEvent,
     transport::{ConnectionEvent, ConnectionReceiver, ConnectionSender},
     ConnectionAgent,
@@ -19,7 +19,7 @@ fn process_conn_msg<BE, HE>(
     _sender: &Arc<dyn ConnectionSender>,
     receiver: &Box<dyn ConnectionReceiver + Send>,
     router: &Arc<dyn RouterTable>,
-    cross_gate: &Arc<RwLock<CrossHandlerGate<BE, HE>>>,
+    cross_gate: &Arc<RwLock<CrossHandlerGateIplm<BE, HE>>>,
 ) where
     HE: Send + Sync + 'static,
     BE: Send + Sync + 'static,
@@ -64,7 +64,7 @@ pub struct PlaneSingleConn<BE, HE> {
     pub(crate) internal_tx: Sender<NetworkPlaneInternalEvent<BE>>,
     pub(crate) outgoing: bool,
     pub(crate) router: Arc<dyn RouterTable>,
-    pub(crate) cross_gate: Arc<RwLock<CrossHandlerGate<BE, HE>>>,
+    pub(crate) cross_gate: Arc<RwLock<CrossHandlerGateIplm<BE, HE>>>,
 }
 
 impl<BE, HE> PlaneSingleConn<BE, HE>

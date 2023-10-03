@@ -11,14 +11,14 @@ mod storage;
 
 pub use behavior::KeyValueBehavior;
 pub use behavior::KeyValueSdk;
-pub use msg::{KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueMsg, KeyValueReq, KeyValueRes};
+pub use msg::{KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueMsg};
 
 #[cfg(test)]
 mod tests {
     use std::{sync::Arc, time::Duration, vec};
 
     use bluesea_router::ForceLocalRouter;
-    use network::mock::{MockTransport, MockTransportRpc};
+    use network::mock::MockTransport;
     use network::{
         convert_enum,
         plane::{NetworkPlane, NetworkPlaneConfig},
@@ -31,9 +31,6 @@ mod tests {
     enum ImplNetworkMsg {
         KeyValue(KeyValueMsg),
     }
-
-    enum ImplNetworkReq {}
-    enum ImplNetworkRes {}
 
     #[derive(convert_enum::From, convert_enum::TryInto)]
     enum ImplBehaviorEvent {
@@ -50,18 +47,16 @@ mod tests {
     async fn local_node() {
         env_logger::builder().format_timestamp_millis().init();
         let (mock, _faker, _output) = MockTransport::new();
-        let (mock_rpc, _faker_rpc, _output_rpc) = MockTransportRpc::<ImplNetworkReq, ImplNetworkRes>::new();
         let transport = Box::new(mock);
         let timer = Arc::new(SystemTimer());
 
-        let (behavior, mut sdk) = KeyValueBehavior::new(0, timer.clone(), 1000);
+        let (behavior, sdk) = KeyValueBehavior::new(0, timer.clone(), 1000);
 
-        let mut plane = NetworkPlane::<ImplBehaviorEvent, ImplHandlerEvent, ImplNetworkReq, ImplNetworkRes>::new(NetworkPlaneConfig {
+        let mut plane = NetworkPlane::<ImplBehaviorEvent, ImplHandlerEvent>::new(NetworkPlaneConfig {
             local_node_id: 0,
             tick_ms: 100,
             behavior: vec![Box::new(behavior)],
             transport,
-            transport_rpc: Box::new(mock_rpc),
             timer,
             router: Arc::new(ForceLocalRouter()),
         });

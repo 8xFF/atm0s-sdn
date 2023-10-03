@@ -47,7 +47,7 @@ Each part also can exchanged data with other part by using Agent, which is provi
 For reference bellow is trait of behaviour
 
 ```rust
-pub trait NetworkBehavior<BE, HE, MSG, Req, Res>
+pub trait NetworkBehavior<BE, HE, MSG>
 where
     MSG: Send + Sync,
 {

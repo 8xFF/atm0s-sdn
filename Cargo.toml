@@ -15,7 +15,6 @@ members = [
     "packages/transports/vnet",
     "packages/transports/tcp",
     "packages/transports/udp",
-    "packages/transports/http_rpc",
     "packages/runner",
     "examples",
 ]
@@ -36,7 +35,6 @@ key-value = { package = "key-value", path = "packages/services/key_value" }
 transport-vnet = { package = "vnet", path = "packages/transports/vnet" }
 transport-tcp = { package = "tcp", path = "packages/transports/tcp" }
 transport-udp = { package = "udp", path = "packages/transports/udp" }
-transport-http-rpc = { package = "http-rpc", path = "packages/transports/http_rpc" }
 bincode = "1.3.3"
 serde = { version = "1.0", features = ["derive"] }
 async-trait = "0.1"

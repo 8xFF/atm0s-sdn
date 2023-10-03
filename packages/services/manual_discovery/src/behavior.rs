@@ -3,7 +3,7 @@ use crate::msg::*;
 use crate::MANUAL_SERVICE_ID;
 use bluesea_identity::{ConnId, NodeAddr, NodeAddrType, NodeId};
 use network::behaviour::{ConnectionHandler, NetworkBehavior};
-use network::transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer};
+use network::transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError};
 use network::BehaviorAgent;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -54,12 +54,10 @@ impl ManualBehavior {
     }
 }
 
-impl<BE, HE, Req, Res> NetworkBehavior<BE, HE, Req, Res> for ManualBehavior
+impl<BE, HE> NetworkBehavior<BE, HE> for ManualBehavior
 where
     BE: From<ManualBehaviorEvent> + TryInto<ManualBehaviorEvent> + Send + Sync + 'static,
     HE: From<ManualHandlerEvent> + TryInto<ManualHandlerEvent> + Send + Sync + 'static,
-    Req: From<ManualReq> + TryInto<ManualReq> + Send + Sync + 'static,
-    Res: From<ManualRes> + TryInto<ManualRes> + Send + Sync + 'static,
 {
     fn service_id(&self) -> u8 {
         MANUAL_SERVICE_ID
@@ -159,63 +157,63 @@ where
 
     fn on_handler_event(&mut self, _agent: &BehaviorAgent<BE, HE>, _node_id: NodeId, _connection_id: ConnId, _event: BE) {}
 
-    fn on_rpc(&mut self, _agent: &BehaviorAgent<BE, HE>, req: Req, res: Box<dyn RpcAnswer<Res>>) -> bool {
-        if let Ok(req) = req.try_into() {
-            match req {
-                ManualReq::AddNeighbors(addrs) => {
-                    let mut added_count = 0;
-                    for addr in addrs {
-                        if let Some(node_id) = addr.node_id() {
-                            if self
-                                .neighbours
-                                .insert(
-                                    node_id,
-                                    NodeSlot {
-                                        addr,
-                                        incoming: None,
-                                        outgoing: OutgoingState::New,
-                                    },
-                                )
-                                .is_none()
-                            {
-                                added_count += 1;
-                            }
-                        }
-                    }
-                    res.ok(ManualRes::AddNeighborsRes(added_count).into());
-                }
-                ManualReq::GetNeighbors() => {
-                    let mut addrs = vec![];
-                    for slot in self.neighbours.values() {
-                        addrs.push(slot.addr.clone());
-                    }
-                    res.ok(ManualRes::GetNeighborsRes(addrs).into());
-                }
-                ManualReq::GetConnections() => {
-                    let mut conns = vec![];
-                    for slot in self.neighbours.values() {
-                        if let Some(conn) = slot.incoming {
-                            conns.push((conn, slot.addr.clone(), ConnectionState::IncomingConnected));
-                        }
-                        match slot.outgoing {
-                            OutgoingState::Connecting(_, conn, _) => {
-                                conns.push((conn, slot.addr.clone(), ConnectionState::OutgoingConnecting));
-                            }
-                            OutgoingState::Connected(_, conn) => {
-                                conns.push((conn, slot.addr.clone(), ConnectionState::OutgoingConnected));
-                            }
-                            OutgoingState::ConnectError(_, Some(conn_id), _, _) => {
-                                conns.push((conn_id, slot.addr.clone(), ConnectionState::OutgoingError));
-                            }
-                            _ => {}
-                        }
-                    }
-                    res.ok(ManualRes::GetConnectionsRes(conns).into());
-                }
-            }
-        }
-        true
-    }
+    // fn on_rpc(&mut self, _agent: &BehaviorAgent<BE, HE>, req: Req, res: Box<dyn RpcAnswer<Res>>) -> bool {
+    //     if let Ok(req) = req.try_into() {
+    //         match req {
+    //             ManualReq::AddNeighbors(addrs) => {
+    //                 let mut added_count = 0;
+    //                 for addr in addrs {
+    //                     if let Some(node_id) = addr.node_id() {
+    //                         if self
+    //                             .neighbours
+    //                             .insert(
+    //                                 node_id,
+    //                                 NodeSlot {
+    //                                     addr,
+    //                                     incoming: None,
+    //                                     outgoing: OutgoingState::New,
+    //                                 },
+    //                             )
+    //                             .is_none()
+    //                         {
+    //                             added_count += 1;
+    //                         }
+    //                     }
+    //                 }
+    //                 res.ok(ManualRes::AddNeighborsRes(added_count).into());
+    //             }
+    //             ManualReq::GetNeighbors() => {
+    //                 let mut addrs = vec![];
+    //                 for slot in self.neighbours.values() {
+    //                     addrs.push(slot.addr.clone());
+    //                 }
+    //                 res.ok(ManualRes::GetNeighborsRes(addrs).into());
+    //             }
+    //             ManualReq::GetConnections() => {
+    //                 let mut conns = vec![];
+    //                 for slot in self.neighbours.values() {
+    //                     if let Some(conn) = slot.incoming {
+    //                         conns.push((conn, slot.addr.clone(), ConnectionState::IncomingConnected));
+    //                     }
+    //                     match slot.outgoing {
+    //                         OutgoingState::Connecting(_, conn, _) => {
+    //                             conns.push((conn, slot.addr.clone(), ConnectionState::OutgoingConnecting));
+    //                         }
+    //                         OutgoingState::Connected(_, conn) => {
+    //                             conns.push((conn, slot.addr.clone(), ConnectionState::OutgoingConnected));
+    //                         }
+    //                         OutgoingState::ConnectError(_, Some(conn_id), _, _) => {
+    //                             conns.push((conn_id, slot.addr.clone(), ConnectionState::OutgoingError));
+    //                         }
+    //                         _ => {}
+    //                     }
+    //                 }
+    //                 res.ok(ManualRes::GetConnectionsRes(conns).into());
+    //             }
+    //         }
+    //     }
+    //     true
+    // }
 
     fn on_started(&mut self, _agent: &BehaviorAgent<BE, HE>) {}
 

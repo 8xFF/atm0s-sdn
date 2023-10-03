@@ -11,8 +11,9 @@ use std::sync::Arc;
 
 use super::MOCK_PROTOCOL_ID;
 
+#[derive(Default)]
 pub struct MockTransportConnector {
-    output: Arc<Mutex<VecDeque<MockOutput>>>,
+    pub(crate) output: Arc<Mutex<VecDeque<MockOutput>>>,
     conn_id: Arc<AtomicU64>,
 }
 

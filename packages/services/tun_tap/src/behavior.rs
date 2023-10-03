@@ -17,12 +17,12 @@ use futures::{select, FutureExt};
 use network::{
     behaviour::{ConnectionHandler, NetworkBehavior},
     msg::TransportMsg,
-    transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer},
+    transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError},
     BehaviorAgent,
 };
 use utils::{error_handle::ErrorUtils, option_handle::OptionUtils};
 
-use crate::{TunTapBehaviorEvent, TunTapHandler, TunTapHandlerEvent, TunTapReq, TunTapRes, TUNTAP_SERVICE_ID};
+use crate::{TunTapBehaviorEvent, TunTapHandler, TunTapHandlerEvent, TUNTAP_SERVICE_ID};
 
 pub struct TunTapBehavior {
     join: Option<async_std::task::JoinHandle<()>>,
@@ -41,12 +41,10 @@ impl Default for TunTapBehavior {
     }
 }
 
-impl<BE, HE, Req, Res> NetworkBehavior<BE, HE, Req, Res> for TunTapBehavior
+impl<BE, HE> NetworkBehavior<BE, HE> for TunTapBehavior
 where
     BE: From<TunTapBehaviorEvent> + TryInto<TunTapBehaviorEvent> + Send + Sync + 'static,
     HE: From<TunTapHandlerEvent> + TryInto<TunTapHandlerEvent> + Send + Sync + 'static,
-    Req: From<TunTapReq> + TryInto<TunTapReq> + Send + Sync + 'static,
-    Res: From<TunTapRes> + TryInto<TunTapRes> + Send + Sync + 'static,
 {
     fn service_id(&self) -> u8 {
         TUNTAP_SERVICE_ID
@@ -176,10 +174,6 @@ where
     fn on_outgoing_connection_error(&mut self, _agent: &BehaviorAgent<BE, HE>, _node_id: NodeId, _conn_id: ConnId, _err: &OutgoingConnectionError) {}
 
     fn on_handler_event(&mut self, _agent: &BehaviorAgent<BE, HE>, _node_id: NodeId, _connection_id: ConnId, _event: BE) {}
-
-    fn on_rpc(&mut self, _agent: &BehaviorAgent<BE, HE>, _req: Req, _res: Box<dyn RpcAnswer<Res>>) -> bool {
-        false
-    }
 
     fn on_stopped(&mut self, _agent: &BehaviorAgent<BE, HE>) {}
 }

@@ -27,18 +27,6 @@ enum NodeMsg {
     LayersSpreadRouterSync(LayersSpreadRouterSyncMsg),
 }
 
-#[derive(convert_enum::From, convert_enum::TryInto)]
-enum NodeRpcReq {
-    Manual(ManualReq),
-    LayersSpreadRouterSync(LayersSpreadRouterSyncReq),
-}
-
-#[derive(convert_enum::From, convert_enum::TryInto)]
-enum NodeRpcRes {
-    Manual(ManualRes),
-    LayersSpreadRouterSync(LayersSpreadRouterSyncRes),
-}
-
 /// Node with manual network builder
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -59,7 +47,6 @@ async fn main() {
     let node_addr_builder = Arc::new(NodeAddrBuilder::default());
     node_addr_builder.add_protocol(Protocol::P2p(args.node_id));
     let transport = transport_tcp::TcpTransport::new(args.node_id, 0, node_addr_builder.clone()).await;
-    let (transport_rpc, _, _) = network::mock::MockTransportRpc::new();
     let node_addr = node_addr_builder.addr();
     log::info!("Listen on addr {}", node_addr);
 
@@ -71,12 +58,11 @@ async fn main() {
         timer: Arc::new(SystemTimer()),
     });
 
-    let mut plane = NetworkPlane::<NodeBehaviorEvent, NodeHandleEvent, NodeRpcReq, NodeRpcRes>::new(NetworkPlaneConfig {
+    let mut plane = NetworkPlane::<NodeBehaviorEvent, NodeHandleEvent>::new(NetworkPlaneConfig {
         local_node_id: args.node_id,
         tick_ms: 1000,
         behavior: vec![Box::new(spreads_layer_router), Box::new(manual)],
         transport: Box::new(transport),
-        transport_rpc: Box::new(transport_rpc),
         timer: Arc::new(SystemTimer()),
         router: Arc::new(router),
     });

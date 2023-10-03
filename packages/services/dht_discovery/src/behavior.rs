@@ -7,7 +7,7 @@ use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use bluesea_router::RouteRule;
 use network::behaviour::{ConnectionHandler, NetworkBehavior};
 use network::msg::TransportMsg;
-use network::transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer};
+use network::transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError};
 use network::BehaviorAgent;
 use std::sync::Arc;
 use utils::error_handle::ErrorUtils;
@@ -79,7 +79,7 @@ impl DiscoveryNetworkBehavior {
     }
 }
 
-impl<BE, HE, Req, Res> NetworkBehavior<BE, HE, Req, Res> for DiscoveryNetworkBehavior
+impl<BE, HE> NetworkBehavior<BE, HE> for DiscoveryNetworkBehavior
 where
     BE: TryInto<DiscoveryBehaviorEvent> + From<DiscoveryBehaviorEvent> + Send + Sync + 'static,
     HE: TryInto<DiscoveryHandlerEvent> + From<DiscoveryHandlerEvent> + Send + Sync + 'static,
@@ -148,10 +148,6 @@ where
                 log::error!("cannot convert to DiscoveryBehaviorEvent");
             }
         }
-    }
-
-    fn on_rpc(&mut self, _agent: &BehaviorAgent<BE, HE>, _req: Req, _res: Box<dyn RpcAnswer<Res>>) -> bool {
-        false
     }
 
     fn on_started(&mut self, _agent: &BehaviorAgent<BE, HE>) {}

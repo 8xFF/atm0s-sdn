@@ -1,11 +1,14 @@
 use crate::{KeyId, KeyVersion, ReqId, ValueType};
 use network::msg::MsgHeader;
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum KeyValueBehaviorEvent {
     FromNode(MsgHeader, KeyValueMsg),
     Awake,
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum KeyValueHandlerEvent {}
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -41,7 +44,3 @@ pub enum KeyValueMsg {
     Remote(RemoteEvent),
     Local(LocalEvent),
 }
-
-pub enum KeyValueReq {}
-
-pub enum KeyValueRes {}

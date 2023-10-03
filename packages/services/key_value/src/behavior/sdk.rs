@@ -11,6 +11,7 @@ mod pub_sub;
 
 pub type KeyValueSubscriber = pub_sub::Subscriber<u64, (KeyId, Option<ValueType>, KeyVersion)>;
 
+#[derive(Clone)]
 pub struct KeyValueSdk {
     local: Arc<RwLock<LocalStorage>>,
     publisher: Arc<pub_sub::PublisherManager<u64, (KeyId, Option<ValueType>, KeyVersion)>>,
@@ -24,7 +25,7 @@ impl KeyValueSdk {
         }
     }
 
-    pub fn set(&mut self, key: u64, value: Vec<u8>, ex: Option<u64>) {
+    pub fn set(&self, key: u64, value: Vec<u8>, ex: Option<u64>) {
         self.local.write().set(key, value, ex);
     }
 
@@ -37,11 +38,11 @@ impl KeyValueSdk {
         rx.recv().await.unwrap_or(Err(SimpleKeyValueGetError::Timeout))
     }
 
-    pub fn del(&mut self, key: u64) {
+    pub fn del(&self, key: u64) {
         self.local.write().del(key);
     }
 
-    pub fn subscribe(&mut self, key: u64, ex: Option<u64>) -> KeyValueSubscriber {
+    pub fn subscribe(&self, key: u64, ex: Option<u64>) -> KeyValueSubscriber {
         let local = self.local.clone();
         let (subscriber, is_new) = self.publisher.subscribe(
             key,

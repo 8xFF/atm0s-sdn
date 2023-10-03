@@ -2,9 +2,9 @@ mod single_conn;
 
 use crate::behaviour::{ConnectionHandler, NetworkBehavior};
 use crate::internal::agent::{BehaviorAgent, ConnectionAgent};
-use crate::internal::cross_handler_gate::CrossHandlerGate;
+use crate::internal::cross_handler_gate::CrossHandlerGateIplm;
 use crate::msg::TransportMsg;
-use crate::transport::{ConnectionSender, RpcAnswer, Transport, TransportEvent, TransportRpc};
+use crate::transport::{ConnectionSender, Transport, TransportEvent};
 use async_std::channel::{unbounded, Receiver, Sender};
 use async_std::stream::Interval;
 use bluesea_identity::{ConnId, NodeId};
@@ -26,51 +26,46 @@ pub enum NetworkPlaneInternalEvent<BE> {
     OutgoingDisconnected(Arc<dyn ConnectionSender>),
 }
 
-pub struct NetworkPlaneConfig<BE, HE, Req, Res> {
+pub struct NetworkPlaneConfig<BE, HE> {
     /// Local node_id, which is u32 value
     pub local_node_id: NodeId,
     /// Tick_ms, each tick_ms miliseconds, network will call tick function on both behavior and handler
     pub tick_ms: u64,
     /// List of behavior
-    pub behavior: Vec<Box<dyn NetworkBehavior<BE, HE, Req, Res> + Send + Sync>>,
+    pub behavior: Vec<Box<dyn NetworkBehavior<BE, HE> + Send + Sync>>,
     /// Transport which is used
     pub transport: Box<dyn Transport + Send + Sync>,
-    pub transport_rpc: Box<dyn TransportRpc<Req, Res> + Send + Sync>,
     /// Timer for getting timestamp miliseconds
     pub timer: Arc<dyn Timer>,
     /// Routing table, which is used to route message to correct node
     pub router: Arc<dyn RouterTable>,
 }
 
-pub struct NetworkPlane<BE, HE, Req, Res> {
+pub struct NetworkPlane<BE, HE> {
     local_node_id: NodeId,
     tick_ms: u64,
-    behaviors: Vec<Option<(Box<dyn NetworkBehavior<BE, HE, Req, Res> + Send + Sync>, BehaviorAgent<BE, HE>)>>,
+    behaviors: Vec<Option<(Box<dyn NetworkBehavior<BE, HE> + Send + Sync>, BehaviorAgent<BE, HE>)>>,
     transport: Box<dyn Transport + Send + Sync>,
-    #[allow(dead_code)]
-    transport_rpc: Box<dyn TransportRpc<Req, Res> + Send + Sync>,
     timer: Arc<dyn Timer>,
     router: Arc<dyn RouterTable>,
     internal_tx: Sender<NetworkPlaneInternalEvent<BE>>,
     internal_rx: Receiver<NetworkPlaneInternalEvent<BE>>,
-    cross_gate: Arc<RwLock<CrossHandlerGate<BE, HE>>>,
+    cross_gate: Arc<RwLock<CrossHandlerGateIplm<BE, HE>>>,
     tick_interval: Interval,
 }
 
-impl<BE, HE, Req, Res> NetworkPlane<BE, HE, Req, Res>
+impl<BE, HE> NetworkPlane<BE, HE>
 where
     BE: Send + Sync + 'static,
     HE: Send + Sync + 'static,
-    Req: Send + Sync + 'static,
-    Res: Send + Sync + 'static,
 {
     /// Creating new network plane, after create need to run
     /// `while let Some(_) = plane.run().await {}`
-    pub fn new(conf: NetworkPlaneConfig<BE, HE, Req, Res>) -> Self {
+    pub fn new(conf: NetworkPlaneConfig<BE, HE>) -> Self {
         let (internal_tx, internal_rx) = unbounded();
 
-        let cross_gate: Arc<RwLock<CrossHandlerGate<BE, HE>>> = Arc::new(RwLock::new(CrossHandlerGate::new(conf.router.clone(), internal_tx.clone())));
-        let mut behaviors: Vec<Option<(Box<dyn NetworkBehavior<BE, HE, Req, Res> + Send + Sync>, BehaviorAgent<BE, HE>)>> = init_vec(256, || None);
+        let cross_gate: Arc<RwLock<CrossHandlerGateIplm<BE, HE>>> = Arc::new(RwLock::new(CrossHandlerGateIplm::new(conf.router.clone(), internal_tx.clone())));
+        let mut behaviors: Vec<Option<(Box<dyn NetworkBehavior<BE, HE> + Send + Sync>, BehaviorAgent<BE, HE>)>> = init_vec(256, || None);
 
         for behavior in conf.behavior {
             let service_id = behavior.service_id() as usize;
@@ -86,7 +81,6 @@ where
             tick_ms: conf.tick_ms,
             behaviors,
             transport: conf.transport,
-            transport_rpc: conf.transport_rpc,
             tick_interval: async_std::stream::interval(Duration::from_millis(conf.tick_ms)),
             internal_tx,
             internal_rx,
@@ -198,18 +192,6 @@ where
         });
 
         Ok(())
-    }
-
-    #[allow(dead_code)]
-    fn process_transport_rpc_event(&mut self, e: Result<(u8, Req, Box<dyn RpcAnswer<Res>>), ()>) -> Result<(), ()> {
-        let (service_id, req, res) = e?;
-        if let Some(Some((behaviour, agent))) = self.behaviors.get_mut(service_id as usize) {
-            behaviour.on_rpc(agent, req, res);
-            Ok(())
-        } else {
-            res.error(0, "SERVICE_NOT_FOUND");
-            Err(())
-        }
     }
 
     pub fn started(&mut self) {

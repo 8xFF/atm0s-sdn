@@ -1,4 +1,3 @@
-use crate::internal::cross_handler_gate::{CrossHandlerEvent, CrossHandlerGate, CrossHandlerRoute};
 use crate::msg::TransportMsg;
 use crate::plane::NetworkPlaneInternalEvent;
 use crate::transport::{ConnectionSender, OutgoingConnectionError, TransportConnectingOutgoing, TransportConnector};
@@ -7,11 +6,13 @@ use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use parking_lot::RwLock;
 use std::sync::Arc;
 
+use super::{CrossHandlerEvent, CrossHandlerGate, CrossHandlerRoute};
+
 pub struct BehaviorAgent<BE, HE> {
-    service_id: u8,
-    local_node_id: NodeId,
-    connector: Arc<dyn TransportConnector>,
-    cross_gate: Arc<RwLock<CrossHandlerGate<BE, HE>>>,
+    pub(crate) service_id: u8,
+    pub(crate) local_node_id: NodeId,
+    pub(crate) connector: Arc<dyn TransportConnector>,
+    pub(crate) cross_gate: Arc<RwLock<dyn CrossHandlerGate<BE, HE>>>,
 }
 
 impl<BE, HE> Clone for BehaviorAgent<BE, HE> {
@@ -30,7 +31,7 @@ where
     BE: Send + Sync + 'static,
     HE: Send + Sync + 'static,
 {
-    pub(crate) fn new(service_id: u8, local_node_id: NodeId, connector: Arc<dyn TransportConnector>, cross_gate: Arc<RwLock<CrossHandlerGate<BE, HE>>>) -> Self {
+    pub(crate) fn new(service_id: u8, local_node_id: NodeId, connector: Arc<dyn TransportConnector>, cross_gate: Arc<RwLock<dyn CrossHandlerGate<BE, HE>>>) -> Self {
         Self {
             service_id,
             connector,
@@ -75,7 +76,7 @@ pub struct ConnectionAgent<BE, HE> {
     conn_id: ConnId,
     sender: Arc<dyn ConnectionSender>,
     internal_tx: Sender<NetworkPlaneInternalEvent<BE>>,
-    cross_gate: Arc<RwLock<CrossHandlerGate<BE, HE>>>,
+    cross_gate: Arc<RwLock<dyn CrossHandlerGate<BE, HE>>>,
 }
 
 impl<BE, HE> ConnectionAgent<BE, HE>
@@ -90,7 +91,7 @@ where
         conn_id: ConnId,
         sender: Arc<dyn ConnectionSender>,
         internal_tx: Sender<NetworkPlaneInternalEvent<BE>>,
-        cross_gate: Arc<RwLock<CrossHandlerGate<BE, HE>>>,
+        cross_gate: Arc<RwLock<dyn CrossHandlerGate<BE, HE>>>,
     ) -> Self {
         Self {
             service_id,

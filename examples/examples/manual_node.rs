@@ -1,12 +1,12 @@
 use bluesea_identity::{NodeAddr, NodeAddrBuilder, Protocol};
 use clap::Parser;
 use layers_spread_router::SharedRouter;
-use layers_spread_router_sync::{LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent, LayersSpreadRouterSyncHandlerEvent, LayersSpreadRouterSyncReq, LayersSpreadRouterSyncRes};
-use manual_discovery::{ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent, ManualReq, ManualRes};
+use layers_spread_router_sync::{LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent, LayersSpreadRouterSyncHandlerEvent};
+use manual_discovery::{ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent};
 use network::convert_enum;
 use network::plane::{NetworkPlane, NetworkPlaneConfig};
 use std::sync::Arc;
-use tun_tap::{TunTapBehaviorEvent, TunTapHandlerEvent, TunTapReq, TunTapRes};
+use tun_tap::{TunTapBehaviorEvent, TunTapHandlerEvent};
 use utils::SystemTimer;
 
 #[derive(convert_enum::From, convert_enum::TryInto)]
@@ -21,20 +21,6 @@ enum NodeHandleEvent {
     Manual(ManualHandlerEvent),
     LayersSpreadRouterSync(LayersSpreadRouterSyncHandlerEvent),
     TunTap(TunTapHandlerEvent),
-}
-
-#[derive(convert_enum::From, convert_enum::TryInto)]
-enum NodeRpcReq {
-    Manual(ManualReq),
-    LayersSpreadRouterSync(LayersSpreadRouterSyncReq),
-    TunTap(TunTapReq),
-}
-
-#[derive(convert_enum::From, convert_enum::TryInto)]
-enum NodeRpcRes {
-    Manual(ManualRes),
-    LayersSpreadRouterSync(LayersSpreadRouterSyncRes),
-    TunTap(TunTapRes),
 }
 
 /// Node with manual network builder
@@ -57,7 +43,6 @@ async fn main() {
     let node_addr_builder = Arc::new(NodeAddrBuilder::default());
     node_addr_builder.add_protocol(Protocol::P2p(args.node_id));
     let transport = transport_udp::UdpTransport::new(args.node_id, 50000 + args.node_id as u16, node_addr_builder.clone()).await;
-    let (transport_rpc, _, _) = network::mock::MockTransportRpc::new();
     let node_addr = node_addr_builder.addr();
     log::info!("Listen on addr {}", node_addr);
 
@@ -71,13 +56,12 @@ async fn main() {
     let tun_tap = tun_tap::TunTapBehavior::default();
     let spreads_layer_router = LayersSpreadRouterSyncBehavior::new(router.clone());
 
-    let mut plane = NetworkPlane::<NodeBehaviorEvent, NodeHandleEvent, NodeRpcReq, NodeRpcRes>::new(NetworkPlaneConfig {
+    let mut plane = NetworkPlane::<NodeBehaviorEvent, NodeHandleEvent>::new(NetworkPlaneConfig {
         router: Arc::new(router),
         local_node_id: args.node_id,
         tick_ms: 1000,
         behavior: vec![Box::new(manual), Box::new(spreads_layer_router), Box::new(tun_tap)],
         transport: Box::new(transport),
-        transport_rpc: Box::new(transport_rpc),
         timer: Arc::new(SystemTimer()),
     });
 

@@ -4,7 +4,7 @@ use crate::FAST_PATH_ROUTE_SERVICE_ID;
 use bluesea_identity::{ConnId, NodeId};
 use layers_spread_router::SharedRouter;
 use network::behaviour::{ConnectionHandler, NetworkBehavior};
-use network::transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer};
+use network::transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError};
 use network::BehaviorAgent;
 use std::sync::Arc;
 
@@ -18,7 +18,7 @@ impl LayersSpreadRouterSyncBehavior {
     }
 }
 
-impl<BE, HE, Req, Res> NetworkBehavior<BE, HE, Req, Res> for LayersSpreadRouterSyncBehavior
+impl<BE, HE> NetworkBehavior<BE, HE> for LayersSpreadRouterSyncBehavior
 where
     BE: From<LayersSpreadRouterSyncBehaviorEvent> + TryInto<LayersSpreadRouterSyncBehaviorEvent> + Send + Sync + 'static,
     HE: From<LayersSpreadRouterSyncHandlerEvent> + TryInto<LayersSpreadRouterSyncHandlerEvent> + Send + Sync + 'static,
@@ -62,10 +62,6 @@ where
     fn on_outgoing_connection_error(&mut self, _agent: &BehaviorAgent<BE, HE>, _node_id: NodeId, _conn_id: ConnId, _err: &OutgoingConnectionError) {}
 
     fn on_handler_event(&mut self, _agent: &BehaviorAgent<BE, HE>, _node_id: NodeId, _conn_id: ConnId, _event: BE) {}
-
-    fn on_rpc(&mut self, _agent: &BehaviorAgent<BE, HE>, _req: Req, _res: Box<dyn RpcAnswer<Res>>) -> bool {
-        false
-    }
 
     fn on_started(&mut self, _agent: &BehaviorAgent<BE, HE>) {}
 
