@@ -19,7 +19,8 @@ use utils::Timer;
 use self::single_conn::PlaneSingleConn;
 
 pub enum NetworkPlaneInternalEvent<BE> {
-    ToBehaviour { service_id: u8, node_id: NodeId, conn_id: ConnId, event: BE },
+    ToBehaviourFromHandler { service_id: u8, node_id: NodeId, conn_id: ConnId, event: BE },
+    ToBehaviourLocalEvent { service_id: u8, event: BE },
     ToBehaviourLocalMsg { service_id: u8, msg: TransportMsg },
     IncomingDisconnected(Arc<dyn ConnectionSender>),
     OutgoingDisconnected(Arc<dyn ConnectionSender>),
@@ -247,7 +248,7 @@ where
                     }
                     Ok(())
                 },
-                Ok(NetworkPlaneInternalEvent::ToBehaviour { service_id, node_id, conn_id, event }) => {
+                Ok(NetworkPlaneInternalEvent::ToBehaviourFromHandler { service_id, node_id, conn_id, event }) => {
                     log::debug!("[NetworkPlane] received NetworkPlaneInternalEvent::ToBehaviour service: {}, from node: {} conn_id: {}", service_id, node_id, conn_id);
                     if let Some((behaviour, agent)) = &mut self.behaviors[service_id as usize] {
                         behaviour.on_handler_event(agent, node_id, conn_id, event);
@@ -256,6 +257,15 @@ where
                     }
                     Ok(())
                 },
+                Ok(NetworkPlaneInternalEvent::ToBehaviourLocalEvent { service_id, event }) => {
+                    log::debug!("[NetworkPlane] received NetworkPlaneInternalEvent::ToBehaviourLocalEvent service: {}", service_id);
+                    if let Some((behaviour, agent)) = &mut self.behaviors[service_id as usize] {
+                        behaviour.on_local_event(agent, event);
+                    } else {
+                        debug_assert!(false, "service not found {}", service_id);
+                    }
+                    Ok(())
+                }
                 Ok(NetworkPlaneInternalEvent::ToBehaviourLocalMsg { service_id, msg }) => {
                     log::debug!("[NetworkPlane] received NetworkPlaneInternalEvent::ToBehaviourLocalMsg service: {}", service_id);
                     if let Some((behaviour, agent)) = &mut self.behaviors[service_id as usize] {

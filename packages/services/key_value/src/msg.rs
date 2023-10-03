@@ -3,6 +3,7 @@ use network::msg::MsgHeader;
 use serde::{Deserialize, Serialize};
 pub enum KeyValueBehaviorEvent {
     FromNode(MsgHeader, KeyValueMsg),
+    Awake,
 }
 
 pub enum KeyValueHandlerEvent {}

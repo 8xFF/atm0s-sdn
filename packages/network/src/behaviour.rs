@@ -18,6 +18,7 @@ pub trait NetworkBehavior<BE, HE, Req, Res> {
     fn on_started(&mut self, agent: &BehaviorAgent<BE, HE>);
     fn on_tick(&mut self, agent: &BehaviorAgent<BE, HE>, ts_ms: u64, interval_ms: u64);
     fn on_local_msg(&mut self, agent: &BehaviorAgent<BE, HE>, msg: TransportMsg);
+    fn on_local_event(&mut self, agent: &BehaviorAgent<BE, HE>, event: BE);
     fn check_incoming_connection(&mut self, node: NodeId, conn_id: ConnId) -> Result<(), ConnectionRejectReason>;
     fn check_outgoing_connection(&mut self, node: NodeId, conn_id: ConnId) -> Result<(), ConnectionRejectReason>;
     fn on_incoming_connection_connected(&mut self, agent: &BehaviorAgent<BE, HE>, conn: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>>;

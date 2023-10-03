@@ -106,6 +106,8 @@ mod tests {
             Ok(())
         }
 
+        fn on_local_event(&mut self, _agent: &BehaviorAgent<BE, HE>, _event: BE) {}
+
         fn on_local_msg(&mut self, _agent: &BehaviorAgent<BE, HE>, _msg: TransportMsg) {}
 
         fn on_incoming_connection_connected(&mut self, _agent: &BehaviorAgent<BE, HE>, _connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
@@ -188,6 +190,8 @@ mod tests {
         fn check_outgoing_connection(&mut self, _node: NodeId, _conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
             Ok(())
         }
+
+        fn on_local_event(&mut self, _agent: &BehaviorAgent<BE, HE>, _event: BE) {}
 
         fn on_local_msg(&mut self, _agent: &BehaviorAgent<BE, HE>, _msg: TransportMsg) {}
 

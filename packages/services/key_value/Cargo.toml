@@ -15,6 +15,7 @@ thiserror = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }
 async-std = { workspace = true }
+async-notify = { workspace = true }
 parking_lot = { workspace = true }
 
 [dev-dependencies]

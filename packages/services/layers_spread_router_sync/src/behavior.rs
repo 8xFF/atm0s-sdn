@@ -39,6 +39,10 @@ where
         Ok(())
     }
 
+    fn on_local_event(&mut self, _agent: &BehaviorAgent<BE, HE>, _event: BE) {
+        panic!("Should not happend");
+    }
+
     fn on_local_msg(&mut self, _agent: &BehaviorAgent<BE, HE>, _msg: network::msg::TransportMsg) {
         panic!("Should not happend");
     }

@@ -47,6 +47,10 @@ where
         self.connector.connect_to(node_id, dest)
     }
 
+    pub fn send_to_behaviour(&self, event: BE) {
+        self.cross_gate.read().send_to_behaviour(self.service_id, event);
+    }
+
     pub fn send_to_handler(&self, route: CrossHandlerRoute, event: HE) {
         self.cross_gate.read().send_to_handler(self.service_id, route, CrossHandlerEvent::FromBehavior(event));
     }
@@ -112,7 +116,7 @@ where
     }
 
     pub fn send_behavior(&self, event: BE) {
-        match self.internal_tx.send_blocking(NetworkPlaneInternalEvent::ToBehaviour {
+        match self.internal_tx.send_blocking(NetworkPlaneInternalEvent::ToBehaviourFromHandler {
             service_id: self.service_id,
             node_id: self.remote_node_id,
             conn_id: self.conn_id,

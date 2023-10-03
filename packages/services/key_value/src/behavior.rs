@@ -1,6 +1,8 @@
+use crate::behavior::awaker::AsyncAwaker;
 use crate::handler::KeyValueConnectionHandler;
 use crate::msg::{KeyValueBehaviorEvent, KeyValueMsg};
 use crate::KEY_VALUE_SERVICE_ID;
+use async_std::task::JoinHandle;
 use bluesea_identity::{ConnId, NodeId};
 use network::behaviour::{ConnectionHandler, NetworkBehavior};
 use network::msg::{MsgHeader, TransportMsg};
@@ -10,9 +12,11 @@ use parking_lot::RwLock;
 use std::sync::Arc;
 use utils::Timer;
 
+use self::awaker::Awaker;
 use self::simple_local::LocalStorage;
 use self::simple_remote::RemoteStorage;
 
+mod awaker;
 mod event_acks;
 mod sdk;
 mod simple_local;
@@ -25,13 +29,16 @@ pub struct KeyValueBehavior {
     node_id: NodeId,
     simple_remote: RemoteStorage,
     simple_local: Arc<RwLock<LocalStorage>>,
+    awake_notify: Arc<dyn Awaker>,
+    awake_task: Option<JoinHandle<()>>,
 }
 
 impl KeyValueBehavior {
     #[allow(unused)]
     pub fn new(node_id: NodeId, timer: Arc<dyn Timer>, sync_each_ms: u64) -> (Self, sdk::KeyValueSdk) {
         log::info!("[KeyValueBehaviour {}] created with sync_each_ms {}", node_id, sync_each_ms);
-        let simple_local = Arc::new(RwLock::new(LocalStorage::new(timer.clone(), sync_each_ms)));
+        let awake_notify = Arc::new(AsyncAwaker::default());
+        let simple_local = Arc::new(RwLock::new(LocalStorage::new(timer.clone(), awake_notify.clone(), sync_each_ms)));
         let sdk = sdk::KeyValueSdk::new(simple_local.clone());
 
         (
@@ -39,6 +46,8 @@ impl KeyValueBehavior {
                 node_id,
                 simple_remote: RemoteStorage::new(timer),
                 simple_local,
+                awake_notify,
+                awake_task: None,
             },
             sdk,
         )
@@ -117,6 +126,10 @@ where
         Ok(())
     }
 
+    fn on_local_event(&mut self, agent: &BehaviorAgent<BE, HE>, _event: BE) {
+        self.pop_all_events(agent)
+    }
+
     fn on_local_msg(&mut self, agent: &BehaviorAgent<BE, HE>, msg: TransportMsg) {
         match msg.get_payload_bincode::<KeyValueMsg>() {
             Ok(kv_msg) => {
@@ -149,6 +162,7 @@ where
                 KeyValueBehaviorEvent::FromNode(header, msg) => {
                     self.process_key_value_msg(header, msg, agent);
                 }
+                _ => {}
             }
         }
     }
@@ -157,7 +171,26 @@ where
         false
     }
 
-    fn on_started(&mut self, _agent: &BehaviorAgent<BE, HE>) {}
+    fn on_started(&mut self, agent: &BehaviorAgent<BE, HE>) {
+        log::info!("[KeyValueBehavior {}] on_started", self.node_id);
+        let node_id = self.node_id;
+        let awake_notify = self.awake_notify.clone();
+        let agent = agent.clone();
+        self.awake_task = Some(async_std::task::spawn(async move {
+            loop {
+                awake_notify.wait().await;
+                log::debug!("[KeyValueBehavior {}] awake_notify", node_id);
+                agent.send_to_behaviour(KeyValueBehaviorEvent::Awake.into());
+            }
+        }));
+    }
 
-    fn on_stopped(&mut self, _agent: &BehaviorAgent<BE, HE>) {}
+    fn on_stopped(&mut self, _agent: &BehaviorAgent<BE, HE>) {
+        log::info!("[KeyValueBehavior {}] on_stopped", self.node_id);
+        if let Some(task) = self.awake_task.take() {
+            async_std::task::spawn(async move {
+                task.cancel().await;
+            });
+        }
+    }
 }

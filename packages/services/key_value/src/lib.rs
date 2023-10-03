@@ -48,6 +48,7 @@ mod tests {
     /// Testing local storage
     #[async_std::test]
     async fn local_node() {
+        env_logger::builder().format_timestamp_millis().init();
         let (mock, _faker, _output) = MockTransport::new();
         let (mock_rpc, _faker_rpc, _output_rpc) = MockTransportRpc::<ImplNetworkReq, ImplNetworkRes>::new();
         let transport = Box::new(mock);

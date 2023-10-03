@@ -88,6 +88,15 @@ where
         }
     }
 
+    pub(crate) fn send_to_behaviour(&self, service_id: u8, event: BE) -> Option<()> {
+        if let Err(e) = self.behaviour_tx.send_blocking(NetworkPlaneInternalEvent::ToBehaviourLocalEvent { service_id, event }) {
+            log::error!("[CrossHandlerGate] send to behaviour error {:?}", e);
+            None
+        } else {
+            Some(())
+        }
+    }
+
     pub(crate) fn send_to_handler(&self, service_id: u8, route: CrossHandlerRoute, event: CrossHandlerEvent<HE>) -> Option<()> {
         log::debug!("[CrossHandlerGate] send_to_handler service: {} route: {:?}", service_id, route);
         match route {

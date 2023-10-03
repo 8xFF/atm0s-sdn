@@ -7,7 +7,7 @@ mod tests {
     use crate::transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer};
     use crate::BehaviorAgent;
     use bluesea_identity::{ConnId, NodeId};
-    use bluesea_router::{ForceLocalRouter, RouteRule};
+    use bluesea_router::ForceLocalRouter;
     use std::sync::atomic::{AtomicU16, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
@@ -15,7 +15,9 @@ mod tests {
     use utils::SystemTimer;
 
     enum TestCrossNetworkMsg {}
-    enum TestCrossBehaviorEvent {}
+    enum TestCrossBehaviorEvent {
+        Test,
+    }
     enum TestCrossHandleEvent {}
 
     #[derive(convert_enum::From, convert_enum::TryInto)]
@@ -61,11 +63,11 @@ mod tests {
             Ok(())
         }
 
-        fn on_local_event(&mut self, _agent: &BehaviorAgent<BE, HE>, _event: BE) {}
-
-        fn on_local_msg(&mut self, _agent: &BehaviorAgent<BE, HE>, _msg: TransportMsg) {
+        fn on_local_event(&mut self, _agent: &BehaviorAgent<BE, HE>, _event: BE) {
             self.flag.fetch_add(1, Ordering::Relaxed);
         }
+
+        fn on_local_msg(&mut self, _agent: &BehaviorAgent<BE, HE>, _msg: TransportMsg) {}
 
         fn on_incoming_connection_connected(&mut self, _agent: &BehaviorAgent<BE, HE>, _connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
             None
@@ -83,14 +85,14 @@ mod tests {
         }
 
         fn on_started(&mut self, agent: &BehaviorAgent<BE, HE>) {
-            agent.send_to_net(TransportMsg::build_reliable(1, RouteRule::ToKey(1), 0, &vec![1]));
+            agent.send_to_behaviour(TestCrossBehaviorEvent::Test.into());
         }
 
         fn on_stopped(&mut self, _agent: &BehaviorAgent<BE, HE>) {}
     }
 
     #[async_std::test]
-    async fn test_cross_behaviour_handler() {
+    async fn test_local_event() {
         let flag = Arc::new(AtomicU16::new(0));
         let behavior = Box::new(TestCrossNetworkBehavior { flag: flag.clone() });
 
