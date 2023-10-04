@@ -18,19 +18,9 @@ pub enum TransportEvent {
 }
 
 #[async_trait::async_trait]
-pub trait Transport {
+pub trait Transport: Send {
     fn connector(&self) -> Arc<dyn TransportConnector>;
     async fn recv(&mut self) -> Result<TransportEvent, ()>;
-}
-
-pub trait RpcAnswer<Res> {
-    fn ok(&self, res: Res);
-    fn error(&self, code: u32, message: &str);
-}
-
-#[async_trait::async_trait]
-pub trait TransportRpc<Req, Res> {
-    async fn recv(&mut self) -> Result<(u8, Req, Box<dyn RpcAnswer<Res>>), ()>;
 }
 
 pub trait TransportConnector: Send + Sync {

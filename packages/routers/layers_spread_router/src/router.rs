@@ -2,8 +2,11 @@ use bluesea_identity::{ConnId, NodeId, NodeIdType};
 use serde::{Deserialize, Serialize};
 
 use crate::registry::{Registry, RegistrySync};
-use crate::table::{Metric, Path, Table, TableSync};
+use crate::table::{Metric, NodeIndex, Path, Table, TableSync};
 use crate::ServiceDestination;
+
+/// Which layer in node id space, in this case is 0 -> 3
+pub type Layer = u8;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct RouterSync(pub RegistrySync, pub [Option<TableSync>; 4]);
@@ -90,10 +93,15 @@ impl Router {
         }
     }
 
-    pub fn closest_node(&self, key: NodeId, excepts: &[NodeId]) -> Option<(ConnId, NodeId, u8, u8)> {
+    pub fn closest_node(&self, key: NodeId, excepts: &[NodeId]) -> Option<(ConnId, NodeId, Layer, NodeIndex)> {
         for i in [3, 2, 1, 0] {
             let index = key.layer(i);
-            let (mut next_index, next_conn, next_node) = self.tables[i as usize].closest_for(index, excepts)?;
+            let (mut next_index, next_conn, next_node) = if let Some(res) = self.tables[i as usize].closest_for(index, excepts) {
+                res
+            } else {
+                //if find nothing => that mean this layer is empty trying to find closest node in next layer
+                continue;
+            };
             let current_node_index = self.local_node_id.layer(i);
             let next_distance = index ^ next_index;
             let local_distance = index ^ current_node_index;
@@ -392,8 +400,60 @@ mod tests {
         assert_eq!(router_a.closest_node(NodeId::build(2, 6, 0, 0), &[]), Some((conn_0500, node_0500, 2, 5)));
     }
 
+    /// This test ensure closest_node working when we have only small part of key-space
+    #[test]
+    fn closest_node_out_of_space() {
+        let (node_a, _conn_a, mut router_a) = create_router(NodeId::build(1, 0, 0, 1));
+
+        assert_eq!(router_a.closest_node(0x01, &[]), None);
+
+        let node_0002 = NodeId::build(1, 0, 0, 2);
+        let node_0003 = NodeId::build(1, 0, 0, 3);
+
+        let conn_0002 = ConnId::from_out(0, 2);
+        let conn_0003 = ConnId::from_out(0, 3);
+
+        router_a.set_direct(conn_0002, node_0002, Metric::new(1, vec![node_0002, node_a], 1));
+        router_a.set_direct(conn_0003, node_0003, Metric::new(1, vec![node_0003, node_a], 1));
+
+        assert_eq!(router_a.closest_node(NodeId::build(1, 0, 0, 0), &[]), None);
+        assert_eq!(router_a.closest_node(NodeId::build(4, 0, 0, 0), &[]), None);
+        assert_eq!(router_a.closest_node(NodeId::build(6, 0, 0, 0), &[]), None);
+
+        assert_eq!(router_a.closest_node(NodeId::build(0, 1, 0, 1), &[]), None);
+        assert_eq!(router_a.closest_node(NodeId::build(0, 6, 0, 2), &[]), Some((conn_0002, node_0002, 0, 2)));
+        assert_eq!(router_a.closest_node(NodeId::build(2, 1, 0, 3), &[]), Some((conn_0003, node_0003, 0, 3)));
+        assert_eq!(router_a.closest_node(NodeId::build(2, 6, 0, 4), &[]), None);
+    }
+
     #[test]
     fn random_test_closest() {
         //TODO
+    }
+
+    #[test]
+    fn to_key_consistance() {
+        for _ in 0..100 {
+            let (node_a, _conn_a, mut router_a) = create_router(rand::random());
+            let (node_b, _conn_b, mut router_b) = create_router(rand::random());
+
+            router_a.set_direct(_conn_a, node_b, Metric::new(1, vec![node_b], 1));
+            router_b.set_direct(_conn_b, node_a, Metric::new(1, vec![node_a], 1));
+
+            for i in 0..100 {
+                let key: u32 = rand::random();
+                let next_a = router_a.closest_node(key, &vec![]);
+                let next_b = router_b.closest_node(key, &vec![]);
+                match (next_a, next_b) {
+                    (Some(a), Some(b)) => {
+                        panic!("Step {}, Wrong with key {} => {:?} {:?}", i, key, a, b);
+                    }
+                    (None, None) => {
+                        panic!("Step {}, Wrong with key {} => None None", i, key);
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
 }

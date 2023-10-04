@@ -12,6 +12,9 @@ mod dest;
 mod metric;
 mod path;
 
+/// Index of node-id inside this table (0-255)
+pub type NodeIndex = u8;
+
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct TableSync(pub Vec<(u8, Metric)>);
 
@@ -77,7 +80,7 @@ impl Table {
         self.dests[index as usize].next_path(excepts)
     }
 
-    pub fn closest_for(&self, key: u8, excepts: &[NodeId]) -> Option<(u8, ConnId, NodeId)> {
+    pub fn closest_for(&self, key: u8, excepts: &[NodeId]) -> Option<(NodeIndex, ConnId, NodeId)> {
         let mut closest_distance: u16 = 256;
         let mut res = None;
         for slot in &self.slots {

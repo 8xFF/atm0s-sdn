@@ -1,13 +1,11 @@
 mod connection_receiver;
 mod connection_sender;
 mod transport;
-mod transport_rpc;
 
 use crate::msg::TransportMsg;
 use crate::transport::OutgoingConnectionError;
 use bluesea_identity::{ConnId, NodeAddr, NodeId};
-pub use transport::MockTransport;
-pub use transport_rpc::MockTransportRpc;
+pub use transport::{MockTransport, MockTransportConnector};
 
 pub const MOCK_PROTOCOL_ID: u8 = 0;
 

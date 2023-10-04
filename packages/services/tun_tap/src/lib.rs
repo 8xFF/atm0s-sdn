@@ -6,4 +6,4 @@ mod msg;
 
 pub use behavior::TunTapBehavior;
 pub use handler::TunTapHandler;
-pub use msg::{TunTapBehaviorEvent, TunTapHandlerEvent, TunTapReq, TunTapRes};
+pub use msg::{TunTapBehaviorEvent, TunTapHandlerEvent};

@@ -19,7 +19,7 @@ mod tests {
     use bluesea_identity::{ConnId, NodeAddr, Protocol};
     use bluesea_router::{ForceNodeRouter, RouteRule};
     use network::convert_enum;
-    use network::mock::{MockInput, MockOutput, MockTransport, MockTransportRpc};
+    use network::mock::{MockInput, MockOutput, MockTransport};
     use network::msg::TransportMsg;
     use network::plane::{NetworkPlane, NetworkPlaneConfig};
     use std::sync::Arc;
@@ -31,9 +31,6 @@ mod tests {
     enum ImplNetworkMsg {
         Discovery(DiscoveryMsg),
     }
-
-    enum ImplNetworkReq {}
-    enum ImplNetworkRes {}
 
     #[derive(convert_enum::From, convert_enum::TryInto)]
     enum ImplBehaviorEvent {
@@ -51,7 +48,6 @@ mod tests {
         let neighbour1_addr = NodeAddr::from(Protocol::Memory(1000));
 
         let (mock, faker, output) = MockTransport::new();
-        let (mock_rpc, _faker_rpc, _output_rpc) = MockTransportRpc::<ImplNetworkReq, ImplNetworkRes>::new();
         let transport = Box::new(mock);
         let timer = Arc::new(SystemTimer());
 
@@ -61,12 +57,11 @@ mod tests {
             timer: timer.clone(),
         }));
 
-        let mut plane = NetworkPlane::<ImplBehaviorEvent, ImplHandlerEvent, ImplNetworkReq, ImplNetworkRes>::new(NetworkPlaneConfig {
+        let mut plane = NetworkPlane::<ImplBehaviorEvent, ImplHandlerEvent>::new(NetworkPlaneConfig {
             local_node_id: 0,
             tick_ms: 100,
             behavior: vec![behavior],
             transport,
-            transport_rpc: Box::new(mock_rpc),
             timer,
             router: Arc::new(ForceNodeRouter(ConnId::from_in(0, 0), neighbour1)),
         });
@@ -100,7 +95,6 @@ mod tests {
         let neighbour1_addr = NodeAddr::from(Protocol::Memory(1000));
 
         let (mock, faker, output) = MockTransport::new();
-        let (mock_rpc, _faker_rpc, _output_rpc) = MockTransportRpc::<ImplNetworkReq, ImplNetworkRes>::new();
         let transport = Box::new(mock);
         let timer = Arc::new(SystemTimer());
 
@@ -110,12 +104,11 @@ mod tests {
             timer: timer.clone(),
         }));
 
-        let mut plane = NetworkPlane::<ImplBehaviorEvent, ImplHandlerEvent, ImplNetworkReq, ImplNetworkRes>::new(NetworkPlaneConfig {
+        let mut plane = NetworkPlane::<ImplBehaviorEvent, ImplHandlerEvent>::new(NetworkPlaneConfig {
             local_node_id: 0,
             tick_ms: 100,
             behavior: vec![behavior],
             transport,
-            transport_rpc: Box::new(mock_rpc),
             timer,
             router: Arc::new(ForceNodeRouter(ConnId::from_in(0, 0), neighbour1)),
         });

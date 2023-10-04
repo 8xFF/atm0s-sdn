@@ -3,11 +3,11 @@ use bluesea_router::{RouteAction, RouterTable};
 use futures::{select, FutureExt, StreamExt};
 use parking_lot::RwLock;
 use std::{sync::Arc, time::Duration};
-use utils::{option_handle::OptionUtils, Timer};
+use utils::{error_handle::ErrorUtils, option_handle::OptionUtils, Timer};
 
 use crate::{
     behaviour::ConnectionHandler,
-    internal::cross_handler_gate::{CrossHandlerEvent, CrossHandlerGate},
+    internal::{cross_handler_gate::CrossHandlerGateIplm, CrossHandlerEvent},
     plane::NetworkPlaneInternalEvent,
     transport::{ConnectionEvent, ConnectionReceiver, ConnectionSender},
     ConnectionAgent,
@@ -19,16 +19,16 @@ fn process_conn_msg<BE, HE>(
     _sender: &Arc<dyn ConnectionSender>,
     receiver: &Box<dyn ConnectionReceiver + Send>,
     router: &Arc<dyn RouterTable>,
-    cross_gate: &Arc<RwLock<CrossHandlerGate<HE>>>,
+    cross_gate: &Arc<RwLock<CrossHandlerGateIplm<BE, HE>>>,
 ) where
     HE: Send + Sync + 'static,
     BE: Send + Sync + 'static,
 {
     match &event {
-        ConnectionEvent::Msg(msg) => match router.path_to(&msg.header.route, msg.header.service_id) {
+        ConnectionEvent::Msg(msg) => match router.action_for_incomming(&msg.header.route, msg.header.service_id) {
             RouteAction::Reject => {}
             RouteAction::Local => {
-                log::debug!(
+                log::trace!(
                     "[NetworkPlane] fire handlers on_event network msg for conn ({}, {}) from service {}",
                     receiver.remote_node_id(),
                     receiver.conn_id(),
@@ -40,7 +40,17 @@ fn process_conn_msg<BE, HE>(
                     debug_assert!(false, "service not found {}", msg.header.service_id);
                 }
             }
-            RouteAction::Next(conn, _node_id) => {
+            RouteAction::Next(conn, node_id) => {
+                log::trace!(
+                    "[NetworkPlane] forward network msg {:?} for conn ({}, {}) to ({}, {}) from service {}, route {:?}",
+                    msg,
+                    receiver.remote_node_id(),
+                    receiver.conn_id(),
+                    conn,
+                    node_id,
+                    msg.header.service_id,
+                    msg.header.route,
+                );
                 let c_gate = cross_gate.read();
                 c_gate.send_to_conn(&conn, msg.clone()).print_none("Should send to conn");
             }
@@ -64,7 +74,7 @@ pub struct PlaneSingleConn<BE, HE> {
     pub(crate) internal_tx: Sender<NetworkPlaneInternalEvent<BE>>,
     pub(crate) outgoing: bool,
     pub(crate) router: Arc<dyn RouterTable>,
-    pub(crate) cross_gate: Arc<RwLock<CrossHandlerGate<HE>>>,
+    pub(crate) cross_gate: Arc<RwLock<CrossHandlerGateIplm<BE, HE>>>,
 }
 
 impl<BE, HE> PlaneSingleConn<BE, HE>
@@ -132,11 +142,15 @@ where
         }
 
         if self.outgoing {
-            if let Err(err) = self.internal_tx.send(NetworkPlaneInternalEvent::IncomingDisconnected(self.sender.clone())).await {
-                log::error!("Sending IncomingDisconnected error {:?}", err);
-            }
-        } else if let Err(err) = self.internal_tx.send(NetworkPlaneInternalEvent::OutgoingDisconnected(self.sender.clone())).await {
-            log::error!("Sending OutgoingDisconnected error {:?}", err);
+            self.internal_tx
+                .send(NetworkPlaneInternalEvent::OutgoingDisconnected(self.sender.clone()))
+                .await
+                .print_error("Should send disconnect event");
+        } else {
+            self.internal_tx
+                .send(NetworkPlaneInternalEvent::IncomingDisconnected(self.sender.clone()))
+                .await
+                .print_error("Should send disconnect event");
         }
     }
 }

@@ -17,12 +17,12 @@ use futures::{select, FutureExt};
 use network::{
     behaviour::{ConnectionHandler, NetworkBehavior},
     msg::TransportMsg,
-    transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, RpcAnswer},
+    transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError},
     BehaviorAgent,
 };
 use utils::{error_handle::ErrorUtils, option_handle::OptionUtils};
 
-use crate::{TunTapBehaviorEvent, TunTapHandler, TunTapHandlerEvent, TunTapReq, TunTapRes, TUNTAP_SERVICE_ID};
+use crate::{TunTapBehaviorEvent, TunTapHandler, TunTapHandlerEvent, TUNTAP_SERVICE_ID};
 
 pub struct TunTapBehavior {
     join: Option<async_std::task::JoinHandle<()>>,
@@ -32,7 +32,7 @@ pub struct TunTapBehavior {
 
 impl Default for TunTapBehavior {
     fn default() -> Self {
-        let (local_tx, local_rx) = async_std::channel::bounded(100);
+        let (local_tx, local_rx) = async_std::channel::bounded(1000);
         Self {
             join: None,
             local_tx,
@@ -41,18 +41,16 @@ impl Default for TunTapBehavior {
     }
 }
 
-impl<BE, HE, Req, Res> NetworkBehavior<BE, HE, Req, Res> for TunTapBehavior
+impl<BE, HE> NetworkBehavior<BE, HE> for TunTapBehavior
 where
     BE: From<TunTapBehaviorEvent> + TryInto<TunTapBehaviorEvent> + Send + Sync + 'static,
     HE: From<TunTapHandlerEvent> + TryInto<TunTapHandlerEvent> + Send + Sync + 'static,
-    Req: From<TunTapReq> + TryInto<TunTapReq> + Send + Sync + 'static,
-    Res: From<TunTapRes> + TryInto<TunTapRes> + Send + Sync + 'static,
 {
     fn service_id(&self) -> u8 {
         TUNTAP_SERVICE_ID
     }
 
-    fn on_started(&mut self, agent: &BehaviorAgent<HE>) {
+    fn on_started(&mut self, agent: &BehaviorAgent<BE, HE>) {
         if let Some(rx) = self.local_rx.take() {
             let agent = agent.clone();
             let join = async_std::task::spawn(async move {
@@ -143,7 +141,7 @@ where
         }
     }
 
-    fn on_tick(&mut self, _agent: &BehaviorAgent<HE>, _ts_ms: u64, _interal_ms: u64) {}
+    fn on_tick(&mut self, _agent: &BehaviorAgent<BE, HE>, _ts_ms: u64, _interal_ms: u64) {}
 
     fn check_incoming_connection(&mut self, _node: NodeId, _conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
         Ok(())
@@ -153,27 +151,31 @@ where
         Ok(())
     }
 
-    fn on_incoming_connection_connected(&mut self, _agent: &BehaviorAgent<HE>, _conn: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
+    fn on_local_event(&mut self, _agent: &BehaviorAgent<BE, HE>, _event: BE) {
+        panic!("Should not happend");
+    }
+
+    fn on_local_msg(&mut self, _agent: &BehaviorAgent<BE, HE>, _msg: TransportMsg) {
+        panic!("Should not happend");
+    }
+
+    fn on_incoming_connection_connected(&mut self, _agent: &BehaviorAgent<BE, HE>, _conn: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
         Some(Box::new(TunTapHandler { local_tx: self.local_tx.clone() }))
     }
 
-    fn on_outgoing_connection_connected(&mut self, _agent: &BehaviorAgent<HE>, _connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
+    fn on_outgoing_connection_connected(&mut self, _agent: &BehaviorAgent<BE, HE>, _connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
         Some(Box::new(TunTapHandler { local_tx: self.local_tx.clone() }))
     }
 
-    fn on_incoming_connection_disconnected(&mut self, _agent: &BehaviorAgent<HE>, _connection: Arc<dyn ConnectionSender>) {}
+    fn on_incoming_connection_disconnected(&mut self, _agent: &BehaviorAgent<BE, HE>, _connection: Arc<dyn ConnectionSender>) {}
 
-    fn on_outgoing_connection_disconnected(&mut self, _agent: &BehaviorAgent<HE>, _connection: Arc<dyn ConnectionSender>) {}
+    fn on_outgoing_connection_disconnected(&mut self, _agent: &BehaviorAgent<BE, HE>, _connection: Arc<dyn ConnectionSender>) {}
 
-    fn on_outgoing_connection_error(&mut self, _agent: &BehaviorAgent<HE>, _node_id: NodeId, _conn_id: ConnId, _err: &OutgoingConnectionError) {}
+    fn on_outgoing_connection_error(&mut self, _agent: &BehaviorAgent<BE, HE>, _node_id: NodeId, _conn_id: ConnId, _err: &OutgoingConnectionError) {}
 
-    fn on_handler_event(&mut self, _agent: &BehaviorAgent<HE>, _node_id: NodeId, _connection_id: ConnId, _event: BE) {}
+    fn on_handler_event(&mut self, _agent: &BehaviorAgent<BE, HE>, _node_id: NodeId, _connection_id: ConnId, _event: BE) {}
 
-    fn on_rpc(&mut self, _agent: &BehaviorAgent<HE>, _req: Req, _res: Box<dyn RpcAnswer<Res>>) -> bool {
-        false
-    }
-
-    fn on_stopped(&mut self, _agent: &BehaviorAgent<HE>) {}
+    fn on_stopped(&mut self, _agent: &BehaviorAgent<BE, HE>) {}
 }
 
 impl Drop for TunTapBehavior {

@@ -1,4 +1,3 @@
-use crate::internal::cross_handler_gate::{CrossHandlerEvent, CrossHandlerGate, CrossHandlerRoute};
 use crate::msg::TransportMsg;
 use crate::plane::NetworkPlaneInternalEvent;
 use crate::transport::{ConnectionSender, OutgoingConnectionError, TransportConnectingOutgoing, TransportConnector};
@@ -7,14 +6,16 @@ use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use parking_lot::RwLock;
 use std::sync::Arc;
 
-pub struct BehaviorAgent<HE> {
-    service_id: u8,
-    local_node_id: NodeId,
-    connector: Arc<dyn TransportConnector>,
-    cross_gate: Arc<RwLock<CrossHandlerGate<HE>>>,
+use super::{CrossHandlerEvent, CrossHandlerGate, CrossHandlerRoute};
+
+pub struct BehaviorAgent<BE, HE> {
+    pub(crate) service_id: u8,
+    pub(crate) local_node_id: NodeId,
+    pub(crate) connector: Arc<dyn TransportConnector>,
+    pub(crate) cross_gate: Arc<RwLock<dyn CrossHandlerGate<BE, HE>>>,
 }
 
-impl<HE> Clone for BehaviorAgent<HE> {
+impl<BE, HE> Clone for BehaviorAgent<BE, HE> {
     fn clone(&self) -> Self {
         Self {
             service_id: self.service_id,
@@ -25,11 +26,12 @@ impl<HE> Clone for BehaviorAgent<HE> {
     }
 }
 
-impl<HE> BehaviorAgent<HE>
+impl<BE, HE> BehaviorAgent<BE, HE>
 where
+    BE: Send + Sync + 'static,
     HE: Send + Sync + 'static,
 {
-    pub(crate) fn new(service_id: u8, local_node_id: NodeId, connector: Arc<dyn TransportConnector>, cross_gate: Arc<RwLock<CrossHandlerGate<HE>>>) -> Self {
+    pub(crate) fn new(service_id: u8, local_node_id: NodeId, connector: Arc<dyn TransportConnector>, cross_gate: Arc<RwLock<dyn CrossHandlerGate<BE, HE>>>) -> Self {
         Self {
             service_id,
             connector,
@@ -44,6 +46,10 @@ where
 
     pub fn connect_to(&self, node_id: NodeId, dest: NodeAddr) -> Result<TransportConnectingOutgoing, OutgoingConnectionError> {
         self.connector.connect_to(node_id, dest)
+    }
+
+    pub fn send_to_behaviour(&self, event: BE) {
+        self.cross_gate.read().send_to_behaviour(self.service_id, event);
     }
 
     pub fn send_to_handler(&self, route: CrossHandlerRoute, event: HE) {
@@ -70,7 +76,7 @@ pub struct ConnectionAgent<BE, HE> {
     conn_id: ConnId,
     sender: Arc<dyn ConnectionSender>,
     internal_tx: Sender<NetworkPlaneInternalEvent<BE>>,
-    cross_gate: Arc<RwLock<CrossHandlerGate<HE>>>,
+    cross_gate: Arc<RwLock<dyn CrossHandlerGate<BE, HE>>>,
 }
 
 impl<BE, HE> ConnectionAgent<BE, HE>
@@ -85,7 +91,7 @@ where
         conn_id: ConnId,
         sender: Arc<dyn ConnectionSender>,
         internal_tx: Sender<NetworkPlaneInternalEvent<BE>>,
-        cross_gate: Arc<RwLock<CrossHandlerGate<HE>>>,
+        cross_gate: Arc<RwLock<dyn CrossHandlerGate<BE, HE>>>,
     ) -> Self {
         Self {
             service_id,
@@ -111,7 +117,7 @@ where
     }
 
     pub fn send_behavior(&self, event: BE) {
-        match self.internal_tx.send_blocking(NetworkPlaneInternalEvent::ToBehaviour {
+        match self.internal_tx.send_blocking(NetworkPlaneInternalEvent::ToBehaviourFromHandler {
             service_id: self.service_id,
             node_id: self.remote_node_id,
             conn_id: self.conn_id,
