@@ -81,8 +81,8 @@ impl RouterTable for SharedRouter {
     }
 
     fn path_to_key(&self, key: NodeId) -> RouteAction {
-        match self.next(key, &[]) {
-            Some((conn, node)) => RouteAction::Next(conn, node),
+        match self.closest_node(key, &[]) {
+            Some((conn, node, _layer, _node_index)) => RouteAction::Next(conn, node),
             None => RouteAction::Local,
         }
     }
