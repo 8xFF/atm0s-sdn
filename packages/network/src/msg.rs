@@ -27,10 +27,10 @@ pub enum MsgHeaderError {
 ///    |V=0|R|F|V|  S |      TTL      |    Service     |       M       |
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ///    |                         Stream ID                             |
-///    +=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
-///    |                         FromNodeId (Option)                   |
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ///    |                         Route Destination (Option)            |
+///    +=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
+///    |                         FromNodeId (Option)                   |
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ///    |                         ValidateCode (Option)                 |
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -122,17 +122,6 @@ impl MsgHeader {
 
         let mut ptr = 8;
 
-        let from_node = if from_bit {
-            if bytes.len() < ptr + 4 {
-                return Err(MsgHeaderError::TooSmall);
-            }
-            let from_node_id = NodeId::from_be_bytes([bytes[ptr], bytes[ptr + 1], bytes[ptr + 2], bytes[ptr + 3]]);
-            ptr += 4;
-            Some(from_node_id)
-        } else {
-            None
-        };
-
         let route = match route_type {
             ROUTE_RULE_DIRECT => RouteRule::Direct,
             ROUTE_RULE_TO_NODE => {
@@ -160,6 +149,17 @@ impl MsgHeader {
                 rr
             }
             _ => return Err(MsgHeaderError::InvalidRoute),
+        };
+
+        let from_node = if from_bit {
+            if bytes.len() < ptr + 4 {
+                return Err(MsgHeaderError::TooSmall);
+            }
+            let from_node_id = NodeId::from_be_bytes([bytes[ptr], bytes[ptr + 1], bytes[ptr + 2], bytes[ptr + 3]]);
+            ptr += 4;
+            Some(from_node_id)
+        } else {
+            None
         };
 
         let validate_code = if validate_bit {
@@ -463,6 +463,33 @@ mod tests {
         assert_eq!(header.stream_id, 0);
         assert_eq!(header.from_node, None);
         assert_eq!(header.validate_code, None);
+    }
+
+    /// test header without option
+    #[test]
+    fn test_header_with_all_options() {
+        let mut buf = Vec::with_capacity(16);
+        let header = MsgHeader {
+            version: 0,
+            reliable: true,
+            ttl: 66,
+            service_id: 33,
+            route: RouteRule::ToNode(111),
+            stream_id: 222,
+            from_node: Some(1000),
+            validate_code: Some(1000),
+        };
+        header.to_bytes(&mut buf);
+        assert_eq!(header.serialize_size(), 20);
+        let (header, _) = MsgHeader::from_bytes(&buf).unwrap();
+        assert_eq!(header.version, 0);
+        assert_eq!(header.reliable, true);
+        assert_eq!(header.ttl, 66);
+        assert_eq!(header.service_id, 33);
+        assert_eq!(header.route, RouteRule::ToNode(111));
+        assert_eq!(header.stream_id, 222);
+        assert_eq!(header.from_node, Some(1000));
+        assert_eq!(header.validate_code, Some(1000));
     }
 
     /// test header with router dest
