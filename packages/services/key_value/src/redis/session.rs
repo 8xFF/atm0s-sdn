@@ -79,7 +79,7 @@ impl RedisSession {
                     let mut stream = self.tcp_stream.clone();
                     let mut rx = self.sdk.subscribe(key_hash(&key), None);
                     subscribe_task = Some(async_std::task::spawn(async move {
-                        while let Some((_, value, version)) = rx.recv().await {
+                        while let Some((_, value, version, source)) = rx.recv().await {
                             log::debug!("recv: {:?}", value);
                             if let Some(value) = value {
                                 Self::send_reply2(
@@ -89,6 +89,7 @@ impl RedisSession {
                                         resp::Value::String(key.clone()),
                                         resp::Value::String(String::from_utf8(value).unwrap()),
                                         resp::Value::Integer(version as i64),
+                                        resp::Value::Integer(source as i64),
                                     ]),
                                 )
                                 .await
@@ -96,7 +97,12 @@ impl RedisSession {
                             } else {
                                 Self::send_reply2(
                                     &mut stream,
-                                    resp::Value::Array(vec![resp::Value::String("del".to_string()), resp::Value::String(key.clone()), resp::Value::Integer(version as i64)]),
+                                    resp::Value::Array(vec![
+                                        resp::Value::String("del".to_string()),
+                                        resp::Value::String(key.clone()),
+                                        resp::Value::Integer(version as i64),
+                                        resp::Value::Integer(source as i64),
+                                    ]),
                                 )
                                 .await
                                 .print_error("Should send event");

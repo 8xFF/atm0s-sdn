@@ -1,4 +1,4 @@
-use crate::{KeyId, KeyVersion, ReqId, ValueType};
+use crate::{KeyId, KeySource, KeyVersion, ReqId, ValueType};
 use network::msg::MsgHeader;
 use serde::{Deserialize, Serialize};
 
@@ -30,13 +30,13 @@ pub enum RemoteEvent {
 pub enum LocalEvent {
     /// Response set request with key and version, if success => true, otherwise => false
     SetAck(ReqId, KeyId, KeyVersion, bool),
-    GetAck(ReqId, KeyId, Option<(ValueType, KeyVersion)>),
+    GetAck(ReqId, KeyId, Option<(ValueType, KeyVersion, KeySource)>),
     DelAck(ReqId, KeyId, Option<KeyVersion>),
     SubAck(ReqId, KeyId),
     /// Response unsub request with key, if success => true, otherwise => false
     UnsubAck(ReqId, KeyId, bool),
-    OnKeySet(ReqId, KeyId, ValueType, KeyVersion),
-    OnKeyDel(ReqId, KeyId, KeyVersion),
+    OnKeySet(ReqId, KeyId, ValueType, KeyVersion, KeySource),
+    OnKeyDel(ReqId, KeyId, KeyVersion, KeySource),
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]

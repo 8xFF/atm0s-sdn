@@ -3,18 +3,18 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use utils::error_handle::ErrorUtils;
 
-use crate::{KeyId, KeyVersion, ValueType};
+use crate::{KeyId, KeySource, KeyVersion, ValueType};
 
 use super::simple_local::{LocalStorage, SimpleKeyValueGetError};
 
 mod pub_sub;
 
-pub type KeyValueSubscriber = pub_sub::Subscriber<u64, (KeyId, Option<ValueType>, KeyVersion)>;
+pub type KeyValueSubscriber = pub_sub::Subscriber<u64, (KeyId, Option<ValueType>, KeyVersion, KeySource)>;
 
 #[derive(Clone)]
 pub struct KeyValueSdk {
     local: Arc<RwLock<LocalStorage>>,
-    publisher: Arc<pub_sub::PublisherManager<u64, (KeyId, Option<ValueType>, KeyVersion)>>,
+    publisher: Arc<pub_sub::PublisherManager<u64, (KeyId, Option<ValueType>, KeyVersion, KeySource)>>,
 }
 
 impl KeyValueSdk {
@@ -29,9 +29,9 @@ impl KeyValueSdk {
         self.local.write().set(key, value, ex);
     }
 
-    pub async fn get(&self, key: u64, timeout_ms: u64) -> Result<Option<(ValueType, KeyVersion)>, SimpleKeyValueGetError> {
+    pub async fn get(&self, key: u64, timeout_ms: u64) -> Result<Option<(ValueType, KeyVersion, KeySource)>, SimpleKeyValueGetError> {
         let (tx, rx) = async_std::channel::bounded(1);
-        let handler = move |res: Result<Option<(ValueType, KeyVersion)>, SimpleKeyValueGetError>| {
+        let handler = move |res: Result<Option<(ValueType, KeyVersion, KeySource)>, SimpleKeyValueGetError>| {
             tx.try_send(res).print_error("Should send result");
         };
         self.local.write().get(key, Box::new(handler), timeout_ms);
@@ -55,8 +55,8 @@ impl KeyValueSdk {
             self.local.write().subscribe(
                 key,
                 ex,
-                Box::new(move |key, value, version| {
-                    publisher.publish(key, (key, value, version));
+                Box::new(move |key, value, version, source| {
+                    publisher.publish(key, (key, value, version, source));
                 }),
             );
         }

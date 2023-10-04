@@ -2,6 +2,7 @@ pub static KEY_VALUE_SERVICE_ID: u8 = 4;
 pub type KeyId = u64;
 pub type ReqId = u64;
 pub type KeyVersion = u64;
+pub type KeySource = NodeId;
 pub type ValueType = Vec<u8>;
 
 mod behavior;
@@ -12,6 +13,7 @@ mod storage;
 
 pub use behavior::KeyValueBehavior;
 pub use behavior::KeyValueSdk;
+use bluesea_identity::NodeId;
 pub use msg::{KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueMsg};
 
 #[cfg(test)]

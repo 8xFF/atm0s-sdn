@@ -5,9 +5,9 @@ use utils::vec_dequeue::VecDeque;
 use utils::Timer;
 
 #[derive(Eq, PartialEq, Debug)]
-pub enum OutputEvent<K, V, H> {
-    NotifySet(K, V, u64, H),
-    NotifyDel(K, V, u64, H),
+pub enum OutputEvent<Key, Value, Source, Handler> {
+    NotifySet(Key, Value, u64, Source, Handler),
+    NotifyDel(Key, Value, u64, Source, Handler),
 }
 
 struct HandlerSlot {
@@ -16,23 +16,24 @@ struct HandlerSlot {
     expire_at: Option<u64>,
 }
 
-struct ValueSlot<V, H> {
-    value: Option<(V, u64)>,
+struct ValueSlot<Value, Source, Handler> {
+    value: Option<(Value, u64, Source)>,
     expire_at: Option<u64>,
-    listeners: HashMap<H, HandlerSlot>,
+    listeners: HashMap<Handler, HandlerSlot>,
 }
 
-pub struct SimpleKeyValue<K, V, H> {
-    keys: HashMap<K, ValueSlot<V, H>>,
-    events: VecDeque<OutputEvent<K, V, H>>,
+pub struct SimpleKeyValue<Key, Value, Source, Handlder> {
+    keys: HashMap<Key, ValueSlot<Value, Source, Handlder>>,
+    events: VecDeque<OutputEvent<Key, Value, Source, Handlder>>,
     timer: Arc<dyn Timer>,
 }
 
-impl<K, V, H> SimpleKeyValue<K, V, H>
+impl<Key, Value, Source, Handler> SimpleKeyValue<Key, Value, Source, Handler>
 where
-    K: PartialEq + Eq + Hash + Clone,
-    V: Clone,
-    H: PartialEq + Eq + Hash + Clone,
+    Key: PartialEq + Eq + Hash + Clone,
+    Value: Clone,
+    Source: Clone,
+    Handler: PartialEq + Eq + Hash + Clone,
 {
     pub fn new(timer: Arc<dyn Timer>) -> Self {
         Self {
@@ -57,7 +58,7 @@ where
         for (key, slot) in self.keys.iter_mut() {
             if let Some(expire_at) = slot.expire_at {
                 if expire_at <= now {
-                    if let Some((_, version)) = &slot.value {
+                    if let Some((_, version, _)) = &slot.value {
                         expired_keys.push((key.clone(), *version));
                     }
                 }
@@ -96,15 +97,15 @@ where
 
     /// EX seconds -- Set the specified expire time, in seconds.
     /// version -- Version of value, it should be increased each time new data is set
-    pub fn set(&mut self, key: K, value: V, version: u64, ex: Option<u64>) -> bool {
+    pub fn set(&mut self, key: Key, value: Value, version: u64, source: Source, ex: Option<u64>) -> bool {
         match self.keys.get_mut(&key) {
             Some(slot) => {
                 let should_add = match &slot.value {
-                    Some((_, old_version)) => *old_version < version,
+                    Some((_, old_version, _)) => *old_version < version,
                     None => true,
                 };
                 if should_add {
-                    slot.value = Some((value, version));
+                    slot.value = Some((value, version, source));
                     slot.expire_at = ex.map(|ex| self.timer.now_ms() + ex);
                     Self::fire_set_events(&key, slot, &mut self.events);
                     true
@@ -114,7 +115,7 @@ where
             }
             None => {
                 let slot = ValueSlot {
-                    value: Some((value, version)),
+                    value: Some((value, version, source)),
                     expire_at: ex.map(|ex| self.timer.now_ms() + ex),
                     listeners: Default::default(),
                 };
@@ -125,40 +126,40 @@ where
         }
     }
 
-    pub fn get(&self, key: &K) -> Option<(&V, u64)> {
+    pub fn get(&self, key: &Key) -> Option<(&Value, u64, Source)> {
         let slot = self.keys.get(key)?;
-        if let Some((value, version)) = &(slot.value) {
-            Some((value, *version))
+        if let Some((value, version, source)) = &(slot.value) {
+            Some((value, *version, source.clone()))
         } else {
             None
         }
     }
 
-    pub fn del(&mut self, key: &K, request_version: u64) -> Option<(V, u64)> {
+    pub fn del(&mut self, key: &Key, request_version: u64) -> Option<(Value, u64, Source)> {
         if let Some(slot) = self.keys.get_mut(key) {
             if slot.value.is_none() {
                 return None;
             }
 
-            if let Some((_, version)) = &slot.value {
+            if let Some((_, version, _)) = &slot.value {
                 if *version > request_version {
                     return None;
                 }
             }
 
             Self::fire_del_events(key, slot, &mut self.events);
-            let (value, version) = slot.value.take().expect("cannot happend");
+            let (value, version, source) = slot.value.take().expect("cannot happend");
             slot.expire_at = None;
             if slot.listeners.is_empty() {
                 self.keys.remove(key);
             }
-            Some((value, version))
+            Some((value, version, source))
         } else {
             None
         }
     }
 
-    pub fn subscribe(&mut self, key: &K, handler_uuid: H, ex: Option<u64>) {
+    pub fn subscribe(&mut self, key: &Key, handler_uuid: Handler, ex: Option<u64>) {
         match self.keys.get_mut(key) {
             Some(slot) => {
                 slot.listeners.insert(
@@ -188,7 +189,7 @@ where
         }
     }
 
-    pub fn unsubscribe(&mut self, key: &K, handler_uuid: &H) -> bool {
+    pub fn unsubscribe(&mut self, key: &Key, handler_uuid: &Handler) -> bool {
         match self.keys.get_mut(key) {
             None => false,
             Some(slot) => {
@@ -204,16 +205,16 @@ where
         }
     }
 
-    pub fn poll(&mut self) -> Option<OutputEvent<K, V, H>> {
+    pub fn poll(&mut self) -> Option<OutputEvent<Key, Value, Source, Handler>> {
         self.events.pop_front()
     }
 
     //Private functions
     ///Fire set events of slot, this should be called after new data is set
-    fn fire_set_events(key: &K, slot: &ValueSlot<V, H>, events: &mut VecDeque<OutputEvent<K, V, H>>) -> bool {
-        if let Some((value, version)) = &slot.value {
+    fn fire_set_events(key: &Key, slot: &ValueSlot<Value, Source, Handler>, events: &mut VecDeque<OutputEvent<Key, Value, Source, Handler>>) -> bool {
+        if let Some((value, version, source)) = &slot.value {
             for (handler, _handler_slot) in slot.listeners.iter() {
-                events.push_back(OutputEvent::NotifySet(key.clone(), value.clone(), *version, handler.clone()));
+                events.push_back(OutputEvent::NotifySet(key.clone(), value.clone(), *version, source.clone(), handler.clone()));
             }
             true
         } else {
@@ -222,10 +223,10 @@ where
     }
 
     ///Fire del events of slot, this should be called before delete data
-    fn fire_del_events(key: &K, slot: &ValueSlot<V, H>, events: &mut VecDeque<OutputEvent<K, V, H>>) -> bool {
-        if let Some((value, version)) = &slot.value {
+    fn fire_del_events(key: &Key, slot: &ValueSlot<Value, Source, Handler>, events: &mut VecDeque<OutputEvent<Key, Value, Source, Handler>>) -> bool {
+        if let Some((value, version, source)) = &slot.value {
             for (handler, _handler_slot) in slot.listeners.iter() {
-                events.push_back(OutputEvent::NotifyDel(key.clone(), value.clone(), *version, handler.clone()));
+                events.push_back(OutputEvent::NotifyDel(key.clone(), value.clone(), *version, source.clone(), handler.clone()));
             }
             true
         } else {
@@ -256,25 +257,27 @@ mod tests {
     #[test]
     fn set_value() {
         let timer = Arc::new(MockTimer::default());
-        let mut store = SimpleKeyValue::<u32, u32, u32>::new(timer.clone());
+        let mut store = SimpleKeyValue::<u32, u32, u32, u32>::new(timer.clone());
         let key = 1;
         let value = 2;
         let version = 1;
-        assert!(store.set(key, value, version, None));
-        assert_eq!(store.get(&key), Some((&value, version)));
+        let source = 1000;
+        assert!(store.set(key, value, source, version, None));
+        assert_eq!(store.get(&key), Some((&value, source, version)));
     }
 
     /// Must return None after delete
     #[test]
     fn delete_value() {
         let timer = Arc::new(MockTimer::default());
-        let mut store = SimpleKeyValue::<u32, u32, u32>::new(timer.clone());
+        let mut store = SimpleKeyValue::<u32, u32, u32, u32>::new(timer.clone());
         let key = 1;
         let value = 2;
         let version = 1;
-        assert!(store.set(key, value, version, None));
+        let source = 1000;
+        assert!(store.set(key, value, version, source, None));
         assert_eq!(store.del(&key, 0), None);
-        assert_eq!(store.del(&key, version), Some((value, version)));
+        assert_eq!(store.del(&key, version), Some((value, version, source)));
         assert_eq!(store.get(&key), None);
     }
 
@@ -282,12 +285,13 @@ mod tests {
     #[test]
     fn expire_value() {
         let timer = Arc::new(MockTimer::default());
-        let mut store = SimpleKeyValue::<u32, u32, u32>::new(timer.clone());
+        let mut store = SimpleKeyValue::<u32, u32, u32, u32>::new(timer.clone());
         let key = 1;
         let value = 2;
         let version = 1;
-        assert!(store.set(key, value, version, Some(100)));
-        assert_eq!(store.get(&key), Some((&value, version)));
+        let source = 1000;
+        assert!(store.set(key, value, version, source, Some(100)));
+        assert_eq!(store.get(&key), Some((&value, version, source)));
         timer.fake(100);
         store.tick();
         assert_eq!(store.get(&key), None);
@@ -297,14 +301,15 @@ mod tests {
     #[test]
     fn subscribe() {
         let timer = Arc::new(MockTimer::default());
-        let mut store = SimpleKeyValue::<u32, u32, u32>::new(timer.clone());
+        let mut store = SimpleKeyValue::<u32, u32, u32, u32>::new(timer.clone());
         let key = 1;
         let value = 2;
         let version = 1;
         let handler = 1;
+        let source = 1000;
         store.subscribe(&key, handler, None);
-        assert!(store.set(key, value, version, None));
-        assert_eq!(store.poll(), Some(OutputEvent::NotifySet(key, value, version, handler)));
+        assert!(store.set(key, value, version, source, None));
+        assert_eq!(store.poll(), Some(OutputEvent::NotifySet(key, value, version, source, handler)));
         assert_eq!(store.poll(), None);
     }
 
@@ -312,20 +317,21 @@ mod tests {
     #[test]
     fn subscribe_multi_handlers() {
         let timer = Arc::new(MockTimer::default());
-        let mut store = SimpleKeyValue::<u32, u32, u32>::new(timer.clone());
+        let mut store = SimpleKeyValue::<u32, u32, u32, u32>::new(timer.clone());
         let key = 1;
         let value = 2;
         let version = 1;
         let handler1 = 1;
         let handler2 = 2;
+        let source = 1000;
         store.subscribe(&key, handler1, None);
         store.subscribe(&key, handler2, None);
-        assert!(store.set(key, value, version, None));
+        assert!(store.set(key, value, version, source, None));
         let event1 = store.poll().expect("Should return NotifySet");
         let event2 = store.poll().expect("Should return NotifySet");
 
-        let expected1 = OutputEvent::NotifySet(key, value, version, handler1);
-        let expected2 = OutputEvent::NotifySet(key, value, version, handler2);
+        let expected1 = OutputEvent::NotifySet(key, value, version, source, handler1);
+        let expected2 = OutputEvent::NotifySet(key, value, version, source, handler2);
 
         assert!(event1 == expected1 || event1 == expected2);
         assert!(event2 == expected1 || event2 == expected2);
@@ -338,14 +344,15 @@ mod tests {
     #[test]
     fn unsubscribe() {
         let timer = Arc::new(MockTimer::default());
-        let mut store = SimpleKeyValue::<u32, u32, u32>::new(timer.clone());
+        let mut store = SimpleKeyValue::<u32, u32, u32, u32>::new(timer.clone());
         let key = 1;
         let value = 2;
         let version = 1;
         let handler = 1;
+        let source = 1000;
         store.subscribe(&key, handler, None);
         assert!(store.unsubscribe(&key, &handler));
-        assert!(store.set(key, value, version, None));
+        assert!(store.set(key, value, version, source, None));
         assert_eq!(store.poll(), None);
     }
 
@@ -353,16 +360,17 @@ mod tests {
     #[test]
     fn subscribe_del() {
         let timer = Arc::new(MockTimer::default());
-        let mut store = SimpleKeyValue::<u32, u32, u32>::new(timer.clone());
+        let mut store = SimpleKeyValue::<u32, u32, u32, u32>::new(timer.clone());
         let key = 1;
         let value = 2;
         let version = 1;
         let handler = 1;
+        let source = 1000;
         store.subscribe(&key, handler, None);
-        assert!(store.set(key, value, version, None));
-        assert_eq!(store.del(&key, version), Some((value, version)));
-        assert_eq!(store.poll(), Some(OutputEvent::NotifySet(key, value, version, handler)));
-        assert_eq!(store.poll(), Some(OutputEvent::NotifyDel(key, value, version, handler)));
+        assert!(store.set(key, value, version, source, None));
+        assert_eq!(store.del(&key, version), Some((value, version, source)));
+        assert_eq!(store.poll(), Some(OutputEvent::NotifySet(key, value, version, source, handler)));
+        assert_eq!(store.poll(), Some(OutputEvent::NotifyDel(key, value, version, source, handler)));
         assert_eq!(store.poll(), None);
     }
 
@@ -370,15 +378,16 @@ mod tests {
     #[test]
     fn unsubscribe_del() {
         let timer = Arc::new(MockTimer::default());
-        let mut store = SimpleKeyValue::<u32, u32, u32>::new(timer.clone());
+        let mut store = SimpleKeyValue::<u32, u32, u32, u32>::new(timer.clone());
         let key = 1;
         let value = 2;
         let version = 1;
         let handler = 1;
+        let source = 1000;
         store.subscribe(&key, handler, None);
         assert!(store.unsubscribe(&key, &handler));
-        assert!(store.set(key, value, version, None));
-        assert_eq!(store.del(&key, version), Some((value, version)));
+        assert!(store.set(key, value, version, source, None));
+        assert_eq!(store.del(&key, version), Some((value, version, source)));
         assert_eq!(store.poll(), None);
     }
 
@@ -386,18 +395,19 @@ mod tests {
     #[test]
     fn subscribe_expire() {
         let timer = Arc::new(MockTimer::default());
-        let mut store = SimpleKeyValue::<u32, u32, u32>::new(timer.clone());
+        let mut store = SimpleKeyValue::<u32, u32, u32, u32>::new(timer.clone());
         let key = 1;
         let value = 2;
         let version = 1;
         let handler = 1;
+        let source = 1000;
         store.subscribe(&key, handler, None);
-        assert!(store.set(key, value, version, Some(100)));
-        assert_eq!(store.poll(), Some(OutputEvent::NotifySet(key, value, version, handler)));
+        assert!(store.set(key, value, version, source, Some(100)));
+        assert_eq!(store.poll(), Some(OutputEvent::NotifySet(key, value, version, source, handler)));
         assert_eq!(store.poll(), None);
         timer.fake(100);
         store.tick();
-        assert_eq!(store.poll(), Some(OutputEvent::NotifyDel(key, value, version, handler)));
+        assert_eq!(store.poll(), Some(OutputEvent::NotifyDel(key, value, version, source, handler)));
         assert_eq!(store.poll(), None);
     }
 
@@ -405,17 +415,18 @@ mod tests {
     #[test]
     fn expire_handler() {
         let timer = Arc::new(MockTimer::default());
-        let mut store = SimpleKeyValue::<u32, u32, u32>::new(timer.clone());
+        let mut store = SimpleKeyValue::<u32, u32, u32, u32>::new(timer.clone());
         let key = 1;
         let value = 2;
         let version = 1;
         let handler = 1;
+        let source = 1000;
         store.subscribe(&key, handler, Some(100));
-        assert!(store.set(key, value, version, None));
-        assert_eq!(store.poll(), Some(OutputEvent::NotifySet(key, value, version, handler)));
+        assert!(store.set(key, value, version, source, None));
+        assert_eq!(store.poll(), Some(OutputEvent::NotifySet(key, value, version, source, handler)));
         timer.fake(100);
         store.tick();
-        assert_eq!(store.del(&key, version), Some((value, version)));
+        assert_eq!(store.del(&key, version), Some((value, version, source)));
         assert_eq!(store.poll(), None);
     }
 
@@ -425,15 +436,16 @@ mod tests {
         let _profiler = dhat::Profiler::builder().testing().build();
 
         let timer = Arc::new(MockTimer::default());
-        let mut store = SimpleKeyValue::<u32, u32, u32>::new(timer.clone());
+        let mut store = SimpleKeyValue::<u32, u32, u32, u32>::new(timer.clone());
 
         let stats = dhat::HeapStats::get();
 
         let key1 = 1;
         let value1 = 2;
         let version1 = 1;
-        assert!(store.set(key1, value1, version1, None));
-        assert_eq!(store.del(&key1, version1), Some((value1, version1)));
+        let source1 = 1000;
+        assert!(store.set(key1, value1, version1, source1, None));
+        assert_eq!(store.del(&key1, version1), Some((value1, version1, source1)));
         assert_eq!(store.keys.len(), 0);
         assert_eq!(store.events.len(), 0);
 
@@ -448,7 +460,7 @@ mod tests {
         let _profiler = dhat::Profiler::builder().testing().build();
 
         let timer = Arc::new(MockTimer::default());
-        let mut store = SimpleKeyValue::<u32, u32, u32>::new(timer.clone());
+        let mut store = SimpleKeyValue::<u32, u32, u32, u32>::new(timer.clone());
 
         let stats = dhat::HeapStats::get();
 
@@ -468,14 +480,15 @@ mod tests {
         let _profiler = dhat::Profiler::builder().testing().build();
 
         let timer = Arc::new(MockTimer::default());
-        let mut store = SimpleKeyValue::<u32, u32, u32>::new(timer.clone());
+        let mut store = SimpleKeyValue::<u32, u32, u32, u32>::new(timer.clone());
 
         let stats = dhat::HeapStats::get();
 
         let key1 = 1;
         let value1 = 2;
         let version1 = 1;
-        assert!(store.set(key1, value1, version1, Some(100)));
+        let source1 = 1000;
+        assert!(store.set(key1, value1, version1, source1, Some(100)));
         timer.fake(100);
         store.tick();
 
@@ -490,7 +503,7 @@ mod tests {
         let _profiler = dhat::Profiler::builder().testing().build();
 
         let timer = Arc::new(MockTimer::default());
-        let mut store = SimpleKeyValue::<u32, u32, u32>::new(timer.clone());
+        let mut store = SimpleKeyValue::<u32, u32, u32, u32>::new(timer.clone());
 
         let stats = dhat::HeapStats::get();
 
@@ -511,21 +524,22 @@ mod tests {
         let _profiler = dhat::Profiler::builder().testing().build();
 
         let timer = Arc::new(MockTimer::default());
-        let mut store = SimpleKeyValue::<u32, u32, u32>::new(timer.clone());
+        let mut store = SimpleKeyValue::<u32, u32, u32, u32>::new(timer.clone());
 
         let key1 = 1;
         let value1 = 2;
         let version1 = 1;
         let handler1 = 1;
+        let source1 = 1000;
         store.subscribe(&key1, handler1, None);
 
         let stats = dhat::HeapStats::get();
 
-        assert!(store.set(key1, value1, version1, None));
-        assert_eq!(store.del(&key1, version1), Some((value1, version1)));
+        assert!(store.set(key1, value1, version1, source1, None));
+        assert_eq!(store.del(&key1, version1), Some((value1, version1, source1)));
 
-        assert_eq!(store.poll(), Some(OutputEvent::NotifySet(key1, value1, version1, handler1)));
-        assert_eq!(store.poll(), Some(OutputEvent::NotifyDel(key1, value1, version1, handler1)));
+        assert_eq!(store.poll(), Some(OutputEvent::NotifySet(key1, value1, version1, source1, handler1)));
+        assert_eq!(store.poll(), Some(OutputEvent::NotifyDel(key1, value1, version1, source1, handler1)));
         assert_eq!(store.poll(), None);
 
         let new_stats = dhat::HeapStats::get();
