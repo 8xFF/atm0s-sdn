@@ -203,7 +203,7 @@ where
 
     /// Run loop for plane which handle tick and connection
     pub async fn recv(&mut self) -> Result<(), ()> {
-        log::debug!("[NetworkPlane] waiting event");
+        log::trace!("[NetworkPlane] waiting event");
         select! {
             _ = self.tick_interval.next().fuse() => {
                 let ts_ms = self.timer.now_ms();

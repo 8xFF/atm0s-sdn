@@ -138,8 +138,11 @@ where
 
     fn send_to_net(&self, msg: TransportMsg) -> Option<()> {
         log::debug!("[CrossHandlerGate] send_to_net service: {} route: {:?}", msg.header.service_id, msg.header.route);
-        match self.router.path_to(&msg.header.route, msg.header.service_id) {
-            RouteAction::Reject => None,
+        match self.router.action_for_incomming(&msg.header.route, msg.header.service_id) {
+            RouteAction::Reject => {
+                log::warn!("[CrossHandlerGate] send_to_net reject {} {:?}", msg.header.service_id, msg.header.route);
+                None
+            }
             RouteAction::Local => {
                 // TODO: may be have other way to send to local without serializing and deserializing
                 self.behaviour_tx

@@ -37,10 +37,14 @@ impl RouteAction {
 }
 
 pub trait RouterTable: Send + Sync {
+    /// This is used for finding path for sending data out to node
     fn path_to_node(&self, dest: NodeId) -> RouteAction;
+    /// This is used for finding path for sending data out to key
     fn path_to_key(&self, key: NodeId) -> RouteAction;
+    /// This is used for finding path for sending data out to service
     fn path_to_service(&self, service_id: u8) -> RouteAction;
-    fn path_to(&self, route: &RouteRule, service_id: u8) -> RouteAction {
+    /// This is used only for determine next action for incomming messages
+    fn action_for_incomming(&self, route: &RouteRule, service_id: u8) -> RouteAction {
         match route {
             RouteRule::Direct => RouteAction::Local,
             RouteRule::ToNode(dest) => self.path_to_node(*dest),

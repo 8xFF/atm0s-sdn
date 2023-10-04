@@ -121,7 +121,7 @@ where
     }
 
     fn on_tick(&mut self, agent: &BehaviorAgent<BE, HE>, ts_ms: u64, interal_ms: u64) {
-        log::debug!("[KeyValueBehavior {}] on_tick ts_ms {}, interal_ms {}", self.node_id, ts_ms, interal_ms);
+        log::trace!("[KeyValueBehavior {}] on_tick ts_ms {}, interal_ms {}", self.node_id, ts_ms, interal_ms);
         self.simple_remote.tick();
         self.simple_local.write().tick();
         self.pop_all_events(agent);

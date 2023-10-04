@@ -25,10 +25,10 @@ fn process_conn_msg<BE, HE>(
     BE: Send + Sync + 'static,
 {
     match &event {
-        ConnectionEvent::Msg(msg) => match router.path_to(&msg.header.route, msg.header.service_id) {
+        ConnectionEvent::Msg(msg) => match router.action_for_incomming(&msg.header.route, msg.header.service_id) {
             RouteAction::Reject => {}
             RouteAction::Local => {
-                log::debug!(
+                log::trace!(
                     "[NetworkPlane] fire handlers on_event network msg for conn ({}, {}) from service {}",
                     receiver.remote_node_id(),
                     receiver.conn_id(),
@@ -40,7 +40,17 @@ fn process_conn_msg<BE, HE>(
                     debug_assert!(false, "service not found {}", msg.header.service_id);
                 }
             }
-            RouteAction::Next(conn, _node_id) => {
+            RouteAction::Next(conn, node_id) => {
+                log::trace!(
+                    "[NetworkPlane] forward network msg {:?} for conn ({}, {}) to ({}, {}) from service {}, route {:?}",
+                    msg,
+                    receiver.remote_node_id(),
+                    receiver.conn_id(),
+                    conn,
+                    node_id,
+                    msg.header.service_id,
+                    msg.header.route,
+                );
                 let c_gate = cross_gate.read();
                 c_gate.send_to_conn(&conn, msg.clone()).print_none("Should send to conn");
             }
