@@ -7,7 +7,7 @@ use utils::{error_handle::ErrorUtils, option_handle::OptionUtils, Timer};
 
 use crate::{
     behaviour::ConnectionHandler,
-    internal::{cross_handler_gate::CrossHandlerGateIplm, CrossHandlerEvent, CrossHandlerGate},
+    internal::{cross_handler_gate::CrossHandlerGateIplm, CrossHandlerEvent},
     plane::NetworkPlaneInternalEvent,
     transport::{ConnectionEvent, ConnectionReceiver, ConnectionSender},
     ConnectionAgent,

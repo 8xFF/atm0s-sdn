@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, f32::consts::E, io::BufReader};
+use std::{collections::VecDeque, io::BufReader};
 
 fn get_string(value: resp::Value) -> Option<String> {
     if let resp::Value::Bulk(value) = value {

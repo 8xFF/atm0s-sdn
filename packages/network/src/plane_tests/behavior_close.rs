@@ -26,8 +26,6 @@ mod tests {
         CloseNode(NodeId),
     }
     enum TestCrossHandleEvent {}
-    enum TestCrossBehaviorReq {}
-    enum TestCrossBehaviorRes {}
 
     #[derive(convert_enum::From, convert_enum::TryInto)]
     enum ImplTestCrossNetworkBehaviorEvent {
