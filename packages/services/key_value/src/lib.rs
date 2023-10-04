@@ -1,5 +1,10 @@
+#[cfg(test)]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
 pub static KEY_VALUE_SERVICE_ID: u8 = 4;
 pub type KeyId = u64;
+pub type SubKeyId = u64;
 pub type ReqId = u64;
 pub type KeyVersion = u64;
 pub type KeySource = NodeId;
@@ -73,6 +78,38 @@ mod tests {
         sdk.set(111, vec![111], None);
         let saved_value = sdk.get(111, 1000).await.expect("Should get success").expect("Should some");
         assert_eq!(saved_value.0, vec![111]);
+
+        join.cancel().await.print_none("Should cancel join");
+    }
+
+    /// Testing local storage
+    #[async_std::test]
+    async fn local_node_hashmap() {
+        let (mock, _faker, _output) = MockTransport::new();
+        let transport = Box::new(mock);
+        let timer = Arc::new(SystemTimer());
+
+        let (behavior, sdk) = KeyValueBehavior::new(0, timer.clone(), 1000, None);
+
+        let mut plane = NetworkPlane::<ImplBehaviorEvent, ImplHandlerEvent>::new(NetworkPlaneConfig {
+            local_node_id: 0,
+            tick_ms: 100,
+            behavior: vec![Box::new(behavior)],
+            transport,
+            timer,
+            router: Arc::new(ForceLocalRouter()),
+        });
+
+        let join = async_std::task::spawn(async move {
+            plane.started();
+            while let Ok(_) = plane.recv().await {}
+            plane.stopped();
+        });
+
+        async_std::task::sleep(Duration::from_millis(1000)).await;
+        sdk.hset(111, 222, vec![111], None);
+        let saved_value = sdk.hget(111, 1000).await.expect("Should get success").expect("Should some");
+        assert_eq!(saved_value.into_iter().map(|(sub, val, _, src)| (sub, val, src)).collect::<Vec<_>>(), vec![(222, vec![111], 0)]);
 
         join.cancel().await.print_none("Should cancel join");
     }

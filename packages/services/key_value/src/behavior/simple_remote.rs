@@ -8,7 +8,7 @@ use utils::Timer;
 
 use crate::storage::simple::{OutputEvent, SimpleKeyValue};
 use crate::{
-    msg::{LocalEvent, RemoteEvent},
+    msg::{SimpleLocalEvent, SimpleRemoteEvent},
     KeyId, ValueType,
 };
 
@@ -17,16 +17,16 @@ use super::event_acks::EventAckManager;
 const RETRY_COUNT: u8 = 5;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RemoteStorageAction(pub(crate) LocalEvent, pub(crate) RouteRule);
+pub struct RemoteStorageAction(pub(crate) SimpleLocalEvent, pub(crate) RouteRule);
 
-pub struct RemoteStorage {
+pub struct SimpleRemoteStorage {
     req_id_seed: u64,
     storage: SimpleKeyValue<KeyId, ValueType, NodeId, NodeId>,
     event_acks: EventAckManager<RemoteStorageAction>,
     output_events: VecDeque<RemoteStorageAction>,
 }
 
-impl RemoteStorage {
+impl SimpleRemoteStorage {
     pub fn new(timer: Arc<dyn Timer>) -> Self {
         Self {
             req_id_seed: 0,
@@ -41,45 +41,49 @@ impl RemoteStorage {
         self.event_acks.tick();
     }
 
-    pub fn on_event(&mut self, from: NodeId, event: RemoteEvent) {
+    pub fn on_event(&mut self, from: NodeId, event: SimpleRemoteEvent) {
         match event {
-            RemoteEvent::Set(req_id, key, value, version, ex) => {
-                log::debug!("[RemoteStorage] receive set event from {} key {} value {:?} version {} ex {:?}", from, key, value, version, ex);
+            SimpleRemoteEvent::Set(req_id, key, value, version, ex) => {
+                log::debug!("[SimpleRemote] receive set event from {} key {} value {:?} version {} ex {:?}", from, key, value, version, ex);
                 let setted = self.storage.set(key, value, version, from, ex);
                 self.output_events
-                    .push_back(RemoteStorageAction(LocalEvent::SetAck(req_id, key, version, setted), RouteRule::ToNode(from)));
+                    .push_back(RemoteStorageAction(SimpleLocalEvent::SetAck(req_id, key, version, setted), RouteRule::ToNode(from)));
             }
-            RemoteEvent::Get(req_id, key) => {
+            SimpleRemoteEvent::Get(req_id, key) => {
                 if let Some((value, version, source)) = self.storage.get(&key) {
-                    log::debug!("[RemoteStorage] receive get event from {} key {} value {:?} version {}", from, key, value, version);
-                    self.output_events
-                        .push_back(RemoteStorageAction(LocalEvent::GetAck(req_id, key, Some((value.clone(), version, source))), RouteRule::ToNode(from)));
+                    log::debug!("[SimpleRemote] receive get event from {} key {} value {:?} version {}", from, key, value, version);
+                    self.output_events.push_back(RemoteStorageAction(
+                        SimpleLocalEvent::GetAck(req_id, key, Some((value.clone(), version, source))),
+                        RouteRule::ToNode(from),
+                    ));
                 } else {
-                    log::debug!("[RemoteStorage] receive get event from {} key {} value None", from, key);
-                    self.output_events.push_back(RemoteStorageAction(LocalEvent::GetAck(req_id, key, None), RouteRule::ToNode(from)));
+                    log::debug!("[SimpleRemote] receive get event from {} key {} value None", from, key);
+                    self.output_events.push_back(RemoteStorageAction(SimpleLocalEvent::GetAck(req_id, key, None), RouteRule::ToNode(from)));
                 }
             }
-            RemoteEvent::Del(req_id, key, req_version) => {
-                log::debug!("[RemoteStorage] receive del event from {} key {} version {:?}", from, key, req_version);
+            SimpleRemoteEvent::Del(req_id, key, req_version) => {
+                log::debug!("[SimpleRemote] receive del event from {} key {} version {:?}", from, key, req_version);
                 let version = self.storage.del(&key, req_version).map(|(_, version, _)| version);
-                self.output_events.push_back(RemoteStorageAction(LocalEvent::DelAck(req_id, key, version), RouteRule::ToNode(from)));
+                self.output_events
+                    .push_back(RemoteStorageAction(SimpleLocalEvent::DelAck(req_id, key, version), RouteRule::ToNode(from)));
             }
-            RemoteEvent::Sub(req_id, key, ex) => {
-                log::debug!("[RemoteStorage] receive sub event from {} key {} ex {:?}", from, key, ex);
+            SimpleRemoteEvent::Sub(req_id, key, ex) => {
+                log::debug!("[SimpleRemote] receive sub event from {} key {} ex {:?}", from, key, ex);
                 self.storage.subscribe(&key, from, ex);
-                self.output_events.push_back(RemoteStorageAction(LocalEvent::SubAck(req_id, key), RouteRule::ToNode(from)));
+                self.output_events.push_back(RemoteStorageAction(SimpleLocalEvent::SubAck(req_id, key), RouteRule::ToNode(from)));
             }
-            RemoteEvent::Unsub(req_id, key) => {
-                log::debug!("[RemoteStorage] receive unsub event from {} key {}", from, key);
+            SimpleRemoteEvent::Unsub(req_id, key) => {
+                log::debug!("[SimpleRemote] receive unsub event from {} key {}", from, key);
                 let success = self.storage.unsubscribe(&key, &from);
-                self.output_events.push_back(RemoteStorageAction(LocalEvent::UnsubAck(req_id, key, success), RouteRule::ToNode(from)));
+                self.output_events
+                    .push_back(RemoteStorageAction(SimpleLocalEvent::UnsubAck(req_id, key, success), RouteRule::ToNode(from)));
             }
-            RemoteEvent::OnKeySetAck(req_id) => {
-                log::debug!("[RemoteStorage] receive on_key_set_ack event from {}, req_id {}", from, req_id);
+            SimpleRemoteEvent::OnKeySetAck(req_id) => {
+                log::debug!("[SimpleRemote] receive on_key_set_ack event from {}, req_id {}", from, req_id);
                 self.event_acks.on_ack(req_id);
             }
-            RemoteEvent::OnKeyDelAck(req_id) => {
-                log::debug!("[RemoteStorage] receive on_key_del_ack event from {}, req_id {}", from, req_id);
+            SimpleRemoteEvent::OnKeyDelAck(req_id) => {
+                log::debug!("[SimpleRemote] receive on_key_del_ack event from {}, req_id {}", from, req_id);
                 self.event_acks.on_ack(req_id);
             }
         }
@@ -88,17 +92,17 @@ impl RemoteStorage {
     pub fn pop_action(&mut self) -> Option<RemoteStorageAction> {
         //first pop from output_events, if not exits then pop from event_acks
         if let Some(e) = self.output_events.pop_front() {
-            log::debug!("[RemoteStorage] pop action from output_events: {:?}", e);
+            log::debug!("[SimpleRemote] pop action from output_events: {:?}", e);
             Some(e)
         } else {
             if let Some(event) = self.storage.poll() {
                 let req_id = self.req_id_seed;
                 self.req_id_seed += 1;
                 let event = match event {
-                    OutputEvent::NotifySet(key, value, version, source, handler) => RemoteStorageAction(LocalEvent::OnKeySet(req_id, key, value, version, source), RouteRule::ToNode(handler)),
-                    OutputEvent::NotifyDel(key, _value, version, source, handler) => RemoteStorageAction(LocalEvent::OnKeyDel(req_id, key, version, source), RouteRule::ToNode(handler)),
+                    OutputEvent::NotifySet(key, value, version, source, handler) => RemoteStorageAction(SimpleLocalEvent::OnKeySet(req_id, key, value, version, source), RouteRule::ToNode(handler)),
+                    OutputEvent::NotifyDel(key, _value, version, source, handler) => RemoteStorageAction(SimpleLocalEvent::OnKeyDel(req_id, key, version, source), RouteRule::ToNode(handler)),
                 };
-                log::debug!("[RemoteStorage] pop action from event_acks: {:?}, req_id {}", event, req_id);
+                log::debug!("[SimpleRemote] pop action from event_acks: {:?}, req_id {}", event, req_id);
                 self.event_acks.add_event(req_id, event, RETRY_COUNT);
             }
             self.event_acks.pop_action()
@@ -111,27 +115,27 @@ mod tests {
     use std::sync::Arc;
 
     use super::RemoteStorageAction;
-    use crate::msg::{LocalEvent, RemoteEvent};
+    use crate::msg::{SimpleLocalEvent, SimpleRemoteEvent};
     use bluesea_router::RouteRule;
     use utils::MockTimer;
 
     #[test]
     fn receive_set_dersiered_send_ack() {
         let timer = Arc::new(MockTimer::default());
-        let mut remote_storage = super::RemoteStorage::new(timer.clone());
+        let mut remote_storage = super::SimpleRemoteStorage::new(timer.clone());
 
-        remote_storage.on_event(1000, RemoteEvent::Set(1, 1, vec![1], 0, None));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(LocalEvent::SetAck(1, 1, 0, true), RouteRule::ToNode(1000))));
+        remote_storage.on_event(1000, SimpleRemoteEvent::Set(1, 1, vec![1], 0, None));
+        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(SimpleLocalEvent::SetAck(1, 1, 0, true), RouteRule::ToNode(1000))));
         assert_eq!(remote_storage.pop_action(), None);
     }
 
     #[test]
     fn receive_set_ex() {
         let timer = Arc::new(MockTimer::default());
-        let mut remote_storage = super::RemoteStorage::new(timer.clone());
+        let mut remote_storage = super::SimpleRemoteStorage::new(timer.clone());
 
-        remote_storage.on_event(1000, RemoteEvent::Set(1, 1, vec![1], 0, Some(1000)));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(LocalEvent::SetAck(1, 1, 0, true), RouteRule::ToNode(1000))));
+        remote_storage.on_event(1000, SimpleRemoteEvent::Set(1, 1, vec![1], 0, Some(1000)));
+        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(SimpleLocalEvent::SetAck(1, 1, 0, true), RouteRule::ToNode(1000))));
         assert_eq!(remote_storage.pop_action(), None);
 
         assert_eq!(remote_storage.storage.len(), 1);
@@ -147,95 +151,110 @@ mod tests {
     #[test]
     fn receive_set_with_wrong_version() {
         let timer = Arc::new(MockTimer::default());
-        let mut remote_storage = super::RemoteStorage::new(timer.clone());
+        let mut remote_storage = super::SimpleRemoteStorage::new(timer.clone());
 
-        remote_storage.on_event(1000, RemoteEvent::Set(1, 1, vec![1], 10, None));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(LocalEvent::SetAck(1, 1, 10, true), RouteRule::ToNode(1000))));
+        remote_storage.on_event(1000, SimpleRemoteEvent::Set(1, 1, vec![1], 10, None));
+        assert_eq!(
+            remote_storage.pop_action(),
+            Some(RemoteStorageAction(SimpleLocalEvent::SetAck(1, 1, 10, true), RouteRule::ToNode(1000)))
+        );
         assert_eq!(remote_storage.pop_action(), None);
 
         // receive a older version will be rejected
-        remote_storage.on_event(1000, RemoteEvent::Set(1, 1, vec![1], 5, None));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(LocalEvent::SetAck(1, 1, 5, false), RouteRule::ToNode(1000))));
+        remote_storage.on_event(1000, SimpleRemoteEvent::Set(1, 1, vec![1], 5, None));
+        assert_eq!(
+            remote_storage.pop_action(),
+            Some(RemoteStorageAction(SimpleLocalEvent::SetAck(1, 1, 5, false), RouteRule::ToNode(1000)))
+        );
         assert_eq!(remote_storage.pop_action(), None);
     }
 
     #[test]
     fn receive_del_dersiered_send_ack() {
         let timer = Arc::new(MockTimer::default());
-        let mut remote_storage = super::RemoteStorage::new(timer.clone());
+        let mut remote_storage = super::SimpleRemoteStorage::new(timer.clone());
 
-        remote_storage.on_event(1000, RemoteEvent::Set(1, 1, vec![1], 0, None));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(LocalEvent::SetAck(1, 1, 0, true), RouteRule::ToNode(1000))));
+        remote_storage.on_event(1000, SimpleRemoteEvent::Set(1, 1, vec![1], 0, None));
+        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(SimpleLocalEvent::SetAck(1, 1, 0, true), RouteRule::ToNode(1000))));
         assert_eq!(remote_storage.pop_action(), None);
 
-        remote_storage.on_event(1000, RemoteEvent::Del(2, 1, 0));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(LocalEvent::DelAck(2, 1, Some(0)), RouteRule::ToNode(1000))));
+        remote_storage.on_event(1000, SimpleRemoteEvent::Del(2, 1, 0));
+        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(SimpleLocalEvent::DelAck(2, 1, Some(0)), RouteRule::ToNode(1000))));
         assert_eq!(remote_storage.pop_action(), None);
     }
 
     #[test]
     fn receive_del_older_version() {
         let timer = Arc::new(MockTimer::default());
-        let mut remote_storage = super::RemoteStorage::new(timer.clone());
+        let mut remote_storage = super::SimpleRemoteStorage::new(timer.clone());
 
-        remote_storage.on_event(1000, RemoteEvent::Set(1, 1, vec![1], 10, None));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(LocalEvent::SetAck(1, 1, 10, true), RouteRule::ToNode(1000))));
+        remote_storage.on_event(1000, SimpleRemoteEvent::Set(1, 1, vec![1], 10, None));
+        assert_eq!(
+            remote_storage.pop_action(),
+            Some(RemoteStorageAction(SimpleLocalEvent::SetAck(1, 1, 10, true), RouteRule::ToNode(1000)))
+        );
         assert_eq!(remote_storage.pop_action(), None);
 
-        remote_storage.on_event(1000, RemoteEvent::Del(2, 1, 5));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(LocalEvent::DelAck(2, 1, None), RouteRule::ToNode(1000))));
+        remote_storage.on_event(1000, SimpleRemoteEvent::Del(2, 1, 5));
+        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(SimpleLocalEvent::DelAck(2, 1, None), RouteRule::ToNode(1000))));
         assert_eq!(remote_storage.pop_action(), None);
     }
 
     #[test]
     fn receive_del_newer_version() {
         let timer = Arc::new(MockTimer::default());
-        let mut remote_storage = super::RemoteStorage::new(timer.clone());
+        let mut remote_storage = super::SimpleRemoteStorage::new(timer.clone());
 
-        remote_storage.on_event(1000, RemoteEvent::Set(1, 1, vec![1], 0, None));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(LocalEvent::SetAck(1, 1, 0, true), RouteRule::ToNode(1000))));
+        remote_storage.on_event(1000, SimpleRemoteEvent::Set(1, 1, vec![1], 0, None));
+        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(SimpleLocalEvent::SetAck(1, 1, 0, true), RouteRule::ToNode(1000))));
         assert_eq!(remote_storage.pop_action(), None);
 
-        remote_storage.on_event(1000, RemoteEvent::Del(2, 1, 100));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(LocalEvent::DelAck(2, 1, Some(0)), RouteRule::ToNode(1000))));
+        remote_storage.on_event(1000, SimpleRemoteEvent::Del(2, 1, 100));
+        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(SimpleLocalEvent::DelAck(2, 1, Some(0)), RouteRule::ToNode(1000))));
         assert_eq!(remote_storage.pop_action(), None);
     }
 
     #[test]
     fn receive_get_dersiered_send_ack() {
         let timer = Arc::new(MockTimer::default());
-        let mut remote_storage = super::RemoteStorage::new(timer.clone());
+        let mut remote_storage = super::SimpleRemoteStorage::new(timer.clone());
 
-        remote_storage.on_event(1000, RemoteEvent::Set(1, 1, vec![1], 10, None));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(LocalEvent::SetAck(1, 1, 10, true), RouteRule::ToNode(1000))));
-        assert_eq!(remote_storage.pop_action(), None);
-
-        remote_storage.on_event(1001, RemoteEvent::Get(2, 1));
+        remote_storage.on_event(1000, SimpleRemoteEvent::Set(1, 1, vec![1], 10, None));
         assert_eq!(
             remote_storage.pop_action(),
-            Some(RemoteStorageAction(LocalEvent::GetAck(2, 1, Some((vec![1], 10, 1000))), RouteRule::ToNode(1001)))
+            Some(RemoteStorageAction(SimpleLocalEvent::SetAck(1, 1, 10, true), RouteRule::ToNode(1000)))
         );
         assert_eq!(remote_storage.pop_action(), None);
 
-        remote_storage.on_event(1001, RemoteEvent::Get(3, 2));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(LocalEvent::GetAck(3, 2, None), RouteRule::ToNode(1001))));
+        remote_storage.on_event(1001, SimpleRemoteEvent::Get(2, 1));
+        assert_eq!(
+            remote_storage.pop_action(),
+            Some(RemoteStorageAction(SimpleLocalEvent::GetAck(2, 1, Some((vec![1], 10, 1000))), RouteRule::ToNode(1001)))
+        );
+        assert_eq!(remote_storage.pop_action(), None);
+
+        remote_storage.on_event(1001, SimpleRemoteEvent::Get(3, 2));
+        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(SimpleLocalEvent::GetAck(3, 2, None), RouteRule::ToNode(1001))));
         assert_eq!(remote_storage.pop_action(), None);
     }
 
     #[test]
     fn receive_sub_dersiered_send_ack() {
         let timer = Arc::new(MockTimer::default());
-        let mut remote_storage = super::RemoteStorage::new(timer.clone());
+        let mut remote_storage = super::SimpleRemoteStorage::new(timer.clone());
 
-        remote_storage.on_event(1000, RemoteEvent::Sub(1, 1, None));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(LocalEvent::SubAck(1, 1), RouteRule::ToNode(1000))));
+        remote_storage.on_event(1000, SimpleRemoteEvent::Sub(1, 1, None));
+        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(SimpleLocalEvent::SubAck(1, 1), RouteRule::ToNode(1000))));
         assert_eq!(remote_storage.pop_action(), None);
 
-        remote_storage.on_event(1001, RemoteEvent::Set(2, 1, vec![1], 100, None));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(LocalEvent::SetAck(2, 1, 100, true), RouteRule::ToNode(1001))));
+        remote_storage.on_event(1001, SimpleRemoteEvent::Set(2, 1, vec![1], 100, None));
         assert_eq!(
             remote_storage.pop_action(),
-            Some(RemoteStorageAction(LocalEvent::OnKeySet(0, 1, vec![1], 100, 1001), RouteRule::ToNode(1000)))
+            Some(RemoteStorageAction(SimpleLocalEvent::SetAck(2, 1, 100, true), RouteRule::ToNode(1001)))
+        );
+        assert_eq!(
+            remote_storage.pop_action(),
+            Some(RemoteStorageAction(SimpleLocalEvent::OnKeySet(0, 1, vec![1], 100, 1001), RouteRule::ToNode(1000)))
         );
         assert_eq!(remote_storage.pop_action(), None);
     }
@@ -243,49 +262,55 @@ mod tests {
     #[test]
     fn receive_unsub_dersiered_send_ack() {
         let timer = Arc::new(MockTimer::default());
-        let mut remote_storage = super::RemoteStorage::new(timer.clone());
+        let mut remote_storage = super::SimpleRemoteStorage::new(timer.clone());
 
-        remote_storage.on_event(1000, RemoteEvent::Sub(1, 1, None));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(LocalEvent::SubAck(1, 1), RouteRule::ToNode(1000))));
+        remote_storage.on_event(1000, SimpleRemoteEvent::Sub(1, 1, None));
+        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(SimpleLocalEvent::SubAck(1, 1), RouteRule::ToNode(1000))));
         assert_eq!(remote_storage.pop_action(), None);
 
-        remote_storage.on_event(1000, RemoteEvent::Unsub(2, 1));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(LocalEvent::UnsubAck(2, 1, true), RouteRule::ToNode(1000))));
+        remote_storage.on_event(1000, SimpleRemoteEvent::Unsub(2, 1));
+        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(SimpleLocalEvent::UnsubAck(2, 1, true), RouteRule::ToNode(1000))));
         assert_eq!(remote_storage.pop_action(), None);
 
-        remote_storage.on_event(1001, RemoteEvent::Set(3, 1, vec![1], 100, None));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(LocalEvent::SetAck(3, 1, 100, true), RouteRule::ToNode(1001))));
+        remote_storage.on_event(1001, SimpleRemoteEvent::Set(3, 1, vec![1], 100, None));
+        assert_eq!(
+            remote_storage.pop_action(),
+            Some(RemoteStorageAction(SimpleLocalEvent::SetAck(3, 1, 100, true), RouteRule::ToNode(1001)))
+        );
         assert_eq!(remote_storage.pop_action(), None);
     }
 
     #[test]
     fn receive_unsub_wrong_key() {
         let timer = Arc::new(MockTimer::default());
-        let mut remote_storage = super::RemoteStorage::new(timer.clone());
+        let mut remote_storage = super::SimpleRemoteStorage::new(timer.clone());
 
-        remote_storage.on_event(1000, RemoteEvent::Unsub(2, 1));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(LocalEvent::UnsubAck(2, 1, false), RouteRule::ToNode(1000))));
+        remote_storage.on_event(1000, SimpleRemoteEvent::Unsub(2, 1));
+        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(SimpleLocalEvent::UnsubAck(2, 1, false), RouteRule::ToNode(1000))));
         assert_eq!(remote_storage.pop_action(), None);
     }
 
     #[test]
     fn key_changed_event_with_ack() {
         let timer = Arc::new(MockTimer::default());
-        let mut remote_storage = super::RemoteStorage::new(timer.clone());
+        let mut remote_storage = super::SimpleRemoteStorage::new(timer.clone());
 
-        remote_storage.on_event(1000, RemoteEvent::Sub(1, 1, None));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(LocalEvent::SubAck(1, 1), RouteRule::ToNode(1000))));
+        remote_storage.on_event(1000, SimpleRemoteEvent::Sub(1, 1, None));
+        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(SimpleLocalEvent::SubAck(1, 1), RouteRule::ToNode(1000))));
         assert_eq!(remote_storage.pop_action(), None);
 
-        remote_storage.on_event(1001, RemoteEvent::Set(2, 1, vec![1], 100, None));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(LocalEvent::SetAck(2, 1, 100, true), RouteRule::ToNode(1001))));
+        remote_storage.on_event(1001, SimpleRemoteEvent::Set(2, 1, vec![1], 100, None));
         assert_eq!(
             remote_storage.pop_action(),
-            Some(RemoteStorageAction(LocalEvent::OnKeySet(0, 1, vec![1], 100, 1001), RouteRule::ToNode(1000)))
+            Some(RemoteStorageAction(SimpleLocalEvent::SetAck(2, 1, 100, true), RouteRule::ToNode(1001)))
+        );
+        assert_eq!(
+            remote_storage.pop_action(),
+            Some(RemoteStorageAction(SimpleLocalEvent::OnKeySet(0, 1, vec![1], 100, 1001), RouteRule::ToNode(1000)))
         );
         assert_eq!(remote_storage.pop_action(), None);
 
-        remote_storage.on_event(1000, RemoteEvent::OnKeySetAck(0));
+        remote_storage.on_event(1000, SimpleRemoteEvent::OnKeySetAck(0));
         remote_storage.tick();
         assert_eq!(remote_storage.pop_action(), None);
     }
@@ -293,17 +318,20 @@ mod tests {
     #[test]
     fn key_changed_event_without_ack_should_resend() {
         let timer = Arc::new(MockTimer::default());
-        let mut remote_storage = super::RemoteStorage::new(timer.clone());
+        let mut remote_storage = super::SimpleRemoteStorage::new(timer.clone());
 
-        remote_storage.on_event(1000, RemoteEvent::Sub(1, 1, None));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(LocalEvent::SubAck(1, 1), RouteRule::ToNode(1000))));
+        remote_storage.on_event(1000, SimpleRemoteEvent::Sub(1, 1, None));
+        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(SimpleLocalEvent::SubAck(1, 1), RouteRule::ToNode(1000))));
         assert_eq!(remote_storage.pop_action(), None);
 
-        remote_storage.on_event(1001, RemoteEvent::Set(2, 1, vec![1], 100, None));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(LocalEvent::SetAck(2, 1, 100, true), RouteRule::ToNode(1001))));
+        remote_storage.on_event(1001, SimpleRemoteEvent::Set(2, 1, vec![1], 100, None));
         assert_eq!(
             remote_storage.pop_action(),
-            Some(RemoteStorageAction(LocalEvent::OnKeySet(0, 1, vec![1], 100, 1001), RouteRule::ToNode(1000)))
+            Some(RemoteStorageAction(SimpleLocalEvent::SetAck(2, 1, 100, true), RouteRule::ToNode(1001)))
+        );
+        assert_eq!(
+            remote_storage.pop_action(),
+            Some(RemoteStorageAction(SimpleLocalEvent::OnKeySet(0, 1, vec![1], 100, 1001), RouteRule::ToNode(1000)))
         );
         assert_eq!(remote_storage.pop_action(), None);
 
@@ -311,7 +339,7 @@ mod tests {
         // need resend each tick
         assert_eq!(
             remote_storage.pop_action(),
-            Some(RemoteStorageAction(LocalEvent::OnKeySet(0, 1, vec![1], 100, 1001), RouteRule::ToNode(1000)))
+            Some(RemoteStorageAction(SimpleLocalEvent::OnKeySet(0, 1, vec![1], 100, 1001), RouteRule::ToNode(1000)))
         );
         assert_eq!(remote_storage.pop_action(), None);
     }

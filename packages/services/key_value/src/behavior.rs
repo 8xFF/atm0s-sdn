@@ -15,11 +15,15 @@ use std::sync::Arc;
 use utils::Timer;
 
 use self::awaker::Awaker;
-use self::simple_local::LocalStorage;
-use self::simple_remote::RemoteStorage;
+use self::hashmap_local::HashmapLocalStorage;
+use self::hashmap_remote::HashmapRemoteStorage;
+use self::simple_local::SimpleLocalStorage;
+use self::simple_remote::SimpleRemoteStorage;
 
 mod awaker;
 mod event_acks;
+mod hashmap_local;
+mod hashmap_remote;
 mod sdk;
 mod simple_local;
 mod simple_remote;
@@ -29,8 +33,10 @@ pub use sdk::KeyValueSdk;
 #[allow(unused)]
 pub struct KeyValueBehavior {
     node_id: NodeId,
-    simple_remote: RemoteStorage,
-    simple_local: Arc<RwLock<LocalStorage>>,
+    simple_remote: SimpleRemoteStorage,
+    simple_local: Arc<RwLock<SimpleLocalStorage>>,
+    hashmap_remote: HashmapRemoteStorage,
+    hashmap_local: Arc<RwLock<HashmapLocalStorage>>,
     awake_notify: Arc<dyn Awaker>,
     awake_task: Option<JoinHandle<()>>,
     redis_server: Option<RedisServer>,
@@ -42,8 +48,9 @@ impl KeyValueBehavior {
     pub fn new(node_id: NodeId, timer: Arc<dyn Timer>, sync_each_ms: u64, redis_addr: Option<SocketAddr>) -> (Self, sdk::KeyValueSdk) {
         log::info!("[KeyValueBehaviour {}] created with sync_each_ms {}", node_id, sync_each_ms);
         let awake_notify = Arc::new(AsyncAwaker::default());
-        let simple_local = Arc::new(RwLock::new(LocalStorage::new(timer.clone(), awake_notify.clone(), sync_each_ms)));
-        let sdk = sdk::KeyValueSdk::new(simple_local.clone());
+        let simple_local = Arc::new(RwLock::new(SimpleLocalStorage::new(timer.clone(), awake_notify.clone(), sync_each_ms)));
+        let hashmap_local = Arc::new(RwLock::new(HashmapLocalStorage::new(timer.clone(), awake_notify.clone(), sync_each_ms)));
+        let sdk = sdk::KeyValueSdk::new(simple_local.clone(), hashmap_local.clone());
 
         let sdk_c = sdk.clone();
         let redis_server = redis_addr.map(|addr| RedisServer::new(addr, sdk_c));
@@ -51,8 +58,10 @@ impl KeyValueBehavior {
         (
             Self {
                 node_id,
-                simple_remote: RemoteStorage::new(timer),
+                simple_remote: SimpleRemoteStorage::new(timer.clone()),
                 simple_local,
+                hashmap_remote: HashmapRemoteStorage::new(timer),
+                hashmap_local,
                 awake_notify,
                 awake_task: None,
                 redis_server,
@@ -68,17 +77,31 @@ impl KeyValueBehavior {
         HE: Send + Sync + 'static,
     {
         while let Some(action) = self.simple_remote.pop_action() {
-            log::debug!("[KeyValueBehavior {}] pop_all_events remote: {:?}", self.node_id, action);
+            log::debug!("[KeyValueBehavior {}] pop_all_events simple remote: {:?}", self.node_id, action);
             let mut header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, action.1, 0);
             header.from_node = Some(self.node_id);
-            agent.send_to_net(TransportMsg::from_payload_bincode(header, &KeyValueMsg::Local(action.0)));
+            agent.send_to_net(TransportMsg::from_payload_bincode(header, &KeyValueMsg::SimpleLocal(action.0)));
         }
 
         while let Some(action) = self.simple_local.write().pop_action() {
-            log::debug!("[KeyValueBehavior {}] pop_all_events local: {:?}", self.node_id, action);
+            log::debug!("[KeyValueBehavior {}] pop_all_events simple local: {:?}", self.node_id, action);
             let mut header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, action.1, 0);
             header.from_node = Some(self.node_id);
-            agent.send_to_net(TransportMsg::from_payload_bincode(header, &KeyValueMsg::Remote(action.0)));
+            agent.send_to_net(TransportMsg::from_payload_bincode(header, &KeyValueMsg::SimpleRemote(action.0)));
+        }
+
+        while let Some(action) = self.hashmap_remote.pop_action() {
+            log::debug!("[KeyValueBehavior {}] pop_all_events hashmap remote: {:?}", self.node_id, action);
+            let mut header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, action.1, 0);
+            header.from_node = Some(self.node_id);
+            agent.send_to_net(TransportMsg::from_payload_bincode(header, &KeyValueMsg::HashmapLocal(action.0)));
+        }
+
+        while let Some(action) = self.hashmap_local.write().pop_action() {
+            log::debug!("[KeyValueBehavior {}] pop_all_events hashmap local: {:?}", self.node_id, action);
+            let mut header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, action.1, 0);
+            header.from_node = Some(self.node_id);
+            agent.send_to_net(TransportMsg::from_payload_bincode(header, &KeyValueMsg::HashmapRemote(action.0)));
         }
     }
 
@@ -88,22 +111,40 @@ impl KeyValueBehavior {
         HE: Send + Sync + 'static,
     {
         match msg {
-            KeyValueMsg::Remote(msg) => {
+            KeyValueMsg::SimpleRemote(msg) => {
                 if let Some(from) = header.from_node {
-                    log::debug!("[KeyValueBehavior {}] process_key_value_msg remote: {:?} from {}", self.node_id, msg, from);
+                    log::debug!("[KeyValueBehavior {}] process_key_value_msg simple remote: {:?} from {}", self.node_id, msg, from);
                     self.simple_remote.on_event(from, msg);
                     self.pop_all_events(agent);
                 } else {
-                    log::warn!("[KeyValueBehavior {}] process_key_value_msg remote: no from_node", self.node_id);
+                    log::warn!("[KeyValueBehavior {}] process_key_value_msg simple remote: no from_node", self.node_id);
                 }
             }
-            KeyValueMsg::Local(msg) => {
+            KeyValueMsg::SimpleLocal(msg) => {
                 if let Some(from) = header.from_node {
-                    log::debug!("[KeyValueBehavior {}] process_key_value_msg local: {:?} from {}", self.node_id, msg, from);
+                    log::debug!("[KeyValueBehavior {}] process_key_value_msg simple local: {:?} from {}", self.node_id, msg, from);
                     self.simple_local.write().on_event(from, msg);
                     self.pop_all_events(agent);
                 } else {
-                    log::warn!("[KeyValueBehavior {}] process_key_value_msg local: no from_node", self.node_id);
+                    log::warn!("[KeyValueBehavior {}] process_key_value_msg simple local: no from_node", self.node_id);
+                }
+            }
+            KeyValueMsg::HashmapRemote(msg) => {
+                if let Some(from) = header.from_node {
+                    log::debug!("[KeyValueBehavior {}] process_key_value_msg hashmap remote: {:?} from {}", self.node_id, msg, from);
+                    self.hashmap_remote.on_event(from, msg);
+                    self.pop_all_events(agent);
+                } else {
+                    log::warn!("[KeyValueBehavior {}] process_key_value_msg hashmap remote: no from_node", self.node_id);
+                }
+            }
+            KeyValueMsg::HashmapLocal(msg) => {
+                if let Some(from) = header.from_node {
+                    log::debug!("[KeyValueBehavior {}] process_key_value_msg hashmap local: {:?} from {}", self.node_id, msg, from);
+                    self.hashmap_local.write().on_event(from, msg);
+                    self.pop_all_events(agent);
+                } else {
+                    log::warn!("[KeyValueBehavior {}] process_key_value_msg hashmap local: no from_node", self.node_id);
                 }
             }
         }
@@ -124,6 +165,8 @@ where
         log::trace!("[KeyValueBehavior {}] on_tick ts_ms {}, interal_ms {}", self.node_id, ts_ms, interal_ms);
         self.simple_remote.tick();
         self.simple_local.write().tick();
+        self.hashmap_remote.tick();
+        self.hashmap_local.write().tick();
         self.pop_all_events(agent);
     }
 
@@ -214,7 +257,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::{msg::RemoteEvent, KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueMsg, KEY_VALUE_SERVICE_ID};
+    use crate::{
+        msg::{HashmapRemoteEvent, SimpleRemoteEvent},
+        KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueMsg, KEY_VALUE_SERVICE_ID,
+    };
     use network::{
         behaviour::NetworkBehavior,
         convert_enum,
@@ -261,7 +307,7 @@ mod tests {
         let set_msg = cross_gate_out.lock().pop_front().expect("Should has set msg");
         if let CrossHandlerGateMockEvent::SentToNet(msg) = set_msg {
             let msg = msg.get_payload_bincode::<KeyValueMsg>().expect("Should be KeyValueMsg");
-            if let KeyValueMsg::Remote(RemoteEvent::Set(_req_id, key_id, value, _version, ex)) = msg {
+            if let KeyValueMsg::SimpleRemote(SimpleRemoteEvent::Set(_req_id, key_id, value, _version, ex)) = msg {
                 assert_eq!(key_id, 1);
                 assert_eq!(value, vec![1]);
                 assert_eq!(ex, None);
@@ -305,7 +351,7 @@ mod tests {
         let set_msg = cross_gate_out.lock().pop_front().expect("Should has set msg");
         if let CrossHandlerGateMockEvent::SentToNet(msg) = set_msg {
             let msg = msg.get_payload_bincode::<KeyValueMsg>().expect("Should be KeyValueMsg");
-            if let KeyValueMsg::Remote(RemoteEvent::Get(_req_id, key_id)) = msg {
+            if let KeyValueMsg::SimpleRemote(SimpleRemoteEvent::Get(_req_id, key_id)) = msg {
                 assert_eq!(key_id, 1);
             } else {
                 panic!("Should be RemoteEvent::Set")
@@ -346,7 +392,134 @@ mod tests {
         let set_msg = cross_gate_out.lock().pop_front().expect("Should has set msg");
         if let CrossHandlerGateMockEvent::SentToNet(msg) = set_msg {
             let msg = msg.get_payload_bincode::<KeyValueMsg>().expect("Should be KeyValueMsg");
-            if let KeyValueMsg::Remote(RemoteEvent::Sub(_req_id, key_id, ex)) = msg {
+            if let KeyValueMsg::SimpleRemote(SimpleRemoteEvent::Sub(_req_id, key_id, ex)) = msg {
+                assert_eq!(key_id, 1);
+                assert_eq!(ex, None);
+            } else {
+                panic!("Should be RemoteEvent::Sub")
+            }
+        } else {
+            panic!("Should be SentToNet {:?}", set_msg);
+        }
+
+        behaviour.on_stopped(&mock_agent);
+    }
+
+    #[async_std::test]
+    async fn sdk_hset_should_awake_behaviour() {
+        let node_id = 1;
+        let sync_ms = 10000;
+        let timer = Arc::new(MockTimer::default());
+        let (mut behaviour, sdk) = super::KeyValueBehavior::new(node_id, timer.clone(), sync_ms, None);
+
+        let (mock_agent, _, cross_gate_out) = create_mock_behaviour_agent::<BehaviorEvent, HandlerEvent>(node_id, KEY_VALUE_SERVICE_ID);
+
+        behaviour.on_started(&mock_agent);
+
+        sdk.hset(1, 2, vec![1], None);
+
+        async_std::task::sleep(Duration::from_millis(100)).await;
+        assert_eq!(cross_gate_out.lock().len(), 1);
+        let awake_msg = cross_gate_out.lock().pop_front().expect("Should has awake msg");
+        assert_eq!(
+            awake_msg,
+            CrossHandlerGateMockEvent::SendToBehaviour(KEY_VALUE_SERVICE_ID, BehaviorEvent::KeyValue(KeyValueBehaviorEvent::Awake))
+        );
+
+        behaviour.on_local_event(&mock_agent, BehaviorEvent::KeyValue(KeyValueBehaviorEvent::Awake));
+
+        //should request to network
+        assert_eq!(cross_gate_out.lock().len(), 1);
+        let set_msg = cross_gate_out.lock().pop_front().expect("Should has set msg");
+        if let CrossHandlerGateMockEvent::SentToNet(msg) = set_msg {
+            let msg = msg.get_payload_bincode::<KeyValueMsg>().expect("Should be KeyValueMsg");
+            if let KeyValueMsg::HashmapRemote(HashmapRemoteEvent::Set(_req_id, key_id, sub_key, value, _version, ex)) = msg {
+                assert_eq!(key_id, 1);
+                assert_eq!(sub_key, 2);
+                assert_eq!(value, vec![1]);
+                assert_eq!(ex, None);
+            } else {
+                panic!("Should be RemoteEvent::Set")
+            }
+        } else {
+            panic!("Should be SentToNet")
+        }
+
+        behaviour.on_stopped(&mock_agent);
+    }
+
+    #[async_std::test]
+    async fn sdk_hget_should_awake_behaviour() {
+        let node_id = 1;
+        let sync_ms = 10000;
+        let timer = Arc::new(MockTimer::default());
+        let (mut behaviour, sdk) = super::KeyValueBehavior::new(node_id, timer.clone(), sync_ms, None);
+
+        let (mock_agent, _, cross_gate_out) = create_mock_behaviour_agent::<BehaviorEvent, HandlerEvent>(node_id, KEY_VALUE_SERVICE_ID);
+
+        behaviour.on_started(&mock_agent);
+
+        let join = async_std::task::spawn(async move {
+            sdk.hget(1, 10000).await.print_error("");
+        });
+
+        async_std::task::sleep(Duration::from_millis(100)).await;
+        assert_eq!(cross_gate_out.lock().len(), 1);
+        let awake_msg = cross_gate_out.lock().pop_front().expect("Should has awake msg");
+        assert_eq!(
+            awake_msg,
+            CrossHandlerGateMockEvent::SendToBehaviour(KEY_VALUE_SERVICE_ID, BehaviorEvent::KeyValue(KeyValueBehaviorEvent::Awake))
+        );
+
+        behaviour.on_local_event(&mock_agent, BehaviorEvent::KeyValue(KeyValueBehaviorEvent::Awake));
+
+        //should request to network
+        assert_eq!(cross_gate_out.lock().len(), 1);
+        let set_msg = cross_gate_out.lock().pop_front().expect("Should has set msg");
+        if let CrossHandlerGateMockEvent::SentToNet(msg) = set_msg {
+            let msg = msg.get_payload_bincode::<KeyValueMsg>().expect("Should be KeyValueMsg");
+            if let KeyValueMsg::HashmapRemote(HashmapRemoteEvent::Get(_req_id, key_id)) = msg {
+                assert_eq!(key_id, 1);
+            } else {
+                panic!("Should be RemoteEvent::Set")
+            }
+        } else {
+            panic!("Should be SentToNet")
+        }
+
+        behaviour.on_stopped(&mock_agent);
+        join.cancel().await;
+    }
+
+    #[async_std::test]
+    async fn sdk_hsub_should_awake_behaviour() {
+        let node_id = 1;
+        let sync_ms = 10000;
+        let timer = Arc::new(MockTimer::default());
+        let (mut behaviour, sdk) = super::KeyValueBehavior::new(node_id, timer.clone(), sync_ms, None);
+
+        let (mock_agent, _, cross_gate_out) = create_mock_behaviour_agent::<BehaviorEvent, HandlerEvent>(node_id, KEY_VALUE_SERVICE_ID);
+
+        behaviour.on_started(&mock_agent);
+
+        let _event_rx = sdk.hsubscribe(1, None);
+
+        async_std::task::sleep(Duration::from_millis(100)).await;
+        assert_eq!(cross_gate_out.lock().len(), 1);
+        let awake_msg = cross_gate_out.lock().pop_front().expect("Should has awake msg");
+        assert_eq!(
+            awake_msg,
+            CrossHandlerGateMockEvent::SendToBehaviour(KEY_VALUE_SERVICE_ID, BehaviorEvent::KeyValue(KeyValueBehaviorEvent::Awake))
+        );
+
+        behaviour.on_local_event(&mock_agent, BehaviorEvent::KeyValue(KeyValueBehaviorEvent::Awake));
+
+        //should request to network
+        assert_eq!(cross_gate_out.lock().len(), 1);
+        let set_msg = cross_gate_out.lock().pop_front().expect("Should has set msg");
+        if let CrossHandlerGateMockEvent::SentToNet(msg) = set_msg {
+            let msg = msg.get_payload_bincode::<KeyValueMsg>().expect("Should be KeyValueMsg");
+            if let KeyValueMsg::HashmapRemote(HashmapRemoteEvent::Sub(_req_id, key_id, ex)) = msg {
                 assert_eq!(key_id, 1);
                 assert_eq!(ex, None);
             } else {

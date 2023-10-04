@@ -110,8 +110,80 @@ impl RedisSession {
                         }
                     }));
                 }
-                Ok(RedisCmd::Unsub(_key)) => {
-                    self.send_reply(resp::Value::Error("NOT_SUPPORTED".to_string())).await?;
+                Ok(RedisCmd::HGet(key)) => {
+                    let key = key_hash(&key);
+                    match self.sdk.hget(key, 1000).await {
+                        Ok(value) => match value {
+                            Some(sub_keys) => {
+                                let res = sub_keys
+                                    .into_iter()
+                                    .map(|(sub, value, version, source)| {
+                                        resp::Value::Array(vec![
+                                            resp::Value::Integer(sub as i64),
+                                            resp::Value::String(String::from_utf8(value).unwrap_or("ERROR".to_string())),
+                                            resp::Value::Integer(version as i64),
+                                            resp::Value::Integer(source as i64),
+                                        ])
+                                    })
+                                    .collect::<Vec<_>>();
+                                self.send_reply(resp::Value::Array(res)).await?;
+                            }
+                            None => {
+                                self.send_reply(resp::Value::Null).await?;
+                            }
+                        },
+                        Err(e) => {
+                            self.send_reply(resp::Value::Error(format!("{:?}", e))).await?;
+                        }
+                    }
+                }
+                Ok(RedisCmd::HDel(key, sub_key)) => {
+                    let key = key_hash(&key);
+                    let sub_key = key_hash(&sub_key);
+                    self.sdk.hdel(key, sub_key);
+                    self.send_reply(resp::Value::String("OK".to_string())).await?;
+                }
+                Ok(RedisCmd::HSet(key, sub_key, value)) => {
+                    let key = key_hash(&key);
+                    let sub_key = key_hash(&sub_key);
+                    self.sdk.hset(key, sub_key, value.as_bytes().to_vec(), None);
+                    self.send_reply(resp::Value::String("OK".to_string())).await?;
+                }
+                Ok(RedisCmd::HSub(key)) => {
+                    let mut stream = self.tcp_stream.clone();
+                    let mut rx = self.sdk.hsubscribe(key_hash(&key), None);
+                    subscribe_task = Some(async_std::task::spawn(async move {
+                        while let Some((_, sub_key, value, version, source)) = rx.recv().await {
+                            log::debug!("recv: {:?}", value);
+                            if let Some(value) = value {
+                                Self::send_reply2(
+                                    &mut stream,
+                                    resp::Value::Array(vec![
+                                        resp::Value::String("set".to_string()),
+                                        resp::Value::String(key.clone()),
+                                        resp::Value::Integer(sub_key as i64),
+                                        resp::Value::String(String::from_utf8(value).unwrap()),
+                                        resp::Value::Integer(version as i64),
+                                        resp::Value::Integer(source as i64),
+                                    ]),
+                                )
+                                .await
+                                .print_error("Should send event");
+                            } else {
+                                Self::send_reply2(
+                                    &mut stream,
+                                    resp::Value::Array(vec![
+                                        resp::Value::String("del".to_string()),
+                                        resp::Value::String(key.clone()),
+                                        resp::Value::Integer(version as i64),
+                                        resp::Value::Integer(source as i64),
+                                    ]),
+                                )
+                                .await
+                                .print_error("Should send event");
+                            }
+                        }
+                    }));
                 }
                 Err(_e) => {
                     self.send_reply(resp::Value::Error("NOT_SUPPORTED".to_string())).await?;

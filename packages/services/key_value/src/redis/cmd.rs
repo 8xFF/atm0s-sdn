@@ -14,8 +14,11 @@ pub enum RedisCmd {
     Get(String),
     Del(String),
     Set(String, String),
+    HGet(String),
+    HSet(String, String, String),
+    HDel(String, String),
     Sub(String),
-    Unsub(String),
+    HSub(String),
 }
 
 impl TryFrom<&[u8]> for RedisCmd {
@@ -45,8 +48,19 @@ impl TryFrom<&[u8]> for RedisCmd {
                             let value = cmds.pop_front().and_then(get_string).ok_or("Empty value")?;
                             Ok(RedisCmd::Set(key, value))
                         }
-                        "SUBSCRIBE" => Ok(RedisCmd::Sub(cmds.pop_front().and_then(get_string).ok_or("Empty key")?)),
-                        "UNSUBSCRIBE" => Ok(RedisCmd::Unsub(cmds.pop_front().and_then(get_string).ok_or("Empty key")?)),
+                        "HGET" => Ok(RedisCmd::HGet(cmds.pop_front().and_then(get_string).ok_or("Empty key")?)),
+                        "HDEL" => Ok(RedisCmd::HDel(
+                            cmds.pop_front().and_then(get_string).ok_or("Empty key")?,
+                            cmds.pop_front().and_then(get_string).ok_or("Empty sub_key")?,
+                        )),
+                        "HSET" => {
+                            let key = cmds.pop_front().and_then(get_string).ok_or("Empty key")?;
+                            let sub_key = cmds.pop_front().and_then(get_string).ok_or("Empty sub_key")?;
+                            let value = cmds.pop_front().and_then(get_string).ok_or("Empty value")?;
+                            Ok(RedisCmd::HSet(key, sub_key, value))
+                        }
+                        "SUB" => Ok(RedisCmd::Sub(cmds.pop_front().and_then(get_string).ok_or("Empty key")?)),
+                        "HSUB" => Ok(RedisCmd::HSub(cmds.pop_front().and_then(get_string).ok_or("Empty key")?)),
                         _ => Err("NOT_SUPPORTED".to_string()),
                     }
                 } else {
