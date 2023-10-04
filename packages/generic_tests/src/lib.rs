@@ -1,4 +1,8 @@
 #[cfg(test)]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
+#[cfg(test)]
 mod tests {
     use std::collections::HashMap;
 
@@ -20,6 +24,8 @@ mod tests {
         vec.pop();
         vec.pop();
         vec.pop();
+
+        vec.shrink_to_fit();
 
         let post_stats = dhat::HeapStats::get();
 
@@ -46,6 +52,8 @@ mod tests {
         map.remove(&3);
         map.remove(&4);
         map.remove(&5);
+
+        map.shrink_to_fit();
 
         let post_stats = dhat::HeapStats::get();
 
