@@ -209,6 +209,13 @@ where
         }
     }
 
+    pub fn started(&mut self) {
+        log::info!("[NetworkPlane] started {}", self.local_node_id);
+        for (behaviour, agent) in self.behaviors.iter_mut().flatten() {
+            behaviour.on_started(agent);
+        }
+    }
+
     /// Run loop for plane which handle tick and connection
     pub async fn recv(&mut self) -> Result<(), ()> {
         log::debug!("[NetworkPlane] waiting event");
@@ -251,6 +258,13 @@ where
                     Err(())
                 }
             }
+        }
+    }
+
+    pub fn stopped(&mut self) {
+        log::info!("[NetworkPlane] stopped {}", self.local_node_id);
+        for (behaviour, agent) in self.behaviors.iter_mut().flatten() {
+            behaviour.on_stopped(agent);
         }
     }
 }

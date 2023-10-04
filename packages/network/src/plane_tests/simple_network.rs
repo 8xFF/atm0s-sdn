@@ -126,6 +126,10 @@ mod tests {
         fn on_rpc(&mut self, _agent: &BehaviorAgent<HE>, _req: Req, _res: Box<dyn RpcAnswer<Res>>) -> bool {
             false
         }
+
+        fn on_started(&mut self, _agent: &BehaviorAgent<HE>) {}
+
+        fn on_stopped(&mut self, _agent: &BehaviorAgent<HE>) {}
     }
 
     impl<BE, HE> ConnectionHandler<BE, HE> for Test1NetworkHandler
@@ -195,8 +199,12 @@ mod tests {
         fn on_handler_event(&mut self, _agent: &BehaviorAgent<HE>, _node_id: NodeId, _conn_id: ConnId, _event: BE) {}
 
         fn on_rpc(&mut self, _agent: &BehaviorAgent<HE>, _req: Req, _res: Box<dyn RpcAnswer<Res>>) -> bool {
-            todo!()
+            false
         }
+
+        fn on_started(&mut self, _agent: &BehaviorAgent<HE>) {}
+
+        fn on_stopped(&mut self, _agent: &BehaviorAgent<HE>) {}
     }
 
     impl<BE, HE> ConnectionHandler<BE, HE> for Test2NetworkHandler
@@ -238,7 +246,11 @@ mod tests {
             router: Arc::new(ForceLocalRouter()),
         });
 
-        async_std::task::spawn(async move { while let Ok(_) = plane.recv().await {} });
+        let join = async_std::task::spawn(async move {
+            plane.started();
+            while let Ok(_) = plane.recv().await {}
+            plane.stopped();
+        });
 
         faker.send(MockInput::FakeIncomingConnection(1, ConnId::from_in(0, 1), NodeAddr::from(Protocol::Udp(1)))).await.unwrap();
         async_std::task::sleep(Duration::from_millis(100)).await;
@@ -264,5 +276,7 @@ mod tests {
         faker.send(MockInput::FakeDisconnectIncoming(1, ConnId::from_in(0, 1))).await.unwrap();
         async_std::task::sleep(Duration::from_millis(1000)).await;
         assert_eq!(conn_counter.load(Ordering::SeqCst), 0);
+
+        join.cancel().await;
     }
 }

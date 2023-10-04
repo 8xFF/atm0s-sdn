@@ -15,6 +15,7 @@ layers-spread-router = { workspace = true }
 manual-discovery = { workspace = true }
 transport-tcp = { workspace = true }
 layers-spread-router-sync = { workspace = true }
+tun-tap = { workspace = true }
 
 env_logger = { workspace = true }
 async-trait = { workspace = true }

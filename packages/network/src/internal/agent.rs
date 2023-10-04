@@ -14,6 +14,17 @@ pub struct BehaviorAgent<HE> {
     cross_gate: Arc<RwLock<CrossHandlerGate<HE>>>,
 }
 
+impl<HE> Clone for BehaviorAgent<HE> {
+    fn clone(&self) -> Self {
+        Self {
+            service_id: self.service_id,
+            local_node_id: self.local_node_id,
+            connector: self.connector.clone(),
+            cross_gate: self.cross_gate.clone(),
+        }
+    }
+}
+
 impl<HE> BehaviorAgent<HE>
 where
     HE: Send + Sync + 'static,

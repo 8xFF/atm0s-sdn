@@ -27,7 +27,7 @@ mod tests {
     }
 
     fn create_reliable(msg: Msg) -> TransportMsg {
-        TransportMsg::build_reliable(0, RouteRule::Direct, 0, bincode::serialize(&msg).unwrap())
+        TransportMsg::build_reliable(0, RouteRule::Direct, 0, &bincode::serialize(&msg).unwrap())
     }
 
     #[async_std::test]

@@ -299,13 +299,13 @@ pub struct TransportMsg {
 }
 
 impl TransportMsg {
-    pub fn build_reliable(service_id: u8, route: RouteRule, stream_id: u32, payload: Vec<u8>) -> Self {
+    pub fn build_reliable(service_id: u8, route: RouteRule, stream_id: u32, payload: &[u8]) -> Self {
         let header = MsgHeader::build_reliable(service_id, route, stream_id);
         let header_size = header.serialize_size();
         let mut buffer = Vec::with_capacity(header_size + payload.len());
         let header_size = header.to_bytes(&mut buffer).expect("Should serialize header");
 
-        buffer.extend_from_slice(&payload);
+        buffer.extend_from_slice(payload);
         Self {
             buffer,
             header,
@@ -313,12 +313,12 @@ impl TransportMsg {
         }
     }
 
-    pub fn build_unreliable(service_id: u8, route: RouteRule, stream_id: u32, payload: Vec<u8>) -> Self {
+    pub fn build_unreliable(service_id: u8, route: RouteRule, stream_id: u32, payload: &[u8]) -> Self {
         let header = MsgHeader::build_unreliable(service_id, route, stream_id);
         let header_size = header.serialize_size();
         let mut buffer = Vec::with_capacity(header_size + payload.len());
         header.to_bytes(&mut buffer);
-        buffer.extend_from_slice(&payload);
+        buffer.extend_from_slice(payload);
         Self {
             buffer,
             header,
@@ -345,6 +345,10 @@ impl TransportMsg {
 
     pub fn payload(&self) -> &[u8] {
         &self.buffer[self.payload_start..]
+    }
+
+    pub fn payload_mut(&mut self) -> &mut [u8] {
+        &mut self.buffer[self.payload_start..]
     }
 
     pub fn rewrite_route(&mut self, new_route: RouteRule) -> Option<()> {
