@@ -15,6 +15,10 @@ fn benchmark_empty(c: &mut Criterion) {
         b.iter(|| router.next(1, &[]));
     });
 
+    group.bench_function("next_closest", |b| {
+        b.iter(|| router.closest_node(rand::random(), &[]));
+    });
+
     let router = Router::new(0);
     group.bench_function("next_service", |b| {
         b.iter(|| router.service_next(1, &[]));
@@ -28,6 +32,10 @@ fn benchmark_single(c: &mut Criterion) {
     router.set_direct(ConnId::from_in(0, 0), 1, Metric::new(1, vec![1], 100000));
     group.bench_function("next_node", |b| {
         b.iter(|| router.next(1, &[]));
+    });
+
+    group.bench_function("next_closest", |b| {
+        b.iter(|| router.closest_node(rand::random(), &[]));
     });
 
     let mut router = Router::new(0);
@@ -54,6 +62,10 @@ fn benchmark_full(c: &mut Criterion) {
         b.iter(|| router.next(1, &[]));
     });
 
+    group.bench_function("next_closest", |b| {
+        b.iter(|| router.closest_node(rand::random(), &[]));
+    });
+
     let mut router = Router::new(0);
     let mut services = vec![];
     for s in 0..255 {
@@ -75,6 +87,10 @@ fn benchmark_full_shared(c: &mut Criterion) {
     }
     group.bench_function("next_node", |b| {
         b.iter(|| router.next(1, &[]));
+    });
+
+    group.bench_function("next_closest", |b| {
+        b.iter(|| router.closest_node(rand::random(), &[]));
     });
 
     let router = SharedRouter::new(0);
