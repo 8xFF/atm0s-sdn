@@ -221,7 +221,7 @@ mod tests {
         plane_tests::{create_mock_behaviour_agent, CrossHandlerGateMockEvent},
     };
     use std::{sync::Arc, time::Duration};
-    use utils::MockTimer;
+    use utils::{error_handle::ErrorUtils, MockTimer};
 
     #[derive(convert_enum::From, convert_enum::TryInto, Debug, PartialEq, Eq)]
     enum BehaviorEvent {
@@ -287,7 +287,7 @@ mod tests {
         behaviour.on_started(&mock_agent);
 
         let join = async_std::task::spawn(async move {
-            sdk.get(1, 10000).await;
+            sdk.get(1, 10000).await.print_error("");
         });
 
         async_std::task::sleep(Duration::from_millis(100)).await;

@@ -104,7 +104,7 @@ impl RedisSession {
                         }
                     }));
                 }
-                Ok(RedisCmd::Unsub(key)) => {
+                Ok(RedisCmd::Unsub(_key)) => {
                     self.send_reply(resp::Value::Error("NOT_SUPPORTED".to_string())).await?;
                 }
                 Err(_e) => {
