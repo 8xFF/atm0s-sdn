@@ -37,6 +37,8 @@ where
             let mut header = MsgHeader::build_reliable(PUBSUB_SERVICE_ID, RouteRule::Direct, 0);
             header.meta = CONTROL_META_TYPE;
             let msg = TransportMsg::from_payload_bincode(header, &action);
+
+            //Should be send to correct conn, if that conn not exits => fallback by finding to origin source node
             if let Some(conn) = conn {
                 agent.send_to_net_direct(conn, msg);
             } else {
@@ -102,15 +104,9 @@ where
         node_id: bluesea_identity::NodeId,
         conn_id: bluesea_identity::ConnId,
         err: &network::transport::OutgoingConnectionError,
-    ) {
-        todo!()
-    }
+    ) { }
 
-    fn on_handler_event(&mut self, agent: &network::BehaviorAgent<BE, HE>, node_id: bluesea_identity::NodeId, conn_id: bluesea_identity::ConnId, event: BE) {
-        todo!()
-    }
+    fn on_handler_event(&mut self, agent: &network::BehaviorAgent<BE, HE>, node_id: bluesea_identity::NodeId, conn_id: bluesea_identity::ConnId, event: BE) {}
 
-    fn on_stopped(&mut self, agent: &network::BehaviorAgent<BE, HE>) {
-        todo!()
-    }
+    fn on_stopped(&mut self, agent: &network::BehaviorAgent<BE, HE>) {}
 }
