@@ -25,6 +25,8 @@ pub enum CrossHandlerGateMockEvent<BE, HE> {
     SendToHandlerFromBehaviour(u8, CrossHandlerRoute, HE),
     SendToHandlerFromHandler(u8, NodeId, ConnId, CrossHandlerRoute, HE),
     SentToNet(TransportMsg),
+    SentToNetNode(NodeId, TransportMsg),
+    SentToNetDirect(ConnId, TransportMsg),
 }
 
 pub struct CrossHandlerGateMock<BE, HE> {
@@ -71,6 +73,16 @@ where
 
     fn send_to_net(&self, msg: crate::msg::TransportMsg) -> Option<()> {
         self.events.lock().push_back(CrossHandlerGateMockEvent::SentToNet(msg));
+        Some(())
+    }
+
+    fn send_to_net_node(&self, node: NodeId, msg: TransportMsg) -> Option<()> {
+        self.events.lock().push_back(CrossHandlerGateMockEvent::SentToNetNode(node, msg));
+        Some(())
+    }
+
+    fn send_to_net_direct(&self, conn_id: ConnId, msg: TransportMsg) -> Option<()> {
+        self.events.lock().push_back(CrossHandlerGateMockEvent::SentToNetDirect(conn_id, msg));
         Some(())
     }
 }

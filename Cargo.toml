@@ -12,6 +12,7 @@ members = [
     "packages/services/layers_spread_router_sync",
     "packages/services/key_value",
     "packages/services/tun_tap",
+    "packages/services/pub_sub",
     "packages/transports/vnet",
     "packages/transports/tcp",
     "packages/transports/udp",
