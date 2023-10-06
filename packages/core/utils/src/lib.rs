@@ -1,3 +1,4 @@
+pub mod awaker;
 pub mod error_handle;
 pub mod hashmap;
 pub mod init_array;

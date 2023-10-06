@@ -5,7 +5,7 @@ use bytes::Bytes;
 use network::msg::TransportMsg;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use utils::SystemTimer;
+use utils::{awaker::Awaker, SystemTimer};
 
 use crate::{
     msg::{PubsubRemoteEvent, PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent},
@@ -66,9 +66,9 @@ where
     BE: From<PubsubServiceBehaviourEvent> + TryInto<PubsubServiceBehaviourEvent> + Send + Sync + 'static,
     HE: From<PubsubServiceHandlerEvent> + TryInto<PubsubServiceHandlerEvent> + Send + Sync + 'static,
 {
-    pub fn new(node_id: NodeId) -> (Self, PubsubSdk<BE, HE>) {
+    pub fn new(node_id: NodeId, awaker: Arc<dyn Awaker>) -> (Self, PubsubSdk<BE, HE>) {
         let s = Self {
-            logic: Arc::new(RwLock::new(PubsubRelayLogic::new(node_id, Arc::new(SystemTimer())))),
+            logic: Arc::new(RwLock::new(PubsubRelayLogic::new(node_id, Arc::new(SystemTimer()), awaker))),
             remote: Arc::new(RwLock::new(RemoteRelay::new())),
             local: Arc::new(RwLock::new(LocalRelay::new())),
         };

@@ -1,4 +1,3 @@
-use crate::behavior::awaker::AsyncAwaker;
 use crate::handler::KeyValueConnectionHandler;
 use crate::msg::{KeyValueBehaviorEvent, KeyValueMsg};
 use crate::redis::RedisServer;
@@ -12,15 +11,14 @@ use network::BehaviorAgent;
 use parking_lot::RwLock;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use utils::awaker::{AsyncAwaker, Awaker};
 use utils::Timer;
 
-use self::awaker::Awaker;
 use self::hashmap_local::HashmapLocalStorage;
 use self::hashmap_remote::HashmapRemoteStorage;
 use self::simple_local::SimpleLocalStorage;
 use self::simple_remote::SimpleRemoteStorage;
 
-mod awaker;
 mod event_acks;
 mod hashmap_local;
 mod hashmap_remote;

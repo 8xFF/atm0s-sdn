@@ -6,7 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-async-trait = { workspace = true }
 bluesea-identity = { workspace = true }
 bluesea-router = { workspace = true }
 utils = { workspace = true }
@@ -15,7 +14,6 @@ thiserror = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }
 async-std = { workspace = true }
-async-notify = { workspace = true }
 parking_lot = { workspace = true }
 resp = "1.0.3"
 

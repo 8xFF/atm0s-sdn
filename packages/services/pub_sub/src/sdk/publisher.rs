@@ -12,6 +12,7 @@ use crate::{
 };
 
 pub struct Publisher<BE, HE> {
+    #[allow(unused)]
     uuid: LocalPubId,
     channel: ChannelIdentify,
     logic: Arc<RwLock<PubsubRelayLogic>>,

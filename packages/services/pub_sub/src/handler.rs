@@ -20,7 +20,7 @@ where
         self.relay.on_connection_opened(agent)
     }
 
-    fn on_tick(&mut self, agent: &network::ConnectionAgent<BE, HE>, ts_ms: u64, interval_ms: u64) {}
+    fn on_tick(&mut self, _agent: &network::ConnectionAgent<BE, HE>, _ts_ms: u64, _interval_ms: u64) {}
 
     fn on_event(&mut self, agent: &network::ConnectionAgent<BE, HE>, event: network::transport::ConnectionEvent) {
         match event {
@@ -40,11 +40,17 @@ where
         }
     }
 
-    fn on_other_handler_event(&mut self, agent: &network::ConnectionAgent<BE, HE>, from_node: bluesea_identity::NodeId, from_conn: bluesea_identity::ConnId, event: HE) {}
+    fn on_other_handler_event(&mut self, _agent: &network::ConnectionAgent<BE, HE>, _from_node: bluesea_identity::NodeId, _from_conn: bluesea_identity::ConnId, _event: HE) {}
 
-    fn on_behavior_event(&mut self, agent: &network::ConnectionAgent<BE, HE>, event: HE) {}
+    fn on_behavior_event(&mut self, _agent: &network::ConnectionAgent<BE, HE>, _event: HE) {}
 
     fn on_closed(&mut self, agent: &network::ConnectionAgent<BE, HE>) {
         self.relay.on_connection_closed(agent)
     }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn should_send_event_to_logic() {}
 }

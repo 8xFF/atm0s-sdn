@@ -1,7 +1,9 @@
 use crate::relay::ChannelIdentify;
 use serde::{Deserialize, Serialize};
 
-pub enum PubsubServiceBehaviourEvent {}
+pub enum PubsubServiceBehaviourEvent {
+    Awake,
+}
 pub enum PubsubServiceHandlerEvent {}
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]

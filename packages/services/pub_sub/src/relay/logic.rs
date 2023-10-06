@@ -4,6 +4,7 @@ use std::{
 };
 
 use bluesea_identity::{ConnId, NodeId};
+use utils::awaker::Awaker;
 use utils::Timer;
 
 use crate::{msg::PubsubRemoteEvent, PUBSUB_CHANNEL_RESYNC_MS, PUBSUB_CHANNEL_TIMEOUT_MS};
@@ -25,6 +26,7 @@ struct ChannelContainer {
 }
 
 pub struct PubsubRelayLogic {
+    awaker: Arc<dyn Awaker>,
     timer: Arc<dyn Timer>,
     node_id: NodeId,
     channels: HashMap<ChannelIdentify, ChannelContainer>,
@@ -32,8 +34,9 @@ pub struct PubsubRelayLogic {
 }
 
 impl PubsubRelayLogic {
-    pub fn new(node_id: NodeId, timer: Arc<dyn Timer>) -> Self {
+    pub fn new(node_id: NodeId, timer: Arc<dyn Timer>, awaker: Arc<dyn Awaker>) -> Self {
         Self {
+            awaker,
             timer,
             node_id,
             channels: Default::default(),
@@ -143,6 +146,7 @@ impl PubsubRelayLogic {
                 channel.source()
             );
             self.output_events.push_back((channel.source(), None, PubsubRemoteEvent::Sub(channel)));
+            self.awaker.notify();
         }
     }
 
@@ -167,6 +171,7 @@ impl PubsubRelayLogic {
                         info.from_node
                     );
                     self.output_events.push_back((info.from_node, Some(info.from_conn), PubsubRemoteEvent::Unsub(channel)));
+                    self.awaker.notify();
                 } else {
                     log::warn!("[PubsubRelayLogic] local unsub {} event from {} list empty => but no next node", channel, handler);
                     self.channels.remove(&channel);
@@ -214,6 +219,8 @@ impl PubsubRelayLogic {
                     log::info!("[PubsubRelayLogic] sub {} event from {} pushed to list, new relay => send sub to source {}", id, from, id.source());
                     self.output_events.push_back((id.source(), None, PubsubRemoteEvent::Sub(id)));
                 }
+
+                self.awaker.notify();
             }
             PubsubRemoteEvent::Unsub(id) => {
                 if let Some(slot) = self.channels.get_mut(&id) {
@@ -240,6 +247,7 @@ impl PubsubRelayLogic {
                             log::info!("[PubsubRelayLogic] unsub {} event from {} list empty in source node => removed", id, from);
                         }
                     }
+                    self.awaker.notify();
                 } else {
                     log::warn!("[PubsubRelayLogic] unsub {} event from {} but no channel found", id, from);
                 }
@@ -281,7 +289,10 @@ mod tests {
     use std::sync::Arc;
 
     use bluesea_identity::{ConnId, NodeId};
-    use utils::MockTimer;
+    use utils::{
+        awaker::{Awaker, MockAwaker},
+        MockTimer,
+    };
 
     use crate::{
         msg::PubsubRemoteEvent,
@@ -297,14 +308,16 @@ mod tests {
         InLocalSub(ChannelIdentify, LocalSubId),
         InLocalUnsub(ChannelIdentify, LocalSubId),
         In(NodeId, ConnId, PubsubRemoteEvent),
+        OutAwake(usize),
         OutNone,
         Out(NodeId, Option<ConnId>, PubsubRemoteEvent),
         Validate(Box<dyn FnOnce(&PubsubRelayLogic) -> bool>),
     }
 
     fn test(node_id: NodeId, events: Vec<Event>) {
+        let awake = Arc::new(MockAwaker::default());
         let timer = Arc::new(MockTimer::default());
-        let mut logic = PubsubRelayLogic::new(node_id, timer.clone());
+        let mut logic = PubsubRelayLogic::new(node_id, timer.clone(), awake.clone());
 
         for event in events {
             match event {
@@ -313,6 +326,7 @@ mod tests {
                 Event::InLocalSub(channel, handler) => logic.on_local_sub(channel, handler),
                 Event::InLocalUnsub(channel, handler) => logic.on_local_unsub(channel, handler),
                 Event::In(from, conn, event) => logic.on_event(from, conn, event),
+                Event::OutAwake(count) => assert_eq!(awake.pop_awake_count(), count),
                 Event::OutNone => assert_eq!(logic.pop_action(), None),
                 Event::Out(from, conn, event) => assert_eq!(logic.pop_action(), Some((from, conn, event))),
                 Event::Validate(validator) => assert_eq!(validator(&logic), true),
@@ -337,6 +351,7 @@ mod tests {
                 Event::OutNone,
                 Event::In(remote_node_id, remote_conn_id, PubsubRemoteEvent::Sub(channel)),
                 Event::Out(remote_node_id, Some(remote_conn_id), PubsubRemoteEvent::SubAck(channel, true)),
+                Event::OutAwake(1),
                 Event::OutNone,
                 Event::Tick,
                 Event::OutNone,
@@ -346,6 +361,7 @@ mod tests {
                 })),
                 Event::In(remote_node_id, remote_conn_id, PubsubRemoteEvent::Unsub(channel)),
                 Event::Out(remote_node_id, Some(remote_conn_id), PubsubRemoteEvent::UnsubAck(channel, true)),
+                Event::OutAwake(1),
                 Event::OutNone,
                 Event::Validate(Box::new(move |logic| -> bool {
                     assert_eq!(logic.relay(channel), None);
@@ -375,6 +391,7 @@ mod tests {
                 Event::OutNone,
                 Event::In(remote_node_id, remote_conn_id, PubsubRemoteEvent::Sub(channel)),
                 Event::Out(remote_node_id, Some(remote_conn_id), PubsubRemoteEvent::SubAck(channel, true)),
+                Event::OutAwake(1),
                 Event::OutNone,
                 Event::Tick,
                 Event::OutNone,
@@ -384,6 +401,7 @@ mod tests {
                 })),
                 Event::In(remote_node_id2, remote_conn_id2, PubsubRemoteEvent::Sub(channel)),
                 Event::Out(remote_node_id2, Some(remote_conn_id2), PubsubRemoteEvent::SubAck(channel, true)),
+                Event::OutAwake(1),
                 Event::OutNone,
                 Event::Tick,
                 Event::OutNone,
@@ -393,6 +411,7 @@ mod tests {
                 })),
                 Event::In(remote_node_id2, remote_conn_id2, PubsubRemoteEvent::Unsub(channel)),
                 Event::Out(remote_node_id2, Some(remote_conn_id2), PubsubRemoteEvent::UnsubAck(channel, true)),
+                Event::OutAwake(1),
                 Event::OutNone,
                 Event::Validate(Box::new(move |logic| -> bool {
                     assert_eq!(logic.relay(channel), Some((vec![remote_conn_id].as_slice(), vec![].as_slice())));
@@ -400,6 +419,7 @@ mod tests {
                 })),
                 Event::In(remote_node_id, remote_conn_id, PubsubRemoteEvent::Unsub(channel)),
                 Event::Out(remote_node_id, Some(remote_conn_id), PubsubRemoteEvent::UnsubAck(channel, true)),
+                Event::OutAwake(1),
                 Event::OutNone,
                 Event::Validate(Box::new(move |logic| -> bool {
                     assert_eq!(logic.relay(channel), None);
@@ -430,6 +450,7 @@ mod tests {
                 Event::In(remote_node_id, remote_conn_id, PubsubRemoteEvent::Sub(channel)),
                 Event::Out(remote_node_id, Some(remote_conn_id), PubsubRemoteEvent::SubAck(channel, true)),
                 Event::Out(channel.source(), None, PubsubRemoteEvent::Sub(channel)),
+                Event::OutAwake(1),
                 Event::OutNone,
                 Event::In(next_node_id, next_conn_id, PubsubRemoteEvent::SubAck(channel, true)),
                 Event::Tick,
@@ -441,12 +462,14 @@ mod tests {
                 Event::In(remote_node_id, remote_conn_id, PubsubRemoteEvent::Unsub(channel)),
                 Event::Out(remote_node_id, Some(remote_conn_id), PubsubRemoteEvent::UnsubAck(channel, true)),
                 Event::Out(next_node_id, Some(next_conn_id), PubsubRemoteEvent::Unsub(channel)),
+                Event::OutAwake(1),
                 Event::OutNone,
                 Event::Validate(Box::new(move |logic| -> bool {
                     assert_eq!(logic.relay(channel), Some((vec![].as_slice(), vec![].as_slice())));
                     true
                 })),
                 Event::In(next_node_id, next_conn_id, PubsubRemoteEvent::UnsubAck(channel, true)),
+                Event::OutAwake(0),
                 Event::OutNone,
                 Event::Validate(Box::new(move |logic| -> bool {
                     assert_eq!(logic.relay(channel), None);
@@ -477,9 +500,11 @@ mod tests {
                 Event::In(remote_node_id, remote_conn_id, PubsubRemoteEvent::Sub(channel)),
                 Event::Out(remote_node_id, Some(remote_conn_id), PubsubRemoteEvent::SubAck(channel, true)),
                 Event::Out(channel.source(), None, PubsubRemoteEvent::Sub(channel)),
+                Event::OutAwake(1),
                 Event::OutNone,
                 Event::Tick,
                 Event::Out(channel.source(), None, PubsubRemoteEvent::Sub(channel)),
+                Event::OutAwake(0), //no need awake because of generated from tick
                 Event::OutNone,
                 Event::In(next_node_id, next_conn_id, PubsubRemoteEvent::SubAck(channel, true)),
                 Event::Tick,
@@ -508,6 +533,7 @@ mod tests {
                 Event::In(remote_node_id, remote_conn_id, PubsubRemoteEvent::Sub(channel)),
                 Event::Out(remote_node_id, Some(remote_conn_id), PubsubRemoteEvent::SubAck(channel, true)),
                 Event::Out(channel.source(), None, PubsubRemoteEvent::Sub(channel)),
+                Event::OutAwake(1),
                 Event::OutNone,
                 Event::In(next_node_id, next_conn_id, PubsubRemoteEvent::SubAck(channel, true)),
                 Event::Tick,
@@ -515,6 +541,7 @@ mod tests {
                 Event::FakeTimer(PUBSUB_CHANNEL_RESYNC_MS),
                 Event::Tick,
                 Event::Out(channel.source(), Some(next_conn_id), PubsubRemoteEvent::Sub(channel)),
+                Event::OutAwake(0),
                 Event::OutNone,
             ],
         );
@@ -536,6 +563,7 @@ mod tests {
                 Event::OutNone,
                 Event::In(remote_node_id, remote_conn_id, PubsubRemoteEvent::Sub(channel)),
                 Event::Out(remote_node_id, Some(remote_conn_id), PubsubRemoteEvent::SubAck(channel, true)),
+                Event::OutAwake(1),
                 Event::OutNone,
                 Event::Tick,
                 Event::OutNone,
@@ -545,6 +573,7 @@ mod tests {
                 })),
                 Event::FakeTimer(PUBSUB_CHANNEL_TIMEOUT_MS),
                 Event::Tick,
+                Event::OutAwake(0),
                 Event::OutNone,
                 Event::Validate(Box::new(move |logic| -> bool {
                     assert_eq!(logic.relay(channel), None);
@@ -574,6 +603,7 @@ mod tests {
                 Event::In(remote_node_id, remote_conn_id, PubsubRemoteEvent::Sub(channel)),
                 Event::Out(remote_node_id, Some(remote_conn_id), PubsubRemoteEvent::SubAck(channel, true)),
                 Event::Out(channel.source(), None, PubsubRemoteEvent::Sub(channel)),
+                Event::OutAwake(1),
                 Event::OutNone,
                 Event::In(next_node_id, next_conn_id, PubsubRemoteEvent::SubAck(channel, true)),
                 Event::Tick,
@@ -585,6 +615,7 @@ mod tests {
                 Event::FakeTimer(PUBSUB_CHANNEL_TIMEOUT_MS),
                 Event::Tick,
                 Event::Out(next_node_id, Some(next_conn_id), PubsubRemoteEvent::Unsub(channel)),
+                Event::OutAwake(0), //dont need awake because of genereated from tick
                 Event::OutNone,
                 Event::In(next_node_id, next_conn_id, PubsubRemoteEvent::UnsubAck(channel, true)),
                 Event::Validate(Box::new(move |logic| -> bool {
@@ -608,6 +639,7 @@ mod tests {
                 Event::Tick,
                 Event::OutNone,
                 Event::InLocalSub(channel, handler),
+                Event::OutAwake(0),
                 Event::OutNone,
                 Event::Tick,
                 Event::OutNone,
@@ -616,6 +648,7 @@ mod tests {
                     true
                 })),
                 Event::InLocalUnsub(channel, handler),
+                Event::OutAwake(0),
                 Event::OutNone,
                 Event::Tick,
                 Event::OutNone,
@@ -643,6 +676,7 @@ mod tests {
                 Event::Tick,
                 Event::OutNone,
                 Event::InLocalSub(channel, handler),
+                Event::OutAwake(1),
                 Event::Out(channel.source(), None, PubsubRemoteEvent::Sub(channel)),
                 Event::OutNone,
                 Event::In(next_node_id, next_conn_id, PubsubRemoteEvent::SubAck(channel, true)),
@@ -653,6 +687,7 @@ mod tests {
                     true
                 })),
                 Event::InLocalUnsub(channel, handler),
+                Event::OutAwake(1),
                 Event::Out(next_node_id, Some(next_conn_id), PubsubRemoteEvent::Unsub(channel)),
                 Event::OutNone,
                 Event::In(next_node_id, next_conn_id, PubsubRemoteEvent::UnsubAck(channel, true)),
@@ -686,6 +721,7 @@ mod tests {
                 Event::InLocalSub(channel, handler),
                 Event::In(remote_node_id, remote_conn_id, PubsubRemoteEvent::Sub(channel)),
                 Event::Out(remote_node_id, Some(remote_conn_id), PubsubRemoteEvent::SubAck(channel, true)),
+                Event::OutAwake(1),
                 Event::OutNone,
                 Event::Tick,
                 Event::OutNone,
@@ -696,6 +732,7 @@ mod tests {
                 Event::InLocalUnsub(channel, handler),
                 Event::In(remote_node_id, remote_conn_id, PubsubRemoteEvent::Unsub(channel)),
                 Event::Out(remote_node_id, Some(remote_conn_id), PubsubRemoteEvent::UnsubAck(channel, true)),
+                Event::OutAwake(1),
                 Event::OutNone,
                 Event::Validate(Box::new(move |logic| -> bool {
                     assert_eq!(logic.relay(channel), None);
