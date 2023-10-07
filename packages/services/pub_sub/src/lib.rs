@@ -9,6 +9,8 @@ pub(crate) mod relay;
 pub(crate) mod sdk;
 
 pub use behaviour::PubsubServiceBehaviour;
+pub use msg::{PubsubRemoteEvent, PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent};
+pub use relay::ChannelIdentify;
 pub use sdk::{consumer::Consumer, publisher::Publisher, PubsubSdk};
 
 #[cfg(test)]
