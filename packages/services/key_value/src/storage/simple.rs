@@ -429,96 +429,76 @@ mod tests {
     /// Should clear memory after delete
     #[test]
     fn delete_memory() {
-        let _profiler = dhat::Profiler::builder().testing().build();
-
         let timer = Arc::new(MockTimer::default());
         let mut store = SimpleKeyValue::<u32, u32, u32, u32>::new(timer.clone());
-
-        let stats = dhat::HeapStats::get();
-
-        let key1 = 1;
-        let value1 = 2;
-        let version1 = 1;
-        let source1 = 1000;
-        assert!(store.set(key1, value1, version1, source1, None));
-        assert_eq!(store.del(&key1, version1), Some((value1, version1, source1)));
-        assert_eq!(store.keys.len(), 0);
-        assert_eq!(store.events.len(), 0);
-
-        let new_stats = dhat::HeapStats::get();
-        assert_eq!(new_stats.curr_blocks, stats.curr_blocks);
-        assert_eq!(new_stats.curr_bytes, stats.curr_bytes);
+        let info = allocation_counter::measure(|| {
+            let key1 = 1;
+            let value1 = 2;
+            let version1 = 1;
+            let source1 = 1000;
+            assert!(store.set(key1, value1, version1, source1, None));
+            assert_eq!(store.del(&key1, version1), Some((value1, version1, source1)));
+            assert_eq!(store.keys.len(), 0);
+            assert_eq!(store.events.len(), 0);
+        });
+        assert_eq!(info.count_current, 0);
     }
 
     /// Should clear memory after unsubscribe
     #[test]
     fn unsubscribe_memory() {
-        let _profiler = dhat::Profiler::builder().testing().build();
-
         let timer = Arc::new(MockTimer::default());
         let mut store = SimpleKeyValue::<u32, u32, u32, u32>::new(timer.clone());
 
-        let stats = dhat::HeapStats::get();
-
         let key1 = 1;
         let handler1 = 1;
-        store.subscribe(&key1, handler1, None);
-        assert!(store.unsubscribe(&key1, &handler1));
 
-        let new_stats = dhat::HeapStats::get();
-        assert_eq!(new_stats.curr_blocks, stats.curr_blocks);
-        assert_eq!(new_stats.curr_bytes, stats.curr_bytes);
+        let info = allocation_counter::measure(|| {
+            store.subscribe(&key1, handler1, None);
+            assert!(store.unsubscribe(&key1, &handler1));
+        });
+        assert_eq!(info.count_current, 0);
     }
 
     /// Should clear memory after expire data
     #[test]
     fn expire_memory() {
-        let _profiler = dhat::Profiler::builder().testing().build();
-
         let timer = Arc::new(MockTimer::default());
         let mut store = SimpleKeyValue::<u32, u32, u32, u32>::new(timer.clone());
-
-        let stats = dhat::HeapStats::get();
 
         let key1 = 1;
         let value1 = 2;
         let version1 = 1;
         let source1 = 1000;
-        assert!(store.set(key1, value1, version1, source1, Some(100)));
-        timer.fake(100);
-        store.tick();
 
-        let new_stats = dhat::HeapStats::get();
-        assert_eq!(new_stats.curr_blocks, stats.curr_blocks);
-        assert_eq!(new_stats.curr_bytes, stats.curr_bytes);
+        let info = allocation_counter::measure(|| {
+            assert!(store.set(key1, value1, version1, source1, Some(100)));
+            timer.fake(100);
+            store.tick();
+        });
+        assert_eq!(info.count_current, 0);
     }
 
     /// Should clear memory after expire handler
     #[test]
     fn expire_handler_memory() {
-        let _profiler = dhat::Profiler::builder().testing().build();
-
         let timer = Arc::new(MockTimer::default());
         let mut store = SimpleKeyValue::<u32, u32, u32, u32>::new(timer.clone());
 
-        let stats = dhat::HeapStats::get();
-
         let key1 = 1;
         let handler1 = 1;
-        store.subscribe(&key1, handler1, Some(100));
-        timer.fake(100);
-        store.tick();
 
-        let new_stats = dhat::HeapStats::get();
-        assert_eq!(new_stats.curr_blocks, stats.curr_blocks);
-        assert_eq!(new_stats.curr_bytes, stats.curr_bytes);
+        let info = allocation_counter::measure(|| {
+            store.subscribe(&key1, handler1, Some(100));
+            timer.fake(100);
+            store.tick();
+        });
+        assert_eq!(info.count_current, 0);
     }
 
     /// Should clear memory after pop all events
     #[test]
     fn pop_all_memory() {
-        let _profiler = dhat::Profiler::builder().testing().build();
-
         let timer = Arc::new(MockTimer::default());
         let mut store = SimpleKeyValue::<u32, u32, u32, u32>::new(timer.clone());
 
@@ -529,17 +509,14 @@ mod tests {
         let source1 = 1000;
         store.subscribe(&key1, handler1, None);
 
-        let stats = dhat::HeapStats::get();
+        let info = allocation_counter::measure(|| {
+            assert!(store.set(key1, value1, version1, source1, None));
+            assert_eq!(store.del(&key1, version1), Some((value1, version1, source1)));
 
-        assert!(store.set(key1, value1, version1, source1, None));
-        assert_eq!(store.del(&key1, version1), Some((value1, version1, source1)));
-
-        assert_eq!(store.poll(), Some(OutputEvent::NotifySet(key1, value1, version1, source1, handler1)));
-        assert_eq!(store.poll(), Some(OutputEvent::NotifyDel(key1, value1, version1, source1, handler1)));
-        assert_eq!(store.poll(), None);
-
-        let new_stats = dhat::HeapStats::get();
-        assert_eq!(new_stats.curr_blocks, stats.curr_blocks);
-        assert_eq!(new_stats.curr_bytes, stats.curr_bytes);
+            assert_eq!(store.poll(), Some(OutputEvent::NotifySet(key1, value1, version1, source1, handler1)));
+            assert_eq!(store.poll(), Some(OutputEvent::NotifyDel(key1, value1, version1, source1, handler1)));
+            assert_eq!(store.poll(), None);
+        });
+        assert_eq!(info.count_current, 0);
     }
 }

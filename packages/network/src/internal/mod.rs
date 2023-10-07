@@ -1,6 +1,5 @@
 use crate::msg::TransportMsg;
 use bluesea_identity::{ConnId, NodeId};
-use bluesea_router::RouteRule;
 
 pub(crate) mod agent;
 pub(crate) mod cross_handler_gate;

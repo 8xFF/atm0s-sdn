@@ -155,13 +155,9 @@ mod tests {
 
     #[test]
     fn test_simple_pubsub_memory() {
-        let _profiler = dhat::Profiler::builder().testing().build();
-
         let pub_manager = super::PublisherManager::<u64, u64>::new();
 
-        let pre_stats = dhat::HeapStats::get();
-
-        {
+        let info = allocation_counter::measure(|| {
             let (sub1, is_new) = pub_manager.subscribe(1, Box::new(|| {}));
             assert!(is_new);
             let (sub2, is_new) = pub_manager.subscribe(1, Box::new(|| {}));
@@ -178,15 +174,10 @@ mod tests {
 
             // shrink to fit for check memory leak
             pub_manager.subscribers.write().shrink_to_fit();
-        }
 
-        //after drop subscribers should be empty
-        assert!(pub_manager.subscribers.read().is_empty());
-
-        let post_stats = dhat::HeapStats::get();
-
-        // assert heap usage is the same
-        assert_eq!(pre_stats.curr_blocks, post_stats.curr_blocks);
-        assert_eq!(pre_stats.curr_bytes, post_stats.curr_bytes);
+            //after drop subscribers should be empty
+            assert!(pub_manager.subscribers.read().is_empty());
+        });
+        assert_eq!(info.count_current, 0);
     }
 }

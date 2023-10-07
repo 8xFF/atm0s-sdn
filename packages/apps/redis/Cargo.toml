@@ -1,5 +1,5 @@
 [package]
-name = "key-value"
+name = "redis-server"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,13 +10,8 @@ bluesea-identity = { workspace = true }
 bluesea-router = { workspace = true }
 utils = { workspace = true }
 network = { workspace = true }
-thiserror = { workspace = true }
+key-value = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }
 async-std = { workspace = true }
-parking_lot = { workspace = true }
-
-[dev-dependencies]
-env_logger = { workspace = true }
-allocation-counter = { workspace = true }
-utils = { workspace = true, features = ["auto-clear"] }
+resp = "1.0.3"
