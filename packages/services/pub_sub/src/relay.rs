@@ -72,7 +72,7 @@ where
             remote: Arc::new(RwLock::new(RemoteRelay::new())),
             local: Arc::new(RwLock::new(LocalRelay::new())),
         };
-        let sdk = PubsubSdk::new(s.logic.clone(), s.remote.clone(), s.local.clone());
+        let sdk = PubsubSdk::new(node_id, s.logic.clone(), s.remote.clone(), s.local.clone());
         (s, sdk)
     }
 

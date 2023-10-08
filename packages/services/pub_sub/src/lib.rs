@@ -27,7 +27,6 @@ mod tests {
     use utils::{option_handle::OptionUtils, SystemTimer};
 
     use crate::msg::{PubsubRemoteEvent, PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent};
-    use crate::relay::ChannelIdentify;
     use crate::PubsubServiceBehaviour;
 
     #[derive(convert_enum::From, convert_enum::TryInto, PartialEq, Debug)]
@@ -72,9 +71,8 @@ mod tests {
 
         async_std::task::sleep(Duration::from_millis(1000)).await;
 
-        let channel = ChannelIdentify::new(1111, node_id);
-        let consumer = sdk.create_consumer(channel, Some(10));
-        let producer = sdk.create_publisher(channel);
+        let producer = sdk.create_publisher(1111);
+        let consumer = sdk.create_consumer(producer.identify(), Some(10));
 
         let data = Bytes::from(vec![1, 2, 3, 4]);
         producer.send(data.clone());

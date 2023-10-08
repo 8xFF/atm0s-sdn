@@ -7,7 +7,7 @@ use layers_spread_router_sync::{LayersSpreadRouterSyncBehavior, LayersSpreadRout
 use manual_discovery::{ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent, ManualMsg};
 use network::convert_enum;
 use network::plane::{NetworkPlane, NetworkPlaneConfig};
-use pub_sub::{ChannelIdentify, PubsubRemoteEvent, PubsubSdk, PubsubServiceBehaviour, PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent};
+use pub_sub::{PubsubRemoteEvent, PubsubSdk, PubsubServiceBehaviour, PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent};
 use utils::{SystemTimer, Timer};
 
 #[derive(convert_enum::From, convert_enum::TryInto)]
@@ -71,14 +71,11 @@ async fn main() {
     let (pubsub_sdk1, node_addr1) = run_node(node_id1, vec![]).await;
     let (pubsub_sdk2, _node_addr2) = run_node(node_id2, vec![node_addr1]).await;
 
-    let ping_channel = ChannelIdentify::new(1, node_id1);
-    let pong_channel = ChannelIdentify::new(2, node_id2);
+    let ping_producer = pubsub_sdk1.create_publisher(1);
+    let pong_producer = pubsub_sdk2.create_publisher(2);
 
-    let ping_producer = pubsub_sdk1.create_publisher(ping_channel);
-    let pong_consumer = pubsub_sdk1.create_consumer(pong_channel, None);
-
-    let pong_producer = pubsub_sdk2.create_publisher(pong_channel);
-    let ping_consumer = pubsub_sdk2.create_consumer(ping_channel, None);
+    let pong_consumer = pubsub_sdk1.create_consumer(pong_producer.identify(), None);
+    let ping_consumer = pubsub_sdk2.create_consumer(ping_producer.identify(), None);
 
     async_std::task::sleep(Duration::from_secs(5)).await;
 

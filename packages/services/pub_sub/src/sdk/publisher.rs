@@ -29,6 +29,10 @@ where
         Self { uuid, channel, logic, remote, local }
     }
 
+    pub fn identify(&self) -> ChannelIdentify {
+        self.channel
+    }
+
     pub fn send(&self, data: Bytes) {
         if let Some((remotes, locals)) = self.logic.read().relay(self.channel) {
             if remotes.len() > 0 {
