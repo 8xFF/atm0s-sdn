@@ -370,7 +370,10 @@ mod tests {
 
     use crate::{
         msg::PubsubRemoteEvent,
-        relay::{feedback::Feedback, ChannelIdentify, LocalSubId},
+        relay::{
+            feedback::{Feedback, FeedbackConsumerId, FeedbackType, NumberInfo},
+            ChannelIdentify, LocalSubId,
+        },
         PUBSUB_CHANNEL_RESYNC_MS, PUBSUB_CHANNEL_TIMEOUT_MS,
     };
 
@@ -382,6 +385,7 @@ mod tests {
         InLocalSub(ChannelIdentify, LocalSubId),
         InLocalUnsub(ChannelIdentify, LocalSubId),
         In(NodeId, ConnId, PubsubRemoteEvent),
+        InFb(ChannelIdentify, FeedbackConsumerId, Feedback, Option<Feedback>),
         OutAwake(usize),
         OutNone,
         Out(NodeId, Option<ConnId>, PubsubRemoteEvent),
@@ -401,6 +405,7 @@ mod tests {
                 Event::InLocalSub(channel, handler) => logic.on_local_sub(channel, handler),
                 Event::InLocalUnsub(channel, handler) => logic.on_local_unsub(channel, handler),
                 Event::In(from, conn, event) => logic.on_event(from, conn, event),
+                Event::InFb(channel, consumer, fb, out) => assert_eq!(logic.on_feedback(channel, consumer, fb), out),
                 Event::OutAwake(count) => assert_eq!(awake.pop_awake_count(), count),
                 Event::OutNone => assert_eq!(logic.pop_action(), None),
                 Event::Out(from, conn, event) => assert_eq!(logic.pop_action(), Some((from, conn, PubsubRelayLogicOutput::Event(event)))),
@@ -420,11 +425,26 @@ mod tests {
         let remote_node_id = 1;
         let remote_conn_id = ConnId::from_in(10, 2);
 
+        let fb = Feedback {
+            channel: channel,
+            id: 1,
+            feedback_type: FeedbackType::Passthrough(vec![1]),
+        };
+        let fb2 = Feedback {
+            channel: channel,
+            id: 2,
+            feedback_type: FeedbackType::Number {
+                window_ms: 100,
+                info: NumberInfo { count: 1, max: 1, min: 1, sum: 1 },
+            },
+        };
+
         test(
             node_id,
             vec![
                 Event::Tick(vec![]),
                 Event::OutNone,
+                //Test sub
                 Event::In(remote_node_id, remote_conn_id, PubsubRemoteEvent::Sub(channel)),
                 Event::Out(remote_node_id, Some(remote_conn_id), PubsubRemoteEvent::SubAck(channel, true)),
                 Event::OutAwake(1),
@@ -435,6 +455,25 @@ mod tests {
                     assert_eq!(logic.relay(channel), Some((vec![remote_conn_id].as_slice(), vec![].as_slice())));
                     true
                 })),
+                //Test feedback
+                Event::InFb(channel, FeedbackConsumerId::Local(1), fb.clone(), Some(fb.clone())),
+                Event::OutNone,
+                Event::InFb(channel, FeedbackConsumerId::Remote(remote_conn_id), fb.clone(), Some(fb.clone())),
+                Event::OutNone,
+                Event::OutAwake(0),
+                Event::FakeTimer(100),
+                Event::InFb(channel, FeedbackConsumerId::Remote(remote_conn_id), fb2.clone(), Some(fb2.clone())),
+                Event::OutNone,
+                Event::OutAwake(0),
+                Event::FakeTimer(150),
+                Event::InFb(channel, FeedbackConsumerId::Remote(remote_conn_id), fb2.clone(), None),
+                Event::OutNone,
+                Event::OutAwake(0),
+                Event::FakeTimer(200),
+                Event::Tick(vec![fb2.clone()]),
+                Event::OutNone,
+                Event::OutAwake(0),
+                //Test unsub
                 Event::In(remote_node_id, remote_conn_id, PubsubRemoteEvent::Unsub(channel)),
                 Event::Out(remote_node_id, Some(remote_conn_id), PubsubRemoteEvent::UnsubAck(channel, true)),
                 Event::OutAwake(1),
@@ -518,11 +557,27 @@ mod tests {
         let next_node_id = 2;
         let next_conn_id = ConnId::from_in(10, 3);
 
+        let fb = Feedback {
+            channel: channel,
+            id: 1,
+            feedback_type: FeedbackType::Passthrough(vec![1]),
+        };
+
+        let fb2 = Feedback {
+            channel: channel,
+            id: 2,
+            feedback_type: FeedbackType::Number {
+                window_ms: 100,
+                info: NumberInfo { count: 1, max: 1, min: 1, sum: 1 },
+            },
+        };
+
         test(
             node_id,
             vec![
                 Event::Tick(vec![]),
                 Event::OutNone,
+                // Test sub
                 Event::In(remote_node_id, remote_conn_id, PubsubRemoteEvent::Sub(channel)),
                 Event::Out(remote_node_id, Some(remote_conn_id), PubsubRemoteEvent::SubAck(channel, true)),
                 Event::Out(channel.source(), None, PubsubRemoteEvent::Sub(channel)),
@@ -535,6 +590,26 @@ mod tests {
                     assert_eq!(logic.relay(channel), Some((vec![remote_conn_id].as_slice(), vec![].as_slice())));
                     true
                 })),
+                // Test feedback
+                Event::InFb(channel, FeedbackConsumerId::Local(1), fb.clone(), None),
+                Event::OutFb(next_node_id, Some(next_conn_id), fb.clone()),
+                Event::OutAwake(1),
+                Event::InFb(channel, FeedbackConsumerId::Remote(remote_conn_id), fb.clone(), None),
+                Event::OutFb(next_node_id, Some(next_conn_id), fb.clone()),
+                Event::OutAwake(1),
+                Event::FakeTimer(100),
+                Event::InFb(channel, FeedbackConsumerId::Remote(remote_conn_id), fb2.clone(), None),
+                Event::OutFb(next_node_id, Some(next_conn_id), fb2.clone()),
+                Event::OutAwake(1),
+                Event::FakeTimer(150),
+                Event::InFb(channel, FeedbackConsumerId::Remote(remote_conn_id), fb2.clone(), None),
+                Event::OutNone,
+                Event::OutAwake(0),
+                Event::FakeTimer(200),
+                Event::Tick(vec![]),
+                Event::OutFb(next_node_id, Some(next_conn_id), fb2.clone()),
+                Event::OutAwake(0),
+                // Test unsub
                 Event::In(remote_node_id, remote_conn_id, PubsubRemoteEvent::Unsub(channel)),
                 Event::Out(remote_node_id, Some(remote_conn_id), PubsubRemoteEvent::UnsubAck(channel, true)),
                 Event::Out(next_node_id, Some(next_conn_id), PubsubRemoteEvent::Unsub(channel)),
