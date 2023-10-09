@@ -7,7 +7,7 @@ use parking_lot::RwLock;
 
 use crate::{
     msg::{PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent},
-    relay::{local::LocalRelay, logic::PubsubRelayLogic, remote::RemoteRelay, ChannelIdentify, LocalPubId},
+    relay::{feedback::Feedback, local::LocalRelay, logic::PubsubRelayLogic, remote::RemoteRelay, ChannelIdentify, LocalPubId},
     PUBSUB_SERVICE_ID,
 };
 
@@ -18,6 +18,7 @@ pub struct Publisher<BE, HE> {
     logic: Arc<RwLock<PubsubRelayLogic>>,
     remote: Arc<RwLock<RemoteRelay<BE, HE>>>,
     local: Arc<RwLock<LocalRelay>>,
+    fb_rx: async_std::channel::Receiver<Feedback>,
 }
 
 impl<BE, HE> Publisher<BE, HE>
@@ -26,7 +27,16 @@ where
     HE: From<PubsubServiceHandlerEvent> + TryInto<PubsubServiceHandlerEvent> + Send + Sync + 'static,
 {
     pub fn new(uuid: LocalPubId, channel: ChannelIdentify, logic: Arc<RwLock<PubsubRelayLogic>>, remote: Arc<RwLock<RemoteRelay<BE, HE>>>, local: Arc<RwLock<LocalRelay>>) -> Self {
-        Self { uuid, channel, logic, remote, local }
+        let (tx, rx) = async_std::channel::bounded(100);
+        local.write().on_local_pub(channel.uuid(), tx);
+        Self {
+            uuid,
+            channel,
+            logic,
+            remote,
+            local,
+            fb_rx: rx,
+        }
     }
 
     pub fn identify(&self) -> ChannelIdentify {
@@ -45,8 +55,14 @@ where
             self.local.read().relay(locals, data);
         }
     }
+
+    pub async fn recv_feedback(&self) -> Option<Feedback> {
+        self.fb_rx.recv().await.ok()
+    }
 }
 
 impl<BE, HE> Drop for Publisher<BE, HE> {
-    fn drop(&mut self) {}
+    fn drop(&mut self) {
+        self.local.write().on_local_unpub(self.channel.uuid());
+    }
 }

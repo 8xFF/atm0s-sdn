@@ -10,9 +10,9 @@ use network::{
 use utils::awaker::{AsyncAwaker, Awaker};
 
 use crate::{
-    handler::{PubsubServiceConnectionHandler, CONTROL_META_TYPE},
+    handler::{PubsubServiceConnectionHandler, CONTROL_META_TYPE, FEEDBACK_TYPE},
     msg::{PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent},
-    relay::PubsubRelay,
+    relay::{logic::PubsubRelayLogicOutput, PubsubRelay},
     PubsubSdk, PUBSUB_SERVICE_ID,
 };
 
@@ -48,9 +48,18 @@ where
 {
     fn pop_all_events(&mut self, agent: &network::BehaviorAgent<BE, HE>) {
         while let Some((node, conn, action)) = self.relay.pop_action() {
-            let mut header = MsgHeader::build_reliable(PUBSUB_SERVICE_ID, RouteRule::Direct, 0);
-            header.meta = CONTROL_META_TYPE;
-            let msg = TransportMsg::from_payload_bincode(header, &action);
+            let msg = match action {
+                PubsubRelayLogicOutput::Event(e) => {
+                    let mut header = MsgHeader::build_reliable(PUBSUB_SERVICE_ID, RouteRule::Direct, 0);
+                    header.meta = CONTROL_META_TYPE;
+                    TransportMsg::from_payload_bincode(header, &e)
+                }
+                PubsubRelayLogicOutput::Feedback(fb) => {
+                    let mut header = MsgHeader::build_reliable(PUBSUB_SERVICE_ID, RouteRule::Direct, 0);
+                    header.meta = FEEDBACK_TYPE;
+                    TransportMsg::from_payload_bincode(header, &fb)
+                }
+            };
 
             //Should be send to correct conn, if that conn not exits => fallback by finding to origin source node
             if let Some(conn) = conn {

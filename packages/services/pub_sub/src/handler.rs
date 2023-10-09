@@ -2,10 +2,11 @@ use network::{behaviour::ConnectionHandler, transport::ConnectionEvent};
 
 use crate::{
     msg::{PubsubRemoteEvent, PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent},
-    relay::{ChannelIdentify, PubsubRelay},
+    relay::{feedback::Feedback, ChannelIdentify, PubsubRelay},
 };
 
 pub const CONTROL_META_TYPE: u8 = 1;
+pub const FEEDBACK_TYPE: u8 = 2;
 
 pub struct PubsubServiceConnectionHandler<BE, HE> {
     pub(crate) relay: PubsubRelay<BE, HE>,
@@ -28,6 +29,11 @@ where
                 CONTROL_META_TYPE => {
                     if let Ok(cmd) = msg.get_payload_bincode::<PubsubRemoteEvent>() {
                         self.relay.on_event(agent.remote_node_id(), agent.conn_id(), cmd);
+                    }
+                }
+                FEEDBACK_TYPE => {
+                    if let Ok(fb) = msg.get_payload_bincode::<Feedback>() {
+                        self.relay.on_feedback(fb.channel, agent.remote_node_id(), agent.conn_id(), fb);
                     }
                 }
                 _ => {

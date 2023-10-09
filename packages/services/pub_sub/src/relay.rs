@@ -12,8 +12,14 @@ use crate::{
     PubsubSdk,
 };
 
-use self::{local::LocalRelay, logic::PubsubRelayLogic, remote::RemoteRelay};
+use self::{
+    feedback::FeedbackConsumerId,
+    local::LocalRelay,
+    logic::{PubsubRelayLogic, PubsubRelayLogicOutput},
+    remote::RemoteRelay,
+};
 
+pub(crate) mod feedback;
 pub(crate) mod local;
 pub(crate) mod logic;
 pub(crate) mod remote;
@@ -85,11 +91,20 @@ where
     }
 
     pub fn tick(&self) {
-        self.logic.write().tick();
+        let local_fbs = self.logic.write().tick();
+        for fb in local_fbs {
+            self.local.read().feedback(fb.channel.uuid(), fb);
+        }
     }
 
     pub fn on_event(&self, from: NodeId, conn: ConnId, event: PubsubRemoteEvent) {
         self.logic.write().on_event(from, conn, event);
+    }
+
+    pub fn on_feedback(&self, channel: ChannelIdentify, _from: NodeId, conn: ConnId, fb: feedback::Feedback) {
+        if let Some(local_fb) = self.logic.write().on_feedback(channel, FeedbackConsumerId::Remote(conn), fb) {
+            self.local.read().feedback(channel.uuid(), local_fb);
+        }
     }
 
     pub fn relay(&self, channel: ChannelIdentify, msg: TransportMsg) {
@@ -101,7 +116,7 @@ where
         }
     }
 
-    pub fn pop_action(&mut self) -> Option<(NodeId, Option<ConnId>, PubsubRemoteEvent)> {
+    pub fn pop_action(&mut self) -> Option<(NodeId, Option<ConnId>, PubsubRelayLogicOutput)> {
         self.logic.write().pop_action()
     }
 }

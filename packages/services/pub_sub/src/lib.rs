@@ -27,6 +27,7 @@ mod tests {
     use utils::{option_handle::OptionUtils, SystemTimer};
 
     use crate::msg::{PubsubRemoteEvent, PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent};
+    use crate::relay::feedback::{FeedbackType, NumberInfo};
     use crate::PubsubServiceBehaviour;
 
     #[derive(convert_enum::From, convert_enum::TryInto, PartialEq, Debug)]
@@ -78,6 +79,51 @@ mod tests {
         producer.send(data.clone());
         let got_value = consumer.recv().timeout(Duration::from_secs(1)).await.expect("Should get success").expect("Should some");
         assert_eq!(&got_value, &data);
+
+        const PASS_FEEDBACK_TYPE_ID: u8 = 2;
+        consumer.feedback(PASS_FEEDBACK_TYPE_ID, FeedbackType::Passthrough(vec![1]));
+        let got_feedback = producer.recv_feedback().timeout(Duration::from_secs(1)).await.expect("Should get success").expect("Should some");
+        assert_eq!(got_feedback.channel, producer.identify());
+        assert_eq!(got_feedback.id, PASS_FEEDBACK_TYPE_ID);
+        assert_eq!(got_feedback.feedback_type, FeedbackType::Passthrough(vec![1]));
+
+        const NUMBER_FEEDBACK_TYPE_ID: u8 = 3;
+        consumer.feedback(
+            NUMBER_FEEDBACK_TYPE_ID,
+            FeedbackType::Number {
+                window_ms: 200,
+                info: NumberInfo { count: 1, max: 1, min: 1, sum: 1 },
+            },
+        );
+        let got_feedback1 = producer.recv_feedback().timeout(Duration::from_secs(1)).await.expect("Should get success").expect("Should some");
+        assert_eq!(got_feedback1.channel, producer.identify());
+        assert_eq!(got_feedback1.id, NUMBER_FEEDBACK_TYPE_ID);
+        assert_eq!(
+            got_feedback1.feedback_type,
+            FeedbackType::Number {
+                window_ms: 200,
+                info: NumberInfo { count: 1, max: 1, min: 1, sum: 1 }
+            }
+        );
+
+        let consumer2 = sdk.create_consumer(producer.identify(), Some(10));
+        consumer2.feedback(
+            NUMBER_FEEDBACK_TYPE_ID,
+            FeedbackType::Number {
+                window_ms: 200,
+                info: NumberInfo { count: 1, max: 2, min: 2, sum: 2 },
+            },
+        );
+        let got_feedback2 = producer.recv_feedback().timeout(Duration::from_secs(1)).await.expect("Should get success").expect("Should some");
+        assert_eq!(got_feedback2.channel, producer.identify());
+        assert_eq!(got_feedback2.id, NUMBER_FEEDBACK_TYPE_ID);
+        assert_eq!(
+            got_feedback2.feedback_type,
+            FeedbackType::Number {
+                window_ms: 200,
+                info: NumberInfo { count: 2, max: 2, min: 1, sum: 3 }
+            }
+        );
 
         join.cancel().await.print_none("Should cancel join");
     }

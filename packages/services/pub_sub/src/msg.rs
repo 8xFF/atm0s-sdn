@@ -1,4 +1,4 @@
-use crate::relay::ChannelIdentify;
+use crate::relay::{feedback::Feedback, ChannelIdentify};
 use serde::{Deserialize, Serialize};
 
 pub enum PubsubServiceBehaviourEvent {

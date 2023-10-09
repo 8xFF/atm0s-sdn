@@ -3,7 +3,12 @@ use std::sync::Arc;
 use bytes::Bytes;
 use parking_lot::RwLock;
 
-use crate::relay::{local::LocalRelay, logic::PubsubRelayLogic, ChannelIdentify, LocalSubId};
+use crate::relay::{
+    feedback::{Feedback, FeedbackConsumerId, FeedbackType},
+    local::LocalRelay,
+    logic::PubsubRelayLogic,
+    ChannelIdentify, LocalSubId,
+};
 
 pub struct Consumer {
     uuid: LocalSubId,
@@ -20,6 +25,17 @@ impl Consumer {
         local.write().on_local_sub(uuid, tx);
 
         Self { uuid, channel, logic, local, rx }
+    }
+
+    pub fn feedback(&self, id: u8, feedback_type: FeedbackType) {
+        let fb = Feedback {
+            channel: self.channel,
+            id,
+            feedback_type,
+        };
+        if let Some(local_fb) = self.logic.write().on_feedback(self.channel, FeedbackConsumerId::Local(self.uuid), fb) {
+            self.local.read().feedback(self.channel.uuid(), local_fb);
+        }
     }
 
     pub async fn recv(&self) -> Option<Bytes> {
