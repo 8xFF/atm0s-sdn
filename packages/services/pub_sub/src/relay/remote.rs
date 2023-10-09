@@ -29,6 +29,7 @@ where
     pub fn relay(&self, remotes: &[ConnId], msg: &TransportMsg) {
         for remote in remotes {
             if let Some(agent) = self.remotes.get(remote) {
+                log::trace!("[RemoteRelay] relay to remote {}", remote);
                 agent.send_net(msg.clone());
             }
         }

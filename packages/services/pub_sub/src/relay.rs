@@ -112,6 +112,8 @@ where
             self.remote.read().relay(remotes, &msg);
             if !locals.is_empty() {
                 self.local.read().relay(locals, Bytes::from(msg.payload().to_vec()));
+            } else {
+                log::trace!("No local subscriber for channel {}", channel);
             }
         }
     }

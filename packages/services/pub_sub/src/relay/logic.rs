@@ -68,7 +68,7 @@ impl PubsubRelayLogic {
             let mut timeout_remotes = vec![];
             for (conn, ts) in slot.remote_subscribers_ts.iter() {
                 if self.timer.now_ms() - ts >= PUBSUB_CHANNEL_TIMEOUT_MS {
-                    log::info!("[PubsubRelayLogic] remote sub {} event from {} timeout", channel, conn);
+                    log::info!("[PubsubRelayLogic {}] remote sub {} event from {} timeout", self.node_id, channel, conn);
                     timeout_remotes.push(*conn);
                 }
             }
@@ -91,7 +91,7 @@ impl PubsubRelayLogic {
 
             if channel.source() == self.node_id {
                 if slot.remote_subscribers.len() == 0 && slot.local_subscribers.len() == 0 {
-                    log::info!("[PubsubRelayLogic] channel {} empty in source node => clear", channel);
+                    log::info!("[PubsubRelayLogic {}] channel {} empty in source node => clear", self.node_id, channel);
                     need_clear_channels.push(*channel);
                 }
                 continue;
@@ -101,7 +101,8 @@ impl PubsubRelayLogic {
                     let now_ms = self.timer.now_ms();
                     if now_ms - acked.at_ms >= PUBSUB_CHANNEL_RESYNC_MS {
                         log::info!(
-                            "[PubsubRelayLogic] resend sub {} event to next node {} in each resync cycle {} ms",
+                            "[PubsubRelayLogic {}] resend sub {} event to next node {} in each resync cycle {} ms",
+                            self.node_id,
                             channel,
                             acked.from_node,
                             PUBSUB_CHANNEL_RESYNC_MS
@@ -111,16 +112,21 @@ impl PubsubRelayLogic {
                             .push_back((channel.source(), Some(acked.from_conn), PubsubRelayLogicOutput::Event(PubsubRemoteEvent::Sub(*channel))));
                     }
                 } else {
-                    log::info!("[PubsubRelayLogic] resend sub {} event to next node {} in each because of non-acked channel", channel, channel.source());
+                    log::info!(
+                        "[PubsubRelayLogic {}] resend sub {} event to next node {} in each because of non-acked channel",
+                        self.node_id,
+                        channel,
+                        channel.source()
+                    );
                     self.output_events.push_back((channel.source(), None, PubsubRelayLogicOutput::Event(PubsubRemoteEvent::Sub(*channel))));
                 }
             } else if slot.remote_subscribers.len() == 0 && slot.local_subscribers.len() == 0 {
                 if let Some(info) = &slot.acked {
-                    log::info!("[PubsubRelayLogic] resend unsub {} event back next node {} because of empty", channel, info.from_node);
+                    log::info!("[PubsubRelayLogic {}] resend unsub {} event back next node {} because of empty", self.node_id, channel, info.from_node);
                     self.output_events
                         .push_back((info.from_node, Some(info.from_conn), PubsubRelayLogicOutput::Event(PubsubRemoteEvent::Unsub(*channel))));
                 } else {
-                    log::info!("[PubsubRelayLogic] remove channel {} with no next node info because of empty", channel);
+                    log::info!("[PubsubRelayLogic {}] remove channel {} with no next node info because of empty", self.node_id, channel);
                     need_clear_channels.push(*channel);
                 }
             }
@@ -150,7 +156,7 @@ impl PubsubRelayLogic {
                 None
             }
         } else {
-            log::warn!("[PubsubRelayLogic] feedback {} event but no channel found", channel);
+            log::warn!("[PubsubRelayLogic {}] feedback {} event but no channel found", self.node_id, channel);
             None
         }
     }
@@ -166,14 +172,14 @@ impl PubsubRelayLogic {
                 // if from conn is in value.remotes list => do nothing
                 if !value.local_subscribers.contains(&handler) {
                     value.local_subscribers.push(handler);
-                    log::info!("[PubsubRelayLogic] local sub {} event from {} pushed to list", channel, handler);
+                    log::info!("[PubsubRelayLogic {}] local sub {} event from {} pushed to list", self.node_id, channel, handler);
                 } else {
-                    log::info!("[PubsubRelayLogic] local sub {} event from {} allready in list", channel, handler);
+                    log::info!("[PubsubRelayLogic {}] local sub {} event from {} allready in list", self.node_id, channel, handler);
                 }
                 false
             }
             Entry::Vacant(entry) => {
-                log::info!("[PubsubRelayLogic] local sub {} event from {} pushed to list, new relay", channel, handler);
+                log::info!("[PubsubRelayLogic {}] local sub {} event from {} pushed to list, new relay", self.node_id, channel, handler);
                 entry.insert(ChannelContainer {
                     source: channel.source(),
                     acked: None,
@@ -188,7 +194,8 @@ impl PubsubRelayLogic {
 
         if maybe_sub && channel.source() != self.node_id {
             log::info!(
-                "[PubsubRelayLogic] local sub {} event from {} pushed to list, new relay => send sub to source {}",
+                "[PubsubRelayLogic {}] local sub {} event from {} pushed to list, new relay => send sub to source {}",
+                self.node_id,
                 channel,
                 handler,
                 channel.source()
@@ -205,16 +212,17 @@ impl PubsubRelayLogic {
         if let Some(slot) = self.channels.get_mut(&channel) {
             slot.feedback_processor.on_unsub(FeedbackConsumerId::Local(handler));
             if let Some(index) = slot.local_subscribers.iter().position(|&x| x == handler) {
-                log::info!("[PubsubRelayLogic] unsub {} event from {} removed from list", channel, handler);
+                log::info!("[PubsubRelayLogic {}] unsub {} event from {} removed from list", self.node_id, channel, handler);
                 slot.local_subscribers.swap_remove(index);
             } else {
-                log::info!("[PubsubRelayLogic] unsub {} event from {} allready removed from list", channel, handler);
+                log::info!("[PubsubRelayLogic {}] unsub {} event from {} allready removed from list", self.node_id, channel, handler);
             }
 
             if slot.remote_subscribers.len() == 0 && slot.local_subscribers.len() == 0 {
                 if let Some(info) = &slot.acked {
                     log::info!(
-                        "[PubsubRelayLogic] local unsub {} event from {} list empty => send unsub to next node {}",
+                        "[PubsubRelayLogic {}] local unsub {} event from {} list empty => send unsub to next node {}",
+                        self.node_id,
                         channel,
                         handler,
                         info.from_node
@@ -223,12 +231,12 @@ impl PubsubRelayLogic {
                         .push_back((info.from_node, Some(info.from_conn), PubsubRelayLogicOutput::Event(PubsubRemoteEvent::Unsub(channel))));
                     self.awaker.notify();
                 } else {
-                    log::warn!("[PubsubRelayLogic] local unsub {} event from {} list empty => but no next node", channel, handler);
+                    log::warn!("[PubsubRelayLogic {}] local unsub {} event from {} list empty => but no next node", self.node_id, channel, handler);
                     self.channels.remove(&channel);
                 }
             }
         } else {
-            log::warn!("[PubsubRelayLogic] local unsub {} event from {} but no channel found", channel, handler);
+            log::warn!("[PubsubRelayLogic {}] local unsub {} event from {} but no channel found", self.node_id, channel, handler);
         }
     }
 
@@ -242,17 +250,17 @@ impl PubsubRelayLogic {
                         // if from conn is in value.remotes list => do nothing
                         if !value.remote_subscribers.contains(&conn) {
                             value.remote_subscribers.push(conn);
-                            log::info!("[PubsubRelayLogic] sub {} event from {} pushed to list", id, from);
+                            log::info!("[PubsubRelayLogic {}] sub {} event from {} pushed to list", self.node_id, id, from);
                             self.output_events.push_back((from, Some(conn), PubsubRelayLogicOutput::Event(PubsubRemoteEvent::SubAck(id, true))));
                         } else {
-                            log::info!("[PubsubRelayLogic] sub {} event from {} allready added", id, from);
+                            log::info!("[PubsubRelayLogic {}] sub {} event from {} allready added", self.node_id, id, from);
                             self.output_events.push_back((from, Some(conn), PubsubRelayLogicOutput::Event(PubsubRemoteEvent::SubAck(id, false))));
                         }
                         value.remote_subscribers_ts.insert(conn, self.timer.now_ms());
                         false
                     }
                     Entry::Vacant(entry) => {
-                        log::info!("[PubsubRelayLogic] sub {} event from {} pushed to list, new relay", id, from);
+                        log::info!("[PubsubRelayLogic {}] sub {} event from {} pushed to list, new relay", self.node_id, id, from);
                         entry.insert(ChannelContainer {
                             source: id.source(),
                             acked: None,
@@ -267,7 +275,13 @@ impl PubsubRelayLogic {
                 };
 
                 if maybe_sub && id.source() != self.node_id {
-                    log::info!("[PubsubRelayLogic] sub {} event from {} pushed to list, new relay => send sub to source {}", id, from, id.source());
+                    log::info!(
+                        "[PubsubRelayLogic {}] sub {} event from {} pushed to list, new relay => send sub to source {}",
+                        self.node_id,
+                        id,
+                        from,
+                        id.source()
+                    );
                     self.output_events.push_back((id.source(), None, PubsubRelayLogicOutput::Event(PubsubRemoteEvent::Sub(id))));
                 }
 
@@ -278,56 +292,63 @@ impl PubsubRelayLogic {
                     slot.feedback_processor.on_unsub(FeedbackConsumerId::Remote(conn));
                     if let Some(index) = slot.remote_subscribers.iter().position(|&x| x == conn) {
                         slot.remote_subscribers.swap_remove(index);
-                        log::info!("[PubsubRelayLogic] unsub {} event from {} removed from list", id, from);
+                        log::info!("[PubsubRelayLogic {}] unsub {} event from {} removed from list", self.node_id, id, from);
                         self.output_events.push_back((from, Some(conn), PubsubRelayLogicOutput::Event(PubsubRemoteEvent::UnsubAck(id, true))));
                     } else {
-                        log::info!("[PubsubRelayLogic] unsub {} event from {} allready removed from list", id, from);
+                        log::info!("[PubsubRelayLogic {}] unsub {} event from {} allready removed from list", self.node_id, id, from);
                         self.output_events.push_back((from, Some(conn), PubsubRelayLogicOutput::Event(PubsubRemoteEvent::UnsubAck(id, false))));
                     }
 
                     if slot.remote_subscribers.len() == 0 && slot.local_subscribers.len() == 0 {
                         if slot.source != self.node_id {
                             if let Some(info) = &slot.acked {
-                                log::info!("[PubsubRelayLogic] unsub {} event from {} list empty => send unsub to next node {}", id, from, info.from_node);
+                                log::info!(
+                                    "[PubsubRelayLogic {}] unsub {} event from {} list empty => send unsub to next node {}",
+                                    self.node_id,
+                                    id,
+                                    from,
+                                    info.from_node
+                                );
                                 self.output_events
                                     .push_back((info.from_node, Some(info.from_conn), PubsubRelayLogicOutput::Event(PubsubRemoteEvent::Unsub(id))));
                             } else {
                                 self.channels.remove(&id);
-                                log::warn!("[PubsubRelayLogic] unsub {} event from {} list empty => but no next node", id, from);
+                                log::warn!("[PubsubRelayLogic {}] unsub {} event from {} list empty => but no next node", self.node_id, id, from);
                             }
                         } else {
                             self.channels.remove(&id);
-                            log::info!("[PubsubRelayLogic] unsub {} event from {} list empty in source node => removed", id, from);
+                            log::info!("[PubsubRelayLogic {}] unsub {} event from {} list empty in source node => removed", self.node_id, id, from);
                         }
                     }
                     self.awaker.notify();
                 } else {
-                    log::warn!("[PubsubRelayLogic] unsub {} event from {} but no channel found", id, from);
+                    log::warn!("[PubsubRelayLogic {}] unsub {} event from {} but no channel found", self.node_id, id, from);
                 }
             }
             PubsubRemoteEvent::SubAck(id, _added) => {
                 if let Some(slot) = self.channels.get_mut(&id) {
-                    log::info!("[PubsubRelayLogic] sub_ack {} event from {}", id, from);
+                    log::info!("[PubsubRelayLogic {}] sub_ack {} event from {}", self.node_id, id, from);
                     slot.acked = Some(AckedInfo {
                         from_node: from,
                         from_conn: conn,
                         at_ms: self.timer.now_ms(),
                     });
                 } else {
-                    log::warn!("[PubsubRelayLogic] sub_ack {} event from {} but channel not found", id, from);
+                    log::warn!("[PubsubRelayLogic {}] sub_ack {} event from {} but channel not found", self.node_id, id, from);
                 }
             }
             PubsubRemoteEvent::UnsubAck(id, _removed) => {
                 if self.channels.remove(&id).is_some() {
-                    log::info!("[PubsubRelayLogic] unsub_ack {} event from {}", id, from);
+                    log::info!("[PubsubRelayLogic {}] unsub_ack {} event from {}", self.node_id, id, from);
                 } else {
-                    log::warn!("[PubsubRelayLogic] unsub_ack {} event from {} but channel not found", id, from);
+                    log::warn!("[PubsubRelayLogic {}] unsub_ack {} event from {} but channel not found", self.node_id, id, from);
                 }
             }
         }
     }
 
     pub fn relay(&self, channel: ChannelIdentify) -> Option<(&[ConnId], &[LocalSubId])> {
+        log::trace!("[PubsubRelayLogic {}] relay channel {}", self.node_id, channel);
         let slot = self.channels.get(&channel)?;
         Some((&slot.remote_subscribers, &slot.local_subscribers))
     }

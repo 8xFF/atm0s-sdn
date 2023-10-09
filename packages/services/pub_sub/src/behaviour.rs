@@ -17,6 +17,7 @@ use crate::{
 };
 
 pub struct PubsubServiceBehaviour<BE, HE> {
+    node_id: NodeId,
     relay: PubsubRelay<BE, HE>,
     awake_notify: Arc<dyn Awaker>,
     awake_task: Option<JoinHandle<()>>,
@@ -32,6 +33,7 @@ where
         let (relay, sdk) = PubsubRelay::new(node_id, awake_notify.clone());
         (
             Self {
+                node_id,
                 relay,
                 awake_notify,
                 awake_task: None,
@@ -81,13 +83,14 @@ where
     }
 
     fn on_started(&mut self, agent: &network::BehaviorAgent<BE, HE>) {
-        log::info!("[PubSubServiceBehaviour] on_started");
+        log::info!("[PubSubServiceBehaviour {}] on_started", self.node_id);
         let awake_notify = self.awake_notify.clone();
         let agent = agent.clone();
+        let node_id = self.node_id;
         self.awake_task = Some(async_std::task::spawn(async move {
             loop {
                 awake_notify.wait().await;
-                log::debug!("[KeyValueBehavior] awake_notify");
+                log::debug!("[PubSubServiceBehaviour {}] awake_notify", node_id);
                 agent.send_to_behaviour(PubsubServiceBehaviourEvent::Awake.into());
             }
         }));
@@ -117,7 +120,10 @@ where
         _agent: &network::BehaviorAgent<BE, HE>,
         _conn: std::sync::Arc<dyn network::transport::ConnectionSender>,
     ) -> Option<Box<dyn network::behaviour::ConnectionHandler<BE, HE>>> {
-        Some(Box::new(PubsubServiceConnectionHandler { relay: self.relay.clone() }))
+        Some(Box::new(PubsubServiceConnectionHandler {
+            node_id: self.node_id,
+            relay: self.relay.clone(),
+        }))
     }
 
     fn on_outgoing_connection_connected(
@@ -125,7 +131,10 @@ where
         _agent: &network::BehaviorAgent<BE, HE>,
         _conn: std::sync::Arc<dyn network::transport::ConnectionSender>,
     ) -> Option<Box<dyn network::behaviour::ConnectionHandler<BE, HE>>> {
-        Some(Box::new(PubsubServiceConnectionHandler { relay: self.relay.clone() }))
+        Some(Box::new(PubsubServiceConnectionHandler {
+            node_id: self.node_id,
+            relay: self.relay.clone(),
+        }))
     }
 
     fn on_incoming_connection_disconnected(&mut self, _agent: &network::BehaviorAgent<BE, HE>, _conn: std::sync::Arc<dyn network::transport::ConnectionSender>) {}
@@ -144,7 +153,7 @@ where
     fn on_handler_event(&mut self, _agent: &network::BehaviorAgent<BE, HE>, _node_id: bluesea_identity::NodeId, _conn_id: bluesea_identity::ConnId, _event: BE) {}
 
     fn on_stopped(&mut self, _agent: &network::BehaviorAgent<BE, HE>) {
-        log::info!("[PubSubServiceBehaviour] on_stopped");
+        log::info!("[PubSubServiceBehaviour {}] on_stopped", self.node_id);
         if let Some(task) = self.awake_task.take() {
             async_std::task::spawn(async move {
                 task.cancel().await;

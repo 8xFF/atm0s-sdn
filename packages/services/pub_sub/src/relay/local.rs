@@ -4,7 +4,7 @@ use async_std::channel::Sender;
 use bytes::Bytes;
 use utils::error_handle::ErrorUtils;
 
-use super::{feedback::Feedback, ChannelUuid, LocalPubId, LocalSubId};
+use super::{feedback::Feedback, ChannelUuid, LocalSubId};
 
 #[derive(Clone)]
 pub struct LocalRelay {
@@ -45,7 +45,10 @@ impl LocalRelay {
     pub fn relay(&self, locals: &[LocalSubId], data: Bytes) {
         for uuid in locals {
             if let Some(sender) = self.consumers.get(uuid) {
+                log::trace!("[LocalRelay] relay to local {}", uuid);
                 sender.try_send(data.clone()).print_error("Should send data");
+            } else {
+                log::warn!("[LocalRelay] relay to local {} failed", uuid);
             }
         }
     }
