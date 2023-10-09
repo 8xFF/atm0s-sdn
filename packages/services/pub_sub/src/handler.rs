@@ -1,3 +1,4 @@
+use bluesea_identity::NodeId;
 use network::{behaviour::ConnectionHandler, transport::ConnectionEvent};
 
 use crate::{
@@ -9,6 +10,7 @@ pub const CONTROL_META_TYPE: u8 = 1;
 pub const FEEDBACK_TYPE: u8 = 2;
 
 pub struct PubsubServiceConnectionHandler<BE, HE> {
+    pub(crate) node_id: NodeId,
     pub(crate) relay: PubsubRelay<BE, HE>,
 }
 
@@ -38,7 +40,13 @@ where
                 }
                 _ => {
                     if let Some(from_node) = msg.header.from_node {
-                        self.relay.relay(ChannelIdentify::new(from_node, msg.header.stream_id), msg);
+                        log::trace!(
+                            "[PubsubServiceConnectionHandler {}] on remote channel data from {} with channel uuid {}",
+                            self.node_id,
+                            from_node,
+                            msg.header.stream_id
+                        );
+                        self.relay.relay(ChannelIdentify::new(msg.header.stream_id, from_node), msg);
                     }
                 }
             },
