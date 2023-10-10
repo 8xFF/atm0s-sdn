@@ -21,4 +21,6 @@ pub(crate) trait CrossHandlerGate<BE, HE>: Send + Sync {
     fn send_to_behaviour(&self, service_id: u8, event: BE) -> Option<()>;
     fn send_to_handler(&self, service_id: u8, route: CrossHandlerRoute, event: CrossHandlerEvent<HE>) -> Option<()>;
     fn send_to_net(&self, msg: TransportMsg) -> Option<()>;
+    fn send_to_net_node(&self, node: NodeId, msg: TransportMsg) -> Option<()>;
+    fn send_to_net_direct(&self, conn_id: ConnId, msg: TransportMsg) -> Option<()>;
 }

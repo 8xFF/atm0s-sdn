@@ -21,6 +21,7 @@ const RETRY_COUNT: u8 = 5;
 pub struct RemoteStorageAction(pub(crate) HashmapLocalEvent, pub(crate) RouteRule);
 
 pub struct HashmapRemoteStorage {
+    node_id: NodeId,
     req_id_seed: u64,
     storage: HashmapKeyValue<KeyId, SubKeyId, ValueType, NodeId, NodeId>,
     event_acks: EventAckManager<RemoteStorageAction>,
@@ -28,8 +29,9 @@ pub struct HashmapRemoteStorage {
 }
 
 impl HashmapRemoteStorage {
-    pub fn new(timer: Arc<dyn Timer>) -> Self {
+    pub fn new(node_id: NodeId, timer: Arc<dyn Timer>) -> Self {
         Self {
+            node_id,
             req_id_seed: 0,
             storage: HashmapKeyValue::new(timer),
             event_acks: EventAckManager::new(),
@@ -46,7 +48,8 @@ impl HashmapRemoteStorage {
         match event {
             HashmapRemoteEvent::Set(req_id, key, sub_key, value, version, ex) => {
                 log::debug!(
-                    "[HashmapRemote] receive set event from {} key {} sub_key {} value {:?} version {} ex {:?}",
+                    "[HashmapRemote {}] receive set event from {} key {} sub_key {} value {:?} version {} ex {:?}",
+                    self.node_id,
                     from,
                     key,
                     sub_key,
@@ -60,7 +63,7 @@ impl HashmapRemoteStorage {
             }
             HashmapRemoteEvent::Get(req_id, key) => {
                 if let Some(sub_keys) = self.storage.get(&key) {
-                    log::debug!("[HashmapRemote] receive get event from {} has {} keys", from, sub_keys.len());
+                    log::debug!("[HashmapRemote {}] receive get event from {} has {} keys", self.node_id, from, sub_keys.len());
                     let sub_keys_clone = sub_keys
                         .into_iter()
                         .map(|(sub_key, value, version, source)| (sub_key, value.clone(), version, source))
@@ -68,33 +71,40 @@ impl HashmapRemoteStorage {
                     self.output_events
                         .push_back(RemoteStorageAction(HashmapLocalEvent::GetAck(req_id, key, Some(sub_keys_clone)), RouteRule::ToNode(from)));
                 } else {
-                    log::debug!("[HashmapRemote] receive get event from {} key {} value None", from, key);
+                    log::debug!("[HashmapRemote {}] receive get event from {} key {} value None", self.node_id, from, key);
                     self.output_events.push_back(RemoteStorageAction(HashmapLocalEvent::GetAck(req_id, key, None), RouteRule::ToNode(from)));
                 }
             }
             HashmapRemoteEvent::Del(req_id, key, sub_key, req_version) => {
-                log::debug!("[HashmapRemote] receive del event from {} key {} sub_key {} version {:?}", from, key, sub_key, req_version);
+                log::debug!(
+                    "[HashmapRemote {}] receive del event from {} key {} sub_key {} version {:?}",
+                    self.node_id,
+                    from,
+                    key,
+                    sub_key,
+                    req_version
+                );
                 let version = self.storage.del(&key, &sub_key, req_version).map(|(_, version, _)| version);
                 self.output_events
                     .push_back(RemoteStorageAction(HashmapLocalEvent::DelAck(req_id, key, sub_key, version), RouteRule::ToNode(from)));
             }
             HashmapRemoteEvent::Sub(req_id, key, ex) => {
-                log::debug!("[HashmapRemote] receive sub event from {} key {} ex {:?}", from, key, ex);
+                log::debug!("[HashmapRemote {}] receive sub event from {} key {} ex {:?}", self.node_id, from, key, ex);
                 self.storage.subscribe(&key, from, ex);
                 self.output_events.push_back(RemoteStorageAction(HashmapLocalEvent::SubAck(req_id, key), RouteRule::ToNode(from)));
             }
             HashmapRemoteEvent::Unsub(req_id, key) => {
-                log::debug!("[HashmapRemote] receive unsub event from {} key {}", from, key);
+                log::debug!("[HashmapRemote {}] receive unsub event from {} key {}", self.node_id, from, key);
                 let success = self.storage.unsubscribe(&key, &from);
                 self.output_events
                     .push_back(RemoteStorageAction(HashmapLocalEvent::UnsubAck(req_id, key, success), RouteRule::ToNode(from)));
             }
             HashmapRemoteEvent::OnKeySetAck(req_id) => {
-                log::debug!("[HashmapRemote] receive on_key_set_ack event from {}, req_id {}", from, req_id);
+                log::debug!("[HashmapRemote {}] receive on_key_set_ack event from {}, self.node_id, req_id {}", self.node_id, from, req_id);
                 self.event_acks.on_ack(req_id);
             }
             HashmapRemoteEvent::OnKeyDelAck(req_id) => {
-                log::debug!("[HashmapRemote] receive on_key_del_ack event from {}, req_id {}", from, req_id);
+                log::debug!("[HashmapRemote {}] receive on_key_del_ack event from {}, self.node_id, req_id {}", self.node_id, from, req_id);
                 self.event_acks.on_ack(req_id);
             }
         }
@@ -103,7 +113,7 @@ impl HashmapRemoteStorage {
     pub fn pop_action(&mut self) -> Option<RemoteStorageAction> {
         //first pop from output_events, if not exits then pop from event_acks
         if let Some(e) = self.output_events.pop_front() {
-            log::debug!("[HashmapRemote] pop action from output_events: {:?}", e);
+            log::debug!("[HashmapRemote {}] pop action from output_events: {:?}", self.node_id, e);
             Some(e)
         } else {
             if let Some(event) = self.storage.poll() {
@@ -117,7 +127,7 @@ impl HashmapRemoteStorage {
                         RemoteStorageAction(HashmapLocalEvent::OnKeyDel(req_id, key, sub_key, version, source), RouteRule::ToNode(handler))
                     }
                 };
-                log::debug!("[HashmapRemote] pop action from event_acks: {:?}, req_id {}", event, req_id);
+                log::debug!("[HashmapRemote {}] pop action from event_acks: {:?}, req_id {}", self.node_id, event, req_id);
                 self.event_acks.add_event(req_id, event, RETRY_COUNT);
             }
             self.event_acks.pop_action()
@@ -137,7 +147,7 @@ mod tests {
     #[test]
     fn receive_set_dersiered_send_ack() {
         let timer = Arc::new(MockTimer::default());
-        let mut remote_storage = super::HashmapRemoteStorage::new(timer.clone());
+        let mut remote_storage = super::HashmapRemoteStorage::new(0, timer.clone());
 
         remote_storage.on_event(1000, HashmapRemoteEvent::Set(1, 2, 3, vec![1], 0, None));
         assert_eq!(
@@ -150,7 +160,7 @@ mod tests {
     #[test]
     fn receive_set_ex() {
         let timer = Arc::new(MockTimer::default());
-        let mut remote_storage = super::HashmapRemoteStorage::new(timer.clone());
+        let mut remote_storage = super::HashmapRemoteStorage::new(0, timer.clone());
 
         remote_storage.on_event(1000, HashmapRemoteEvent::Set(1, 2, 3, vec![1], 0, Some(1000)));
         remote_storage.on_event(1000, HashmapRemoteEvent::Set(2, 2, 4, vec![1], 0, Some(2000)));
@@ -181,7 +191,7 @@ mod tests {
     #[test]
     fn receive_set_with_wrong_version() {
         let timer = Arc::new(MockTimer::default());
-        let mut remote_storage = super::HashmapRemoteStorage::new(timer.clone());
+        let mut remote_storage = super::HashmapRemoteStorage::new(0, timer.clone());
 
         remote_storage.on_event(1000, HashmapRemoteEvent::Set(1, 2, 3, vec![1], 10, None));
         assert_eq!(
@@ -202,7 +212,7 @@ mod tests {
     #[test]
     fn receive_del_dersiered_send_ack() {
         let timer = Arc::new(MockTimer::default());
-        let mut remote_storage = super::HashmapRemoteStorage::new(timer.clone());
+        let mut remote_storage = super::HashmapRemoteStorage::new(0, timer.clone());
 
         remote_storage.on_event(1000, HashmapRemoteEvent::Set(1, 2, 3, vec![1], 0, None));
         assert_eq!(
@@ -222,7 +232,7 @@ mod tests {
     #[test]
     fn receive_del_older_version() {
         let timer = Arc::new(MockTimer::default());
-        let mut remote_storage = super::HashmapRemoteStorage::new(timer.clone());
+        let mut remote_storage = super::HashmapRemoteStorage::new(0, timer.clone());
 
         remote_storage.on_event(1000, HashmapRemoteEvent::Set(1, 2, 3, vec![1], 10, None));
         assert_eq!(
@@ -242,7 +252,7 @@ mod tests {
     #[test]
     fn receive_del_newer_version() {
         let timer = Arc::new(MockTimer::default());
-        let mut remote_storage = super::HashmapRemoteStorage::new(timer.clone());
+        let mut remote_storage = super::HashmapRemoteStorage::new(0, timer.clone());
 
         remote_storage.on_event(1000, HashmapRemoteEvent::Set(1, 2, 3, vec![1], 0, None));
         assert_eq!(
@@ -262,7 +272,7 @@ mod tests {
     #[test]
     fn receive_get_dersiered_send_ack() {
         let timer = Arc::new(MockTimer::default());
-        let mut remote_storage = super::HashmapRemoteStorage::new(timer.clone());
+        let mut remote_storage = super::HashmapRemoteStorage::new(0, timer.clone());
 
         remote_storage.on_event(1000, HashmapRemoteEvent::Set(1, 2, 3, vec![1], 10, None));
         assert_eq!(
@@ -286,7 +296,7 @@ mod tests {
     #[test]
     fn receive_sub_dersiered_send_ack() {
         let timer = Arc::new(MockTimer::default());
-        let mut remote_storage = super::HashmapRemoteStorage::new(timer.clone());
+        let mut remote_storage = super::HashmapRemoteStorage::new(0, timer.clone());
 
         remote_storage.on_event(1000, HashmapRemoteEvent::Sub(1, 2, None));
         assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(HashmapLocalEvent::SubAck(1, 2), RouteRule::ToNode(1000))));
@@ -305,9 +315,30 @@ mod tests {
     }
 
     #[test]
+    fn receive_sub_after_set_dersiered_send_ack() {
+        let timer = Arc::new(MockTimer::default());
+        let mut remote_storage = super::HashmapRemoteStorage::new(0, timer.clone());
+
+        remote_storage.on_event(1001, HashmapRemoteEvent::Set(2, 2, 3, vec![1], 100, None));
+        assert_eq!(
+            remote_storage.pop_action(),
+            Some(RemoteStorageAction(HashmapLocalEvent::SetAck(2, 2, 3, 100, true), RouteRule::ToNode(1001)))
+        );
+        assert_eq!(remote_storage.pop_action(), None);
+
+        remote_storage.on_event(1000, HashmapRemoteEvent::Sub(1, 2, None));
+        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(HashmapLocalEvent::SubAck(1, 2), RouteRule::ToNode(1000))));
+        assert_eq!(
+            remote_storage.pop_action(),
+            Some(RemoteStorageAction(HashmapLocalEvent::OnKeySet(0, 2, 3, vec![1], 100, 1001), RouteRule::ToNode(1000)))
+        );
+        assert_eq!(remote_storage.pop_action(), None);
+    }
+
+    #[test]
     fn receive_unsub_dersiered_send_ack() {
         let timer = Arc::new(MockTimer::default());
-        let mut remote_storage = super::HashmapRemoteStorage::new(timer.clone());
+        let mut remote_storage = super::HashmapRemoteStorage::new(0, timer.clone());
 
         remote_storage.on_event(1000, HashmapRemoteEvent::Sub(1, 2, None));
         assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(HashmapLocalEvent::SubAck(1, 2), RouteRule::ToNode(1000))));
@@ -328,7 +359,7 @@ mod tests {
     #[test]
     fn receive_unsub_wrong_key() {
         let timer = Arc::new(MockTimer::default());
-        let mut remote_storage = super::HashmapRemoteStorage::new(timer.clone());
+        let mut remote_storage = super::HashmapRemoteStorage::new(0, timer.clone());
 
         remote_storage.on_event(1000, HashmapRemoteEvent::Unsub(2, 1));
         assert_eq!(
@@ -341,7 +372,7 @@ mod tests {
     #[test]
     fn key_changed_event_with_ack() {
         let timer = Arc::new(MockTimer::default());
-        let mut remote_storage = super::HashmapRemoteStorage::new(timer.clone());
+        let mut remote_storage = super::HashmapRemoteStorage::new(0, timer.clone());
 
         remote_storage.on_event(1000, HashmapRemoteEvent::Sub(1, 2, None));
         assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(HashmapLocalEvent::SubAck(1, 2), RouteRule::ToNode(1000))));
@@ -366,7 +397,7 @@ mod tests {
     #[test]
     fn key_changed_event_without_ack_should_resend() {
         let timer = Arc::new(MockTimer::default());
-        let mut remote_storage = super::HashmapRemoteStorage::new(timer.clone());
+        let mut remote_storage = super::HashmapRemoteStorage::new(0, timer.clone());
 
         remote_storage.on_event(1000, HashmapRemoteEvent::Sub(1, 2, None));
         assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(HashmapLocalEvent::SubAck(1, 2), RouteRule::ToNode(1000))));

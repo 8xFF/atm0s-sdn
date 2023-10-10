@@ -60,6 +60,14 @@ where
         self.cross_gate.read().send_to_net(msg);
     }
 
+    pub fn send_to_net_node(&self, node: NodeId, msg: TransportMsg) {
+        self.cross_gate.read().send_to_net_node(node, msg);
+    }
+
+    pub fn send_to_net_direct(&self, conn: ConnId, msg: TransportMsg) {
+        self.cross_gate.read().send_to_net_direct(conn, msg);
+    }
+
     pub fn close_conn(&self, conn: ConnId) {
         self.cross_gate.read().close_conn(conn);
     }
@@ -77,6 +85,20 @@ pub struct ConnectionAgent<BE, HE> {
     sender: Arc<dyn ConnectionSender>,
     internal_tx: Sender<NetworkPlaneInternalEvent<BE>>,
     cross_gate: Arc<RwLock<dyn CrossHandlerGate<BE, HE>>>,
+}
+
+impl<BE, HE> Clone for ConnectionAgent<BE, HE> {
+    fn clone(&self) -> Self {
+        Self {
+            service_id: self.service_id,
+            local_node_id: self.local_node_id,
+            remote_node_id: self.remote_node_id,
+            conn_id: self.conn_id,
+            sender: self.sender.clone(),
+            internal_tx: self.internal_tx.clone(),
+            cross_gate: self.cross_gate.clone(),
+        }
+    }
 }
 
 impl<BE, HE> ConnectionAgent<BE, HE>
@@ -142,6 +164,10 @@ where
 
     pub fn send_to_net(&self, msg: TransportMsg) {
         self.cross_gate.read().send_to_net(msg);
+    }
+
+    pub fn send_to_net_direct(&self, conn_id: ConnId, msg: TransportMsg) -> Option<()> {
+        self.cross_gate.read().send_to_net_direct(conn_id, msg)
     }
 
     pub fn close_conn(&self) {

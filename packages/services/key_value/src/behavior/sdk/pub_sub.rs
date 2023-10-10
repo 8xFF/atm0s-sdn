@@ -26,6 +26,43 @@ impl<K: Hash + Eq + Copy, T: Clone> PublisherManager<K, T> {
         }
     }
 
+    pub fn sub_raw(&self, key: K, uuid: u64, tx: Sender<T>) -> bool {
+        let mut subscribers = self.subscribers.write();
+        match subscribers.entry(key) {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                entry.get_mut().subscribers.insert(uuid, tx);
+                false
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(SubscribeContainer {
+                    subscribers: HashMap::from([(uuid, tx)]),
+                    clear_handler: Box::new(|| {}),
+                });
+                true
+            }
+        }
+    }
+
+    pub fn unsub_raw(&self, key: K, uuid: u64) -> bool {
+        let mut subscribers = self.subscribers.write();
+        let should_remove = {
+            if let Some(container) = subscribers.get_mut(&key) {
+                container.subscribers.remove(&uuid);
+                container.subscribers.is_empty()
+            } else {
+                false
+            }
+        };
+
+        if should_remove {
+            if let Some(container) = subscribers.remove(&key) {
+                (container.clear_handler)();
+            }
+        }
+
+        should_remove
+    }
+
     /// subscribe and return Subscriber and is_new
     /// is_new is true if this is the first subscriber
     /// is_new is false if this is not the first subscriber
@@ -155,13 +192,9 @@ mod tests {
 
     #[test]
     fn test_simple_pubsub_memory() {
-        let _profiler = dhat::Profiler::builder().testing().build();
-
         let pub_manager = super::PublisherManager::<u64, u64>::new();
 
-        let pre_stats = dhat::HeapStats::get();
-
-        {
+        let info = allocation_counter::measure(|| {
             let (sub1, is_new) = pub_manager.subscribe(1, Box::new(|| {}));
             assert!(is_new);
             let (sub2, is_new) = pub_manager.subscribe(1, Box::new(|| {}));
@@ -178,15 +211,10 @@ mod tests {
 
             // shrink to fit for check memory leak
             pub_manager.subscribers.write().shrink_to_fit();
-        }
 
-        //after drop subscribers should be empty
-        assert!(pub_manager.subscribers.read().is_empty());
-
-        let post_stats = dhat::HeapStats::get();
-
-        // assert heap usage is the same
-        assert_eq!(pre_stats.curr_blocks, post_stats.curr_blocks);
-        assert_eq!(pre_stats.curr_bytes, post_stats.curr_bytes);
+            //after drop subscribers should be empty
+            assert!(pub_manager.subscribers.read().is_empty());
+        });
+        assert_eq!(info.count_current, 0);
     }
 }

@@ -48,6 +48,8 @@ impl ManualBehavior {
                         outgoing: OutgoingState::New,
                     },
                 );
+            } else {
+                log::warn!("[ManualBehavior] Invalid node addr {:?}", addr)
             }
         }
         Self { neighbours, timer: conf.timer }
@@ -66,6 +68,7 @@ where
     fn on_tick(&mut self, agent: &BehaviorAgent<BE, HE>, ts_ms: u64, _interal_ms: u64) {
         for (node_id, slot) in &mut self.neighbours {
             if slot.incoming.is_none() {
+                log::debug!("[ManualBehavior] trying connect to {} with addr {}", node_id, slot.addr);
                 match &slot.outgoing {
                     OutgoingState::New => match agent.connect_to(*node_id, slot.addr.clone()) {
                         Ok(conn) => {

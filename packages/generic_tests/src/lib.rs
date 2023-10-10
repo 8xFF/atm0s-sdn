@@ -1,79 +1,62 @@
 #[cfg(test)]
-#[global_allocator]
-static ALLOC: dhat::Alloc = dhat::Alloc;
-
-#[cfg(test)]
 mod tests {
     use std::collections::HashMap;
 
     #[test]
     fn ensure_vector_free() {
-        let _profiler = dhat::Profiler::builder().testing().build();
-
         let mut vec = Vec::new();
-        let pre_stats = dhat::HeapStats::get();
+        let info = allocation_counter::measure(|| {
+            vec.push(1);
+            vec.push(2);
+            vec.push(3);
+            vec.push(4);
+            vec.push(5);
 
-        vec.push(1);
-        vec.push(2);
-        vec.push(3);
-        vec.push(4);
-        vec.push(5);
+            vec.pop();
+            vec.pop();
+            vec.pop();
+            vec.pop();
+            vec.pop();
 
-        vec.pop();
-        vec.pop();
-        vec.pop();
-        vec.pop();
-        vec.pop();
-
-        vec.shrink_to_fit();
-
-        let post_stats = dhat::HeapStats::get();
+            vec.shrink_to_fit();
+        });
 
         // assert heap usage is the same
-        assert_eq!(pre_stats.curr_blocks, post_stats.curr_blocks);
+        assert_eq!(info.count_current, 0);
     }
 
     #[test]
     fn ensure_hashmap_free() {
-        let _profiler = dhat::Profiler::builder().testing().build();
-
         let mut map = HashMap::new();
+        let info = allocation_counter::measure(|| {
+            map.insert(1, 1);
+            map.insert(2, 2);
+            map.insert(3, 3);
+            map.insert(4, 4);
+            map.insert(5, 5);
 
-        let pre_stats = dhat::HeapStats::get();
+            map.remove(&1);
+            map.remove(&2);
+            map.remove(&3);
+            map.remove(&4);
+            map.remove(&5);
 
-        map.insert(1, 1);
-        map.insert(2, 2);
-        map.insert(3, 3);
-        map.insert(4, 4);
-        map.insert(5, 5);
-
-        map.remove(&1);
-        map.remove(&2);
-        map.remove(&3);
-        map.remove(&4);
-        map.remove(&5);
-
-        map.shrink_to_fit();
-
-        let post_stats = dhat::HeapStats::get();
+            map.shrink_to_fit();
+        });
 
         // assert heap usage is the same
-        assert_eq!(pre_stats.curr_blocks, post_stats.curr_blocks);
+        assert_eq!(info.count_current, 0);
     }
 
-    #[async_std::test]
-    async fn ensure_channel_free() {
-        let _profiler = dhat::Profiler::builder().testing().build();
+    #[test]
+    fn ensure_channel_free() {
         let (tx, rx) = async_std::channel::bounded(1);
-
-        let pre_stats = dhat::HeapStats::get();
-
-        tx.try_send(1).expect("Should send");
-        rx.recv().await.expect("Should recv");
-
-        let post_stats = dhat::HeapStats::get();
+        let info = allocation_counter::measure(|| {
+            tx.try_send(1).expect("Should send");
+            rx.try_recv().expect("Should recv");
+        });
 
         // assert heap usage is the same
-        assert_eq!(pre_stats.curr_blocks, post_stats.curr_blocks);
+        assert_eq!(info.count_current, 0);
     }
 }

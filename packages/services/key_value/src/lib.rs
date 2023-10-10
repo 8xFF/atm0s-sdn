@@ -1,7 +1,3 @@
-#[cfg(test)]
-#[global_allocator]
-static ALLOC: dhat::Alloc = dhat::Alloc;
-
 pub static KEY_VALUE_SERVICE_ID: u8 = 4;
 pub type KeyId = u64;
 pub type SubKeyId = u64;
@@ -13,7 +9,6 @@ pub type ValueType = Vec<u8>;
 mod behavior;
 mod handler;
 mod msg;
-mod redis;
 mod storage;
 
 pub use behavior::KeyValueBehavior;
@@ -57,7 +52,7 @@ mod tests {
         let transport = Box::new(mock);
         let timer = Arc::new(SystemTimer());
 
-        let (behavior, sdk) = KeyValueBehavior::new(0, timer.clone(), 1000, None);
+        let (behavior, sdk) = KeyValueBehavior::new(0, timer.clone(), 1000);
 
         let mut plane = NetworkPlane::<ImplBehaviorEvent, ImplHandlerEvent>::new(NetworkPlaneConfig {
             local_node_id: 0,
@@ -89,7 +84,7 @@ mod tests {
         let transport = Box::new(mock);
         let timer = Arc::new(SystemTimer());
 
-        let (behavior, sdk) = KeyValueBehavior::new(0, timer.clone(), 1000, None);
+        let (behavior, sdk) = KeyValueBehavior::new(0, timer.clone(), 1000);
 
         let mut plane = NetworkPlane::<ImplBehaviorEvent, ImplHandlerEvent>::new(NetworkPlaneConfig {
             local_node_id: 0,

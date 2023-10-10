@@ -1,8 +1,9 @@
 use std::net::SocketAddr;
 
 use async_std::net::TcpListener;
+use key_value::KeyValueSdk;
 
-use crate::{redis::session::RedisSession, KeyValueSdk};
+use crate::session::RedisSession;
 
 pub(crate) mod cmd;
 mod session;

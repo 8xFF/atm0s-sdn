@@ -22,9 +22,8 @@ use std::{
         Arc,
     },
 };
+use utils::awaker::Awaker;
 use utils::Timer;
-
-use super::awaker::Awaker;
 
 struct KeySlotData {
     value: Option<Vec<u8>>,
@@ -380,12 +379,10 @@ mod tests {
 
     use bluesea_router::RouteRule;
     use parking_lot::Mutex;
+    use utils::awaker::{Awaker, MockAwaker};
 
     use crate::{
-        behavior::{
-            awaker::{Awaker, MockAwaker},
-            simple_local::LocalStorageAction,
-        },
+        behavior::simple_local::LocalStorageAction,
         msg::{SimpleLocalEvent, SimpleRemoteEvent},
     };
 
@@ -398,7 +395,7 @@ mod tests {
         let mut storage = SimpleLocalStorage::new(timer.clone(), awake_notify.clone(), 10000);
 
         storage.set(1, vec![1], None);
-        assert_eq!(awake_notify.called_count(), 1);
+        assert_eq!(awake_notify.pop_awake_count(), 1);
 
         assert_eq!(storage.pop_action(), Some(LocalStorageAction(SimpleRemoteEvent::Set(0, 1, vec![1], 0, None), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
@@ -508,7 +505,7 @@ mod tests {
         storage.on_event(2, SimpleLocalEvent::SetAck(0, 1, 0, true));
 
         storage.del(1);
-        assert_eq!(awake_notify.called_count(), 2);
+        assert_eq!(awake_notify.pop_awake_count(), 2);
         assert_eq!(storage.pop_action(), Some(LocalStorageAction(SimpleRemoteEvent::Del(1, 1, 0), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
@@ -572,7 +569,7 @@ mod tests {
         let mut storage = SimpleLocalStorage::new(timer.clone(), awake_notify.clone(), 10000);
 
         storage.subscribe(1, None, Box::new(|_, _, _, _| {}));
-        assert_eq!(awake_notify.called_count(), 1);
+        assert_eq!(awake_notify.pop_awake_count(), 1);
         assert_eq!(storage.pop_action(), Some(LocalStorageAction(SimpleRemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
@@ -661,7 +658,7 @@ mod tests {
 
         //sending unsub
         storage.unsubscribe(1);
-        assert_eq!(awake_notify.called_count(), 2);
+        assert_eq!(awake_notify.pop_awake_count(), 2);
         assert_eq!(storage.pop_action(), Some(LocalStorageAction(SimpleRemoteEvent::Unsub(1, 1), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 

@@ -8,5 +8,5 @@ edition = "2021"
 [dependencies]
 
 [dev-dependencies]
-dhat = { workspace = true }
+allocation-counter = { workspace = true }
 async-std = { workspace = true }

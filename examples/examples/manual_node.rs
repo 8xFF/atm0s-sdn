@@ -6,6 +6,7 @@ use layers_spread_router_sync::{LayersSpreadRouterSyncBehavior, LayersSpreadRout
 use manual_discovery::{ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent};
 use network::convert_enum;
 use network::plane::{NetworkPlane, NetworkPlaneConfig};
+use redis_server::RedisServer;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tun_tap::{TunTapBehaviorEvent, TunTapHandlerEvent};
@@ -67,7 +68,14 @@ async fn main() {
     });
 
     let spreads_layer_router = LayersSpreadRouterSyncBehavior::new(router.clone());
-    let (key_value, _) = key_value::KeyValueBehavior::new(args.node_id, timer.clone(), 10000, args.redis_addr);
+    let (key_value, key_value_sdk) = key_value::KeyValueBehavior::new(args.node_id, timer.clone(), 10000);
+
+    if let Some(addr) = args.redis_addr {
+        let mut redis_server = RedisServer::new(addr, key_value_sdk);
+        async_std::task::spawn(async move {
+            redis_server.run().await;
+        });
+    }
 
     let mut plan_cfg = NetworkPlaneConfig {
         router: Arc::new(router),

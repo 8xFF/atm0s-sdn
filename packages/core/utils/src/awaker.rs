@@ -3,7 +3,7 @@ use std::sync::{atomic::AtomicUsize, Arc};
 #[async_trait::async_trait]
 pub trait Awaker: Send + Sync {
     fn notify(&self);
-    fn called_count(&self) -> usize;
+    fn pop_awake_count(&self) -> usize;
     async fn wait(&self);
 }
 
@@ -18,8 +18,8 @@ impl Awaker for MockAwaker {
         self.atomic.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
-    fn called_count(&self) -> usize {
-        self.atomic.load(std::sync::atomic::Ordering::Relaxed)
+    fn pop_awake_count(&self) -> usize {
+        self.atomic.swap(0, std::sync::atomic::Ordering::Relaxed)
     }
 
     async fn wait(&self) {
@@ -38,7 +38,7 @@ impl Awaker for AsyncAwaker {
         self.notify.notify();
     }
 
-    fn called_count(&self) -> usize {
+    fn pop_awake_count(&self) -> usize {
         panic!("Should not called")
     }
 

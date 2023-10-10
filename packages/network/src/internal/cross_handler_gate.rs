@@ -4,7 +4,7 @@ use crate::plane::NetworkPlaneInternalEvent;
 use crate::transport::ConnectionSender;
 use async_std::channel::{unbounded, Receiver, Sender};
 use bluesea_identity::{ConnId, NodeId};
-use bluesea_router::{RouteAction, RouterTable};
+use bluesea_router::{RouteAction, RouteRule, RouterTable};
 use std::collections::HashMap;
 use std::sync::Arc;
 use utils::error_handle::ErrorUtils;
@@ -163,5 +163,41 @@ where
                 }
             }
         }
+    }
+
+    fn send_to_net_node(&self, node: NodeId, msg: TransportMsg) -> Option<()> {
+        log::debug!("[CrossHandlerGate] send_to_net_node service: {} route: ToNode({})", msg.header.service_id, node);
+        match self.router.action_for_incomming(&RouteRule::ToNode(node), msg.header.service_id) {
+            RouteAction::Reject => {
+                log::warn!("[CrossHandlerGate] send_to_net reject {} ToNode({})", msg.header.service_id, node);
+                None
+            }
+            RouteAction::Local => {
+                // TODO: may be have other way to send to local without serializing and deserializing
+                self.behaviour_tx
+                    .send_blocking(NetworkPlaneInternalEvent::ToBehaviourLocalMsg {
+                        service_id: msg.header.service_id,
+                        msg: msg,
+                    })
+                    .print_error("Should send to behaviour transport msg");
+                Some(())
+            }
+            RouteAction::Next(conn, _node) => {
+                if let Some((_s, c_s)) = self.conns.get(&conn) {
+                    c_s.send(msg);
+                    Some(())
+                } else {
+                    log::warn!("[CrossHandlerGate] send_to_net_node conn not found {}", conn);
+                    None
+                }
+            }
+        }
+    }
+
+    fn send_to_net_direct(&self, conn_id: ConnId, msg: TransportMsg) -> Option<()> {
+        log::debug!("[CrossHandlerGate] send_to_net_direct service: {} conn: {}", msg.header.service_id, conn_id);
+        let (_, sender) = self.conns.get(&conn_id)?;
+        sender.send(msg);
+        Some(())
     }
 }

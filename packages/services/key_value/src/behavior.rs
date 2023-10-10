@@ -1,7 +1,5 @@
-use crate::behavior::awaker::AsyncAwaker;
 use crate::handler::KeyValueConnectionHandler;
 use crate::msg::{KeyValueBehaviorEvent, KeyValueMsg};
-use crate::redis::RedisServer;
 use crate::KEY_VALUE_SERVICE_ID;
 use async_std::task::JoinHandle;
 use bluesea_identity::{ConnId, NodeId};
@@ -10,17 +8,15 @@ use network::msg::{MsgHeader, TransportMsg};
 use network::transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError};
 use network::BehaviorAgent;
 use parking_lot::RwLock;
-use std::net::SocketAddr;
 use std::sync::Arc;
+use utils::awaker::{AsyncAwaker, Awaker};
 use utils::Timer;
 
-use self::awaker::Awaker;
 use self::hashmap_local::HashmapLocalStorage;
 use self::hashmap_remote::HashmapRemoteStorage;
 use self::simple_local::SimpleLocalStorage;
 use self::simple_remote::SimpleRemoteStorage;
 
-mod awaker;
 mod event_acks;
 mod hashmap_local;
 mod hashmap_remote;
@@ -39,13 +35,11 @@ pub struct KeyValueBehavior {
     hashmap_local: Arc<RwLock<HashmapLocalStorage>>,
     awake_notify: Arc<dyn Awaker>,
     awake_task: Option<JoinHandle<()>>,
-    redis_server: Option<RedisServer>,
-    redis_task: Option<JoinHandle<()>>,
 }
 
 impl KeyValueBehavior {
     #[allow(unused)]
-    pub fn new(node_id: NodeId, timer: Arc<dyn Timer>, sync_each_ms: u64, redis_addr: Option<SocketAddr>) -> (Self, sdk::KeyValueSdk) {
+    pub fn new(node_id: NodeId, timer: Arc<dyn Timer>, sync_each_ms: u64) -> (Self, sdk::KeyValueSdk) {
         log::info!("[KeyValueBehaviour {}] created with sync_each_ms {}", node_id, sync_each_ms);
         let awake_notify = Arc::new(AsyncAwaker::default());
         let simple_local = Arc::new(RwLock::new(SimpleLocalStorage::new(timer.clone(), awake_notify.clone(), sync_each_ms)));
@@ -53,19 +47,16 @@ impl KeyValueBehavior {
         let sdk = sdk::KeyValueSdk::new(simple_local.clone(), hashmap_local.clone());
 
         let sdk_c = sdk.clone();
-        let redis_server = redis_addr.map(|addr| RedisServer::new(addr, sdk_c));
 
         (
             Self {
                 node_id,
                 simple_remote: SimpleRemoteStorage::new(timer.clone()),
                 simple_local,
-                hashmap_remote: HashmapRemoteStorage::new(timer),
+                hashmap_remote: HashmapRemoteStorage::new(node_id, timer),
                 hashmap_local,
                 awake_notify,
                 awake_task: None,
-                redis_server,
-                redis_task: None,
             },
             sdk,
         )
@@ -231,23 +222,11 @@ where
                 agent.send_to_behaviour(KeyValueBehaviorEvent::Awake.into());
             }
         }));
-
-        if let Some(mut redis_server) = self.redis_server.take() {
-            self.redis_task = Some(async_std::task::spawn(async move {
-                redis_server.run().await;
-            }));
-        }
     }
 
     fn on_stopped(&mut self, _agent: &BehaviorAgent<BE, HE>) {
         log::info!("[KeyValueBehavior {}] on_stopped", self.node_id);
         if let Some(task) = self.awake_task.take() {
-            async_std::task::spawn(async move {
-                task.cancel().await;
-            });
-        }
-
-        if let Some(task) = self.redis_task.take() {
             async_std::task::spawn(async move {
                 task.cancel().await;
             });
@@ -284,7 +263,7 @@ mod tests {
         let node_id = 1;
         let sync_ms = 10000;
         let timer = Arc::new(MockTimer::default());
-        let (mut behaviour, sdk) = super::KeyValueBehavior::new(node_id, timer.clone(), sync_ms, None);
+        let (mut behaviour, sdk) = super::KeyValueBehavior::new(node_id, timer.clone(), sync_ms);
 
         let (mock_agent, _, cross_gate_out) = create_mock_behaviour_agent::<BehaviorEvent, HandlerEvent>(node_id, KEY_VALUE_SERVICE_ID);
 
@@ -326,7 +305,7 @@ mod tests {
         let node_id = 1;
         let sync_ms = 10000;
         let timer = Arc::new(MockTimer::default());
-        let (mut behaviour, sdk) = super::KeyValueBehavior::new(node_id, timer.clone(), sync_ms, None);
+        let (mut behaviour, sdk) = super::KeyValueBehavior::new(node_id, timer.clone(), sync_ms);
 
         let (mock_agent, _, cross_gate_out) = create_mock_behaviour_agent::<BehaviorEvent, HandlerEvent>(node_id, KEY_VALUE_SERVICE_ID);
 
@@ -369,7 +348,7 @@ mod tests {
         let node_id = 1;
         let sync_ms = 10000;
         let timer = Arc::new(MockTimer::default());
-        let (mut behaviour, sdk) = super::KeyValueBehavior::new(node_id, timer.clone(), sync_ms, None);
+        let (mut behaviour, sdk) = super::KeyValueBehavior::new(node_id, timer.clone(), sync_ms);
 
         let (mock_agent, _, cross_gate_out) = create_mock_behaviour_agent::<BehaviorEvent, HandlerEvent>(node_id, KEY_VALUE_SERVICE_ID);
 
@@ -410,7 +389,7 @@ mod tests {
         let node_id = 1;
         let sync_ms = 10000;
         let timer = Arc::new(MockTimer::default());
-        let (mut behaviour, sdk) = super::KeyValueBehavior::new(node_id, timer.clone(), sync_ms, None);
+        let (mut behaviour, sdk) = super::KeyValueBehavior::new(node_id, timer.clone(), sync_ms);
 
         let (mock_agent, _, cross_gate_out) = create_mock_behaviour_agent::<BehaviorEvent, HandlerEvent>(node_id, KEY_VALUE_SERVICE_ID);
 
@@ -453,7 +432,7 @@ mod tests {
         let node_id = 1;
         let sync_ms = 10000;
         let timer = Arc::new(MockTimer::default());
-        let (mut behaviour, sdk) = super::KeyValueBehavior::new(node_id, timer.clone(), sync_ms, None);
+        let (mut behaviour, sdk) = super::KeyValueBehavior::new(node_id, timer.clone(), sync_ms);
 
         let (mock_agent, _, cross_gate_out) = create_mock_behaviour_agent::<BehaviorEvent, HandlerEvent>(node_id, KEY_VALUE_SERVICE_ID);
 
@@ -496,7 +475,7 @@ mod tests {
         let node_id = 1;
         let sync_ms = 10000;
         let timer = Arc::new(MockTimer::default());
-        let (mut behaviour, sdk) = super::KeyValueBehavior::new(node_id, timer.clone(), sync_ms, None);
+        let (mut behaviour, sdk) = super::KeyValueBehavior::new(node_id, timer.clone(), sync_ms);
 
         let (mock_agent, _, cross_gate_out) = create_mock_behaviour_agent::<BehaviorEvent, HandlerEvent>(node_id, KEY_VALUE_SERVICE_ID);
 
