@@ -7,34 +7,59 @@ use crate::relay::{
     feedback::{Feedback, FeedbackConsumerId, FeedbackType},
     local::LocalRelay,
     logic::PubsubRelayLogic,
-    ChannelIdentify, LocalSubId,
+    source_binding::SourceBinding,
+    ChannelIdentify, ChannelUuid, LocalSubId,
 };
 
 pub struct Consumer {
-    uuid: LocalSubId,
-    channel: ChannelIdentify,
+    sub_uuid: LocalSubId,
+    channel: ChannelUuid,
     logic: Arc<RwLock<PubsubRelayLogic>>,
     local: Arc<RwLock<LocalRelay>>,
+    source_binding: Arc<RwLock<SourceBinding>>,
     rx: async_std::channel::Receiver<Bytes>,
 }
 
 impl Consumer {
-    pub fn new(uuid: LocalSubId, channel: ChannelIdentify, logic: Arc<RwLock<PubsubRelayLogic>>, local: Arc<RwLock<LocalRelay>>, max_queue_size: usize) -> Self {
+    pub fn new(
+        sub_uuid: LocalSubId,
+        channel: ChannelUuid,
+        logic: Arc<RwLock<PubsubRelayLogic>>,
+        local: Arc<RwLock<LocalRelay>>,
+        source_binding: Arc<RwLock<SourceBinding>>,
+        max_queue_size: usize,
+    ) -> Self {
         let (tx, rx) = async_std::channel::bounded(max_queue_size);
-        logic.write().on_local_sub(channel, uuid);
-        local.write().on_local_sub(uuid, tx);
+        local.write().on_local_sub(sub_uuid, tx);
+        if let Some(sources) = source_binding.write().on_local_sub(channel, sub_uuid) {
+            for source in sources {
+                let channel = ChannelIdentify::new(channel, source);
+                logic.write().on_local_sub(channel, sub_uuid);
+            }
+        }
 
-        Self { uuid, channel, logic, local, rx }
+        Self {
+            sub_uuid,
+            channel,
+            logic,
+            local,
+            source_binding,
+            rx,
+        }
     }
 
     pub fn feedback(&self, id: u8, feedback_type: FeedbackType) {
-        let fb = Feedback {
-            channel: self.channel,
-            id,
-            feedback_type,
-        };
-        if let Some(local_fb) = self.logic.write().on_feedback(self.channel, FeedbackConsumerId::Local(self.uuid), fb) {
-            self.local.read().feedback(self.channel.uuid(), local_fb);
+        let sources = self.source_binding.read().sources_for(self.channel);
+        for source in sources {
+            let channel = ChannelIdentify::new(self.channel, source);
+            let fb = Feedback {
+                channel,
+                id,
+                feedback_type: feedback_type.clone(),
+            };
+            if let Some(local_fb) = self.logic.write().on_feedback(channel, FeedbackConsumerId::Local(self.sub_uuid), fb) {
+                self.local.read().feedback(self.channel, local_fb);
+            }
         }
     }
 
@@ -45,7 +70,12 @@ impl Consumer {
 
 impl Drop for Consumer {
     fn drop(&mut self) {
-        self.logic.write().on_local_unsub(self.channel, self.uuid);
-        self.local.write().on_local_unsub(self.uuid);
+        self.local.write().on_local_unsub(self.sub_uuid);
+        if let Some(sources) = self.source_binding.write().on_local_sub(self.channel, self.sub_uuid) {
+            for source in sources {
+                let channel = ChannelIdentify::new(self.channel, source);
+                self.logic.write().on_local_unsub(channel, self.sub_uuid);
+            }
+        }
     }
 }

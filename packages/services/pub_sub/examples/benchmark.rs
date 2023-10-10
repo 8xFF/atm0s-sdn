@@ -2,17 +2,19 @@ use std::{sync::Arc, time::Duration};
 
 use bluesea_identity::{NodeAddr, NodeAddrBuilder, NodeId, Protocol};
 use bytes::Bytes;
+use key_value::{KeyValueBehavior, KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueMsg};
 use layers_spread_router::SharedRouter;
 use layers_spread_router_sync::{LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent, LayersSpreadRouterSyncHandlerEvent, LayersSpreadRouterSyncMsg};
 use manual_discovery::{ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent, ManualMsg};
 use network::convert_enum;
 use network::plane::{NetworkPlane, NetworkPlaneConfig};
-use pub_sub::{PubsubRemoteEvent, PubsubSdk, PubsubServiceBehaviour, PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent};
+use pub_sub::{ChannelSourceHashmapReal, PubsubRemoteEvent, PubsubSdk, PubsubServiceBehaviour, PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent};
 use utils::{SystemTimer, Timer};
 
 #[derive(convert_enum::From, convert_enum::TryInto)]
 enum ImplNetworkMsg {
     Pubsub(PubsubRemoteEvent),
+    KeyValue(KeyValueMsg),
     RouterSync(LayersSpreadRouterSyncMsg),
     Manual(ManualMsg),
 }
@@ -20,6 +22,7 @@ enum ImplNetworkMsg {
 #[derive(convert_enum::From, convert_enum::TryInto)]
 enum ImplBehaviorEvent {
     Pubsub(PubsubServiceBehaviourEvent),
+    KeyValue(KeyValueBehaviorEvent),
     RouterSync(LayersSpreadRouterSyncBehaviorEvent),
     Manual(ManualBehaviorEvent),
 }
@@ -27,6 +30,7 @@ enum ImplBehaviorEvent {
 #[derive(convert_enum::From, convert_enum::TryInto)]
 enum ImplHandlerEvent {
     Pubsub(PubsubServiceHandlerEvent),
+    KeyValue(KeyValueHandlerEvent),
     RouterSync(LayersSpreadRouterSyncHandlerEvent),
     Manual(ManualHandlerEvent),
 }
@@ -42,12 +46,13 @@ async fn run_node(node_id: NodeId, neighbours: Vec<NodeAddr>) -> (PubsubSdk<Impl
     let manual = ManualBehavior::new(ManualBehaviorConf { neighbours, timer: timer.clone() });
 
     let router_sync_behaviour = LayersSpreadRouterSyncBehavior::new(router.clone());
-    let (pubsub_behavior, pubsub_sdk) = PubsubServiceBehaviour::new(node_id);
+    let (kv_behaviour, kv_sdk) = KeyValueBehavior::new(node_id, timer.clone(), 3000);
+    let (pubsub_behavior, pubsub_sdk) = PubsubServiceBehaviour::new(node_id, Box::new(ChannelSourceHashmapReal::new(kv_sdk, node_id)));
 
     let mut plane = NetworkPlane::<ImplBehaviorEvent, ImplHandlerEvent>::new(NetworkPlaneConfig {
         local_node_id: node_id,
         tick_ms: 1000,
-        behavior: vec![Box::new(pubsub_behavior), Box::new(router_sync_behaviour), Box::new(manual)],
+        behavior: vec![Box::new(pubsub_behavior), Box::new(kv_behaviour), Box::new(router_sync_behaviour), Box::new(manual)],
         transport,
         timer,
         router: Arc::new(router.clone()),
@@ -74,8 +79,8 @@ async fn main() {
     let ping_producer = pubsub_sdk1.create_publisher(1);
     let pong_producer = pubsub_sdk2.create_publisher(2);
 
-    let pong_consumer = pubsub_sdk1.create_consumer(pong_producer.identify(), None);
-    let ping_consumer = pubsub_sdk2.create_consumer(ping_producer.identify(), None);
+    let pong_consumer = pubsub_sdk1.create_consumer_single(pong_producer.identify(), None);
+    let ping_consumer = pubsub_sdk2.create_consumer_single(ping_producer.identify(), None);
 
     async_std::task::sleep(Duration::from_secs(5)).await;
 

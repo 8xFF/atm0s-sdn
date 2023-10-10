@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use async_std::channel::Sender;
 use parking_lot::RwLock;
 use utils::error_handle::ErrorUtils;
 
@@ -109,5 +110,24 @@ impl KeyValueSdk {
         }
 
         subscriber
+    }
+
+    pub fn hsubscribe_raw(&self, key: u64, uuid: u64, ex: Option<u64>, tx: Sender<(KeyId, SubKeyId, Option<ValueType>, KeyVersion, KeySource)>) {
+        if self.hashmap_publisher.sub_raw(key, uuid, tx) {
+            let publisher = self.hashmap_publisher.clone();
+            self.hashmap_local.write().subscribe(
+                key,
+                ex,
+                Box::new(move |key, sub_key, value, version, source| {
+                    publisher.publish(key, (key, sub_key, value, version, source));
+                }),
+            );
+        }
+    }
+
+    pub fn hunsubscribe_raw(&self, key: u64, uuid: u64) {
+        if self.hashmap_publisher.unsub_raw(key, uuid) {
+            self.hashmap_local.write().unsubscribe(key);
+        }
     }
 }

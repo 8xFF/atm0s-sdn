@@ -10,6 +10,7 @@ log = { workspace = true }
 async-trait = { workspace = true }
 bluesea-identity = { workspace = true }
 bluesea-router = { workspace = true }
+key-value = { workspace = true }
 utils = { workspace = true }
 network = { workspace = true }
 async-std = { workspace = true }

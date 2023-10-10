@@ -260,6 +260,27 @@ mod tests {
     }
 
     #[test]
+    fn receive_sub_after_set_dersiered_send_ack() {
+        let timer = Arc::new(MockTimer::default());
+        let mut remote_storage = super::SimpleRemoteStorage::new(timer.clone());
+
+        remote_storage.on_event(1001, SimpleRemoteEvent::Set(2, 1, vec![1], 100, None));
+        assert_eq!(
+            remote_storage.pop_action(),
+            Some(RemoteStorageAction(SimpleLocalEvent::SetAck(2, 1, 100, true), RouteRule::ToNode(1001)))
+        );
+        assert_eq!(remote_storage.pop_action(), None);
+
+        remote_storage.on_event(1000, SimpleRemoteEvent::Sub(1, 1, None));
+        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(SimpleLocalEvent::SubAck(1, 1), RouteRule::ToNode(1000))));
+        assert_eq!(
+            remote_storage.pop_action(),
+            Some(RemoteStorageAction(SimpleLocalEvent::OnKeySet(0, 1, vec![1], 100, 1001), RouteRule::ToNode(1000)))
+        );
+        assert_eq!(remote_storage.pop_action(), None);
+    }
+
+    #[test]
     fn receive_unsub_dersiered_send_ack() {
         let timer = Arc::new(MockTimer::default());
         let mut remote_storage = super::SimpleRemoteStorage::new(timer.clone());

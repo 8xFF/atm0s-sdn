@@ -53,7 +53,7 @@ impl KeyValueBehavior {
                 node_id,
                 simple_remote: SimpleRemoteStorage::new(timer.clone()),
                 simple_local,
-                hashmap_remote: HashmapRemoteStorage::new(timer),
+                hashmap_remote: HashmapRemoteStorage::new(node_id, timer),
                 hashmap_local,
                 awake_notify,
                 awake_task: None,

@@ -191,12 +191,19 @@ where
         match self.maps.get_mut(key) {
             Some(slot) => {
                 slot.listeners.insert(
-                    handler_uuid,
+                    handler_uuid.clone(),
                     HandlerSlot {
                         added_at: self.timer.now_ms(),
                         expire_at: ex.map(|ex| self.timer.now_ms() + ex),
                     },
                 );
+
+                for (sub_key, slot) in slot.keys.iter() {
+                    if let Some((value, version, source)) = &slot.value {
+                        self.events
+                            .push_back(OutputEvent::NotifySet(key.clone(), sub_key.clone(), value.clone(), *version, source.clone(), handler_uuid.clone()));
+                    }
+                }
             }
             None => {
                 self.maps.insert(
@@ -368,6 +375,24 @@ mod tests {
         let source = 1000;
         store.subscribe(&key, handler, None);
         assert!(store.set(key, sub_key, value, version, source, None));
+        assert_eq!(store.poll(), Some(OutputEvent::NotifySet(key, sub_key, value, version, source, handler)));
+        assert_eq!(store.poll(), None);
+    }
+
+    /// Must add event after subscribe and set
+    #[test]
+    fn subscribe_after_set() {
+        let timer = Arc::new(MockTimer::default());
+        let mut store = HashmapKeyValue::<u32, u32, u32, u32, u32>::new(timer.clone());
+        let key = 1;
+        let sub_key = 11;
+        let value = 2;
+        let version = 1;
+        let handler = 1;
+        let source = 1000;
+        assert!(store.set(key, sub_key, value, version, source, None));
+        assert_eq!(store.poll(), None);
+        store.subscribe(&key, handler, None);
         assert_eq!(store.poll(), Some(OutputEvent::NotifySet(key, sub_key, value, version, source, handler)));
         assert_eq!(store.poll(), None);
     }

@@ -14,15 +14,17 @@ use crate::{
 
 use self::{
     feedback::FeedbackConsumerId,
-    local::LocalRelay,
+    local::{LocalRelay, LocalRelayAction},
     logic::{PubsubRelayLogic, PubsubRelayLogicOutput},
     remote::RemoteRelay,
+    source_binding::{SourceBinding, SourceBindingAction},
 };
 
 pub(crate) mod feedback;
 pub(crate) mod local;
 pub(crate) mod logic;
 pub(crate) mod remote;
+pub(crate) mod source_binding;
 
 pub type ChannelUuid = u32;
 
@@ -55,6 +57,7 @@ pub struct PubsubRelay<BE, HE> {
     logic: Arc<RwLock<PubsubRelayLogic>>,
     remote: Arc<RwLock<RemoteRelay<BE, HE>>>,
     local: Arc<RwLock<LocalRelay>>,
+    source_binding: Arc<RwLock<SourceBinding>>,
 }
 
 impl<BE, HE> Clone for PubsubRelay<BE, HE> {
@@ -63,6 +66,7 @@ impl<BE, HE> Clone for PubsubRelay<BE, HE> {
             logic: self.logic.clone(),
             remote: self.remote.clone(),
             local: self.local.clone(),
+            source_binding: self.source_binding.clone(),
         }
     }
 }
@@ -74,11 +78,12 @@ where
 {
     pub fn new(node_id: NodeId, awaker: Arc<dyn Awaker>) -> (Self, PubsubSdk<BE, HE>) {
         let s = Self {
-            logic: Arc::new(RwLock::new(PubsubRelayLogic::new(node_id, Arc::new(SystemTimer()), awaker))),
+            logic: Arc::new(RwLock::new(PubsubRelayLogic::new(node_id, Arc::new(SystemTimer()), awaker.clone()))),
             remote: Arc::new(RwLock::new(RemoteRelay::new())),
-            local: Arc::new(RwLock::new(LocalRelay::new())),
+            local: Arc::new(RwLock::new(LocalRelay::new(awaker.clone()))),
+            source_binding: Arc::new(RwLock::new(SourceBinding::new(awaker))),
         };
-        let sdk = PubsubSdk::new(node_id, s.logic.clone(), s.remote.clone(), s.local.clone());
+        let sdk = PubsubSdk::new(node_id, s.logic.clone(), s.remote.clone(), s.local.clone(), s.source_binding.clone());
         (s, sdk)
     }
 
@@ -94,6 +99,24 @@ where
         let local_fbs = self.logic.write().tick();
         for fb in local_fbs {
             self.local.read().feedback(fb.channel.uuid(), fb);
+        }
+    }
+
+    pub fn on_source_added(&self, channel: ChannelUuid, source: NodeId) {
+        if let Some(subs) = self.source_binding.write().on_source_added(channel, source) {
+            for sub in subs {
+                log::debug!("[PubsubRelay] sub channel {} with source {} for local sub {}", channel, source, sub);
+                self.logic.write().on_local_sub(ChannelIdentify::new(channel, source), sub);
+            }
+        }
+    }
+
+    pub fn on_source_removed(&self, channel: ChannelUuid, source: NodeId) {
+        if let Some(subs) = self.source_binding.write().on_source_removed(channel, source) {
+            for sub in subs {
+                log::debug!("[PubsubRelay] unsub channel {} with source {} for local sub {}", channel, source, sub);
+                self.logic.write().on_local_unsub(ChannelIdentify::new(channel, source), sub);
+            }
         }
     }
 
@@ -118,7 +141,15 @@ where
         }
     }
 
-    pub fn pop_action(&mut self) -> Option<(NodeId, Option<ConnId>, PubsubRelayLogicOutput)> {
+    pub fn pop_logic_action(&mut self) -> Option<(NodeId, Option<ConnId>, PubsubRelayLogicOutput)> {
         self.logic.write().pop_action()
+    }
+
+    pub fn pop_local_action(&mut self) -> Option<LocalRelayAction> {
+        self.local.write().pop_action()
+    }
+
+    pub fn pop_source_binding_action(&mut self) -> Option<SourceBindingAction> {
+        self.source_binding.write().pop_action()
     }
 }

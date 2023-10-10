@@ -12,7 +12,6 @@ use crate::{
 };
 
 pub struct Publisher<BE, HE> {
-    #[allow(unused)]
     uuid: LocalPubId,
     channel: ChannelIdentify,
     logic: Arc<RwLock<PubsubRelayLogic>>,
@@ -28,7 +27,8 @@ where
 {
     pub fn new(uuid: LocalPubId, channel: ChannelIdentify, logic: Arc<RwLock<PubsubRelayLogic>>, remote: Arc<RwLock<RemoteRelay<BE, HE>>>, local: Arc<RwLock<LocalRelay>>) -> Self {
         let (tx, rx) = async_std::channel::bounded(100);
-        local.write().on_local_pub(channel.uuid(), tx);
+        local.write().on_local_pub(channel.uuid(), uuid, tx);
+
         Self {
             uuid,
             channel,
@@ -63,6 +63,6 @@ where
 
 impl<BE, HE> Drop for Publisher<BE, HE> {
     fn drop(&mut self) {
-        self.local.write().on_local_unpub(self.channel.uuid());
+        self.local.write().on_local_unpub(self.channel.uuid(), self.uuid);
     }
 }

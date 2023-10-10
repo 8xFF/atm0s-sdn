@@ -1,8 +1,11 @@
 use crate::relay::ChannelIdentify;
+use bluesea_identity::NodeId;
 use serde::{Deserialize, Serialize};
 
 pub enum PubsubServiceBehaviourEvent {
     Awake,
+    OnHashmapSet(u64, NodeId),
+    OnHashmapDel(u64, NodeId),
 }
 pub enum PubsubServiceHandlerEvent {}
 

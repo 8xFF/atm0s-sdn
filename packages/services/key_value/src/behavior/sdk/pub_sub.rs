@@ -26,6 +26,43 @@ impl<K: Hash + Eq + Copy, T: Clone> PublisherManager<K, T> {
         }
     }
 
+    pub fn sub_raw(&self, key: K, uuid: u64, tx: Sender<T>) -> bool {
+        let mut subscribers = self.subscribers.write();
+        match subscribers.entry(key) {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                entry.get_mut().subscribers.insert(uuid, tx);
+                false
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(SubscribeContainer {
+                    subscribers: HashMap::from([(uuid, tx)]),
+                    clear_handler: Box::new(|| {}),
+                });
+                true
+            }
+        }
+    }
+
+    pub fn unsub_raw(&self, key: K, uuid: u64) -> bool {
+        let mut subscribers = self.subscribers.write();
+        let should_remove = {
+            if let Some(container) = subscribers.get_mut(&key) {
+                container.subscribers.remove(&uuid);
+                container.subscribers.is_empty()
+            } else {
+                false
+            }
+        };
+
+        if should_remove {
+            if let Some(container) = subscribers.remove(&key) {
+                (container.clear_handler)();
+            }
+        }
+
+        should_remove
+    }
+
     /// subscribe and return Subscriber and is_new
     /// is_new is true if this is the first subscriber
     /// is_new is false if this is not the first subscriber
