@@ -25,3 +25,21 @@ impl Ord for Path {
         self.2.partial_cmp(&other.2).unwrap()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::cmp::Ordering;
+
+    use bluesea_identity::ConnId;
+
+    use crate::{Metric, Path};
+
+    #[test]
+    fn test_compare_path() {
+        let p1 = Path(ConnId::from_in(1, 1), 1, Metric::new(1, vec![1], 10000));
+        let p2 = Path(ConnId::from_in(1, 2), 2, Metric::new(1, vec![2], 10000));
+
+        assert_eq!(p1.cmp(&p2), Ordering::Equal);
+        assert_eq!(p1.partial_cmp(&p2), Some(Ordering::Equal));
+    }
+}
