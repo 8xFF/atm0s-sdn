@@ -55,34 +55,34 @@ impl Metric {
 
 impl PartialOrd for Metric {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        if (self.bandwidth >= BANDWIDTH_LIMIT && other.bandwidth >= BANDWIDTH_LIMIT) || (self.bandwidth < BANDWIDTH_LIMIT && other.bandwidth < BANDWIDTH_LIMIT) {
-            let res = match (self.latency + (self.hops.len() as u16 * HOP_PLUS_RTT)).cmp(&(other.latency + (other.hops.len() as u16 * HOP_PLUS_RTT))) {
-                Ordering::Less => Ordering::Less,
-                Ordering::Greater => Ordering::Greater,
-                Ordering::Equal => match self.hops.len().cmp(&other.hops.len()) {
+        let self_bw = self.bandwidth >= BANDWIDTH_LIMIT;
+        let other_bw = other.bandwidth >= BANDWIDTH_LIMIT;
+        match (self_bw, other_bw) {
+            (true, true) | (false, false) => {
+                let res = match (self.latency + (self.hops.len() as u16 * HOP_PLUS_RTT)).cmp(&(other.latency + (other.hops.len() as u16 * HOP_PLUS_RTT))) {
                     Ordering::Less => Ordering::Less,
                     Ordering::Greater => Ordering::Greater,
-                    Ordering::Equal => match self.bandwidth.cmp(&other.bandwidth) {
-                        Ordering::Less => Ordering::Greater,
-                        Ordering::Greater => Ordering::Less,
-                        Ordering::Equal => Ordering::Equal,
+                    Ordering::Equal => match self.hops.len().cmp(&other.hops.len()) {
+                        Ordering::Less => Ordering::Less,
+                        Ordering::Greater => Ordering::Greater,
+                        Ordering::Equal => match self.bandwidth.cmp(&other.bandwidth) {
+                            Ordering::Less => Ordering::Greater,
+                            Ordering::Greater => Ordering::Less,
+                            Ordering::Equal => Ordering::Equal,
+                        },
                     },
-                },
-            };
-            Some(res)
-        } else if self.bandwidth >= BANDWIDTH_LIMIT {
-            Some(Ordering::Less)
-        } else if other.bandwidth >= BANDWIDTH_LIMIT {
-            Some(Ordering::Greater)
-        } else {
-            Some(Ordering::Equal)
+                };
+                Some(res)
+            }
+            (true, false) => Some(Ordering::Less),
+            (false, true) => Some(Ordering::Greater),
         }
     }
 }
 
 impl PartialEq<Self> for Metric {
     fn eq(&self, other: &Self) -> bool {
-        self.latency == other.latency && self.hops == other.hops
+        self.latency == other.latency && self.hops.len() == other.hops.len() && self.bandwidth == other.bandwidth
     }
 }
 
@@ -117,8 +117,15 @@ mod tests {
         let m1 = Metric::new(1, vec![1], 9000);
         let m2 = Metric::new(2, vec![2], 10000);
         let m3 = Metric::new(2, vec![3], 9000);
+        let m4 = Metric::new(2, vec![3], 11000);
+
         assert!(m2 < m1);
+        assert!(m1 > m2);
         assert!(m1 < m3);
+        assert!(m3 > m1);
+
+        assert!(m2 > m4);
+        assert!(m4 < m2);
     }
 
     #[test]
@@ -145,5 +152,12 @@ mod tests {
         let m2 = Metric::new(2, vec![2], 10000);
 
         assert!(m1 > m2);
+        assert!(m2 < m1);
+
+        let m3 = Metric::new(10, vec![1, 2], 10000);
+        let m4 = Metric::new(20, vec![1], 10000);
+
+        assert!(m3 > m4);
+        assert!(m4 < m3);
     }
 }

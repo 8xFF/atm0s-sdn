@@ -193,12 +193,19 @@ mod tests {
 
         let mut router = Router::new(node0);
 
+        assert_eq!(router.node_id(), node0);
+        assert_eq!(router.size(), 0);
+
         router.set_direct(z_node1_conn, z_node1, Metric::new(1, vec![z_node1, node0], 1));
         router.set_direct(node1_conn, node1, Metric::new(1, vec![node1, node0], 1));
 
+        assert_eq!(router.size(), 2);
+
         //same zone, group
         assert_eq!(router.next(node1, &[node0]), Some((node1_conn, node1)));
+        assert_eq!(router.next_path(node1, &[node0]), Some(Path(node1_conn, node1, Metric::new(1, vec![node1, node0], 1))));
         assert_eq!(router.next(node2, &[node0]), None);
+        assert_eq!(router.next_path(node2, &[node0]), None);
 
         //other zone
         assert_eq!(router.next(z_node2, &[node0]), Some((z_node1_conn, z_node1)));
