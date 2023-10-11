@@ -1,5 +1,5 @@
 use std::{
-    net::SocketAddr,
+    net::{SocketAddr, UdpSocket},
     os::fd::{AsRawFd, FromRawFd},
     sync::{atomic::AtomicU64, Arc},
 };
@@ -90,8 +90,15 @@ impl TransportConnector for UdpConnector {
             }
 
             //TODO increase udp buffer
-            let socket = Arc::new(std::net::UdpSocket::bind("0.0.0.0:0").expect("Should bind a address"));
+            let socket = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::DGRAM, None).expect("Should create socket");
+            let address: SocketAddr = "0.0.0.0:0".parse().expect("Should parse socket_addr");
+            socket.bind(&address.into()).expect("Should bind address");
+            socket.set_recv_buffer_size(1024 * 1024).expect("Should set recv buffer size");
+            socket.set_send_buffer_size(1024 * 1024).expect("Should set recv buffer size");
+            let socket: UdpSocket = socket.into();
+            let socket = Arc::new(socket);
             socket.connect(remote_addr).print_error("Should connect to remote addr");
+            
             let async_socket = unsafe { Arc::new(async_std::net::UdpSocket::from_raw_fd(socket.as_raw_fd())) };
 
             match outgoing_handshake(&async_socket, local_node_id, local_node_addr, node_id).await {
