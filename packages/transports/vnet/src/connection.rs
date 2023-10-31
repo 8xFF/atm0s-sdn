@@ -1,7 +1,7 @@
 use async_std::channel::{Receiver, Sender};
 use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use network::msg::TransportMsg;
-use network::transport::{ConnectionEvent, ConnectionReceiver, ConnectionSender};
+use network::transport::{ConnectionEvent, ConnectionReceiver, ConnectionSender, ConnectionStats};
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -14,6 +14,7 @@ pub struct VnetConnectionReceiver {
     pub(crate) remote_addr: NodeAddr,
     pub(crate) recv: Receiver<Option<TransportMsg>>,
     pub(crate) connections: Arc<RwLock<HashMap<ConnId, (NodeId, NodeId)>>>,
+    pub(crate) first_stats: Option<ConnectionStats>,
 }
 
 #[async_trait::async_trait]
@@ -31,6 +32,10 @@ impl ConnectionReceiver for VnetConnectionReceiver {
     }
 
     async fn poll(&mut self) -> Result<ConnectionEvent, ()> {
+        if let Some(stats) = self.first_stats.take() {
+            return Ok(ConnectionEvent::Stats(stats));
+        }
+
         if let Some(msg) = self.recv.recv().await.map_err(|_e| ())? {
             Ok(ConnectionEvent::Msg(msg))
         } else {
