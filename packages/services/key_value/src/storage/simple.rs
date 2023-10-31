@@ -1,3 +1,4 @@
+use std::collections::hash_map;
 use std::hash::Hash;
 use std::sync::Arc;
 use utils::hashmap::HashMap;
@@ -110,6 +111,7 @@ where
                     Self::fire_set_events(&key, slot, &mut self.events);
                     true
                 } else {
+                    slot.expire_at = ex.map(|ex| self.timer.now_ms() + ex);
                     false
                 }
             }
@@ -161,18 +163,20 @@ where
 
     pub fn subscribe(&mut self, key: &Key, handler_uuid: Handler, ex: Option<u64>) {
         match self.keys.get_mut(key) {
-            Some(slot) => {
-                slot.listeners.insert(
-                    handler_uuid.clone(),
-                    HandlerSlot {
+            Some(slot) => match slot.listeners.entry(handler_uuid.clone()) {
+                hash_map::Entry::Occupied(mut sub_slot) => {
+                    sub_slot.get_mut().expire_at = ex.map(|ex| self.timer.now_ms() + ex);
+                }
+                hash_map::Entry::Vacant(sub_slot) => {
+                    sub_slot.insert(HandlerSlot {
                         added_at: self.timer.now_ms(),
                         expire_at: ex.map(|ex| self.timer.now_ms() + ex),
-                    },
-                );
-                if let Some((value, version, source)) = &slot.value {
-                    self.events.push_back(OutputEvent::NotifySet(key.clone(), value.clone(), *version, source.clone(), handler_uuid));
+                    });
+                    if let Some((value, version, source)) = &slot.value {
+                        self.events.push_back(OutputEvent::NotifySet(key.clone(), value.clone(), *version, source.clone(), handler_uuid));
+                    }
                 }
-            }
+            },
             None => {
                 self.keys.insert(
                     key.clone(),
@@ -291,7 +295,16 @@ mod tests {
         let source = 1000;
         assert!(store.set(key, value, version, source, Some(100)));
         assert_eq!(store.get(&key), Some((&value, version, source)));
+        timer.fake(50);
+        assert!(!store.set(key, value, version, source, Some(100)));
+        store.tick();
+        assert_eq!(store.get(&key), Some((&value, version, source)));
         timer.fake(100);
+        store.tick();
+        assert_eq!(store.get(&key), Some((&value, version, source)));
+
+        //after 100 from 50 => should expire
+        timer.fake(150);
         store.tick();
         assert_eq!(store.get(&key), None);
     }
@@ -309,6 +322,14 @@ mod tests {
         store.subscribe(&key, handler, None);
         assert!(store.set(key, value, version, source, None));
         assert_eq!(store.poll(), Some(OutputEvent::NotifySet(key, value, version, source, handler)));
+        assert_eq!(store.poll(), None);
+
+        //subscribe more time should not fire
+        store.subscribe(&key, handler, None);
+        assert_eq!(store.poll(), None);
+
+        //set with same version should not fire
+        assert!(!store.set(key, value, version, source, None));
         assert_eq!(store.poll(), None);
     }
 

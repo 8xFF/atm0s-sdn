@@ -110,6 +110,7 @@ where
             Some(map) => match map.keys.entry(sub_key.clone()) {
                 hash_map::Entry::Occupied(mut slot) => {
                     let slot_inner = slot.get_mut();
+                    slot_inner.expire_at = ex.map(|ex| self.timer.now_ms() + ex);
                     if let Some((old_value, old_version, old_source)) = &mut slot_inner.value {
                         if *old_version < version {
                             *old_value = value;
@@ -189,22 +190,23 @@ where
 
     pub fn subscribe(&mut self, key: &Key, handler_uuid: Handler, ex: Option<u64>) {
         match self.maps.get_mut(key) {
-            Some(slot) => {
-                slot.listeners.insert(
-                    handler_uuid.clone(),
-                    HandlerSlot {
+            Some(slot) => match slot.listeners.entry(handler_uuid.clone()) {
+                hash_map::Entry::Occupied(mut entry) => {
+                    entry.get_mut().expire_at = ex.map(|ex| self.timer.now_ms() + ex);
+                }
+                hash_map::Entry::Vacant(entry) => {
+                    entry.insert(HandlerSlot {
                         added_at: self.timer.now_ms(),
                         expire_at: ex.map(|ex| self.timer.now_ms() + ex),
-                    },
-                );
-
-                for (sub_key, slot) in slot.keys.iter() {
-                    if let Some((value, version, source)) = &slot.value {
-                        self.events
-                            .push_back(OutputEvent::NotifySet(key.clone(), sub_key.clone(), value.clone(), *version, source.clone(), handler_uuid.clone()));
+                    });
+                    for (sub_key, slot) in slot.keys.iter() {
+                        if let Some((value, version, source)) = &slot.value {
+                            self.events
+                                .push_back(OutputEvent::NotifySet(key.clone(), sub_key.clone(), value.clone(), *version, source.clone(), handler_uuid.clone()));
+                        }
                     }
                 }
-            }
+            },
             None => {
                 self.maps.insert(
                     key.clone(),
@@ -356,8 +358,16 @@ mod tests {
         let version = 1;
         let source = 1000;
         assert!(store.set(key, sub_key, value, version, source, Some(100)));
+        timer.fake(50);
+        assert!(!store.set(key, sub_key, value, version, source, Some(100)));
+        store.tick();
         assert_eq!(store.get(&key), Some(vec![(sub_key, &value, version, source)]));
         timer.fake(100);
+        store.tick();
+        assert_eq!(store.get(&key), Some(vec![(sub_key, &value, version, source)]));
+
+        //after 100 from 50 => should expire
+        timer.fake(150);
         store.tick();
         assert_eq!(store.get(&key), None);
     }
@@ -376,6 +386,14 @@ mod tests {
         store.subscribe(&key, handler, None);
         assert!(store.set(key, sub_key, value, version, source, None));
         assert_eq!(store.poll(), Some(OutputEvent::NotifySet(key, sub_key, value, version, source, handler)));
+        assert_eq!(store.poll(), None);
+
+        //subscribe more time should not fire
+        store.subscribe(&key, handler, None);
+        assert_eq!(store.poll(), None);
+
+        //set with same version should not fire
+        assert!(!store.set(key, sub_key, value, version, source, None));
         assert_eq!(store.poll(), None);
     }
 
