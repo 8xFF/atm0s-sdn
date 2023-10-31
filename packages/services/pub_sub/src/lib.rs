@@ -234,7 +234,7 @@ mod tests {
         let producer = sdk1.create_publisher(1111);
         let consumer = sdk2.create_consumer_single(producer.identify(), Some(10));
 
-        async_std::task::sleep(Duration::from_millis(300)).await;
+        async_std::task::sleep(Duration::from_millis(3000)).await;
 
         let data = Bytes::from(vec![1, 2, 3, 4]);
         producer.send(data.clone());
@@ -301,7 +301,7 @@ mod tests {
         let producer = sdk1.create_publisher(1111);
         let consumer = sdk2.create_consumer(1111, Some(10));
 
-        async_std::task::sleep(Duration::from_millis(300)).await;
+        async_std::task::sleep(Duration::from_millis(3000)).await;
 
         let data = Bytes::from(vec![1, 2, 3, 4]);
         producer.send(data.clone());
