@@ -234,7 +234,8 @@ mod tests {
     /// Testing remote
     #[async_std::test]
     async fn remote_node_single() {
-        env_logger::builder().format_timestamp_millis().init();
+        env_logger::builder().filter_module("pub_sub", log::LevelFilter::Debug).format_timestamp_millis().init();
+        log::info!("Starting remote_node_single");
         let vnet = Arc::new(VnetEarth::default());
         let (sdk1, addr1, join1) = run_node(vnet.clone(), 1, vec![]).await;
         let (sdk2, _addr2, join2) = run_node(vnet, 2, vec![addr1]).await;
