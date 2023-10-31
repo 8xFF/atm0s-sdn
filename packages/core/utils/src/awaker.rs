@@ -1,5 +1,7 @@
 use std::sync::{atomic::AtomicUsize, Arc};
 
+use async_std::channel::{Receiver, Sender};
+
 #[async_trait::async_trait]
 pub trait Awaker: Send + Sync {
     fn notify(&self);
@@ -27,15 +29,22 @@ impl Awaker for MockAwaker {
     }
 }
 
-#[derive(Default)]
 pub struct AsyncAwaker {
-    notify: Arc<async_notify::Notify>,
+    tx: Arc<Sender<()>>,
+    rx: Arc<Receiver<()>>,
+}
+
+impl Default for AsyncAwaker {
+    fn default() -> Self {
+        let (tx, rx) = async_std::channel::bounded(5);
+        Self { tx: Arc::new(tx), rx: Arc::new(rx) }
+    }
 }
 
 #[async_trait::async_trait]
 impl Awaker for AsyncAwaker {
     fn notify(&self) {
-        self.notify.notify();
+        self.tx.try_send(());
     }
 
     fn pop_awake_count(&self) -> usize {
@@ -43,6 +52,6 @@ impl Awaker for AsyncAwaker {
     }
 
     async fn wait(&self) {
-        self.notify.notified().await;
+        self.rx.recv().await;
     }
 }
