@@ -4,6 +4,7 @@ use std::{
 };
 
 use async_std::channel::Sender;
+use bluesea_identity::NodeId;
 use bytes::Bytes;
 use utils::{awaker::Awaker, error_handle::ErrorUtils};
 
@@ -16,7 +17,7 @@ pub enum LocalRelayAction {
 }
 
 pub struct LocalRelay {
-    consumers: HashMap<u64, Sender<Bytes>>,
+    consumers: HashMap<u64, Sender<(LocalSubId, NodeId, ChannelUuid, Bytes)>>,
     producer_fbs: HashMap<ChannelUuid, HashMap<u64, Sender<Feedback>>>,
     actions: VecDeque<LocalRelayAction>,
     awaker: Arc<dyn Awaker>,
@@ -32,7 +33,7 @@ impl LocalRelay {
         }
     }
 
-    pub fn on_local_sub(&mut self, uuid: LocalSubId, sender: Sender<Bytes>) {
+    pub fn on_local_sub(&mut self, uuid: LocalSubId, sender: Sender<(LocalSubId, NodeId, ChannelUuid, Bytes)>) {
         self.consumers.insert(uuid, sender);
     }
 
@@ -72,11 +73,11 @@ impl LocalRelay {
         }
     }
 
-    pub fn relay(&self, locals: &[LocalSubId], data: Bytes) {
+    pub fn relay(&self, source: NodeId, channel: ChannelUuid, locals: &[LocalSubId], data: Bytes) {
         for uuid in locals {
             if let Some(sender) = self.consumers.get(uuid) {
                 log::trace!("[LocalRelay] relay to local {}", uuid);
-                sender.try_send(data.clone()).print_error("Should send data");
+                sender.try_send((*uuid, source, channel, data.clone())).print_error("Should send data");
             } else {
                 log::warn!("[LocalRelay] relay to local {} failed", uuid);
             }
@@ -137,16 +138,16 @@ mod tests {
         relay.on_local_sub(11, tx2);
 
         let data1 = Bytes::from("hello1");
-        relay.relay(&[10, 11], data1.clone());
-        assert_eq!(rx1.try_recv(), Ok(data1.clone()));
-        assert_eq!(rx2.try_recv(), Ok(data1.clone()));
+        relay.relay(1, 1000, &[10, 11], data1.clone());
+        assert_eq!(rx1.try_recv(), Ok((10, 1, 1000, data1.clone())));
+        assert_eq!(rx2.try_recv(), Ok((11, 1, 1000, data1.clone())));
 
         let data2 = Bytes::from("hello2");
         let data3 = Bytes::from("hello2");
-        relay.relay(&[10], data2.clone());
-        relay.relay(&[11], data3.clone());
-        assert_eq!(rx1.try_recv(), Ok(data2.clone()));
-        assert_eq!(rx2.try_recv(), Ok(data3.clone()));
+        relay.relay(1, 1000, &[10], data2.clone());
+        relay.relay(1, 1000, &[11], data3.clone());
+        assert_eq!(rx1.try_recv(), Ok((10, 1, 1000, data2.clone())));
+        assert_eq!(rx2.try_recv(), Ok((11, 1, 1000, data3.clone())));
     }
 
     #[test]

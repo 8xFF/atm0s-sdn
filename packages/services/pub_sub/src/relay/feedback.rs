@@ -30,9 +30,9 @@ pub enum FeedbackConsumerId {
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Clone)]
 pub struct Feedback {
-    pub(crate) channel: ChannelIdentify,
-    pub(crate) id: u8,
-    pub(crate) feedback_type: FeedbackType,
+    pub channel: ChannelIdentify,
+    pub id: u8,
+    pub feedback_type: FeedbackType,
 }
 
 pub(crate) trait SingleFeedbackProcessor: Send + Sync {

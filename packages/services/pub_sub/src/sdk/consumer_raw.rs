@@ -12,45 +12,42 @@ use crate::relay::{
     ChannelIdentify, ChannelUuid, LocalSubId,
 };
 
-pub struct Consumer {
-    uuid: LocalSubId,
+pub struct ConsumerRaw {
+    sub_uuid: LocalSubId,
     channel: ChannelUuid,
     logic: Arc<RwLock<PubsubRelayLogic>>,
     local: Arc<RwLock<LocalRelay>>,
     source_binding: Arc<RwLock<SourceBinding>>,
-    rx: async_std::channel::Receiver<(LocalSubId, NodeId, ChannelUuid, Bytes)>,
 }
 
-impl Consumer {
+impl ConsumerRaw {
     pub fn new(
-        uuid: LocalSubId,
+        sub_uuid: LocalSubId,
         channel: ChannelUuid,
         logic: Arc<RwLock<PubsubRelayLogic>>,
         local: Arc<RwLock<LocalRelay>>,
         source_binding: Arc<RwLock<SourceBinding>>,
-        max_queue_size: usize,
+        tx: async_std::channel::Sender<(LocalSubId, NodeId, ChannelUuid, Bytes)>,
     ) -> Self {
-        let (tx, rx) = async_std::channel::bounded(max_queue_size);
-        local.write().on_local_sub(uuid, tx);
-        if let Some(sources) = source_binding.write().on_local_sub(channel, uuid) {
+        local.write().on_local_sub(sub_uuid, tx);
+        if let Some(sources) = source_binding.write().on_local_sub(channel, sub_uuid) {
             for source in sources {
                 let channel = ChannelIdentify::new(channel, source);
-                logic.write().on_local_sub(channel, uuid);
+                logic.write().on_local_sub(channel, sub_uuid);
             }
         }
 
         Self {
-            uuid,
+            sub_uuid,
             channel,
             logic,
             local,
             source_binding,
-            rx,
         }
     }
 
     pub fn uuid(&self) -> LocalSubId {
-        self.uuid
+        self.sub_uuid
     }
 
     pub fn feedback(&self, id: u8, feedback_type: FeedbackType) {
@@ -62,24 +59,20 @@ impl Consumer {
                 id,
                 feedback_type: feedback_type.clone(),
             };
-            if let Some(local_fb) = self.logic.write().on_feedback(channel, FeedbackConsumerId::Local(self.uuid), fb) {
+            if let Some(local_fb) = self.logic.write().on_feedback(channel, FeedbackConsumerId::Local(self.sub_uuid), fb) {
                 self.local.read().feedback(self.channel, local_fb);
             }
         }
     }
-
-    pub async fn recv(&self) -> Option<(LocalSubId, NodeId, ChannelUuid, Bytes)> {
-        self.rx.recv().await.ok()
-    }
 }
 
-impl Drop for Consumer {
+impl Drop for ConsumerRaw {
     fn drop(&mut self) {
-        self.local.write().on_local_unsub(self.uuid);
-        if let Some(sources) = self.source_binding.write().on_local_sub(self.channel, self.uuid) {
+        self.local.write().on_local_unsub(self.sub_uuid);
+        if let Some(sources) = self.source_binding.write().on_local_sub(self.channel, self.sub_uuid) {
             for source in sources {
                 let channel = ChannelIdentify::new(self.channel, source);
-                self.logic.write().on_local_unsub(channel, self.uuid);
+                self.logic.write().on_local_unsub(channel, self.sub_uuid);
             }
         }
     }

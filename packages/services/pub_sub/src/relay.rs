@@ -134,7 +134,7 @@ where
         if let Some((remotes, locals)) = self.logic.read().relay(channel) {
             self.remote.read().relay(remotes, &msg);
             if !locals.is_empty() {
-                self.local.read().relay(locals, Bytes::from(msg.payload().to_vec()));
+                self.local.read().relay(channel.source(), channel.uuid(), locals, Bytes::from(msg.payload().to_vec()));
             } else {
                 log::trace!("No local subscriber for channel {}", channel);
             }

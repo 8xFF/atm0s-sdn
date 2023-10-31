@@ -28,12 +28,14 @@ layers-spread-router = { path = "packages/routers/layers_spread_router" }
 multiaddr = { path = "packages/core/multiaddr" }
 utils = { package = "utils", path = "packages/core/utils" }
 router = { package = "router", path = "packages/core/router" }
+runner = { package = "runner", path = "packages/runner" }
 network = { package = "network", path = "packages/network" }
 manual-discovery = { package = "manual-discovery", path = "packages/services/manual_discovery" }
 dht-discovery = { package = "dht-discovery", path = "packages/services/dht_discovery" }
 layers-spread-router-sync = { package = "layers-spread-router-sync", path = "packages/services/layers_spread_router_sync" }
 tun-tap = { package = "tun-tap", path = "packages/services/tun_tap" }
 key-value = { package = "key-value", path = "packages/services/key_value" }
+pub-sub = { package = "pub-sub", path = "packages/services/pub_sub" }
 transport-vnet = { package = "vnet", path = "packages/transports/vnet" }
 transport-tcp = { package = "tcp", path = "packages/transports/tcp" }
 transport-udp = { package = "udp", path = "packages/transports/udp" }

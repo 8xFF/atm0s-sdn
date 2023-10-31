@@ -1,18 +1,22 @@
 use std::sync::{atomic::AtomicU64, Arc};
 
+use async_std::channel::Sender;
 use bluesea_identity::NodeId;
+use bytes::Bytes;
 use parking_lot::RwLock;
 
 use crate::{
     msg::{PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent},
-    relay::{local::LocalRelay, logic::PubsubRelayLogic, remote::RemoteRelay, source_binding::SourceBinding, ChannelIdentify, ChannelUuid},
+    relay::{feedback::Feedback, local::LocalRelay, logic::PubsubRelayLogic, remote::RemoteRelay, source_binding::SourceBinding, ChannelIdentify, ChannelUuid, LocalSubId},
 };
 
-use self::{consumer::Consumer, consumer_single::ConsumerSingle, publisher::Publisher};
+use self::{consumer::Consumer, consumer_raw::ConsumerRaw, consumer_single::ConsumerSingle, publisher::Publisher, publisher_raw::PublisherRaw};
 
 pub(crate) mod consumer;
+pub(crate) mod consumer_raw;
 pub(crate) mod consumer_single;
 pub(crate) mod publisher;
+pub(crate) mod publisher_raw;
 
 pub struct PubsubSdk<BE, HE> {
     node_id: NodeId,
@@ -60,9 +64,19 @@ where
         Publisher::<BE, HE>::new(uuid, ChannelIdentify::new(channel, self.node_id), self.logic.clone(), self.remote.clone(), self.local.clone())
     }
 
+    pub fn create_publisher_raw(&self, channel: ChannelUuid, fb_tx: async_std::channel::Sender<Feedback>) -> PublisherRaw<BE, HE> {
+        let uuid = self.pub_uuid_seed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        PublisherRaw::<BE, HE>::new(uuid, ChannelIdentify::new(channel, self.node_id), self.logic.clone(), self.remote.clone(), self.local.clone(), fb_tx)
+    }
+
     pub fn create_consumer_single(&self, channel: ChannelIdentify, max_queue_size: Option<usize>) -> ConsumerSingle {
         let uuid = self.sub_uuid_seed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         ConsumerSingle::new(uuid, channel, self.logic.clone(), self.local.clone(), max_queue_size.unwrap_or(100))
+    }
+
+    pub fn create_consumer_raw(&self, channel: ChannelUuid, tx: Sender<(LocalSubId, NodeId, ChannelUuid, Bytes)>) -> ConsumerRaw {
+        let uuid = self.sub_uuid_seed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        ConsumerRaw::new(uuid, channel, self.logic.clone(), self.local.clone(), self.source_binding.clone(), tx)
     }
 
     pub fn create_consumer(&self, channel: ChannelUuid, max_queue_size: Option<usize>) -> Consumer {

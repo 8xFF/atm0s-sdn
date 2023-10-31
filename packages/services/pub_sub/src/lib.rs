@@ -5,13 +5,13 @@ pub(crate) static PUBSUB_CHANNEL_TIMEOUT_MS: u64 = 20000;
 mod behaviour;
 mod handler;
 mod msg;
-pub(crate) mod relay;
-pub(crate) mod sdk;
+mod relay;
+mod sdk;
 
 pub use behaviour::{channel_source::ChannelSourceHashmapMock, channel_source::ChannelSourceHashmapReal, PubsubServiceBehaviour};
 pub use msg::{PubsubRemoteEvent, PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent};
-pub use relay::ChannelIdentify;
-pub use sdk::{consumer_single::ConsumerSingle, publisher::Publisher, PubsubSdk};
+pub use relay::{feedback::Feedback, feedback::FeedbackType, feedback::NumberInfo, ChannelIdentify, ChannelUuid, LocalPubId, LocalSubId};
+pub use sdk::{consumer::Consumer, consumer_raw::ConsumerRaw, consumer_single::ConsumerSingle, publisher::Publisher, publisher_raw::PublisherRaw, PubsubSdk};
 
 #[cfg(test)]
 mod tests {
@@ -106,7 +106,7 @@ mod tests {
         let data = Bytes::from(vec![1, 2, 3, 4]);
         producer.send(data.clone());
         let got_value = consumer.recv().timeout(Duration::from_secs(1)).await.expect("Should get success").expect("Should some");
-        assert_eq!(&got_value, &data);
+        assert_eq!(got_value, (consumer.uuid(), 1, 1111, data));
 
         const PASS_FEEDBACK_TYPE_ID: u8 = 2;
         consumer.feedback(PASS_FEEDBACK_TYPE_ID, FeedbackType::Passthrough(vec![1]));
@@ -173,7 +173,7 @@ mod tests {
         let data = Bytes::from(vec![1, 2, 3, 4]);
         producer.send(data.clone());
         let got_value = consumer.recv().timeout(Duration::from_secs(1)).await.expect("Should get success").expect("Should some");
-        assert_eq!(&got_value, &data);
+        assert_eq!(got_value, (consumer.uuid(), 1, 1111, data));
 
         const PASS_FEEDBACK_TYPE_ID: u8 = 2;
         consumer.feedback(PASS_FEEDBACK_TYPE_ID, FeedbackType::Passthrough(vec![1]));
@@ -239,7 +239,7 @@ mod tests {
         let data = Bytes::from(vec![1, 2, 3, 4]);
         producer.send(data.clone());
         let got_value = consumer.recv().timeout(Duration::from_secs(1)).await.expect("Should get success").expect("Should some");
-        assert_eq!(&got_value, &data);
+        assert_eq!(got_value, (consumer.uuid(), 1, 1111, data));
 
         const PASS_FEEDBACK_TYPE_ID: u8 = 2;
         consumer.feedback(PASS_FEEDBACK_TYPE_ID, FeedbackType::Passthrough(vec![1]));
@@ -306,7 +306,7 @@ mod tests {
         let data = Bytes::from(vec![1, 2, 3, 4]);
         producer.send(data.clone());
         let got_value = consumer.recv().timeout(Duration::from_secs(1)).await.expect("Should get success").expect("Should some");
-        assert_eq!(&got_value, &data);
+        assert_eq!(got_value, (consumer.uuid(), 1, 1111, data));
 
         const PASS_FEEDBACK_TYPE_ID: u8 = 2;
         consumer.feedback(PASS_FEEDBACK_TYPE_ID, FeedbackType::Passthrough(vec![1]));

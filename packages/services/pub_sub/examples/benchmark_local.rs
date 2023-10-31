@@ -83,7 +83,7 @@ async fn main() {
     async_std::task::sleep(Duration::from_secs(1)).await;
 
     async_std::task::spawn(async move {
-        while let Some(msg) = ping_consumer.recv().await {
+        while let Some((_sub_id, _source, _channel, msg)) = ping_consumer.recv().await {
             pong_producer.send(msg);
         }
     });

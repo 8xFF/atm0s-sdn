@@ -98,7 +98,7 @@ impl TransportConnector for UdpConnector {
             let socket: UdpSocket = socket.into();
             let socket = Arc::new(socket);
             socket.connect(remote_addr).print_error("Should connect to remote addr");
-            
+
             let async_socket = unsafe { Arc::new(async_std::net::UdpSocket::from_raw_fd(socket.as_raw_fd())) };
 
             match outgoing_handshake(&async_socket, local_node_id, local_node_addr, node_id).await {
