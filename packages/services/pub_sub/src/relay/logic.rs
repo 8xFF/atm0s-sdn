@@ -126,7 +126,11 @@ impl PubsubRelayLogic {
                     self.output_events
                         .push_back((info.from_node, Some(info.from_conn), PubsubRelayLogicOutput::Event(PubsubRemoteEvent::Unsub(*channel))));
                 } else {
-                    log::info!("[PubsubRelayLogic {}] remove channel {} with no next node info because of empty", self.node_id, channel);
+                    if self.node_id != channel.source() {
+                        log::warn!("[PubsubRelayLogic {}] remove channel {} with no next node info because of empty", self.node_id, channel);
+                    } else {
+                        log::info!("[PubsubRelayLogic {}] remove channel {} list empty in source node => removed", self.node_id, channel);
+                    }
                     need_clear_channels.push(*channel);
                 }
             }
@@ -231,7 +235,16 @@ impl PubsubRelayLogic {
                         .push_back((info.from_node, Some(info.from_conn), PubsubRelayLogicOutput::Event(PubsubRemoteEvent::Unsub(channel))));
                     self.awaker.notify();
                 } else {
-                    log::warn!("[PubsubRelayLogic {}] local unsub {} event from {} list empty => but no next node", self.node_id, channel, handler);
+                    if self.node_id != channel.source() {
+                        log::warn!("[PubsubRelayLogic {}] local unsub {} event from {} list empty => but no next node", self.node_id, channel, handler);
+                    } else {
+                        log::info!(
+                            "[PubsubRelayLogic {}] local unsub {} event from {} list empty in source node => removed",
+                            self.node_id,
+                            channel,
+                            handler
+                        );
+                    }
                     self.channels.remove(&channel);
                 }
             }
@@ -313,7 +326,11 @@ impl PubsubRelayLogic {
                                     .push_back((info.from_node, Some(info.from_conn), PubsubRelayLogicOutput::Event(PubsubRemoteEvent::Unsub(id))));
                             } else {
                                 self.channels.remove(&id);
-                                log::warn!("[PubsubRelayLogic {}] unsub {} event from {} list empty => but no next node", self.node_id, id, from);
+                                if id.source() != self.node_id {
+                                    log::warn!("[PubsubRelayLogic {}] unsub {} event from {} list empty => but no next node", self.node_id, id, from);
+                                } else {
+                                    log::info!("[PubsubRelayLogic {}] unsub {} event from {} list empty in source node => removed", self.node_id, id, from);
+                                }
                             }
                         } else {
                             self.channels.remove(&id);
