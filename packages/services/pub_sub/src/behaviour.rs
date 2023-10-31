@@ -126,8 +126,8 @@ where
         let agent = agent.clone();
         let node_id = self.node_id;
         self.awake_task = Some(async_std::task::spawn(async move {
+            log::debug!("[PubSubServiceBehaviour {}] start wait loop", node_id);
             loop {
-                log::debug!("[PubSubServiceBehaviour {}] wait event", node_id);
                 select! {
                     _ = awake_notify.wait().fuse() => {
                         log::debug!("[PubSubServiceBehaviour {}] awake_notify", node_id);
