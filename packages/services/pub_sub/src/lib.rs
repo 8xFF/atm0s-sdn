@@ -28,6 +28,7 @@ mod tests {
         plane::{NetworkPlane, NetworkPlaneConfig},
     };
     use std::{sync::Arc, time::Duration, vec};
+    use transport_vnet::VnetEarth;
     use utils::{option_handle::OptionUtils, SystemTimer};
 
     use crate::relay::feedback::{FeedbackType, NumberInfo};
@@ -61,15 +62,20 @@ mod tests {
         Manual(ManualHandlerEvent),
     }
 
-    async fn run_node(node_id: NodeId, neighbours: Vec<NodeAddr>) -> (PubsubSdk<ImplBehaviorEvent, ImplHandlerEvent>, NodeAddr, JoinHandle<()>) {
+    async fn run_node(vnet: Arc<VnetEarth>, node_id: NodeId, neighbours: Vec<NodeAddr>) -> (PubsubSdk<ImplBehaviorEvent, ImplHandlerEvent>, NodeAddr, JoinHandle<()>) {
         log::info!("Run node {} connect to {:?}", node_id, neighbours);
         let node_addr = Arc::new(NodeAddrBuilder::default());
         node_addr.add_protocol(Protocol::P2p(node_id));
-        let transport = Box::new(transport_udp::UdpTransport::new(node_id, 0, node_addr.clone()).await);
+        node_addr.add_protocol(Protocol::Memory(node_id as u64));
+        let transport = Box::new(transport_vnet::VnetTransport::new(vnet, node_id as u64, node_id, node_addr.addr()));
         let timer = Arc::new(SystemTimer());
 
         let router = SharedRouter::new(node_id);
-        let manual = ManualBehavior::new(ManualBehaviorConf { neighbours, timer: timer.clone() });
+        let manual = ManualBehavior::new(ManualBehaviorConf {
+            node_id,
+            neighbours,
+            timer: timer.clone(),
+        });
 
         let router_sync_behaviour = LayersSpreadRouterSyncBehavior::new(router.clone());
         let (kv_behaviour, kv_sdk) = KeyValueBehavior::new(node_id, timer.clone(), 3000);
@@ -96,7 +102,8 @@ mod tests {
     /// Testing local pubsub
     #[async_std::test]
     async fn local_node_single() {
-        let (sdk, _addr, join) = run_node(1, vec![]).await;
+        let vnet = Arc::new(VnetEarth::default());
+        let (sdk, _addr, join) = run_node(vnet, 1, vec![]).await;
 
         async_std::task::sleep(Duration::from_millis(1000)).await;
 
@@ -159,7 +166,8 @@ mod tests {
     /// Testing local pubsub
     #[async_std::test]
     async fn local_node_auto() {
-        let (sdk, _addr, join) = run_node(1, vec![]).await;
+        let vnet = Arc::new(VnetEarth::default());
+        let (sdk, _addr, join) = run_node(vnet, 1, vec![]).await;
 
         async_std::task::sleep(Duration::from_millis(1000)).await;
 
@@ -226,15 +234,16 @@ mod tests {
     /// Testing remote
     #[async_std::test]
     async fn remote_node_single() {
-        let (sdk1, addr1, join1) = run_node(1, vec![]).await;
-        let (sdk2, _addr2, join2) = run_node(2, vec![addr1]).await;
+        let vnet = Arc::new(VnetEarth::default());
+        let (sdk1, addr1, join1) = run_node(vnet.clone(), 1, vec![]).await;
+        let (sdk2, _addr2, join2) = run_node(vnet, 2, vec![addr1]).await;
 
         async_std::task::sleep(Duration::from_millis(1000)).await;
 
         let producer = sdk1.create_publisher(1111);
         let consumer = sdk2.create_consumer_single(producer.identify(), Some(10));
 
-        async_std::task::sleep(Duration::from_millis(3000)).await;
+        async_std::task::sleep(Duration::from_millis(300)).await;
 
         let data = Bytes::from(vec![1, 2, 3, 4]);
         producer.send(data.clone());
@@ -293,15 +302,16 @@ mod tests {
     /// Testing remote
     #[async_std::test]
     async fn remote_node_auto() {
-        let (sdk1, addr1, join1) = run_node(1, vec![]).await;
-        let (sdk2, _addr2, join2) = run_node(2, vec![addr1]).await;
+        let vnet = Arc::new(VnetEarth::default());
+        let (sdk1, addr1, join1) = run_node(vnet.clone(), 1, vec![]).await;
+        let (sdk2, _addr2, join2) = run_node(vnet, 2, vec![addr1]).await;
 
-        async_std::task::sleep(Duration::from_millis(3000)).await;
+        async_std::task::sleep(Duration::from_millis(1000)).await;
 
         let producer = sdk1.create_publisher(1111);
         let consumer = sdk2.create_consumer(1111, Some(10));
 
-        async_std::task::sleep(Duration::from_millis(3000)).await;
+        async_std::task::sleep(Duration::from_millis(300)).await;
 
         let data = Bytes::from(vec![1, 2, 3, 4]);
         producer.send(data.clone());
