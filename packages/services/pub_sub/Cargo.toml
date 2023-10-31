@@ -21,6 +21,7 @@ bytes = "*"
 
 [dev-dependencies]
 env_logger = { workspace = true }
+transport-vnet = { workspace = true }
 transport-udp = { workspace = true }
 layers-spread-router = { workspace = true }
 layers-spread-router-sync = { workspace = true }

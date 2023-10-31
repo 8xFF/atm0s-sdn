@@ -63,6 +63,7 @@ async fn main() {
     let router = SharedRouter::new(args.node_id);
 
     let manual = ManualBehavior::new(ManualBehaviorConf {
+        node_id: args.node_id,
         neighbours: args.neighbours.clone(),
         timer: timer.clone(),
     });

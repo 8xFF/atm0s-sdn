@@ -43,7 +43,11 @@ async fn run_node(node_id: NodeId, neighbours: Vec<NodeAddr>) -> (PubsubSdk<Impl
     let timer = Arc::new(SystemTimer());
 
     let router = SharedRouter::new(node_id);
-    let manual = ManualBehavior::new(ManualBehaviorConf { neighbours, timer: timer.clone() });
+    let manual = ManualBehavior::new(ManualBehaviorConf {
+        node_id,
+        neighbours,
+        timer: timer.clone(),
+    });
 
     let router_sync_behaviour = LayersSpreadRouterSyncBehavior::new(router.clone());
     let (kv_behaviour, kv_sdk) = KeyValueBehavior::new(node_id, timer.clone(), 3000);

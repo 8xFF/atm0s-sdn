@@ -33,7 +33,7 @@ impl ConnId {
     }
 
     pub fn from_in(protocol: u8, uuid: u64) -> ConnId {
-        Self::from(protocol, ConnDirection::Outgoing, uuid)
+        Self::from(protocol, ConnDirection::Incoming, uuid)
     }
 
     pub fn protocol(&self) -> u8 {

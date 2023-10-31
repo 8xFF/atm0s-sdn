@@ -54,6 +54,7 @@ async fn main() {
     let spreads_layer_router = LayersSpreadRouterSyncBehavior::new(router.clone());
 
     let manual = ManualBehavior::new(ManualBehaviorConf {
+        node_id: args.node_id,
         neighbours: args.neighbours.clone(),
         timer: Arc::new(SystemTimer()),
     });

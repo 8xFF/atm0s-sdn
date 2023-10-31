@@ -113,7 +113,12 @@ where
                 return Ok(());
             }
             TransportEvent::Incoming(sender, receiver) => {
-                log::info!("[NetworkPlane] received TransportEvent::Incoming({}, {})", receiver.remote_node_id(), receiver.conn_id());
+                log::info!(
+                    "[NetworkPlane {}] received TransportEvent::Incoming({}, {})",
+                    self.local_node_id,
+                    receiver.remote_node_id(),
+                    receiver.conn_id()
+                );
                 let mut cross_gate = self.cross_gate.write();
                 let rx = cross_gate.add_conn(sender.clone());
                 drop(cross_gate);
@@ -137,7 +142,12 @@ where
                 }
             }
             TransportEvent::Outgoing(sender, receiver) => {
-                log::info!("[NetworkPlane] received TransportEvent::Outgoing({}, {})", receiver.remote_node_id(), receiver.conn_id());
+                log::info!(
+                    "[NetworkPlane {}] received TransportEvent::Outgoing({}, {})",
+                    self.local_node_id,
+                    receiver.remote_node_id(),
+                    receiver.conn_id()
+                );
                 let mut cross_gate = self.cross_gate.write();
                 let rx = cross_gate.add_conn(sender.clone());
                 drop(cross_gate);
@@ -157,12 +167,12 @@ where
                     }
                     (true, sender, receiver, handlers, rx)
                 } else {
-                    log::warn!("[NetworkPlane] received TransportEvent::Outgoing but cannot add to cross_gate");
+                    log::warn!("[NetworkPlane {}] received TransportEvent::Outgoing but cannot add to cross_gate", self.local_node_id);
                     return Ok(());
                 }
             }
             TransportEvent::OutgoingError { node_id, conn_id, err } => {
-                log::info!("[NetworkPlane] received TransportEvent::OutgoingError({}, {})", node_id, conn_id);
+                log::info!("[NetworkPlane {}] received TransportEvent::OutgoingError({}, {})", self.local_node_id, node_id, conn_id);
                 for (behaviour, agent) in self.behaviors.iter_mut().flatten() {
                     behaviour.on_outgoing_connection_error(agent, node_id, conn_id, &err);
                 }
@@ -195,7 +205,7 @@ where
     }
 
     pub fn started(&mut self) {
-        log::info!("[NetworkPlane] started {}", self.local_node_id);
+        log::info!("[NetworkPlane {}] started", self.local_node_id);
         for (behaviour, agent) in self.behaviors.iter_mut().flatten() {
             behaviour.on_started(agent);
         }
@@ -203,7 +213,7 @@ where
 
     /// Run loop for plane which handle tick and connection
     pub async fn recv(&mut self) -> Result<(), ()> {
-        log::trace!("[NetworkPlane] waiting event");
+        log::trace!("[NetworkPlane {}] waiting event", self.local_node_id);
         select! {
             _ = self.tick_interval.next().fuse() => {
                 let ts_ms = self.timer.now_ms();
@@ -217,21 +227,21 @@ where
             }
             e =  self.internal_rx.recv().fuse() => match e {
                 Ok(NetworkPlaneInternalEvent::IncomingDisconnected(sender)) => {
-                    log::info!("[NetworkPlane] received NetworkPlaneInternalEvent::IncomingDisconnected({}, {})", sender.remote_node_id(), sender.conn_id());
+                    log::info!("[NetworkPlane {}] received NetworkPlaneInternalEvent::IncomingDisconnected({}, {})", self.local_node_id, sender.remote_node_id(), sender.conn_id());
                     for (behaviour, agent) in self.behaviors.iter_mut().flatten() {
                         behaviour.on_incoming_connection_disconnected(agent, sender.clone());
                     }
                     Ok(())
                 },
                 Ok(NetworkPlaneInternalEvent::OutgoingDisconnected(sender)) => {
-                    log::info!("[NetworkPlane] received NetworkPlaneInternalEvent::OutgoingDisconnected({}, {})", sender.remote_node_id(), sender.conn_id());
+                    log::info!("[NetworkPlane {}] received NetworkPlaneInternalEvent::OutgoingDisconnected({}, {})", self.local_node_id, sender.remote_node_id(), sender.conn_id());
                     for (behaviour, agent) in self.behaviors.iter_mut().flatten() {
                         behaviour.on_outgoing_connection_disconnected(agent, sender.clone());
                     }
                     Ok(())
                 },
                 Ok(NetworkPlaneInternalEvent::ToBehaviourFromHandler { service_id, node_id, conn_id, event }) => {
-                    log::debug!("[NetworkPlane] received NetworkPlaneInternalEvent::ToBehaviour service: {}, from node: {} conn_id: {}", service_id, node_id, conn_id);
+                    log::debug!("[NetworkPlane {}] received NetworkPlaneInternalEvent::ToBehaviour service: {}, from node: {} conn_id: {}", self.local_node_id, service_id, node_id, conn_id);
                     if let Some((behaviour, agent)) = &mut self.behaviors[service_id as usize] {
                         behaviour.on_handler_event(agent, node_id, conn_id, event);
                     } else {
@@ -240,7 +250,7 @@ where
                     Ok(())
                 },
                 Ok(NetworkPlaneInternalEvent::ToBehaviourLocalEvent { service_id, event }) => {
-                    log::debug!("[NetworkPlane] received NetworkPlaneInternalEvent::ToBehaviourLocalEvent service: {}", service_id);
+                    log::debug!("[NetworkPlane {}] received NetworkPlaneInternalEvent::ToBehaviourLocalEvent service: {}", self.local_node_id, service_id);
                     if let Some((behaviour, agent)) = &mut self.behaviors[service_id as usize] {
                         behaviour.on_local_event(agent, event);
                     } else {
@@ -249,7 +259,7 @@ where
                     Ok(())
                 }
                 Ok(NetworkPlaneInternalEvent::ToBehaviourLocalMsg { service_id, msg }) => {
-                    log::debug!("[NetworkPlane] received NetworkPlaneInternalEvent::ToBehaviourLocalMsg service: {}", service_id);
+                    log::debug!("[NetworkPlane {}] received NetworkPlaneInternalEvent::ToBehaviourLocalMsg service: {}", self.local_node_id, service_id);
                     if let Some((behaviour, agent)) = &mut self.behaviors[service_id as usize] {
                         behaviour.on_local_msg(agent, msg);
                     } else {
@@ -265,7 +275,7 @@ where
     }
 
     pub fn stopped(&mut self) {
-        log::info!("[NetworkPlane] stopped {}", self.local_node_id);
+        log::info!("[NetworkPlane {}] stopped", self.local_node_id);
         for (behaviour, agent) in self.behaviors.iter_mut().flatten() {
             behaviour.on_stopped(agent);
         }

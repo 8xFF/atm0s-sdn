@@ -26,11 +26,13 @@ struct NodeSlot {
 }
 
 pub struct ManualBehaviorConf {
+    pub node_id: NodeId,
     pub neighbours: Vec<NodeAddr>,
     pub timer: Arc<dyn Timer>,
 }
 
 pub struct ManualBehavior {
+    node_id: NodeId,
     neighbours: HashMap<NodeId, NodeSlot>,
     timer: Arc<dyn Timer>,
 }
@@ -52,7 +54,11 @@ impl ManualBehavior {
                 log::warn!("[ManualBehavior] Invalid node addr {:?}", addr)
             }
         }
-        Self { neighbours, timer: conf.timer }
+        Self {
+            node_id: conf.node_id,
+            neighbours,
+            timer: conf.timer,
+        }
     }
 }
 
@@ -68,15 +74,14 @@ where
     fn on_tick(&mut self, agent: &BehaviorAgent<BE, HE>, ts_ms: u64, _interal_ms: u64) {
         for (node_id, slot) in &mut self.neighbours {
             if slot.incoming.is_none() {
-                log::debug!("[ManualBehavior] trying connect to {} with addr {}", node_id, slot.addr);
                 match &slot.outgoing {
                     OutgoingState::New => match agent.connect_to(*node_id, slot.addr.clone()) {
                         Ok(conn) => {
-                            log::info!("[ManualBehavior] connect to {} with addr {} => conn: {}", node_id, slot.addr, conn.conn_id);
+                            log::info!("[ManualBehavior {}] connect to {} with addr {} => conn: {}", self.node_id, node_id, slot.addr, conn.conn_id);
                             slot.outgoing = OutgoingState::Connecting(ts_ms, conn.conn_id, 0);
                         }
                         Err(err) => {
-                            log::error!("[ManualBehavior] connect to {} with addr {} => error {:?}", node_id, slot.addr, err);
+                            log::error!("[ManualBehavior {}] connect to {} with addr {} => error {:?}", self.node_id, node_id, slot.addr, err);
                             slot.outgoing = OutgoingState::ConnectError(ts_ms, None, err, 0);
                         }
                     },
@@ -86,11 +91,11 @@ where
                             //need reconnect
                             match agent.connect_to(*node_id, slot.addr.clone()) {
                                 Ok(conn) => {
-                                    log::info!("[ManualBehavior] reconnect to {} with addr {} => conn: {}", node_id, slot.addr, conn.conn_id);
+                                    log::info!("[ManualBehavior {}] reconnect to {} with addr {} => conn: {}", self.node_id, node_id, slot.addr, conn.conn_id);
                                     slot.outgoing = OutgoingState::Connecting(ts_ms, conn.conn_id, count + 1);
                                 }
                                 Err(err) => {
-                                    log::error!("[ManualBehavior] reconnect to {} with addr {} => error {:?}", node_id, slot.addr, err);
+                                    log::error!("[ManualBehavior {}] reconnect to {} with addr {} => error {:?}", self.node_id, node_id, slot.addr, err);
                                     slot.outgoing = OutgoingState::ConnectError(ts_ms, None, err, count + 1);
                                 }
                             }
@@ -159,64 +164,6 @@ where
     }
 
     fn on_handler_event(&mut self, _agent: &BehaviorAgent<BE, HE>, _node_id: NodeId, _connection_id: ConnId, _event: BE) {}
-
-    // fn on_rpc(&mut self, _agent: &BehaviorAgent<BE, HE>, req: Req, res: Box<dyn RpcAnswer<Res>>) -> bool {
-    //     if let Ok(req) = req.try_into() {
-    //         match req {
-    //             ManualReq::AddNeighbors(addrs) => {
-    //                 let mut added_count = 0;
-    //                 for addr in addrs {
-    //                     if let Some(node_id) = addr.node_id() {
-    //                         if self
-    //                             .neighbours
-    //                             .insert(
-    //                                 node_id,
-    //                                 NodeSlot {
-    //                                     addr,
-    //                                     incoming: None,
-    //                                     outgoing: OutgoingState::New,
-    //                                 },
-    //                             )
-    //                             .is_none()
-    //                         {
-    //                             added_count += 1;
-    //                         }
-    //                     }
-    //                 }
-    //                 res.ok(ManualRes::AddNeighborsRes(added_count).into());
-    //             }
-    //             ManualReq::GetNeighbors() => {
-    //                 let mut addrs = vec![];
-    //                 for slot in self.neighbours.values() {
-    //                     addrs.push(slot.addr.clone());
-    //                 }
-    //                 res.ok(ManualRes::GetNeighborsRes(addrs).into());
-    //             }
-    //             ManualReq::GetConnections() => {
-    //                 let mut conns = vec![];
-    //                 for slot in self.neighbours.values() {
-    //                     if let Some(conn) = slot.incoming {
-    //                         conns.push((conn, slot.addr.clone(), ConnectionState::IncomingConnected));
-    //                     }
-    //                     match slot.outgoing {
-    //                         OutgoingState::Connecting(_, conn, _) => {
-    //                             conns.push((conn, slot.addr.clone(), ConnectionState::OutgoingConnecting));
-    //                         }
-    //                         OutgoingState::Connected(_, conn) => {
-    //                             conns.push((conn, slot.addr.clone(), ConnectionState::OutgoingConnected));
-    //                         }
-    //                         OutgoingState::ConnectError(_, Some(conn_id), _, _) => {
-    //                             conns.push((conn_id, slot.addr.clone(), ConnectionState::OutgoingError));
-    //                         }
-    //                         _ => {}
-    //                     }
-    //                 }
-    //                 res.ok(ManualRes::GetConnectionsRes(conns).into());
-    //             }
-    //         }
-    //     }
-    //     true
-    // }
 
     fn on_started(&mut self, _agent: &BehaviorAgent<BE, HE>) {}
 
