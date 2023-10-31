@@ -63,7 +63,7 @@ mod tests {
             behavior: vec![behavior],
             transport,
             timer,
-            router: Arc::new(ForceNodeRouter(ConnId::from_in(0, 0), neighbour1)),
+            router: Arc::new(ForceNodeRouter(ConnId::from_out(0, 0), neighbour1)),
         });
 
         let join = async_std::task::spawn(async move {

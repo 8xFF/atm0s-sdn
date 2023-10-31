@@ -7,7 +7,7 @@ pub struct ConnId {
     value: u64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ConnDirection {
     Outgoing,
     Incoming,

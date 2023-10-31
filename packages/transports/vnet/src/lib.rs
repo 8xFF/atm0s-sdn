@@ -11,11 +11,11 @@ pub use transport::VnetTransport;
 #[cfg(test)]
 mod tests {
     use crate::{VnetEarth, VnetTransport};
-    use bluesea_identity::{NodeAddr, NodeId, Protocol};
+    use bluesea_identity::{ConnDirection, NodeAddr, NodeId, Protocol};
     use bluesea_router::RouteRule;
     use network::{
         msg::TransportMsg,
-        transport::{ConnectionEvent, OutgoingConnectionError, Transport, TransportEvent},
+        transport::{ConnectionEvent, ConnectionStats, OutgoingConnectionError, Transport, TransportEvent},
     };
     use serde::{Deserialize, Serialize};
     use std::sync::Arc;
@@ -43,7 +43,7 @@ mod tests {
         match tran2.recv().await.unwrap() {
             TransportEvent::IncomingRequest(node, conn, acceptor) => {
                 assert_eq!(node, 1);
-                assert_eq!(conn, conn_id);
+                assert_eq!(conn.direction(), ConnDirection::Incoming);
                 acceptor.accept();
             }
             _ => {
@@ -66,7 +66,7 @@ mod tests {
             TransportEvent::Incoming(sender, recv) => {
                 assert_eq!(sender.remote_node_id(), 1);
                 assert_eq!(sender.remote_addr(), NodeAddr::from(Protocol::Memory(1)));
-                assert_eq!(sender.conn_id(), conn_id);
+                assert_eq!(sender.conn_id().direction(), ConnDirection::Incoming);
                 (sender, recv)
             }
             _ => {
@@ -85,6 +85,30 @@ mod tests {
                 panic!("Need outgoing")
             }
         };
+
+        let received_event = tran2_recv.poll().await.unwrap();
+        assert_eq!(
+            received_event,
+            ConnectionEvent::Stats(ConnectionStats {
+                rtt_ms: 1,
+                sending_kbps: 0,
+                send_est_kbps: 100000,
+                loss_percent: 0,
+                over_use: false,
+            })
+        );
+
+        let received_event = tran1_recv.poll().await.unwrap();
+        assert_eq!(
+            received_event,
+            ConnectionEvent::Stats(ConnectionStats {
+                rtt_ms: 1,
+                sending_kbps: 0,
+                send_est_kbps: 100000,
+                loss_percent: 0,
+                over_use: false,
+            })
+        );
 
         tran1_sender.send(build_releadable(1, Msg::Ping));
         let received_event = tran2_recv.poll().await.unwrap();
