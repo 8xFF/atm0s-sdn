@@ -109,7 +109,7 @@ where
                     self.bus.to_behaviour(service_id, event);
                 }
                 ConnectionHandlerAction::ToNet(msg) => {
-                    self.bus.to_net(msg);
+                    self.sender.send(msg);
                 }
                 ConnectionHandlerAction::ToNetConn(conn, msg) => {
                     self.bus.to_net_conn(conn, msg);
