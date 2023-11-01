@@ -39,6 +39,7 @@ impl ConnectionContext {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum ConnectionHandlerAction<BE, HE> {
     ToBehaviour(BE),
     ToNet(TransportMsg),
@@ -59,6 +60,7 @@ pub trait ConnectionHandler<BE, HE>: Send + Sync {
     fn pop_action(&mut self) -> Option<ConnectionHandlerAction<BE, HE>>;
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum NetworkBehaviorAction<HE> {
     ConnectTo(TransportOutgoingLocalUuid, NodeId, NodeAddr),
     ToNet(TransportMsg),
