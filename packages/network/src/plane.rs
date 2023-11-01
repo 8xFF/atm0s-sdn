@@ -1,38 +1,41 @@
 mod single_conn;
 
-use crate::behaviour::{ConnectionHandler, NetworkBehavior};
-use crate::internal::agent::{BehaviorAgent, ConnectionAgent};
-use crate::internal::cross_handler_gate::CrossHandlerGateIplm;
+use crate::behaviour::{NetworkBehavior, NetworkBehaviorAction};
 use crate::msg::TransportMsg;
-use crate::transport::{ConnectionSender, Transport, TransportEvent};
+use crate::transport::Transport;
 use async_std::channel::{unbounded, Receiver, Sender};
 use async_std::stream::Interval;
 use bluesea_identity::{ConnId, NodeId};
 use bluesea_router::RouterTable;
 use futures::{select, FutureExt, StreamExt};
-use parking_lot::RwLock;
+use utils::error_handle::ErrorUtils;
 use std::sync::Arc;
 use std::time::Duration;
-use utils::init_vec::init_vec;
 use utils::Timer;
 
-use self::single_conn::PlaneSingleConn;
+use self::bus_impl::PlaneBusImpl;
+use self::internal::PlaneInternal;
+use self::single_conn::{PlaneSingleConn, PlaneSingleConnInternal};
+
+mod internal;
+pub(crate) mod bus;
+mod bus_impl;
 
 pub enum NetworkPlaneInternalEvent<BE> {
     ToBehaviourFromHandler { service_id: u8, node_id: NodeId, conn_id: ConnId, event: BE },
     ToBehaviourLocalEvent { service_id: u8, event: BE },
     ToBehaviourLocalMsg { service_id: u8, msg: TransportMsg },
-    IncomingDisconnected(Arc<dyn ConnectionSender>),
-    OutgoingDisconnected(Arc<dyn ConnectionSender>),
+    IncomingDisconnected(NodeId, ConnId),
+    OutgoingDisconnected(NodeId, ConnId),
 }
 
 pub struct NetworkPlaneConfig<BE, HE> {
-    /// Local node_id, which is u32 value
-    pub local_node_id: NodeId,
+    /// Node_id, which is u32 value
+    pub node_id: NodeId,
     /// Tick_ms, each tick_ms miliseconds, network will call tick function on both behavior and handler
     pub tick_ms: u64,
     /// List of behavior
-    pub behavior: Vec<Box<dyn NetworkBehavior<BE, HE> + Send + Sync>>,
+    pub behaviors: Vec<Box<dyn NetworkBehavior<BE, HE> + Send + Sync>>,
     /// Transport which is used
     pub transport: Box<dyn Transport + Send + Sync>,
     /// Timer for getting timestamp miliseconds
@@ -42,16 +45,16 @@ pub struct NetworkPlaneConfig<BE, HE> {
 }
 
 pub struct NetworkPlane<BE, HE> {
-    local_node_id: NodeId,
+    node_id: NodeId,
     tick_ms: u64,
-    behaviors: Vec<Option<(Box<dyn NetworkBehavior<BE, HE> + Send + Sync>, BehaviorAgent<BE, HE>)>>,
     transport: Box<dyn Transport + Send + Sync>,
     timer: Arc<dyn Timer>,
     router: Arc<dyn RouterTable>,
     internal_tx: Sender<NetworkPlaneInternalEvent<BE>>,
     internal_rx: Receiver<NetworkPlaneInternalEvent<BE>>,
-    cross_gate: Arc<RwLock<CrossHandlerGateIplm<BE, HE>>>,
+    bus: Arc<PlaneBusImpl<BE, HE>>,
     tick_interval: Interval,
+    internal: PlaneInternal<BE, HE>,
 }
 
 impl<BE, HE> NetworkPlane<BE, HE>
@@ -63,221 +66,128 @@ where
     /// `while let Some(_) = plane.run().await {}`
     pub fn new(conf: NetworkPlaneConfig<BE, HE>) -> Self {
         let (internal_tx, internal_rx) = unbounded();
-
-        let cross_gate: Arc<RwLock<CrossHandlerGateIplm<BE, HE>>> = Arc::new(RwLock::new(CrossHandlerGateIplm::new(conf.router.clone(), internal_tx.clone())));
-        let mut behaviors: Vec<Option<(Box<dyn NetworkBehavior<BE, HE> + Send + Sync>, BehaviorAgent<BE, HE>)>> = init_vec(256, || None);
-
-        for behavior in conf.behavior {
-            let service_id = behavior.service_id() as usize;
-            if behaviors[service_id].is_none() {
-                behaviors[service_id] = Some((behavior, BehaviorAgent::new(service_id as u8, conf.local_node_id, conf.transport.connector(), cross_gate.clone())));
-            } else {
-                panic!("Duplicate service {}", behavior.service_id())
-            }
-        }
+        let bus: Arc<PlaneBusImpl<BE, HE>> = Arc::new(PlaneBusImpl::new(conf.router.clone(), internal_tx.clone()));
 
         Self {
-            local_node_id: conf.local_node_id,
+            node_id: conf.node_id,
             tick_ms: conf.tick_ms,
-            behaviors,
             transport: conf.transport,
             tick_interval: async_std::stream::interval(Duration::from_millis(conf.tick_ms)),
             internal_tx,
             internal_rx,
             timer: conf.timer,
             router: conf.router,
-            cross_gate,
+            internal: PlaneInternal::new(conf.node_id, conf.behaviors),
+            bus,
         }
-    }
-
-    fn process_transport_event(&mut self, e: Result<TransportEvent, ()>) -> Result<(), ()> {
-        let (outgoing, sender, receiver, handlers, conn_internal_rx) = match e? {
-            TransportEvent::IncomingRequest(node, conn_id, acceptor) => {
-                for (behaviour, _agent) in self.behaviors.iter_mut().flatten() {
-                    if let Err(err) = behaviour.check_incoming_connection(node, conn_id) {
-                        acceptor.reject(err);
-                        return Ok(());
-                    }
-                }
-                acceptor.accept();
-                return Ok(());
-            }
-            TransportEvent::OutgoingRequest(node, conn_id, acceptor) => {
-                for (behaviour, _agent) in self.behaviors.iter_mut().flatten() {
-                    if let Err(err) = behaviour.check_outgoing_connection(node, conn_id) {
-                        acceptor.reject(err);
-                        return Ok(());
-                    }
-                }
-                acceptor.accept();
-                return Ok(());
-            }
-            TransportEvent::Incoming(sender, receiver) => {
-                log::info!(
-                    "[NetworkPlane {}] received TransportEvent::Incoming({}, {})",
-                    self.local_node_id,
-                    receiver.remote_node_id(),
-                    receiver.conn_id()
-                );
-                let mut cross_gate = self.cross_gate.write();
-                let rx = cross_gate.add_conn(sender.clone());
-                drop(cross_gate);
-                if let Some(rx) = rx {
-                    let mut handlers: Vec<Option<(Box<dyn ConnectionHandler<BE, HE>>, ConnectionAgent<BE, HE>)>> = init_vec(256, || None);
-                    for (behaviour, agent) in self.behaviors.iter_mut().flatten() {
-                        let conn_agent = ConnectionAgent::<BE, HE>::new(
-                            behaviour.service_id(),
-                            self.local_node_id,
-                            receiver.remote_node_id(),
-                            receiver.conn_id(),
-                            sender.clone(),
-                            self.internal_tx.clone(),
-                            self.cross_gate.clone(),
-                        );
-                        handlers[behaviour.service_id() as usize] = behaviour.on_incoming_connection_connected(agent, sender.clone()).map(|h| (h, conn_agent));
-                    }
-                    (false, sender, receiver, handlers, rx)
-                } else {
-                    return Ok(());
-                }
-            }
-            TransportEvent::Outgoing(sender, receiver) => {
-                log::info!(
-                    "[NetworkPlane {}] received TransportEvent::Outgoing({}, {})",
-                    self.local_node_id,
-                    receiver.remote_node_id(),
-                    receiver.conn_id()
-                );
-                let mut cross_gate = self.cross_gate.write();
-                let rx = cross_gate.add_conn(sender.clone());
-                drop(cross_gate);
-                if let Some(rx) = rx {
-                    let mut handlers: Vec<Option<(Box<dyn ConnectionHandler<BE, HE>>, ConnectionAgent<BE, HE>)>> = init_vec(256, || None);
-                    for (behaviour, agent) in self.behaviors.iter_mut().flatten() {
-                        let conn_agent = ConnectionAgent::<BE, HE>::new(
-                            behaviour.service_id(),
-                            self.local_node_id,
-                            receiver.remote_node_id(),
-                            receiver.conn_id(),
-                            sender.clone(),
-                            self.internal_tx.clone(),
-                            self.cross_gate.clone(),
-                        );
-                        handlers[behaviour.service_id() as usize] = behaviour.on_outgoing_connection_connected(agent, sender.clone()).map(|h| (h, conn_agent));
-                    }
-                    (true, sender, receiver, handlers, rx)
-                } else {
-                    log::warn!("[NetworkPlane {}] received TransportEvent::Outgoing but cannot add to cross_gate", self.local_node_id);
-                    return Ok(());
-                }
-            }
-            TransportEvent::OutgoingError { node_id, conn_id, err } => {
-                log::info!("[NetworkPlane {}] received TransportEvent::OutgoingError({}, {})", self.local_node_id, node_id, conn_id);
-                for (behaviour, agent) in self.behaviors.iter_mut().flatten() {
-                    behaviour.on_outgoing_connection_error(agent, node_id, conn_id, &err);
-                }
-                return Ok(());
-            }
-        };
-
-        let internal_tx = self.internal_tx.clone();
-        let tick_ms = self.tick_ms;
-        let timer = self.timer.clone();
-        let router = self.router.clone();
-        let cross_gate = self.cross_gate.clone();
-        async_std::task::spawn(async move {
-            let mut single_conn = PlaneSingleConn {
-                outgoing,
-                sender,
-                receiver,
-                handlers,
-                conn_internal_rx,
-                internal_tx,
-                tick_ms,
-                timer,
-                router,
-                cross_gate,
-            };
-            single_conn.run().await;
-        });
-
-        Ok(())
     }
 
     pub fn started(&mut self) {
-        log::info!("[NetworkPlane {}] started", self.local_node_id);
-        for (behaviour, agent) in self.behaviors.iter_mut().flatten() {
-            behaviour.on_started(agent);
-        }
+        self.internal.started(self.timer.now_ms());
+        self.pop_actions(self.timer.now_ms());
     }
 
     /// Run loop for plane which handle tick and connection
     pub async fn recv(&mut self) -> Result<(), ()> {
-        log::trace!("[NetworkPlane {}] waiting event", self.local_node_id);
-        select! {
+        log::trace!("[NetworkPlane {}] waiting event", self.node_id);
+        let res = select! {
             _ = self.tick_interval.next().fuse() => {
-                let ts_ms = self.timer.now_ms();
-                for (behaviour, agent) in self.behaviors.iter_mut().flatten() {
-                    behaviour.on_tick(agent, ts_ms, self.tick_ms);
-                }
+                self.internal.on_tick(self.timer.now_ms(), self.tick_ms);
                 Ok(())
-            }
-            e = self.transport.recv().fuse() => {
-                self.process_transport_event(e)
-            }
+            },
+            e = self.transport.recv().fuse() => match e {
+                Ok(e) => {
+                    self.internal.on_transport_event(self.timer.now_ms(), e);
+                    Ok(())
+                },
+                Err(_e) => {
+                    Err(())
+                }
+            },
             e =  self.internal_rx.recv().fuse() => match e {
-                Ok(NetworkPlaneInternalEvent::IncomingDisconnected(sender)) => {
-                    log::info!("[NetworkPlane {}] received NetworkPlaneInternalEvent::IncomingDisconnected({}, {})", self.local_node_id, sender.remote_node_id(), sender.conn_id());
-                    for (behaviour, agent) in self.behaviors.iter_mut().flatten() {
-                        behaviour.on_incoming_connection_disconnected(agent, sender.clone());
-                    }
+                Ok(event) => {
+                    self.internal.on_internal_event(self.timer.now_ms(), event);
                     Ok(())
                 },
-                Ok(NetworkPlaneInternalEvent::OutgoingDisconnected(sender)) => {
-                    log::info!("[NetworkPlane {}] received NetworkPlaneInternalEvent::OutgoingDisconnected({}, {})", self.local_node_id, sender.remote_node_id(), sender.conn_id());
-                    for (behaviour, agent) in self.behaviors.iter_mut().flatten() {
-                        behaviour.on_outgoing_connection_disconnected(agent, sender.clone());
-                    }
-                    Ok(())
-                },
-                Ok(NetworkPlaneInternalEvent::ToBehaviourFromHandler { service_id, node_id, conn_id, event }) => {
-                    log::debug!("[NetworkPlane {}] received NetworkPlaneInternalEvent::ToBehaviour service: {}, from node: {} conn_id: {}", self.local_node_id, service_id, node_id, conn_id);
-                    if let Some((behaviour, agent)) = &mut self.behaviors[service_id as usize] {
-                        behaviour.on_handler_event(agent, node_id, conn_id, event);
-                    } else {
-                        debug_assert!(false, "service not found {}", service_id);
-                    }
-                    Ok(())
-                },
-                Ok(NetworkPlaneInternalEvent::ToBehaviourLocalEvent { service_id, event }) => {
-                    log::debug!("[NetworkPlane {}] received NetworkPlaneInternalEvent::ToBehaviourLocalEvent service: {}", self.local_node_id, service_id);
-                    if let Some((behaviour, agent)) = &mut self.behaviors[service_id as usize] {
-                        behaviour.on_local_event(agent, event);
-                    } else {
-                        debug_assert!(false, "service not found {}", service_id);
-                    }
-                    Ok(())
-                }
-                Ok(NetworkPlaneInternalEvent::ToBehaviourLocalMsg { service_id, msg }) => {
-                    log::debug!("[NetworkPlane {}] received NetworkPlaneInternalEvent::ToBehaviourLocalMsg service: {}", self.local_node_id, service_id);
-                    if let Some((behaviour, agent)) = &mut self.behaviors[service_id as usize] {
-                        behaviour.on_local_msg(agent, msg);
-                    } else {
-                        debug_assert!(false, "service not found {}", service_id);
-                    }
-                    Ok(())
-                }
                 Err(_) => {
                     Err(())
                 }
             }
-        }
+        };
+        self.pop_actions(self.timer.now_ms());
+        res
     }
 
     pub fn stopped(&mut self) {
-        log::info!("[NetworkPlane {}] stopped", self.local_node_id);
-        for (behaviour, agent) in self.behaviors.iter_mut().flatten() {
-            behaviour.on_stopped(agent);
+        log::info!("[NetworkPlane {}] stopped", self.node_id);
+        self.internal.stopped(self.timer.now_ms());
+        self.pop_actions(self.timer.now_ms());
+    }
+
+    fn pop_actions(&mut self, now_ms: u64) {
+        while let Some(action) = self.internal.pop_action() {
+            match action {
+                internal::PlaneInternalAction::SpawnConnection { outgoing, sender, receiver, handlers } => {
+                    let internal_tx = self.internal_tx.clone();
+                    let tick_ms = self.tick_ms;
+                    let timer = self.timer.clone();
+                    let router = self.router.clone();
+                    let bus = self.bus.clone();
+                    if let Some(conn_internal_rx) = bus.add_conn(sender.clone()) {
+                        async_std::task::spawn(async move {
+                            let remote_node_id = sender.remote_node_id();
+                            let conn_id = sender.conn_id();
+                            let mut single_conn = PlaneSingleConn {
+                                sender,
+                                receiver,
+                                bus_rx: conn_internal_rx,
+                                tick_ms,
+                                tick_interval: async_std::stream::interval(Duration::from_millis(tick_ms)),
+                                timer,
+                                router,
+                                bus: bus.clone(),
+                                internal: PlaneSingleConnInternal {
+                                    handlers,
+                                }
+                            };
+                            single_conn.start();
+                            while let Ok(_) = single_conn.recv().await {}
+                            single_conn.end();
+                            if bus.remove_conn(remote_node_id, conn_id).is_none() {
+                                log::warn!("[NetworkPlane] remove conn ({}, {}) failed", remote_node_id, conn_id);
+                            } else {
+                                if outgoing {
+                                    internal_tx
+                                        .send(NetworkPlaneInternalEvent::OutgoingDisconnected(remote_node_id, conn_id))
+                                        .await
+                                        .print_error("Should send disconnect event");
+                                } else {
+                                    internal_tx
+                                        .send(NetworkPlaneInternalEvent::IncomingDisconnected(remote_node_id, conn_id))
+                                        .await
+                                        .print_error("Should send disconnect event");
+                                }
+                            }
+                        });
+                    } else {
+                        log::warn!("[NetworkPlane] add conn ({}, {}) failed", sender.remote_node_id(), sender.conn_id());
+                    }
+                },
+                internal::PlaneInternalAction::BehaviorAction(service, action) => match action {
+                    NetworkBehaviorAction::ConnectTo(local_uuid, node_id, dest) => {
+                        if let Err(err) = self.transport.connector().connect_to(local_uuid, node_id, dest) {
+                            log::warn!("[NetworkPlane] connect to {} failed: {}", node_id, err);
+                            self.internal.on_transport_event(now_ms, crate::transport::TransportEvent::OutgoingError { local_uuid, node_id, conn_id: None, err });
+                        }
+                    },
+                    NetworkBehaviorAction::ToNet(_) => todo!(),
+                    NetworkBehaviorAction::ToNetConn(_, _) => todo!(),
+                    NetworkBehaviorAction::ToNetNode(_, _) => todo!(),
+                    NetworkBehaviorAction::ToHandler(_, _) => todo!(),
+                    NetworkBehaviorAction::CloseConn(_) => todo!(),
+                    NetworkBehaviorAction::CloseNode(_) => todo!(),
+                },
+            }
         }
     }
 }
