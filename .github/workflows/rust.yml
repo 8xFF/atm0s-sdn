@@ -28,4 +28,3 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_ORG_TOKEN }} # not required for public repos
           files: lcov.info
-          fail_ci_if_error: true
