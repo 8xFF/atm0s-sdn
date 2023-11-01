@@ -1,6 +1,6 @@
 mod single_conn;
 
-use crate::behaviour::{NetworkBehavior, NetworkBehaviorAction};
+use crate::behaviour::{ConnectionContext, NetworkBehavior, NetworkBehaviorAction};
 use crate::msg::TransportMsg;
 use crate::transport::Transport;
 use async_std::channel::{unbounded, Receiver, Sender};
@@ -10,6 +10,7 @@ use bluesea_router::RouterTable;
 use futures::{select, FutureExt, StreamExt};
 use std::sync::Arc;
 use std::time::Duration;
+use utils::awaker::Awaker;
 use utils::error_handle::ErrorUtils;
 use utils::Timer;
 
@@ -22,7 +23,39 @@ pub(crate) mod bus;
 mod bus_impl;
 mod internal;
 
+struct BehaviourAwake<BE, HE> {
+    service_id: u8,
+    bus: Arc<PlaneBusImpl<BE, HE>>,
+}
+
+impl<BE: Send + Sync + 'static, HE: Send + Sync + 'static> Awaker for BehaviourAwake<BE, HE> {
+    fn notify(&self) {
+        self.bus.awake_behaviour(self.service_id);
+    }
+
+    fn pop_awake_count(&self) -> usize {
+        0
+    }
+}
+
+struct HandlerAwake<BE, HE> {
+    service_id: u8,
+    conn_id: ConnId,
+    bus: Arc<PlaneBusImpl<BE, HE>>,
+}
+
+impl<BE: Send + Sync + 'static, HE: Send + Sync + 'static> Awaker for HandlerAwake<BE, HE> {
+    fn notify(&self) {
+        self.bus.awake_handler(self.service_id, self.conn_id);
+    }
+
+    fn pop_awake_count(&self) -> usize {
+        0
+    }
+}
+
 pub enum NetworkPlaneInternalEvent<BE> {
+    AwakeBehaviour { service_id: u8 },
     ToBehaviourFromHandler { service_id: u8, node_id: NodeId, conn_id: ConnId, event: BE },
     ToBehaviourLocalEvent { service_id: u8, event: BE },
     ToBehaviourLocalMsg { service_id: u8, msg: TransportMsg },
@@ -75,6 +108,15 @@ where
         let (internal_tx, internal_rx) = unbounded();
         let bus: Arc<PlaneBusImpl<BE, HE>> = Arc::new(PlaneBusImpl::new(conf.router.clone(), internal_tx.clone()));
 
+        let mut new_behaviours = vec![];
+        for (service_id, behaviour) in conf.behaviors.into_iter().enumerate() {
+            let awake = BehaviourAwake {
+                service_id: service_id as u8,
+                bus: bus.clone(),
+            };
+            new_behaviours.push((behaviour, Arc::new(awake) as Arc<dyn Awaker>));
+        }
+
         Self {
             node_id: conf.node_id,
             tick_ms: conf.tick_ms,
@@ -84,7 +126,7 @@ where
             internal_rx,
             timer: conf.timer,
             router: conf.router,
-            internal: PlaneInternal::new(conf.node_id, conf.behaviors),
+            internal: PlaneInternal::new(conf.node_id, new_behaviours),
             bus,
         }
     }
@@ -141,9 +183,30 @@ where
                     let router = self.router.clone();
                     let bus = self.bus.clone();
                     if let Some(conn_internal_rx) = bus.add_conn(sender.clone()) {
+                        let mut new_handlers = vec![];
+                        for (service_id, handler) in handlers.into_iter().enumerate() {
+                            if let Some(handler) = handler {
+                                let context = ConnectionContext {
+                                    service_id: service_id as u8,
+                                    local_node_id: self.node_id,
+                                    remote_node_id: sender.remote_node_id(),
+                                    conn_id: sender.conn_id(),
+                                    awaker: Arc::new(HandlerAwake {
+                                        bus: self.bus.clone(),
+                                        service_id: service_id as u8,
+                                        conn_id: sender.conn_id(),
+                                    }),
+                                };
+                                new_handlers.push(Some((handler, context)));
+                            } else {
+                                new_handlers.push(None);
+                            }
+                        }
+
                         async_std::task::spawn(async move {
                             let remote_node_id = sender.remote_node_id();
                             let conn_id = sender.conn_id();
+
                             let mut single_conn = PlaneSingleConn {
                                 sender,
                                 receiver,
@@ -153,7 +216,7 @@ where
                                 timer,
                                 router,
                                 bus: bus.clone(),
-                                internal: PlaneSingleConnInternal { handlers },
+                                internal: PlaneSingleConnInternal { handlers: new_handlers },
                             };
                             single_conn.start();
                             while let Ok(_) = single_conn.recv().await {}
@@ -182,7 +245,7 @@ where
                     NetworkBehaviorAction::ConnectTo(local_uuid, node_id, dest) => {
                         if let Err(err) = self.transport.connector().connect_to(local_uuid, node_id, dest) {
                             log::warn!("[NetworkPlane] connect to {} failed: {}", node_id, err);
-                            self.internal.on_transport_event(
+                            if let Err(e) = self.internal.on_transport_event(
                                 now_ms,
                                 crate::transport::TransportEvent::OutgoingError {
                                     local_uuid,
@@ -190,7 +253,9 @@ where
                                     conn_id: None,
                                     err,
                                 },
-                            );
+                            ) {
+                                log::error!("[NetworkPlane] on_transport_event error: {:?}", e);
+                            }
                         }
                     }
                     NetworkBehaviorAction::ToNet(msg) => {

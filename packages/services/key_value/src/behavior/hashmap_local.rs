@@ -23,7 +23,6 @@ use std::{
     },
 };
 use utils::awaker::Awaker;
-use utils::Timer;
 
 struct KeySlotData {
     value: Option<Vec<u8>>,
@@ -58,7 +57,6 @@ pub struct LocalStorageAction(pub(crate) HashmapRemoteEvent, pub(crate) RouteRul
 pub struct HashmapLocalStorage {
     req_id_seed: AtomicU64,
     version_seed: u16,
-    timer: Arc<dyn Timer>,
     sync_each_ms: u64,
     data: HashMap<(KeyId, SubKeyId), KeySlotData>,
     subscribe: HashMap<KeyId, KeySlotSubscribe>,
@@ -69,11 +67,10 @@ pub struct HashmapLocalStorage {
 
 impl HashmapLocalStorage {
     /// create new local storage with provided timer and sync_each_ms. Sync_each_ms is used for sync data to remote storage incase of acked
-    pub fn new(timer: Arc<dyn Timer>, awake_notify: Arc<dyn Awaker>, sync_each_ms: u64) -> Self {
+    pub fn new(awake_notify: Arc<dyn Awaker>, sync_each_ms: u64) -> Self {
         Self {
             req_id_seed: AtomicU64::new(0),
             version_seed: 0,
-            timer,
             sync_each_ms,
             data: HashMap::new(),
             subscribe: HashMap::new(),
@@ -83,20 +80,22 @@ impl HashmapLocalStorage {
         }
     }
 
+    pub fn change_awake_notify(&mut self, awake_notify: Arc<dyn Awaker>) {
+        self.awake_notify = awake_notify;
+    }
+
     fn gen_req_id(&self) -> u64 {
         return self.req_id_seed.fetch_add(1, Ordering::SeqCst);
     }
 
-    fn gen_version(&mut self) -> u64 {
-        let res = (self.timer.now_ms() << 16 | self.version_seed as u64) as u64;
+    fn gen_version(&mut self, now_ms: u64) -> u64 {
+        let res = (now_ms << 16 | self.version_seed as u64) as u64;
         self.version_seed = self.version_seed.wrapping_add(1);
         return res;
     }
 
     /// Resend key releated event if not acked
-    pub fn tick(&mut self) {
-        let now = self.timer.now_ms();
-
+    pub fn tick(&mut self, now: u64) {
         for ((key, sub_key), slot) in self.data.iter() {
             // we resend event each tick if not acked. If has data => Set, no data => Del
             if !slot.acked {
@@ -286,9 +285,9 @@ impl HashmapLocalStorage {
         self.output_events.pop_front()
     }
 
-    pub fn set(&mut self, key: KeyId, sub_key: SubKeyId, value: ValueType, ex: Option<u64>) {
+    pub fn set(&mut self, now_ms: u64, key: KeyId, sub_key: SubKeyId, value: ValueType, ex: Option<u64>) {
         let req_id = self.gen_req_id();
-        let version = self.gen_version();
+        let version = self.gen_version(now_ms);
         log::debug!("[HashmapLocal] set key {} with version {}", key, version);
         self.data.insert(
             (key, sub_key),
@@ -306,13 +305,13 @@ impl HashmapLocalStorage {
         self.awake_notify.notify();
     }
 
-    pub fn get(&mut self, key: KeyId, callback: Box<dyn FnOnce(Result<Option<Vec<(SubKeyId, ValueType, KeyVersion, KeySource)>>, HashmapKeyValueGetError>) + Send + Sync>, timeout_ms: u64) {
+    pub fn get(&mut self, now_ms: u64, key: KeyId, callback: Box<dyn FnOnce(Result<Option<Vec<(SubKeyId, ValueType, KeyVersion, KeySource)>>, HashmapKeyValueGetError>) + Send + Sync>, timeout_ms: u64) {
         let req_id = self.gen_req_id();
         log::debug!("[HashmapLocal] get key {} with req_id {}", key, req_id);
         self.get_queue.insert(
             req_id,
             KeySlotGetCallback {
-                timeout_after_ts: self.timer.now_ms() + timeout_ms,
+                timeout_after_ts: now_ms + timeout_ms,
                 callback,
             },
         );
@@ -390,11 +389,10 @@ mod tests {
 
     #[test]
     fn set_should_mark_after_ack() {
-        let timer = Arc::new(utils::MockTimer::default());
         let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(timer.clone(), awake_notify.clone(), 10000);
+        let mut storage = HashmapLocalStorage::new(awake_notify.clone(), 10000);
 
-        storage.set(1, 2, vec![1], None);
+        storage.set(0, 1, 2, vec![1], None);
         assert_eq!(awake_notify.pop_awake_count(), 1);
 
         assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Set(0, 1, 2, vec![1], 0, None), RouteRule::ToKey(1))));
@@ -403,7 +401,7 @@ mod tests {
         storage.on_event(2, HashmapLocalEvent::SetAck(0, 1, 2, 0, true));
 
         //after received ack should not resend event
-        storage.tick();
+        storage.tick(0);
         assert_eq!(storage.pop_action(), None);
     }
 
@@ -411,7 +409,7 @@ mod tests {
     // fn should_renegerate_set_event_if_ack_failed() {
     //     let timer = Arc::new(utils::MockTimer::default());
     //     let awake_notify = Arc::new(MockAwaker::default());
-    //     let mut storage = LocalStorage::new(timer.clone(), awake_notify, 10000);
+    //     let mut storage = LocalStorage::new(awake_notify, 10000);
 
     //     storage.set(1, vec![1], None);
     //     assert_eq!(storage.pop_action(), Some(LocalStorageAction(RemoteEvent::Set(0, 1, vec![1], 0, None), RouteRule::ToKey(1))));
@@ -431,17 +429,14 @@ mod tests {
 
     #[test]
     fn set_should_generate_new_version() {
-        let timer = Arc::new(utils::MockTimer::default());
         let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(timer.clone(), awake_notify, 10000);
+        let mut storage = HashmapLocalStorage::new(awake_notify, 10000);
 
-        storage.set(1, 2, vec![1], None);
+        storage.set(0, 1, 2, vec![1], None);
         assert!(storage.pop_action().is_some());
         assert!(storage.pop_action().is_none());
 
-        timer.fake(1000);
-
-        storage.set(1, 2, vec![2], None);
+        storage.set(1000, 1, 2, vec![2], None);
         assert_eq!(
             storage.pop_action(),
             Some(LocalStorageAction(HashmapRemoteEvent::Set(1, 1, 2, vec![2], 65536001, None), RouteRule::ToKey(1)))
@@ -451,55 +446,51 @@ mod tests {
         storage.on_event(2, HashmapLocalEvent::SetAck(1, 1, 2, 65536001, true));
 
         //after received ack should not resend event
-        storage.tick();
+        storage.tick(1000);
         assert_eq!(storage.pop_action(), None);
     }
 
     #[test]
     fn set_should_retry_after_tick_and_not_received_ack() {
-        let timer = Arc::new(utils::MockTimer::default());
         let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(timer.clone(), awake_notify, 10000);
+        let mut storage = HashmapLocalStorage::new(awake_notify, 10000);
 
-        storage.set(1, 2, vec![1], None);
+        storage.set(0, 1, 2, vec![1], None);
         assert!(storage.pop_action().is_some());
         assert!(storage.pop_action().is_none());
 
         //because dont received ack, should resend event
-        storage.tick();
+        storage.tick(0);
         assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Set(1, 1, 2, vec![1], 0, None), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
     }
 
     #[test]
     fn set_acked_should_resend_each_sync_each_ms() {
-        let timer = Arc::new(utils::MockTimer::default());
         let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(timer.clone(), awake_notify, 10000);
+        let mut storage = HashmapLocalStorage::new(awake_notify, 10000);
 
-        storage.set(1, 2, vec![1], None);
+        storage.set(0, 1, 2, vec![1], None);
         assert!(storage.pop_action().is_some());
         assert!(storage.pop_action().is_none());
 
         storage.on_event(2, HashmapLocalEvent::SetAck(0, 1, 2, 0, true));
 
         //after received ack should not resend event
-        storage.tick();
+        storage.tick(0);
         assert_eq!(storage.pop_action(), None);
 
         //should resend if timer greater than sync_each_ms
-        timer.fake(10001);
-        storage.tick();
+        storage.tick(10001);
         assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Set(1, 1, 2, vec![1], 0, None), RouteRule::ToKey(1))));
     }
 
     #[test]
     fn del_should_mark_after_ack() {
-        let timer = Arc::new(utils::MockTimer::default());
         let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(timer.clone(), awake_notify.clone(), 10000);
+        let mut storage = HashmapLocalStorage::new(awake_notify.clone(), 10000);
 
-        storage.set(1, 2, vec![1], None);
+        storage.set(0, 1, 2, vec![1], None);
         assert!(storage.pop_action().is_some());
         assert!(storage.pop_action().is_none());
         storage.on_event(2, HashmapLocalEvent::SetAck(0, 1, 2, 0, true));
@@ -511,24 +502,22 @@ mod tests {
 
         //after received ack should not resend event
         storage.on_event(2, HashmapLocalEvent::DelAck(0, 1, 2, Some(0)));
-        storage.tick();
+        storage.tick(0);
         assert_eq!(storage.pop_action(), None);
     }
 
     #[test]
     fn del_should_mark_after_ack_older() {
-        let timer = Arc::new(utils::MockTimer::default());
         let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(timer.clone(), awake_notify.clone(), 10000);
+        let mut storage = HashmapLocalStorage::new(awake_notify.clone(), 10000);
 
-        storage.set(1, 2, vec![1], None);
+        storage.set(0, 1, 2, vec![1], None);
         assert!(storage.pop_action().is_some());
         assert!(storage.pop_action().is_none());
         storage.on_event(2, HashmapLocalEvent::SetAck(0, 1, 2, 0, true));
 
-        timer.fake(1000);
 
-        storage.set(1, 2, vec![2], None);
+        storage.set(1000, 1, 2, vec![2], None);
         assert!(storage.pop_action().is_some());
         assert!(storage.pop_action().is_none());
         storage.on_event(2, HashmapLocalEvent::SetAck(0, 1, 2, 0, true));
@@ -539,17 +528,16 @@ mod tests {
 
         //after received ack should not resend event
         storage.on_event(2, HashmapLocalEvent::DelAck(2, 1, 2, Some(65536001)));
-        storage.tick();
+        storage.tick(1000);
         assert_eq!(storage.pop_action(), None);
     }
 
     #[test]
     fn del_should_retry_after_tick_and_not_received_ack() {
-        let timer = Arc::new(utils::MockTimer::default());
         let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(timer.clone(), awake_notify.clone(), 10000);
+        let mut storage = HashmapLocalStorage::new(awake_notify.clone(), 10000);
 
-        storage.set(1, 2, vec![1], None);
+        storage.set(0, 1, 2, vec![1], None);
         assert!(storage.pop_action().is_some());
         assert!(storage.pop_action().is_none());
         storage.on_event(2, HashmapLocalEvent::SetAck(0, 1, 2, 0, true));
@@ -558,15 +546,14 @@ mod tests {
         assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Del(1, 1, 2, 0), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
-        storage.tick();
+        storage.tick(0);
         assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Del(2, 1, 2, 0), RouteRule::ToKey(1))));
     }
 
     #[test]
     fn sub_should_mark_after_ack() {
-        let timer = Arc::new(utils::MockTimer::default());
         let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(timer.clone(), awake_notify.clone(), 10000);
+        let mut storage = HashmapLocalStorage::new(awake_notify.clone(), 10000);
 
         storage.subscribe(1, None, Box::new(|_, _, _, _, _| {}));
         assert_eq!(awake_notify.pop_awake_count(), 1);
@@ -575,15 +562,14 @@ mod tests {
 
         storage.on_event(2, HashmapLocalEvent::SubAck(0, 1));
 
-        storage.tick();
+        storage.tick(0);
         assert_eq!(storage.pop_action(), None);
     }
 
     #[test]
     fn sub_event_test() {
-        let timer = Arc::new(utils::MockTimer::default());
         let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(timer.clone(), awake_notify, 10000);
+        let mut storage = HashmapLocalStorage::new(awake_notify, 10000);
         let received_events = Arc::new(Mutex::new(Vec::new()));
 
         let received_events_clone = received_events.clone();
@@ -599,7 +585,7 @@ mod tests {
 
         storage.on_event(2, HashmapLocalEvent::SubAck(0, 1));
 
-        storage.tick();
+        storage.tick(0);
         assert_eq!(storage.pop_action(), None);
 
         // fake incoming event
@@ -611,23 +597,21 @@ mod tests {
 
     #[test]
     fn sub_should_retry_after_tick_and_not_received_ack() {
-        let timer = Arc::new(utils::MockTimer::default());
         let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(timer.clone(), awake_notify, 10000);
+        let mut storage = HashmapLocalStorage::new(awake_notify, 10000);
 
         storage.subscribe(1, None, Box::new(|_, _, _, _, _| {}));
         assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
-        storage.tick();
+        storage.tick(0);
         assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Sub(1, 1, None), RouteRule::ToKey(1))));
     }
 
     #[test]
     fn sub_acked_should_resend_each_sync_each_ms() {
-        let timer = Arc::new(utils::MockTimer::default());
         let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(timer.clone(), awake_notify, 10000);
+        let mut storage = HashmapLocalStorage::new(awake_notify, 10000);
 
         storage.subscribe(1, None, Box::new(|_, _, _, _, _| {}));
         assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
@@ -635,20 +619,18 @@ mod tests {
 
         storage.on_event(2, HashmapLocalEvent::SubAck(0, 1));
 
-        storage.tick();
+        storage.tick(0);
         assert_eq!(storage.pop_action(), None);
 
         //should resend if timer greater than sync_each_ms
-        timer.fake(10001);
-        storage.tick();
+        storage.tick(10001);
         assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Sub(1, 1, None), RouteRule::ToKey(1))));
     }
 
     #[test]
     fn unsub_should_mark_after_ack() {
-        let timer = Arc::new(utils::MockTimer::default());
         let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(timer.clone(), awake_notify.clone(), 10000);
+        let mut storage = HashmapLocalStorage::new(awake_notify.clone(), 10000);
 
         storage.subscribe(1, None, Box::new(|_, _, _, _, _| {}));
         assert!(storage.pop_action().is_some());
@@ -664,15 +646,14 @@ mod tests {
 
         //after received ack should not resend event
         storage.on_event(2, HashmapLocalEvent::UnsubAck(1, 1, true));
-        storage.tick();
+        storage.tick(0);
         assert_eq!(storage.pop_action(), None);
     }
 
     #[test]
     fn unsub_should_retry_after_tick_if_not_received_ack() {
-        let timer = Arc::new(utils::MockTimer::default());
         let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(timer.clone(), awake_notify, 10000);
+        let mut storage = HashmapLocalStorage::new(awake_notify, 10000);
 
         storage.subscribe(1, None, Box::new(|_, _, _, _, _| {}));
         assert!(storage.pop_action().is_some());
@@ -686,19 +667,19 @@ mod tests {
         assert_eq!(storage.pop_action(), None);
 
         //if not received ack should resend event each tick
-        storage.tick();
+        storage.tick(0);
         assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Unsub(2, 1), RouteRule::ToKey(1))));
     }
 
     #[test]
     fn get_should_callback_correct_value() {
-        let timer = Arc::new(utils::MockTimer::default());
         let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(timer.clone(), awake_notify, 10000);
+        let mut storage = HashmapLocalStorage::new(awake_notify, 10000);
 
         let got_value = Arc::new(Mutex::new(None));
         let got_value_clone = got_value.clone();
         storage.get(
+            0,
             1,
             Box::new(move |result| {
                 *got_value_clone.lock() = Some(result);
@@ -716,13 +697,13 @@ mod tests {
 
     #[test]
     fn get_should_timeout_after_no_ack() {
-        let timer = Arc::new(utils::MockTimer::default());
         let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(timer.clone(), awake_notify, 10000);
+        let mut storage = HashmapLocalStorage::new(awake_notify, 10000);
 
         let got_value = Arc::new(Mutex::new(None));
         let got_value_clone = got_value.clone();
         storage.get(
+            0,
             1,
             Box::new(move |result| {
                 *got_value_clone.lock() = Some(result);
@@ -734,8 +715,7 @@ mod tests {
         assert_eq!(storage.pop_action(), None);
 
         //after timeout should callback error
-        timer.fake(1001);
-        storage.tick();
+        storage.tick(1001);
         assert_eq!(*got_value.lock(), Some(Err(super::HashmapKeyValueGetError::Timeout)));
     }
 }

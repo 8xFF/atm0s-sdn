@@ -92,6 +92,19 @@ where
     BE: Send + Sync + 'static,
     HE: Send + Sync + 'static,
 {
+    fn awake_behaviour(&self, service_id: u8) -> Option<()> {
+        if let Err(e) = self.plane_tx.send_blocking(NetworkPlaneInternalEvent::AwakeBehaviour { service_id }) {
+            log::error!("[CrossHandlerGate] send to behaviour error {:?}", e);
+            None
+        } else {
+            Some(())
+        }
+    }
+
+    fn awake_handler(&self, service_id: u8, conn: ConnId) -> Option<()> {
+        self.to_handler(service_id, HandlerRoute::Conn(conn), HandleEvent::Awake)
+    }
+
     fn to_behaviour(&self, service_id: u8, event: BE) -> Option<()> {
         if let Err(e) = self.plane_tx.send_blocking(NetworkPlaneInternalEvent::ToBehaviourLocalEvent { service_id, event }) {
             log::error!("[CrossHandlerGate] send to behaviour error {:?}", e);

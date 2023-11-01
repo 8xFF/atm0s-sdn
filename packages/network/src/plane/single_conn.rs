@@ -163,6 +163,9 @@ impl<BE, HE> PlaneSingleConnInternal<BE, HE> {
     pub fn on_bus_event(&mut self, now_ms: u64, service_id: u8, event: HandleEvent<HE>) {
         if let Some((handler, context)) = self.handlers[service_id as usize].as_mut() {
             match event {
+                HandleEvent::Awake => {
+                    handler.on_awake(context, now_ms);
+                }
                 HandleEvent::FromBehavior(e) => {
                     handler.on_behavior_event(context, now_ms, e);
                 }
