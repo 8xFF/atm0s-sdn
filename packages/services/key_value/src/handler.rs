@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use crate::msg::{KeyValueBehaviorEvent, KeyValueMsg};
 use bluesea_identity::{ConnId, NodeId};
-use network::behaviour::{ConnectionHandler, ConnectionContext, ConnectionHandlerAction};
+use network::behaviour::{ConnectionContext, ConnectionHandler, ConnectionHandlerAction};
 use network::transport::ConnectionEvent;
 
 pub struct KeyValueConnectionHandler<BE, HE> {
@@ -11,9 +11,7 @@ pub struct KeyValueConnectionHandler<BE, HE> {
 
 impl<BE, HE> KeyValueConnectionHandler<BE, HE> {
     pub fn new() -> Self {
-        Self {
-            ouputs: VecDeque::new(),
-        }
+        Self { ouputs: VecDeque::new() }
     }
 }
 

@@ -2,14 +2,14 @@ use crate::handler::KeyValueConnectionHandler;
 use crate::msg::{KeyValueBehaviorEvent, KeyValueMsg};
 use crate::KEY_VALUE_SERVICE_ID;
 use bluesea_identity::{ConnId, NodeId};
-use network::behaviour::{ConnectionHandler, NetworkBehavior, BehaviorContext, NetworkBehaviorAction};
+use network::behaviour::{BehaviorContext, ConnectionHandler, NetworkBehavior, NetworkBehaviorAction};
 use network::msg::{MsgHeader, TransportMsg};
 use network::transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, TransportOutgoingLocalUuid};
 use parking_lot::RwLock;
-use utils::Timer;
-use utils::awaker::MockAwaker;
 use std::collections::VecDeque;
 use std::sync::Arc;
+use utils::awaker::MockAwaker;
+use utils::Timer;
 
 use self::hashmap_local::HashmapLocalStorage;
 use self::hashmap_remote::HashmapRemoteStorage;
@@ -32,11 +32,12 @@ pub struct KeyValueBehavior<HE> {
     simple_local: Arc<RwLock<SimpleLocalStorage>>,
     hashmap_remote: HashmapRemoteStorage,
     hashmap_local: Arc<RwLock<HashmapLocalStorage>>,
-    outputs: VecDeque<NetworkBehaviorAction<HE>>
+    outputs: VecDeque<NetworkBehaviorAction<HE>>,
 }
 
 impl<HE> KeyValueBehavior<HE>
-    where HE: Send + Sync + 'static
+where
+    HE: Send + Sync + 'static,
 {
     #[allow(unused)]
     pub fn new(node_id: NodeId, timer: Arc<dyn Timer>, sync_each_ms: u64) -> (Self, sdk::KeyValueSdk) {
@@ -61,39 +62,45 @@ impl<HE> KeyValueBehavior<HE>
     }
 
     fn pop_all_events<BE>(&mut self, ctx: &BehaviorContext)
-    where BE: Send + Sync + 'static
+    where
+        BE: Send + Sync + 'static,
     {
         while let Some(action) = self.simple_remote.pop_action() {
             log::debug!("[KeyValueBehavior {}] pop_all_events simple remote: {:?}", self.node_id, action);
             let mut header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, action.1, 0);
             header.from_node = Some(self.node_id);
-            self.outputs.push_back(NetworkBehaviorAction::ToNet(TransportMsg::from_payload_bincode(header, &KeyValueMsg::SimpleLocal(action.0))));
+            self.outputs
+                .push_back(NetworkBehaviorAction::ToNet(TransportMsg::from_payload_bincode(header, &KeyValueMsg::SimpleLocal(action.0))));
         }
 
         while let Some(action) = self.simple_local.write().pop_action() {
             log::debug!("[KeyValueBehavior {}] pop_all_events simple local: {:?}", self.node_id, action);
             let mut header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, action.1, 0);
             header.from_node = Some(self.node_id);
-            self.outputs.push_back(NetworkBehaviorAction::ToNet(TransportMsg::from_payload_bincode(header, &KeyValueMsg::SimpleRemote(action.0))));
+            self.outputs
+                .push_back(NetworkBehaviorAction::ToNet(TransportMsg::from_payload_bincode(header, &KeyValueMsg::SimpleRemote(action.0))));
         }
 
         while let Some(action) = self.hashmap_remote.pop_action() {
             log::debug!("[KeyValueBehavior {}] pop_all_events hashmap remote: {:?}", self.node_id, action);
             let mut header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, action.1, 0);
             header.from_node = Some(self.node_id);
-            self.outputs.push_back(NetworkBehaviorAction::ToNet(TransportMsg::from_payload_bincode(header, &KeyValueMsg::HashmapLocal(action.0))));
+            self.outputs
+                .push_back(NetworkBehaviorAction::ToNet(TransportMsg::from_payload_bincode(header, &KeyValueMsg::HashmapLocal(action.0))));
         }
 
         while let Some(action) = self.hashmap_local.write().pop_action() {
             log::debug!("[KeyValueBehavior {}] pop_all_events hashmap local: {:?}", self.node_id, action);
             let mut header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, action.1, 0);
             header.from_node = Some(self.node_id);
-            self.outputs.push_back(NetworkBehaviorAction::ToNet(TransportMsg::from_payload_bincode(header, &KeyValueMsg::HashmapRemote(action.0))));
+            self.outputs
+                .push_back(NetworkBehaviorAction::ToNet(TransportMsg::from_payload_bincode(header, &KeyValueMsg::HashmapRemote(action.0))));
         }
     }
 
     fn process_key_value_msg<BE>(&mut self, ctx: &BehaviorContext, now_ms: u64, header: MsgHeader, msg: KeyValueMsg)
-    where BE: Send + Sync + 'static
+    where
+        BE: Send + Sync + 'static,
     {
         match msg {
             KeyValueMsg::SimpleRemote(msg) => {
@@ -187,7 +194,13 @@ where
         Some(Box::new(KeyValueConnectionHandler::new()))
     }
 
-    fn on_outgoing_connection_connected(&mut self, ctx: &BehaviorContext, now_ms: u64, conn: Arc<dyn ConnectionSender>, local_uuid: TransportOutgoingLocalUuid) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
+    fn on_outgoing_connection_connected(
+        &mut self,
+        ctx: &BehaviorContext,
+        now_ms: u64,
+        conn: Arc<dyn ConnectionSender>,
+        local_uuid: TransportOutgoingLocalUuid,
+    ) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
         Some(Box::new(KeyValueConnectionHandler::new()))
     }
 

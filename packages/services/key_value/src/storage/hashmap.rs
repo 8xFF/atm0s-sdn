@@ -293,7 +293,7 @@ mod tests {
 
     /// This test case using MockTimer to simulate time and set value
     #[test]
-    fn set_value() { 
+    fn set_value() {
         let mut store = HashmapKeyValue::<u32, u32, u32, u32, u32>::new();
         let key = 1;
         let sub_key = 11;

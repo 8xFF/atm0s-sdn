@@ -305,7 +305,13 @@ impl HashmapLocalStorage {
         self.awake_notify.notify();
     }
 
-    pub fn get(&mut self, now_ms: u64, key: KeyId, callback: Box<dyn FnOnce(Result<Option<Vec<(SubKeyId, ValueType, KeyVersion, KeySource)>>, HashmapKeyValueGetError>) + Send + Sync>, timeout_ms: u64) {
+    pub fn get(
+        &mut self,
+        now_ms: u64,
+        key: KeyId,
+        callback: Box<dyn FnOnce(Result<Option<Vec<(SubKeyId, ValueType, KeyVersion, KeySource)>>, HashmapKeyValueGetError>) + Send + Sync>,
+        timeout_ms: u64,
+    ) {
         let req_id = self.gen_req_id();
         log::debug!("[HashmapLocal] get key {} with req_id {}", key, req_id);
         self.get_queue.insert(
@@ -515,7 +521,6 @@ mod tests {
         assert!(storage.pop_action().is_some());
         assert!(storage.pop_action().is_none());
         storage.on_event(2, HashmapLocalEvent::SetAck(0, 1, 2, 0, true));
-
 
         storage.set(1000, 1, 2, vec![2], None);
         assert!(storage.pop_action().is_some());
