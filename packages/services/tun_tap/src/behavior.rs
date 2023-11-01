@@ -165,10 +165,6 @@ where
         Ok(())
     }
 
-    fn on_local_event(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _event: BE) {
-        panic!("Should not happend");
-    }
-
     fn on_local_msg(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _msg: TransportMsg) {
         panic!("Should not happend");
     }

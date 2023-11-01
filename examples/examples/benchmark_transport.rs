@@ -44,15 +44,15 @@ async fn main() {
     async_std::task::sleep(Duration::from_secs(1)).await;
     log::info!("Connect to {}", node_addr2.addr());
 
-    transport1.connector().connect_to(2, node_addr2.addr()).print_error("Should connect");
+    transport1.connector().connect_to(100, 2, node_addr2.addr()).print_error("Should connect");
 
     loop {
         match transport1.recv().await {
-            Ok(TransportEvent::OutgoingRequest(_, _, acceptor)) => {
+            Ok(TransportEvent::OutgoingRequest(_, _, acceptor, _)) => {
                 log::info!("[Transport1] OutgoingRequest");
                 acceptor.accept();
             }
-            Ok(TransportEvent::Outgoing(trans1_sender, mut trans1_receiver)) => {
+            Ok(TransportEvent::Outgoing(trans1_sender, mut trans1_receiver, _)) => {
                 let mut msg_count = 0;
                 trans1_sender.send(TransportMsg::build_reliable(0, RouteRule::Direct, 0, &[0; 10]));
                 let mut last_send = std::time::Instant::now();
