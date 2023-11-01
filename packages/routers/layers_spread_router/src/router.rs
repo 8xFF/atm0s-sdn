@@ -125,7 +125,7 @@ impl Router {
                 return Some((next_conn, next_node, i, next_index));
             } else {
                 log::debug!(
-                    "[Router {}] finding closest to {} in layer {} {:?} -> ({}, {:?})",
+                    "[Router {}] finding closest to {} in layer {}: {:?} -> ({}, {:?})",
                     self.local_node_id,
                     key,
                     i,

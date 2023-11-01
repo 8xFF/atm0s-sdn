@@ -26,12 +26,16 @@ pub struct SourceBinding {
 }
 
 impl SourceBinding {
-    pub fn new(awaker: Arc<dyn Awaker>) -> Self {
+    pub fn new() -> Self {
         Self {
             channels: HashMap::new(),
             actions: VecDeque::new(),
-            awaker,
+            awaker: Arc::new(utils::awaker::MockAwaker::default()),
         }
+    }
+
+    pub fn set_awaker(&mut self, awaker: Arc<dyn Awaker>) {
+        self.awaker = awaker;
     }
 
     pub fn on_local_sub(&mut self, channel: ChannelUuid, sub: LocalSubId) -> Option<Vec<NodeId>> {
@@ -144,8 +148,7 @@ mod tests {
 
     #[test]
     fn source_for_should_correct() {
-        let awake = Arc::new(utils::awaker::MockAwaker::default());
-        let mut bindding = SourceBinding::new(awake.clone());
+        let mut bindding = SourceBinding::new();
         assert_eq!(bindding.sources_for(1), vec![]);
 
         bindding.on_source_added(1, 1000);
@@ -157,7 +160,9 @@ mod tests {
     #[test]
     fn local_sub_unsub_should_correct() {
         let awake = Arc::new(utils::awaker::MockAwaker::default());
-        let mut bindding = SourceBinding::new(awake.clone());
+        let mut bindding = SourceBinding::new();
+        bindding.set_awaker(awake.clone());
+
         assert_eq!(bindding.on_source_added(1, 1000), None);
         assert_eq!(bindding.on_source_added(1, 1001), None);
 
@@ -191,8 +196,7 @@ mod tests {
 
     #[test]
     fn source_add_remove_should_correct() {
-        let awake = Arc::new(utils::awaker::MockAwaker::default());
-        let mut bindding = SourceBinding::new(awake.clone());
+        let mut bindding = SourceBinding::new();
 
         assert_eq!(bindding.on_local_sub(1, 10), None);
         assert_eq!(bindding.on_local_sub(1, 11), None);

@@ -1,4 +1,5 @@
 use async_std::channel::Receiver;
+use bluesea_identity::NodeId;
 use bluesea_router::{RouteAction, RouterTable};
 use futures::{select, FutureExt, StreamExt};
 use std::sync::Arc;
@@ -12,6 +13,7 @@ use crate::{
 use super::{bus::HandleEvent, bus::PlaneBus, bus_impl::PlaneBusImpl};
 
 pub struct PlaneSingleConn<BE, HE> {
+    pub(crate) node_id: NodeId,
     pub(crate) sender: Arc<dyn ConnectionSender>,
     pub(crate) receiver: Box<dyn ConnectionReceiver + Send>,
     pub(crate) tick_ms: u64,
@@ -58,17 +60,19 @@ where
                         }
                         RouteAction::Local => {
                             log::trace!(
-                                "[NetworkPlane] fire handlers on_event network msg for conn ({}, {}) from service {}",
+                                "[PlaneSingleConn {}] fire handlers on_event network msg for conn ({}, {}) from service {}",
+                                self.node_id,
                                 self.receiver.remote_node_id(),
                                 self.receiver.conn_id(),
                                 msg.header.service_id
                             );
-                            self.internal.on_event(self.timer.now_ms(), Some(msg.header.service_id), ConnectionEvent::Msg(msg.clone()));
+                            self.internal.on_event(self.timer.now_ms(), Some(msg.header.service_id), ConnectionEvent::Msg(msg));
                             Ok(())
                         }
                         RouteAction::Next(conn, node_id) => {
                             log::trace!(
-                                "[NetworkPlane] forward network msg {:?} for conn ({}, {}) to ({}, {}) from service {}, route {:?}",
+                                "[PlaneSingleConn {}] forward network msg {:?} for conn ({}, {}) to ({}, {}) from service {}, route {:?}",
+                                self.node_id,
                                 msg,
                                 self.receiver.remote_node_id(),
                                 self.receiver.conn_id(),
@@ -77,13 +81,13 @@ where
                                 msg.header.service_id,
                                 msg.header.route,
                             );
-                            self.bus.to_net_conn(conn, msg.clone()).print_none("Should send to conn");
+                            self.bus.to_net_conn(conn, msg).print_none("Should send to conn");
                             Ok(())
                         }
                     },
                     ConnectionEvent::Stats(stats) => {
-                        log::debug!("[NetworkPlane] fire handlers on_event network stats for conn ({}, {})", self.receiver.remote_node_id(), self.receiver.conn_id());
-                        self.internal.on_event(self.timer.now_ms(), None, ConnectionEvent::Stats(stats.clone()));
+                        log::debug!("[PlaneSingleConn {}] fire handlers on_event network stats for conn ({}, {})", self.node_id, self.receiver.remote_node_id(), self.receiver.conn_id());
+                        self.internal.on_event(self.timer.now_ms(), None, ConnectionEvent::Stats(stats));
                         Ok(())
                     }
                 },
@@ -106,7 +110,7 @@ where
         while let Some((service_id, action)) = self.internal.pop_action() {
             match action {
                 ConnectionHandlerAction::ToBehaviour(event) => {
-                    self.bus.to_behaviour(service_id, event);
+                    self.bus.to_behaviour_from_handler(service_id, self.sender.remote_node_id(), self.sender.conn_id(), event);
                 }
                 ConnectionHandlerAction::ToNet(msg) => {
                     self.sender.send(msg);
@@ -130,6 +134,7 @@ where
 }
 
 pub(crate) struct PlaneSingleConnInternal<BE, HE> {
+    pub(crate) node_id: NodeId,
     pub(crate) handlers: Vec<Option<(Box<dyn ConnectionHandler<BE, HE>>, ConnectionContext)>>,
 }
 
@@ -151,7 +156,7 @@ impl<BE, HE> PlaneSingleConnInternal<BE, HE> {
             if let Some((handler, ctx)) = self.handlers[service_id as usize].as_mut() {
                 handler.on_event(ctx, now_ms, event);
             } else {
-                log::warn!("[NetworkPlane] service {} not found", service_id);
+                log::warn!("[PlaneSingleConnInternal {}] service {} not found", self.node_id, service_id);
             }
         } else {
             for (handler, context) in self.handlers.iter_mut().flatten() {
@@ -174,7 +179,7 @@ impl<BE, HE> PlaneSingleConnInternal<BE, HE> {
                 }
             }
         } else {
-            log::warn!("[NetworkPlane] service {} not found", service_id);
+            log::warn!("[PlaneSingleConnInternal {}] service {} not found", self.node_id, service_id);
         }
     }
 

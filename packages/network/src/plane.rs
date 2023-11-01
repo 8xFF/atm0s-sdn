@@ -57,7 +57,6 @@ impl<BE: Send + Sync + 'static, HE: Send + Sync + 'static> Awaker for HandlerAwa
 pub enum NetworkPlaneInternalEvent<BE> {
     AwakeBehaviour { service_id: u8 },
     ToBehaviourFromHandler { service_id: u8, node_id: NodeId, conn_id: ConnId, event: BE },
-    ToBehaviourLocalEvent { service_id: u8, event: BE },
     ToBehaviourLocalMsg { service_id: u8, msg: TransportMsg },
     IncomingDisconnected(NodeId, ConnId),
     OutgoingDisconnected(NodeId, ConnId),
@@ -106,12 +105,12 @@ where
     /// `while let Some(_) = plane.run().await {}`
     pub fn new(conf: NetworkPlaneConfig<BE, HE>) -> Self {
         let (internal_tx, internal_rx) = unbounded();
-        let bus: Arc<PlaneBusImpl<BE, HE>> = Arc::new(PlaneBusImpl::new(conf.router.clone(), internal_tx.clone()));
+        let bus: Arc<PlaneBusImpl<BE, HE>> = Arc::new(PlaneBusImpl::new(conf.node_id, conf.router.clone(), internal_tx.clone()));
 
         let mut new_behaviours = vec![];
-        for (service_id, behaviour) in conf.behaviors.into_iter().enumerate() {
+        for behaviour in conf.behaviors {
             let awake = BehaviourAwake {
-                service_id: service_id as u8,
+                service_id: behaviour.service_id(),
                 bus: bus.clone(),
             };
             new_behaviours.push((behaviour, Arc::new(awake) as Arc<dyn Awaker>));
@@ -203,11 +202,13 @@ where
                             }
                         }
 
+                        let node_id = self.node_id;
                         async_std::task::spawn(async move {
                             let remote_node_id = sender.remote_node_id();
                             let conn_id = sender.conn_id();
 
                             let mut single_conn = PlaneSingleConn {
+                                node_id,
                                 sender,
                                 receiver,
                                 bus_rx: conn_internal_rx,
@@ -216,7 +217,7 @@ where
                                 timer,
                                 router,
                                 bus: bus.clone(),
-                                internal: PlaneSingleConnInternal { handlers: new_handlers },
+                                internal: PlaneSingleConnInternal { node_id, handlers: new_handlers },
                             };
                             single_conn.start();
                             while let Ok(_) = single_conn.recv().await {}

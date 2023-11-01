@@ -158,10 +158,6 @@ where
         Ok(())
     }
 
-    fn on_local_event(&mut self, ctx: &BehaviorContext, now_ms: u64, _event: BE) {
-        self.pop_all_events::<BE>(ctx);
-    }
-
     fn on_local_msg(&mut self, ctx: &BehaviorContext, now_ms: u64, msg: TransportMsg) {
         //TODO avoid serialize and deserialize in local
         match msg.get_payload_bincode::<KeyValueMsg>() {
@@ -196,6 +192,7 @@ where
     fn on_outgoing_connection_error(&mut self, ctx: &BehaviorContext, now_ms: u64, node_id: NodeId, conn_id: Option<ConnId>, local_uuid: TransportOutgoingLocalUuid, err: &OutgoingConnectionError) {}
 
     fn on_handler_event(&mut self, ctx: &BehaviorContext, now_ms: u64, node_id: NodeId, conn_id: ConnId, event: BE) {
+        log::info!("received event");
         if let Ok(msg) = event.try_into() {
             match msg {
                 KeyValueBehaviorEvent::FromNode(from, msg) => {

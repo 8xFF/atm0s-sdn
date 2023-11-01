@@ -110,16 +110,6 @@ impl<BE, HE> PlaneInternal<BE, HE> {
                     Err(PlaneInternalError::InvalidServiceId(service_id))
                 }
             }
-            NetworkPlaneInternalEvent::ToBehaviourLocalEvent { service_id, event } => {
-                log::debug!("[NetworkPlane {}] received NetworkPlaneInternalEvent::ToBehaviourLocalEvent service: {}", self.node_id, service_id);
-                if let Some((behaviour, context)) = &mut self.behaviors[service_id as usize] {
-                    behaviour.on_local_event(context, now_ms, event);
-                    Ok(())
-                } else {
-                    debug_assert!(false, "service not found {}", service_id);
-                    Err(PlaneInternalError::InvalidServiceId(service_id))
-                }
-            }
             NetworkPlaneInternalEvent::ToBehaviourLocalMsg { service_id, msg } => {
                 log::debug!("[NetworkPlane {}] received NetworkPlaneInternalEvent::ToBehaviourLocalMsg service: {}", self.node_id, service_id);
                 if let Some((behaviour, context)) = &mut self.behaviors[service_id as usize] {

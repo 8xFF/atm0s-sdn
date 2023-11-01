@@ -77,7 +77,6 @@ pub trait NetworkBehavior<BE, HE> {
     fn on_tick(&mut self, ctx: &BehaviorContext, now_ms: u64, interval_ms: u64);
     fn on_awake(&mut self, ctx: &BehaviorContext, now_ms: u64);
     fn on_local_msg(&mut self, ctx: &BehaviorContext, now_ms: u64, msg: TransportMsg);
-    fn on_local_event(&mut self, ctx: &BehaviorContext, now_ms: u64, event: BE);
     fn check_incoming_connection(&mut self, ctx: &BehaviorContext, now_ms: u64, node: NodeId, conn_id: ConnId) -> Result<(), ConnectionRejectReason>;
     fn check_outgoing_connection(&mut self, ctx: &BehaviorContext, now_ms: u64, node: NodeId, conn_id: ConnId, local_uuid: TransportOutgoingLocalUuid) -> Result<(), ConnectionRejectReason>;
     fn on_incoming_connection_connected(&mut self, ctx: &BehaviorContext, now_ms: u64, conn: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>>;

@@ -62,7 +62,7 @@ mod tests {
         Manual(ManualHandlerEvent),
     }
 
-    async fn run_node(vnet: Arc<VnetEarth>, node_id: NodeId, neighbours: Vec<NodeAddr>) -> (PubsubSdk<ImplBehaviorEvent, ImplHandlerEvent>, NodeAddr, JoinHandle<()>) {
+    async fn run_node(vnet: Arc<VnetEarth>, node_id: NodeId, neighbours: Vec<NodeAddr>) -> (PubsubSdk, NodeAddr, JoinHandle<()>) {
         log::info!("Run node {} connect to {:?}", node_id, neighbours);
         let node_addr = Arc::new(NodeAddrBuilder::default());
         node_addr.add_protocol(Protocol::P2p(node_id));
@@ -79,12 +79,12 @@ mod tests {
 
         let router_sync_behaviour = LayersSpreadRouterSyncBehavior::new(router.clone());
         let (kv_behaviour, kv_sdk) = KeyValueBehavior::new(node_id, timer.clone(), 3000);
-        let (pubsub_behavior, pubsub_sdk) = PubsubServiceBehaviour::new(node_id, Box::new(ChannelSourceHashmapReal::new(kv_sdk, node_id)));
+        let (pubsub_behavior, pubsub_sdk) = PubsubServiceBehaviour::new(node_id, Box::new(ChannelSourceHashmapReal::new(kv_sdk, node_id)), timer.clone());
 
         let mut plane = NetworkPlane::<ImplBehaviorEvent, ImplHandlerEvent>::new(NetworkPlaneConfig {
-            local_node_id: node_id,
+            node_id,
             tick_ms: 100,
-            behavior: vec![Box::new(pubsub_behavior), Box::new(kv_behaviour), Box::new(router_sync_behaviour), Box::new(manual)],
+            behaviors: vec![Box::new(pubsub_behavior), Box::new(kv_behaviour), Box::new(router_sync_behaviour), Box::new(manual)],
             transport,
             timer,
             router: Arc::new(router.clone()),
@@ -105,7 +105,7 @@ mod tests {
         let vnet = Arc::new(VnetEarth::default());
         let (sdk, _addr, join) = run_node(vnet, 1, vec![]).await;
 
-        async_std::task::sleep(Duration::from_millis(1000)).await;
+        async_std::task::sleep(Duration::from_millis(300)).await;
 
         let producer = sdk.create_publisher(1111);
         let consumer = sdk.create_consumer_single(producer.identify(), Some(10));
@@ -169,7 +169,7 @@ mod tests {
         let vnet = Arc::new(VnetEarth::default());
         let (sdk, _addr, join) = run_node(vnet, 1, vec![]).await;
 
-        async_std::task::sleep(Duration::from_millis(1000)).await;
+        async_std::task::sleep(Duration::from_millis(300)).await;
 
         log::info!("create publisher");
         let producer = sdk.create_publisher(1111);
@@ -238,7 +238,7 @@ mod tests {
         let (sdk1, addr1, join1) = run_node(vnet.clone(), 1, vec![]).await;
         let (sdk2, _addr2, join2) = run_node(vnet, 2, vec![addr1]).await;
 
-        async_std::task::sleep(Duration::from_millis(1000)).await;
+        async_std::task::sleep(Duration::from_millis(300)).await;
 
         let producer = sdk1.create_publisher(1111);
         let consumer = sdk2.create_consumer_single(producer.identify(), Some(10));
@@ -306,7 +306,7 @@ mod tests {
         let (sdk1, addr1, join1) = run_node(vnet.clone(), 1, vec![]).await;
         let (sdk2, _addr2, join2) = run_node(vnet, 2, vec![addr1]).await;
 
-        async_std::task::sleep(Duration::from_millis(1000)).await;
+        async_std::task::sleep(Duration::from_millis(300)).await;
 
         let producer = sdk1.create_publisher(1111);
         let consumer = sdk2.create_consumer(1111, Some(10));

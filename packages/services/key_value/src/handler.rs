@@ -31,6 +31,7 @@ where
                 if let Some(from) = msg.header.from_node {
                     match msg.get_payload_bincode::<KeyValueMsg>() {
                         Ok(kv_msg) => {
+                            log::debug!("[KeyValueConnectionHandler {}] forward to Behaviour {:?}", _ctx.local_node_id, kv_msg);
                             self.ouputs.push_back(ConnectionHandlerAction::ToBehaviour(KeyValueBehaviorEvent::FromNode(from, kv_msg).into()));
                         }
                         Err(e) => {
