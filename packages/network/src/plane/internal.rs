@@ -1,9 +1,12 @@
 use std::{collections::VecDeque, sync::Arc};
 
-use bluesea_identity::{NodeId, ConnId};
+use bluesea_identity::NodeId;
 use utils::init_vec::init_vec;
 
-use crate::{transport::{TransportEvent, ConnectionSender, ConnectionReceiver}, behaviour::{ConnectionHandler, NetworkBehavior, NetworkBehaviorAction, ConnectionContext, BehaviorContext}};
+use crate::{
+    behaviour::{BehaviorContext, ConnectionContext, ConnectionHandler, NetworkBehavior, NetworkBehaviorAction},
+    transport::{ConnectionReceiver, ConnectionSender, TransportEvent},
+};
 
 use super::NetworkPlaneInternalEvent;
 
@@ -64,58 +67,62 @@ impl<BE, HE> PlaneInternal<BE, HE> {
         self.pop_behaviours_action();
     }
 
-    pub fn on_handler_event(&mut self, now_ms: u64, service: u8, node: NodeId, conn: ConnId, event: BE) -> Result<(), PlaneInternalError> {
-        if let Some((behaviour, context)) = self.behaviors[service as usize].as_mut() {
-            behaviour.on_handler_event(context, now_ms, node, conn, event);
-            self.pop_behaviours_action();
-            Ok(())
-        } else {
-            Err(PlaneInternalError::InvalidServiceId(service))
-        }
-    }
-
     pub fn on_internal_event(&mut self, now_ms: u64, event: NetworkPlaneInternalEvent<BE>) -> Result<(), PlaneInternalError> {
-        match event {
+        let res = match event {
             NetworkPlaneInternalEvent::IncomingDisconnected(node_id, conn_id) => {
                 log::info!("[NetworkPlane {}] received NetworkPlaneInternalEvent::IncomingDisconnected({}, {})", self.node_id, node_id, conn_id);
                 for (behaviour, context) in self.behaviors.iter_mut().flatten() {
                     behaviour.on_incoming_connection_disconnected(context, now_ms, node_id, conn_id);
                 }
-            },
+                Ok(())
+            }
             NetworkPlaneInternalEvent::OutgoingDisconnected(node_id, conn_id) => {
                 log::info!("[NetworkPlane {}] received NetworkPlaneInternalEvent::OutgoingDisconnected({}, {})", self.node_id, node_id, conn_id);
                 for (behaviour, context) in self.behaviors.iter_mut().flatten() {
                     behaviour.on_outgoing_connection_disconnected(context, now_ms, node_id, conn_id);
                 }
-            },
+                Ok(())
+            }
             NetworkPlaneInternalEvent::ToBehaviourFromHandler { service_id, node_id, conn_id, event } => {
-                log::debug!("[NetworkPlane {}] received NetworkPlaneInternalEvent::ToBehaviour service: {}, from node: {} conn_id: {}", self.node_id, service_id, node_id, conn_id);
+                log::debug!(
+                    "[NetworkPlane {}] received NetworkPlaneInternalEvent::ToBehaviour service: {}, from node: {} conn_id: {}",
+                    self.node_id,
+                    service_id,
+                    node_id,
+                    conn_id
+                );
                 if let Some((behaviour, context)) = &mut self.behaviors[service_id as usize] {
                     behaviour.on_handler_event(context, now_ms, node_id, conn_id, event);
+                    Ok(())
                 } else {
                     debug_assert!(false, "service not found {}", service_id);
+                    Err(PlaneInternalError::InvalidServiceId(service_id))
                 }
-            },
+            }
             NetworkPlaneInternalEvent::ToBehaviourLocalEvent { service_id, event } => {
                 log::debug!("[NetworkPlane {}] received NetworkPlaneInternalEvent::ToBehaviourLocalEvent service: {}", self.node_id, service_id);
                 if let Some((behaviour, context)) = &mut self.behaviors[service_id as usize] {
                     behaviour.on_local_event(context, event);
+                    Ok(())
                 } else {
                     debug_assert!(false, "service not found {}", service_id);
+                    Err(PlaneInternalError::InvalidServiceId(service_id))
                 }
             }
             NetworkPlaneInternalEvent::ToBehaviourLocalMsg { service_id, msg } => {
                 log::debug!("[NetworkPlane {}] received NetworkPlaneInternalEvent::ToBehaviourLocalMsg service: {}", self.node_id, service_id);
                 if let Some((behaviour, context)) = &mut self.behaviors[service_id as usize] {
                     behaviour.on_local_msg(context, now_ms, msg);
+                    Ok(())
                 } else {
                     debug_assert!(false, "service not found {}", service_id);
+                    Err(PlaneInternalError::InvalidServiceId(service_id))
                 }
             }
-        }
+        };
 
         self.pop_behaviours_action();
-        Ok(())
+        res
     }
 
     pub fn on_transport_event(&mut self, now_ms: u64, event: TransportEvent) -> Result<(), PlaneInternalError> {
@@ -155,15 +162,15 @@ impl<BE, HE> PlaneInternal<BE, HE> {
                 );
                 let mut handlers: Vec<Option<(Box<dyn ConnectionHandler<BE, HE>>, ConnectionContext)>> = init_vec(256, || None);
                 for (behaviour, context) in self.behaviors.iter_mut().flatten() {
-                    let conn_context = ConnectionContext::new(
-                        behaviour.service_id(),
-                        self.node_id,
-                        receiver.remote_node_id(),
-                        receiver.conn_id(),
-                    );
+                    let conn_context = ConnectionContext::new(behaviour.service_id(), self.node_id, receiver.remote_node_id(), receiver.conn_id());
                     handlers[behaviour.service_id() as usize] = behaviour.on_incoming_connection_connected(context, now_ms, sender.clone()).map(|h| (h, conn_context));
                 }
-                self.action_queue.push_back(PlaneInternalAction::SpawnConnection { outgoing: false, sender, receiver, handlers });
+                self.action_queue.push_back(PlaneInternalAction::SpawnConnection {
+                    outgoing: false,
+                    sender,
+                    receiver,
+                    handlers,
+                });
             }
             TransportEvent::Outgoing(sender, receiver, local_uuid) => {
                 log::info!(
@@ -174,15 +181,15 @@ impl<BE, HE> PlaneInternal<BE, HE> {
                 );
                 let mut handlers: Vec<Option<(Box<dyn ConnectionHandler<BE, HE>>, ConnectionContext)>> = init_vec(256, || None);
                 for (behaviour, context) in self.behaviors.iter_mut().flatten() {
-                    let conn_context = ConnectionContext::new(
-                        behaviour.service_id(),
-                        self.node_id,
-                        receiver.remote_node_id(),
-                        receiver.conn_id(),
-                    );
+                    let conn_context = ConnectionContext::new(behaviour.service_id(), self.node_id, receiver.remote_node_id(), receiver.conn_id());
                     handlers[behaviour.service_id() as usize] = behaviour.on_outgoing_connection_connected(context, now_ms, sender.clone(), local_uuid).map(|h| (h, conn_context));
                 }
-                self.action_queue.push_back(PlaneInternalAction::SpawnConnection { outgoing: true, sender, receiver, handlers });
+                self.action_queue.push_back(PlaneInternalAction::SpawnConnection {
+                    outgoing: true,
+                    sender,
+                    receiver,
+                    handlers,
+                });
             }
             TransportEvent::OutgoingError { local_uuid, node_id, conn_id, err } => {
                 log::info!("[NetworkPlane {}] received TransportEvent::OutgoingError({}, {:?})", self.node_id, node_id, conn_id);

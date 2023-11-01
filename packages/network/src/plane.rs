@@ -8,18 +8,19 @@ use async_std::stream::Interval;
 use bluesea_identity::{ConnId, NodeId};
 use bluesea_router::RouterTable;
 use futures::{select, FutureExt, StreamExt};
-use utils::error_handle::ErrorUtils;
 use std::sync::Arc;
 use std::time::Duration;
+use utils::error_handle::ErrorUtils;
 use utils::Timer;
 
+use self::bus::PlaneBus;
 use self::bus_impl::PlaneBusImpl;
-use self::internal::PlaneInternal;
+use self::internal::{PlaneInternal, PlaneInternalAction};
 use self::single_conn::{PlaneSingleConn, PlaneSingleConnInternal};
 
-mod internal;
 pub(crate) mod bus;
 mod bus_impl;
+mod internal;
 
 pub enum NetworkPlaneInternalEvent<BE> {
     ToBehaviourFromHandler { service_id: u8, node_id: NodeId, conn_id: ConnId, event: BE },
@@ -27,6 +28,12 @@ pub enum NetworkPlaneInternalEvent<BE> {
     ToBehaviourLocalMsg { service_id: u8, msg: TransportMsg },
     IncomingDisconnected(NodeId, ConnId),
     OutgoingDisconnected(NodeId, ConnId),
+}
+
+pub enum NetworkPlaneError {
+    TransportError,
+    InternalQueueError,
+    RuntimeError,
 }
 
 pub struct NetworkPlaneConfig<BE, HE> {
@@ -88,7 +95,7 @@ where
     }
 
     /// Run loop for plane which handle tick and connection
-    pub async fn recv(&mut self) -> Result<(), ()> {
+    pub async fn recv(&mut self) -> Result<(), NetworkPlaneError> {
         log::trace!("[NetworkPlane {}] waiting event", self.node_id);
         let res = select! {
             _ = self.tick_interval.next().fuse() => {
@@ -97,20 +104,20 @@ where
             },
             e = self.transport.recv().fuse() => match e {
                 Ok(e) => {
-                    self.internal.on_transport_event(self.timer.now_ms(), e);
-                    Ok(())
+                    self.internal.on_transport_event(self.timer.now_ms(), e)
+                        .map_err(|_e| NetworkPlaneError::RuntimeError)
                 },
                 Err(_e) => {
-                    Err(())
+                    Err(NetworkPlaneError::TransportError)
                 }
             },
             e =  self.internal_rx.recv().fuse() => match e {
                 Ok(event) => {
-                    self.internal.on_internal_event(self.timer.now_ms(), event);
-                    Ok(())
+                    self.internal.on_internal_event(self.timer.now_ms(), event)
+                        .map_err(|_e| NetworkPlaneError::RuntimeError)
                 },
                 Err(_) => {
-                    Err(())
+                    Err(NetworkPlaneError::InternalQueueError)
                 }
             }
         };
@@ -127,7 +134,7 @@ where
     fn pop_actions(&mut self, now_ms: u64) {
         while let Some(action) = self.internal.pop_action() {
             match action {
-                internal::PlaneInternalAction::SpawnConnection { outgoing, sender, receiver, handlers } => {
+                PlaneInternalAction::SpawnConnection { outgoing, sender, receiver, handlers } => {
                     let internal_tx = self.internal_tx.clone();
                     let tick_ms = self.tick_ms;
                     let timer = self.timer.clone();
@@ -146,9 +153,7 @@ where
                                 timer,
                                 router,
                                 bus: bus.clone(),
-                                internal: PlaneSingleConnInternal {
-                                    handlers,
-                                }
+                                internal: PlaneSingleConnInternal { handlers },
                             };
                             single_conn.start();
                             while let Ok(_) = single_conn.recv().await {}
@@ -172,20 +177,40 @@ where
                     } else {
                         log::warn!("[NetworkPlane] add conn ({}, {}) failed", sender.remote_node_id(), sender.conn_id());
                     }
-                },
-                internal::PlaneInternalAction::BehaviorAction(service, action) => match action {
+                }
+                PlaneInternalAction::BehaviorAction(service, action) => match action {
                     NetworkBehaviorAction::ConnectTo(local_uuid, node_id, dest) => {
                         if let Err(err) = self.transport.connector().connect_to(local_uuid, node_id, dest) {
                             log::warn!("[NetworkPlane] connect to {} failed: {}", node_id, err);
-                            self.internal.on_transport_event(now_ms, crate::transport::TransportEvent::OutgoingError { local_uuid, node_id, conn_id: None, err });
+                            self.internal.on_transport_event(
+                                now_ms,
+                                crate::transport::TransportEvent::OutgoingError {
+                                    local_uuid,
+                                    node_id,
+                                    conn_id: None,
+                                    err,
+                                },
+                            );
                         }
-                    },
-                    NetworkBehaviorAction::ToNet(_) => todo!(),
-                    NetworkBehaviorAction::ToNetConn(_, _) => todo!(),
-                    NetworkBehaviorAction::ToNetNode(_, _) => todo!(),
-                    NetworkBehaviorAction::ToHandler(_, _) => todo!(),
-                    NetworkBehaviorAction::CloseConn(_) => todo!(),
-                    NetworkBehaviorAction::CloseNode(_) => todo!(),
+                    }
+                    NetworkBehaviorAction::ToNet(msg) => {
+                        self.bus.to_net(msg);
+                    }
+                    NetworkBehaviorAction::ToNetConn(conn_id, msg) => {
+                        self.bus.to_net_conn(conn_id, msg);
+                    }
+                    NetworkBehaviorAction::ToNetNode(node, msg) => {
+                        self.bus.to_net_node(node, msg);
+                    }
+                    NetworkBehaviorAction::ToHandler(route, msg) => {
+                        self.bus.to_handler(service, route, bus::HandleEvent::FromBehavior(msg));
+                    }
+                    NetworkBehaviorAction::CloseConn(conn) => {
+                        self.bus.close_conn(conn);
+                    }
+                    NetworkBehaviorAction::CloseNode(node) => {
+                        self.bus.close_node(node);
+                    }
                 },
             }
         }

@@ -1,6 +1,6 @@
-use crate::{msg::TransportMsg, plane::bus::HandlerRoute};
 use crate::plane::NetworkPlaneInternalEvent;
 use crate::transport::ConnectionSender;
+use crate::{msg::TransportMsg, plane::bus::HandlerRoute};
 use async_std::channel::{unbounded, Receiver, Sender};
 use bluesea_identity::{ConnId, NodeId};
 use bluesea_router::{RouteAction, RouteRule, RouterTable};
@@ -63,6 +63,26 @@ where
         } else {
             log::warn!("[CrossHandlerGate] remove_conn not found {}", conn);
             None
+        }
+    }
+
+    pub(crate) fn close_conn(&self, conn: ConnId) {
+        let conns = self.conns.read();
+        if let Some((_s, c_s)) = conns.get(&conn) {
+            log::info!("[CrossHandlerGate] close_con {} {}", c_s.remote_node_id(), conn);
+            c_s.close();
+        } else {
+            log::warn!("[CrossHandlerGate] close_conn not found {}", conn);
+        }
+    }
+
+    pub(crate) fn close_node(&self, node: NodeId) {
+        let nodes = self.nodes.read();
+        if let Some(conns) = nodes.get(&node) {
+            for (_s, c_s) in conns.values() {
+                log::info!("[CrossHandlerGate] close_node {} {}", node, c_s.conn_id());
+                c_s.close();
+            }
         }
     }
 }

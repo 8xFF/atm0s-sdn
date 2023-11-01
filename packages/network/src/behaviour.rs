@@ -1,7 +1,7 @@
 use crate::msg::TransportMsg;
 use crate::plane::bus::HandlerRoute;
 use crate::transport::{ConnectionEvent, ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, TransportOutgoingLocalUuid};
-use bluesea_identity::{ConnId, NodeId, NodeAddr};
+use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -12,10 +12,7 @@ pub struct BehaviorContext {
 
 impl BehaviorContext {
     pub(crate) fn new(service_id: u8, node_id: NodeId) -> Self {
-        Self {
-            service_id,
-            node_id,
-        }
+        Self { service_id, node_id }
     }
 }
 
@@ -28,12 +25,7 @@ pub struct ConnectionContext {
 }
 
 impl ConnectionContext {
-    pub(crate) fn new(
-        service_id: u8,
-        local_node_id: NodeId,
-        remote_node_id: NodeId,
-        conn_id: ConnId,
-    ) -> Self {
+    pub(crate) fn new(service_id: u8, local_node_id: NodeId, remote_node_id: NodeId, conn_id: ConnId) -> Self {
         Self {
             service_id,
             local_node_id,
@@ -81,7 +73,13 @@ pub trait NetworkBehavior<BE, HE> {
     fn check_incoming_connection(&mut self, ctx: &BehaviorContext, now_ms: u64, node: NodeId, conn_id: ConnId) -> Result<(), ConnectionRejectReason>;
     fn check_outgoing_connection(&mut self, ctx: &BehaviorContext, now_ms: u64, node: NodeId, conn_id: ConnId, local_uuid: TransportOutgoingLocalUuid) -> Result<(), ConnectionRejectReason>;
     fn on_incoming_connection_connected(&mut self, ctx: &BehaviorContext, now_ms: u64, conn: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>>;
-    fn on_outgoing_connection_connected(&mut self, ctx: &BehaviorContext, now_ms: u64, conn: Arc<dyn ConnectionSender>, local_uuid: TransportOutgoingLocalUuid) -> Option<Box<dyn ConnectionHandler<BE, HE>>>;
+    fn on_outgoing_connection_connected(
+        &mut self,
+        ctx: &BehaviorContext,
+        now_ms: u64,
+        conn: Arc<dyn ConnectionSender>,
+        local_uuid: TransportOutgoingLocalUuid,
+    ) -> Option<Box<dyn ConnectionHandler<BE, HE>>>;
     fn on_incoming_connection_disconnected(&mut self, ctx: &BehaviorContext, now_ms: u64, node_id: NodeId, conn_id: ConnId);
     fn on_outgoing_connection_disconnected(&mut self, ctx: &BehaviorContext, now_ms: u64, node_id: NodeId, conn_id: ConnId);
     fn on_outgoing_connection_error(&mut self, ctx: &BehaviorContext, now_ms: u64, node_id: NodeId, conn_id: Option<ConnId>, local_uuid: TransportOutgoingLocalUuid, err: &OutgoingConnectionError);

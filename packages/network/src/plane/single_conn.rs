@@ -5,12 +5,11 @@ use std::sync::Arc;
 use utils::{option_handle::OptionUtils, Timer};
 
 use crate::{
-    behaviour::{ConnectionHandler, ConnectionContext, ConnectionHandlerAction},
+    behaviour::{ConnectionContext, ConnectionHandler, ConnectionHandlerAction},
     transport::{ConnectionEvent, ConnectionReceiver, ConnectionSender},
 };
 
 use super::{bus::HandleEvent, bus::PlaneBus, bus_impl::PlaneBusImpl};
-
 
 pub struct PlaneSingleConn<BE, HE> {
     pub(crate) sender: Arc<dyn ConnectionSender>,
@@ -108,27 +107,27 @@ where
             match action {
                 ConnectionHandlerAction::ToBehaviour(event) => {
                     self.bus.to_behaviour(service_id, event);
-                },
+                }
                 ConnectionHandlerAction::ToNet(msg) => {
                     self.bus.to_net(msg);
-                },
+                }
                 ConnectionHandlerAction::ToNetConn(conn, msg) => {
                     self.bus.to_net_conn(conn, msg);
-                },
+                }
                 ConnectionHandlerAction::ToNetNode(node, msg) => {
                     self.bus.to_net_node(node, msg);
-                },
+                }
                 ConnectionHandlerAction::ToHandler(route, event) => {
-                    self.bus.to_handler(service_id, route, HandleEvent::FromHandler(self.receiver.remote_node_id(), self.receiver.conn_id(), event));
-                },
+                    self.bus
+                        .to_handler(service_id, route, HandleEvent::FromHandler(self.receiver.remote_node_id(), self.receiver.conn_id(), event));
+                }
                 ConnectionHandlerAction::CloseConn() => {
                     self.sender.close();
-                },
+                }
             }
         }
     }
 }
-
 
 pub(crate) struct PlaneSingleConnInternal<BE, HE> {
     pub(crate) handlers: Vec<Option<(Box<dyn ConnectionHandler<BE, HE>>, ConnectionContext)>>,

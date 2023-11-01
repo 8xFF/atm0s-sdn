@@ -1,4 +1,4 @@
-use bluesea_identity::{NodeId, ConnId};
+use bluesea_identity::{ConnId, NodeId};
 
 use crate::msg::TransportMsg;
 

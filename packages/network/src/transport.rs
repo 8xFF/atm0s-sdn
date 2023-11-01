@@ -12,7 +12,12 @@ pub enum TransportEvent {
     OutgoingRequest(NodeId, ConnId, Box<dyn ConnectionAcceptor>, TransportOutgoingLocalUuid),
     Incoming(Arc<dyn ConnectionSender>, Box<dyn ConnectionReceiver + Send>),
     Outgoing(Arc<dyn ConnectionSender>, Box<dyn ConnectionReceiver + Send>, TransportOutgoingLocalUuid),
-    OutgoingError { local_uuid: TransportOutgoingLocalUuid, node_id: NodeId, conn_id: Option<ConnId>, err: OutgoingConnectionError },
+    OutgoingError {
+        local_uuid: TransportOutgoingLocalUuid,
+        node_id: NodeId,
+        conn_id: Option<ConnId>,
+        err: OutgoingConnectionError,
+    },
 }
 
 #[async_trait::async_trait]
