@@ -85,7 +85,7 @@ where
                         slot.outgoing = OutgoingState::Connecting(now_ms, None, 0);
                     }
                     OutgoingState::ConnectError(ts, _conn, _err, count) => {
-                        let sleep_ms = CONNECT_WAIT.get(*count).unwrap_or(&CONNECT_WAIT_MAX);
+                        let sleep_ms: &u64 = CONNECT_WAIT.get(*count).unwrap_or(&CONNECT_WAIT_MAX);
                         if ts + *sleep_ms < now_ms {
                             //need reconnect
                             self.queue_action.push_back(NetworkBehaviorAction::ConnectTo(0, *node_id, slot.addr.clone()));
