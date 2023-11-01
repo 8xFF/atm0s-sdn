@@ -5,16 +5,19 @@ use std::sync::Arc;
 use thiserror::Error;
 use utils::error_handle::ErrorUtils;
 
-pub struct TransportConnectingOutgoing {
-    pub conn_id: ConnId,
-}
+pub type TransportOutgoingLocalUuid = u64;
 
 pub enum TransportEvent {
     IncomingRequest(NodeId, ConnId, Box<dyn ConnectionAcceptor>),
-    OutgoingRequest(NodeId, ConnId, Box<dyn ConnectionAcceptor>),
+    OutgoingRequest(NodeId, ConnId, Box<dyn ConnectionAcceptor>, TransportOutgoingLocalUuid),
     Incoming(Arc<dyn ConnectionSender>, Box<dyn ConnectionReceiver + Send>),
-    Outgoing(Arc<dyn ConnectionSender>, Box<dyn ConnectionReceiver + Send>),
-    OutgoingError { node_id: NodeId, conn_id: ConnId, err: OutgoingConnectionError },
+    Outgoing(Arc<dyn ConnectionSender>, Box<dyn ConnectionReceiver + Send>, TransportOutgoingLocalUuid),
+    OutgoingError {
+        local_uuid: TransportOutgoingLocalUuid,
+        node_id: NodeId,
+        conn_id: Option<ConnId>,
+        err: OutgoingConnectionError,
+    },
 }
 
 #[async_trait::async_trait]
@@ -24,7 +27,7 @@ pub trait Transport: Send {
 }
 
 pub trait TransportConnector: Send + Sync {
-    fn connect_to(&self, node_id: NodeId, dest: NodeAddr) -> Result<TransportConnectingOutgoing, OutgoingConnectionError>;
+    fn connect_to(&self, local_uuid: TransportOutgoingLocalUuid, node_id: NodeId, dest: NodeAddr) -> Result<(), OutgoingConnectionError>;
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -36,7 +39,7 @@ pub struct ConnectionStats {
     pub over_use: bool,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum ConnectionEvent {
     Msg(TransportMsg),
     Stats(ConnectionStats),

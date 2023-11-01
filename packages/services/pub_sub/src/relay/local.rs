@@ -24,13 +24,17 @@ pub struct LocalRelay {
 }
 
 impl LocalRelay {
-    pub fn new(awaker: Arc<dyn Awaker>) -> Self {
+    pub fn new() -> Self {
         Self {
             consumers: HashMap::new(),
             producer_fbs: HashMap::new(),
             actions: VecDeque::new(),
-            awaker,
+            awaker: Arc::new(utils::awaker::MockAwaker::default()),
         }
+    }
+
+    pub fn set_awaker(&mut self, awaker: Arc<dyn Awaker>) {
+        self.awaker = awaker;
     }
 
     pub fn on_local_sub(&mut self, uuid: LocalSubId, sender: Sender<(LocalSubId, NodeId, ChannelUuid, Bytes)>) {
@@ -104,7 +108,8 @@ mod tests {
     #[test]
     fn first_pub_should_awake_and_output_action() {
         let awake = Arc::new(utils::awaker::MockAwaker::default());
-        let mut relay = super::LocalRelay::new(awake.clone());
+        let mut relay = super::LocalRelay::new();
+        relay.set_awaker(awake.clone());
 
         let (tx, _rx) = async_std::channel::bounded(1);
         relay.on_local_pub(1, 10, tx.clone());
@@ -128,8 +133,7 @@ mod tests {
 
     #[test]
     fn should_relay_to_all_consumers() {
-        let awake = Arc::new(utils::awaker::MockAwaker::default());
-        let mut relay = super::LocalRelay::new(awake.clone());
+        let mut relay = super::LocalRelay::new();
 
         let (tx1, rx1) = async_std::channel::bounded(1);
         let (tx2, rx2) = async_std::channel::bounded(1);
@@ -152,8 +156,7 @@ mod tests {
 
     #[test]
     fn should_feedback_to_all_publishers() {
-        let awake = Arc::new(utils::awaker::MockAwaker::default());
-        let mut relay = super::LocalRelay::new(awake.clone());
+        let mut relay = super::LocalRelay::new();
 
         let (tx1, rx1) = async_std::channel::bounded(1);
         let (tx2, rx2) = async_std::channel::bounded(1);

@@ -6,7 +6,7 @@ use async_bincode::futures::AsyncBincodeStream;
 use async_std::channel::Sender;
 use async_std::net::{Shutdown, TcpStream};
 use bluesea_identity::{ConnId, NodeAddr, NodeAddrBuilder, NodeId, Protocol};
-use network::transport::{AsyncConnectionAcceptor, ConnectionRejectReason, OutgoingConnectionError, TransportConnectingOutgoing, TransportConnector, TransportEvent};
+use network::transport::{AsyncConnectionAcceptor, ConnectionRejectReason, OutgoingConnectionError, TransportConnector, TransportEvent, TransportOutgoingLocalUuid};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -53,11 +53,11 @@ impl TcpConnector {
     }
 }
 
-async fn wait_accept(remote_node: NodeId, conn_id: ConnId, internal_tx: &Sender<TransportEvent>) -> Result<(), OutgoingHandshakeError> {
+async fn wait_accept(local_uuid: TransportOutgoingLocalUuid, remote_node: NodeId, conn_id: ConnId, internal_tx: &Sender<TransportEvent>) -> Result<(), OutgoingHandshakeError> {
     log::info!("[TcpConnector] connect to {} send local check", remote_node);
     let (connection_acceptor, recv) = AsyncConnectionAcceptor::new();
     internal_tx
-        .send(TransportEvent::OutgoingRequest(remote_node, conn_id, connection_acceptor))
+        .send(TransportEvent::OutgoingRequest(remote_node, conn_id, connection_acceptor, local_uuid))
         .await
         .map_err(|_| OutgoingHandshakeError::InternalError)?;
     log::info!("[TcpConnector] connect to {} wait local accept", remote_node);
@@ -69,7 +69,7 @@ async fn wait_accept(remote_node: NodeId, conn_id: ConnId, internal_tx: &Sender<
 }
 
 impl TransportConnector for TcpConnector {
-    fn connect_to(&self, remote_node_id: NodeId, remote_node_addr: NodeAddr) -> Result<TransportConnectingOutgoing, OutgoingConnectionError> {
+    fn connect_to(&self, local_uuid: TransportOutgoingLocalUuid, remote_node_id: NodeId, remote_node_addr: NodeAddr) -> Result<(), OutgoingConnectionError> {
         log::info!("[TcpConnector] connect to node {}", remote_node_addr);
         let timer = self.timer.clone();
         let node_id = self.node_id;
@@ -79,12 +79,13 @@ impl TransportConnector for TcpConnector {
         let conn_id = ConnId::from_out(TCP_PROTOCOL_ID, conn_seed);
         let internal_tx = self.internal_tx.clone();
         async_std::task::spawn(async move {
-            if let Err(e) = wait_accept(remote_node_id, conn_id, &internal_tx).await {
+            if let Err(e) = wait_accept(local_uuid, remote_node_id, conn_id, &internal_tx).await {
                 log::error!("Outgoing handshake error {:?}", e);
                 internal_tx
                     .send(TransportEvent::OutgoingError {
+                        local_uuid,
                         node_id: remote_node_id,
-                        conn_id,
+                        conn_id: Some(conn_id),
                         err: OutgoingConnectionError::BehaviorRejected(ConnectionRejectReason::Custom("LocalReject".to_string())),
                     })
                     .await
@@ -109,7 +110,7 @@ impl TransportConnector for TcpConnector {
                                 reliable_sender,
                             });
                             internal_tx
-                                .send(TransportEvent::Outgoing(Arc::new(connection_sender), connection_receiver))
+                                .send(TransportEvent::Outgoing(Arc::new(connection_sender), connection_receiver, local_uuid))
                                 .await
                                 .print_error("Should send Outgoing");
                         }
@@ -117,8 +118,9 @@ impl TransportConnector for TcpConnector {
                             socket.shutdown(Shutdown::Both).print_error("Should shutdown socket");
                             internal_tx
                                 .send(TransportEvent::OutgoingError {
+                                    local_uuid,
                                     node_id: remote_node_id,
-                                    conn_id,
+                                    conn_id: Some(conn_id),
                                     err: match err {
                                         OutgoingHandshakeError::SocketError => OutgoingConnectionError::DestinationNotFound,
                                         OutgoingHandshakeError::Timeout => OutgoingConnectionError::AuthenticationError,
@@ -136,8 +138,9 @@ impl TransportConnector for TcpConnector {
                     log::error!("TcpStream connect error {}", err);
                     internal_tx
                         .send(TransportEvent::OutgoingError {
+                            local_uuid,
                             node_id: remote_node_id,
-                            conn_id,
+                            conn_id: Some(conn_id),
                             err: OutgoingConnectionError::DestinationNotFound,
                         })
                         .await
@@ -145,6 +148,6 @@ impl TransportConnector for TcpConnector {
                 }
             }
         });
-        Ok(TransportConnectingOutgoing { conn_id })
+        Ok(())
     }
 }

@@ -1,80 +1,28 @@
-use async_std::channel::{Receiver, Sender};
+use async_std::channel::Receiver;
+use bluesea_identity::NodeId;
 use bluesea_router::{RouteAction, RouterTable};
 use futures::{select, FutureExt, StreamExt};
-use parking_lot::RwLock;
-use std::{sync::Arc, time::Duration};
-use utils::{error_handle::ErrorUtils, option_handle::OptionUtils, Timer};
+use std::sync::Arc;
+use utils::{option_handle::OptionUtils, Timer};
 
 use crate::{
-    behaviour::ConnectionHandler,
-    internal::{cross_handler_gate::CrossHandlerGateIplm, CrossHandlerEvent},
-    plane::NetworkPlaneInternalEvent,
+    behaviour::{ConnectionContext, ConnectionHandler, ConnectionHandlerAction},
     transport::{ConnectionEvent, ConnectionReceiver, ConnectionSender},
-    ConnectionAgent,
 };
 
-fn process_conn_msg<BE, HE>(
-    event: ConnectionEvent,
-    handlers: &mut [Option<(Box<dyn ConnectionHandler<BE, HE>>, ConnectionAgent<BE, HE>)>],
-    _sender: &Arc<dyn ConnectionSender>,
-    receiver: &Box<dyn ConnectionReceiver + Send>,
-    router: &Arc<dyn RouterTable>,
-    cross_gate: &Arc<RwLock<CrossHandlerGateIplm<BE, HE>>>,
-) where
-    HE: Send + Sync + 'static,
-    BE: Send + Sync + 'static,
-{
-    match &event {
-        ConnectionEvent::Msg(msg) => match router.action_for_incomming(&msg.header.route, msg.header.service_id) {
-            RouteAction::Reject => {}
-            RouteAction::Local => {
-                log::trace!(
-                    "[NetworkPlane] fire handlers on_event network msg for conn ({}, {}) from service {}",
-                    receiver.remote_node_id(),
-                    receiver.conn_id(),
-                    msg.header.service_id
-                );
-                if let Some((handler, conn_agent)) = &mut handlers[msg.header.service_id as usize] {
-                    handler.on_event(conn_agent, event);
-                } else {
-                    debug_assert!(false, "service not found {}", msg.header.service_id);
-                }
-            }
-            RouteAction::Next(conn, node_id) => {
-                log::trace!(
-                    "[NetworkPlane] forward network msg {:?} for conn ({}, {}) to ({}, {}) from service {}, route {:?}",
-                    msg,
-                    receiver.remote_node_id(),
-                    receiver.conn_id(),
-                    conn,
-                    node_id,
-                    msg.header.service_id,
-                    msg.header.route,
-                );
-                let c_gate = cross_gate.read();
-                c_gate.send_to_conn(&conn, msg.clone()).print_none("Should send to conn");
-            }
-        },
-        ConnectionEvent::Stats(stats) => {
-            log::debug!("[NetworkPlane] fire handlers on_event network stats for conn ({}, {})", receiver.remote_node_id(), receiver.conn_id());
-            for (handler, conn_agent) in handlers.iter_mut().flatten() {
-                handler.on_event(conn_agent, ConnectionEvent::Stats(stats.clone()));
-            }
-        }
-    }
-}
+use super::{bus::HandleEvent, bus::PlaneBus, bus_impl::PlaneBusImpl};
 
 pub struct PlaneSingleConn<BE, HE> {
-    pub(crate) handlers: Vec<Option<(Box<dyn ConnectionHandler<BE, HE>>, ConnectionAgent<BE, HE>)>>,
+    pub(crate) node_id: NodeId,
     pub(crate) sender: Arc<dyn ConnectionSender>,
     pub(crate) receiver: Box<dyn ConnectionReceiver + Send>,
     pub(crate) tick_ms: u64,
+    pub(crate) tick_interval: async_std::stream::Interval,
     pub(crate) timer: Arc<dyn Timer>,
-    pub(crate) conn_internal_rx: Receiver<(u8, CrossHandlerEvent<HE>)>,
-    pub(crate) internal_tx: Sender<NetworkPlaneInternalEvent<BE>>,
-    pub(crate) outgoing: bool,
+    pub(crate) bus_rx: Receiver<(u8, HandleEvent<HE>)>,
     pub(crate) router: Arc<dyn RouterTable>,
-    pub(crate) cross_gate: Arc<RwLock<CrossHandlerGateIplm<BE, HE>>>,
+    pub(crate) bus: Arc<PlaneBusImpl<BE, HE>>,
+    pub(crate) internal: PlaneSingleConnInternal<BE, HE>,
 }
 
 impl<BE, HE> PlaneSingleConn<BE, HE>
@@ -82,75 +30,171 @@ where
     BE: Send + Sync + 'static,
     HE: Send + Sync + 'static,
 {
-    pub async fn run(&mut self) {
-        log::info!("[NetworkPlane] fire handlers on_opened ({}, {})", self.receiver.remote_node_id(), self.receiver.conn_id());
+    pub fn start(&mut self) {
+        self.internal.on_open(self.timer.now_ms());
+        self.pop_actions();
+    }
 
-        for (handler, conn_agent) in self.handlers.iter_mut().flatten() {
-            handler.on_opened(conn_agent);
-        }
-
-        let mut tick_interval = async_std::stream::interval(Duration::from_millis(self.tick_ms));
-        loop {
-            select! {
-                _ = tick_interval.next().fuse() => {
-                    let ts_ms = self.timer.now_ms();
-                    for (handler, conn_agent) in self.handlers.iter_mut().flatten() {
-                        handler.on_tick(conn_agent, ts_ms, self.tick_ms);
+    pub async fn recv(&mut self) -> Result<(), ()> {
+        let res = select! {
+            _ = self.tick_interval.next().fuse() => {
+                self.internal.on_tick(self.timer.now_ms(), self.tick_ms);
+                Ok(())
+            }
+            e = self.bus_rx.recv().fuse() => {
+                match e {
+                    Ok((service_id, event)) => {
+                        self.internal.on_bus_event(self.timer.now_ms(), service_id, event);
+                        Ok(())
                     }
-                }
-                e = self.conn_internal_rx.recv().fuse() => {
-                    match e {
-                        Ok((service_id, event)) => match event {
-                            CrossHandlerEvent::FromBehavior(e) => {
-                                log::debug!("[NetworkPlane] fire handlers on_behavior_event for conn ({}, {}) from service {}", self.receiver.remote_node_id(), self.receiver.conn_id(), service_id);
-                                if let Some((handler, conn_agent)) = &mut self.handlers[service_id as usize] {
-                                    handler.on_behavior_event(conn_agent, e);
-                                } else {
-                                    debug_assert!(false, "service not found {}", service_id);
-                                }
-                            },
-                            CrossHandlerEvent::FromHandler(node, conn, e) => {
-                                log::debug!("[NetworkPlane] fire handlers on_other_handler_event for conn ({}, {}) from service {}", self.receiver.remote_node_id(), self.receiver.conn_id(), service_id);
-                                if let Some((handler, conn_agent)) = &mut self.handlers[service_id as usize] {
-                                    handler.on_other_handler_event(conn_agent, node, conn, e);
-                                } else {
-                                    debug_assert!(false, "service not found {}", service_id);
-                                }
-                            }
-                        }
-                        Err(_) => {
-                            break;
-                        }
-                    }
-                }
-                e = self.receiver.poll().fuse() => match e {
-                    Ok(event) => {
-                        process_conn_msg(event, &mut self.handlers, &self.sender, &self.receiver, &self.router, &self.cross_gate);
-                    }
-                    Err(err) => {
-                        log::warn!("[NetworkPlane] connection ({}, {}) error {:?}", self.receiver.remote_node_id(), self.receiver.conn_id(), err);
-                        break;
+                    Err(_) => {
+                        Err(())
                     }
                 }
             }
-        }
-        log::info!("[NetworkPlane] fire handlers on_closed ({}, {})", self.receiver.remote_node_id(), self.receiver.conn_id());
-        self.cross_gate.write().remove_conn(self.sender.remote_node_id(), self.sender.conn_id());
+            e = self.receiver.poll().fuse() => match e {
+                Ok(event) => match event {
+                    ConnectionEvent::Msg(msg) => match self.router.action_for_incomming(&msg.header.route, msg.header.service_id) {
+                        RouteAction::Reject => {
+                            Ok(())
+                        }
+                        RouteAction::Local => {
+                            log::trace!(
+                                "[PlaneSingleConn {}] fire handlers on_event network msg for conn ({}, {}) from service {}",
+                                self.node_id,
+                                self.receiver.remote_node_id(),
+                                self.receiver.conn_id(),
+                                msg.header.service_id
+                            );
+                            self.internal.on_event(self.timer.now_ms(), Some(msg.header.service_id), ConnectionEvent::Msg(msg));
+                            Ok(())
+                        }
+                        RouteAction::Next(conn, node_id) => {
+                            log::trace!(
+                                "[PlaneSingleConn {}] forward network msg {:?} for conn ({}, {}) to ({}, {}) from service {}, route {:?}",
+                                self.node_id,
+                                msg,
+                                self.receiver.remote_node_id(),
+                                self.receiver.conn_id(),
+                                conn,
+                                node_id,
+                                msg.header.service_id,
+                                msg.header.route,
+                            );
+                            self.bus.to_net_conn(conn, msg).print_none("Should send to conn");
+                            Ok(())
+                        }
+                    },
+                    ConnectionEvent::Stats(stats) => {
+                        log::debug!("[PlaneSingleConn {}] fire handlers on_event network stats for conn ({}, {})", self.node_id, self.receiver.remote_node_id(), self.receiver.conn_id());
+                        self.internal.on_event(self.timer.now_ms(), None, ConnectionEvent::Stats(stats));
+                        Ok(())
+                    }
+                },
+                Err(_err) => {
+                    Err(())
+                }
+            }
+        };
 
-        for (handler, conn_agent) in self.handlers.iter_mut().flatten() {
-            handler.on_closed(conn_agent);
-        }
+        self.pop_actions();
+        res
+    }
 
-        if self.outgoing {
-            self.internal_tx
-                .send(NetworkPlaneInternalEvent::OutgoingDisconnected(self.sender.clone()))
-                .await
-                .print_error("Should send disconnect event");
+    pub fn end(&mut self) {
+        self.internal.on_close(self.timer.now_ms());
+        self.pop_actions();
+    }
+
+    fn pop_actions(&mut self) {
+        while let Some((service_id, action)) = self.internal.pop_action() {
+            match action {
+                ConnectionHandlerAction::ToBehaviour(event) => {
+                    self.bus.to_behaviour_from_handler(service_id, self.sender.remote_node_id(), self.sender.conn_id(), event);
+                }
+                ConnectionHandlerAction::ToNet(msg) => {
+                    self.sender.send(msg);
+                }
+                ConnectionHandlerAction::ToNetConn(conn, msg) => {
+                    self.bus.to_net_conn(conn, msg);
+                }
+                ConnectionHandlerAction::ToNetNode(node, msg) => {
+                    self.bus.to_net_node(node, msg);
+                }
+                ConnectionHandlerAction::ToHandler(route, event) => {
+                    self.bus
+                        .to_handler(service_id, route, HandleEvent::FromHandler(self.receiver.remote_node_id(), self.receiver.conn_id(), event));
+                }
+                ConnectionHandlerAction::CloseConn() => {
+                    self.sender.close();
+                }
+            }
+        }
+    }
+}
+
+pub(crate) struct PlaneSingleConnInternal<BE, HE> {
+    pub(crate) node_id: NodeId,
+    pub(crate) handlers: Vec<Option<(Box<dyn ConnectionHandler<BE, HE>>, ConnectionContext)>>,
+}
+
+impl<BE, HE> PlaneSingleConnInternal<BE, HE> {
+    pub fn on_open(&mut self, now_ms: u64) {
+        for (handler, context) in self.handlers.iter_mut().flatten() {
+            handler.on_opened(context, now_ms);
+        }
+    }
+
+    pub fn on_tick(&mut self, now_ms: u64, interval_ms: u64) {
+        for (handler, context) in self.handlers.iter_mut().flatten() {
+            handler.on_tick(context, now_ms, interval_ms);
+        }
+    }
+
+    pub fn on_event(&mut self, now_ms: u64, service_id: Option<u8>, event: ConnectionEvent) {
+        if let Some(service_id) = service_id {
+            if let Some((handler, ctx)) = self.handlers[service_id as usize].as_mut() {
+                handler.on_event(ctx, now_ms, event);
+            } else {
+                log::warn!("[PlaneSingleConnInternal {}] service {} not found", self.node_id, service_id);
+            }
         } else {
-            self.internal_tx
-                .send(NetworkPlaneInternalEvent::IncomingDisconnected(self.sender.clone()))
-                .await
-                .print_error("Should send disconnect event");
+            for (handler, context) in self.handlers.iter_mut().flatten() {
+                handler.on_event(context, now_ms, event.clone());
+            }
         }
+    }
+
+    pub fn on_bus_event(&mut self, now_ms: u64, service_id: u8, event: HandleEvent<HE>) {
+        if let Some((handler, context)) = self.handlers[service_id as usize].as_mut() {
+            match event {
+                HandleEvent::Awake => {
+                    handler.on_awake(context, now_ms);
+                }
+                HandleEvent::FromBehavior(e) => {
+                    handler.on_behavior_event(context, now_ms, e);
+                }
+                HandleEvent::FromHandler(node, conn, e) => {
+                    handler.on_other_handler_event(context, now_ms, node, conn, e);
+                }
+            }
+        } else {
+            log::warn!("[PlaneSingleConnInternal {}] service {} not found", self.node_id, service_id);
+        }
+    }
+
+    pub fn on_close(&mut self, now_ms: u64) {
+        for (handler, context) in self.handlers.iter_mut().flatten() {
+            handler.on_closed(context, now_ms);
+        }
+    }
+
+    pub fn pop_action(&mut self) -> Option<(u8, ConnectionHandlerAction<BE, HE>)> {
+        for (handler, context) in self.handlers.iter_mut().flatten() {
+            if let Some(action) = handler.pop_action() {
+                return Some((context.service_id, action));
+            }
+        }
+        None
     }
 }

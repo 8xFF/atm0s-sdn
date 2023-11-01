@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_std::channel::Sender;
 use parking_lot::RwLock;
-use utils::error_handle::ErrorUtils;
+use utils::{error_handle::ErrorUtils, Timer};
 
 use crate::{KeyId, KeySource, KeyVersion, SubKeyId, ValueType};
 
@@ -22,20 +22,22 @@ pub struct KeyValueSdk {
     hashmap_local: Arc<RwLock<HashmapLocalStorage>>,
     simple_publisher: Arc<pub_sub::PublisherManager<u64, (KeyId, Option<ValueType>, KeyVersion, KeySource)>>,
     hashmap_publisher: Arc<pub_sub::PublisherManager<u64, (KeyId, SubKeyId, Option<ValueType>, KeyVersion, KeySource)>>,
+    timer: Arc<dyn Timer>,
 }
 
 impl KeyValueSdk {
-    pub fn new(simple_local: Arc<RwLock<SimpleLocalStorage>>, hashmap_local: Arc<RwLock<HashmapLocalStorage>>) -> Self {
+    pub fn new(simple_local: Arc<RwLock<SimpleLocalStorage>>, hashmap_local: Arc<RwLock<HashmapLocalStorage>>, timer: Arc<dyn Timer>) -> Self {
         Self {
             simple_local,
             hashmap_local,
             simple_publisher: Arc::new(pub_sub::PublisherManager::new()),
             hashmap_publisher: Arc::new(pub_sub::PublisherManager::new()),
+            timer,
         }
     }
 
     pub fn set(&self, key: KeyId, value: Vec<u8>, ex: Option<u64>) {
-        self.simple_local.write().set(key, value, ex);
+        self.simple_local.write().set(self.timer.now_ms(), key, value, ex);
     }
 
     pub async fn get(&self, key: KeyId, timeout_ms: u64) -> Result<Option<(ValueType, KeyVersion, KeySource)>, SimpleKeyValueGetError> {
@@ -43,7 +45,7 @@ impl KeyValueSdk {
         let handler = move |res: Result<Option<(ValueType, KeyVersion, KeySource)>, SimpleKeyValueGetError>| {
             tx.try_send(res).print_error("Should send result");
         };
-        self.simple_local.write().get(key, Box::new(handler), timeout_ms);
+        self.simple_local.write().get(self.timer.now_ms(), key, Box::new(handler), timeout_ms);
         rx.recv().await.unwrap_or(Err(SimpleKeyValueGetError::Timeout))
     }
 
@@ -74,7 +76,7 @@ impl KeyValueSdk {
     }
 
     pub fn hset(&self, key: KeyId, sub_key: SubKeyId, value: Vec<u8>, ex: Option<u64>) {
-        self.hashmap_local.write().set(key, sub_key, value, ex);
+        self.hashmap_local.write().set(self.timer.now_ms(), key, sub_key, value, ex);
     }
 
     pub async fn hget(&self, key: KeyId, timeout_ms: u64) -> Result<Option<Vec<(SubKeyId, ValueType, KeyVersion, KeySource)>>, HashmapKeyValueGetError> {
@@ -82,7 +84,7 @@ impl KeyValueSdk {
         let handler = move |res: Result<Option<Vec<(SubKeyId, ValueType, KeyVersion, KeySource)>>, HashmapKeyValueGetError>| {
             tx.try_send(res).print_error("Should send result");
         };
-        self.hashmap_local.write().get(key, Box::new(handler), timeout_ms);
+        self.hashmap_local.write().get(self.timer.now_ms(), key, Box::new(handler), timeout_ms);
         rx.recv().await.unwrap_or(Err(HashmapKeyValueGetError::Timeout))
     }
 

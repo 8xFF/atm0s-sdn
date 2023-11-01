@@ -21,12 +21,12 @@ fn create_reliable(msg: Msg) -> TransportMsg {
 
 pub async fn simple_network<T: Transport>(mut tran1: T, node1_addr: NodeAddr, mut tran2: T, node2_addr: NodeAddr) {
     let connector1 = tran1.connector();
-    let conn_id = connector1.connect_to(2, node2_addr.clone()).unwrap().conn_id;
+    connector1.connect_to(1111, 2, node2_addr.clone()).unwrap();
 
     match tran1.recv().await.unwrap() {
-        TransportEvent::OutgoingRequest(node, conn, acceptor) => {
+        TransportEvent::OutgoingRequest(node, _conn, acceptor, local_uuid) => {
             assert_eq!(node, 2);
-            assert_eq!(conn, conn_id);
+            assert_eq!(local_uuid, 1111);
             acceptor.accept();
             log::info!("on outgoing request");
         }
@@ -58,10 +58,10 @@ pub async fn simple_network<T: Transport>(mut tran1: T, node1_addr: NodeAddr, mu
     };
 
     let (tran1_sender, mut tran1_recv) = match tran1.recv().await.unwrap() {
-        TransportEvent::Outgoing(sender, recv) => {
+        TransportEvent::Outgoing(sender, recv, local_uuid) => {
             assert_eq!(sender.remote_node_id(), 2);
             assert_eq!(sender.remote_addr(), node2_addr);
-            assert_eq!(sender.conn_id(), conn_id);
+            assert_eq!(local_uuid, 1111);
             (sender, recv)
         }
         _ => {
@@ -97,10 +97,11 @@ pub async fn simple_network<T: Transport>(mut tran1: T, node1_addr: NodeAddr, mu
 
 pub async fn simple_network_connect_addr_not_found<T: Transport>(mut tran1: T, dest: NodeAddr) {
     let connector1 = tran1.connector();
-    let _conn_id = connector1.connect_to(2, dest).unwrap().conn_id;
+    connector1.connect_to(1111, 2, dest).unwrap();
 
     match tran1.recv().await.unwrap() {
-        TransportEvent::OutgoingRequest(_node, _conn, acceptor) => {
+        TransportEvent::OutgoingRequest(_node, _conn, acceptor, local_uuid) => {
+            assert_eq!(local_uuid, 1111);
             acceptor.accept();
         }
         _ => {
@@ -120,7 +121,7 @@ pub async fn simple_network_connect_addr_not_found<T: Transport>(mut tran1: T, d
 
 pub async fn simple_network_connect_wrong_node<T: Transport + Send + 'static>(mut tran1: T, _node1_addr: NodeAddr, mut tran2: T, node2_addr: NodeAddr) {
     let connector1 = tran1.connector();
-    let _conn_id = connector1.connect_to(3, node2_addr.clone()).unwrap().conn_id;
+    connector1.connect_to(1111, 3, node2_addr.clone()).unwrap();
 
     let join = async_std::task::spawn(async move {
         loop {
@@ -137,7 +138,8 @@ pub async fn simple_network_connect_wrong_node<T: Transport + Send + 'static>(mu
     });
 
     match tran1.recv().await.unwrap() {
-        TransportEvent::OutgoingRequest(_node, _conn, acceptor) => {
+        TransportEvent::OutgoingRequest(_node, _conn, acceptor, local_uuid) => {
+            assert_eq!(local_uuid, 1111);
             acceptor.accept();
         }
         _ => {

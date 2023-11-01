@@ -1,36 +1,30 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use bluesea_identity::ConnId;
-use network::{msg::TransportMsg, ConnectionAgent};
+use network::{msg::TransportMsg, transport::ConnectionSender};
 
-use crate::msg::{PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent};
-
-pub struct RemoteRelay<BE, HE> {
-    remotes: HashMap<ConnId, ConnectionAgent<BE, HE>>,
+pub struct RemoteRelay {
+    remotes: HashMap<ConnId, Arc<dyn ConnectionSender>>,
 }
 
-impl<BE, HE> RemoteRelay<BE, HE>
-where
-    BE: From<PubsubServiceBehaviourEvent> + TryInto<PubsubServiceBehaviourEvent> + Send + Sync + 'static,
-    HE: From<PubsubServiceHandlerEvent> + TryInto<PubsubServiceHandlerEvent> + Send + Sync + 'static,
-{
+impl RemoteRelay {
     pub fn new() -> Self {
         Self { remotes: HashMap::new() }
     }
 
-    pub fn on_connection_opened(&mut self, agent: &ConnectionAgent<BE, HE>) {
-        self.remotes.insert(agent.conn_id(), agent.clone());
+    pub fn on_connection_opened(&mut self, conn_id: ConnId, sender: Arc<dyn ConnectionSender>) {
+        self.remotes.insert(conn_id, sender);
     }
 
-    pub fn on_connection_closed(&mut self, agent: &ConnectionAgent<BE, HE>) {
-        self.remotes.remove(&agent.conn_id());
+    pub fn on_connection_closed(&mut self, conn_id: ConnId) {
+        self.remotes.remove(&conn_id);
     }
 
     pub fn relay(&self, remotes: &[ConnId], msg: &TransportMsg) {
         for remote in remotes {
-            if let Some(agent) = self.remotes.get(remote) {
+            if let Some(sender) = self.remotes.get(remote) {
                 log::trace!("[RemoteRelay] relay to remote {}", remote);
-                agent.send_net(msg.clone());
+                sender.send(msg.clone());
             }
         }
     }

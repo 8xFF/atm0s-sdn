@@ -1,6 +1,6 @@
 use crate::earth::VnetEarth;
 use bluesea_identity::Protocol;
-use network::transport::{OutgoingConnectionError, TransportConnectingOutgoing, TransportConnector};
+use network::transport::{OutgoingConnectionError, TransportConnector, TransportOutgoingLocalUuid};
 use std::sync::Arc;
 
 pub struct VnetConnector {
@@ -9,11 +9,11 @@ pub struct VnetConnector {
 }
 
 impl TransportConnector for VnetConnector {
-    fn connect_to(&self, node_id: bluesea_identity::NodeId, addr: bluesea_identity::NodeAddr) -> Result<TransportConnectingOutgoing, OutgoingConnectionError> {
+    fn connect_to(&self, local_uuid: TransportOutgoingLocalUuid, node_id: bluesea_identity::NodeId, addr: bluesea_identity::NodeAddr) -> Result<(), OutgoingConnectionError> {
         for protocol in &addr {
             if let Protocol::Memory(port) = protocol {
-                if let Some(conn_id) = self.earth.create_outgoing(self.port, node_id, port) {
-                    return Ok(TransportConnectingOutgoing { conn_id });
+                if let Some(_conn_id) = self.earth.create_outgoing(local_uuid, self.port, node_id, port) {
+                    return Ok(());
                 } else {
                     return Err(OutgoingConnectionError::DestinationNotFound);
                 }

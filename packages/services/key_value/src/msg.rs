@@ -1,10 +1,10 @@
 use crate::{KeyId, KeySource, KeyVersion, ReqId, SubKeyId, ValueType};
-use network::msg::MsgHeader;
+use bluesea_identity::NodeId;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum KeyValueBehaviorEvent {
-    FromNode(MsgHeader, KeyValueMsg),
+    FromNode(NodeId, KeyValueMsg),
     Awake,
 }
 

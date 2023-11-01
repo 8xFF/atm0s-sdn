@@ -2,15 +2,12 @@ use std::{fmt::Display, sync::Arc};
 
 use bluesea_identity::{ConnId, NodeId};
 use bytes::Bytes;
-use network::msg::TransportMsg;
+use network::{msg::TransportMsg, transport::ConnectionSender};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use utils::{awaker::Awaker, SystemTimer};
+use utils::{awaker::Awaker, Timer};
 
-use crate::{
-    msg::{PubsubRemoteEvent, PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent},
-    PubsubSdk,
-};
+use crate::{msg::PubsubRemoteEvent, PubsubSdk};
 
 use self::{
     feedback::FeedbackConsumerId,
@@ -53,14 +50,14 @@ impl ChannelIdentify {
     }
 }
 
-pub struct PubsubRelay<BE, HE> {
+pub struct PubsubRelay {
     logic: Arc<RwLock<PubsubRelayLogic>>,
-    remote: Arc<RwLock<RemoteRelay<BE, HE>>>,
+    remote: Arc<RwLock<RemoteRelay>>,
     local: Arc<RwLock<LocalRelay>>,
     source_binding: Arc<RwLock<SourceBinding>>,
 }
 
-impl<BE, HE> Clone for PubsubRelay<BE, HE> {
+impl Clone for PubsubRelay {
     fn clone(&self) -> Self {
         Self {
             logic: self.logic.clone(),
@@ -71,32 +68,34 @@ impl<BE, HE> Clone for PubsubRelay<BE, HE> {
     }
 }
 
-impl<BE, HE> PubsubRelay<BE, HE>
-where
-    BE: From<PubsubServiceBehaviourEvent> + TryInto<PubsubServiceBehaviourEvent> + Send + Sync + 'static,
-    HE: From<PubsubServiceHandlerEvent> + TryInto<PubsubServiceHandlerEvent> + Send + Sync + 'static,
-{
-    pub fn new(node_id: NodeId, awaker: Arc<dyn Awaker>) -> (Self, PubsubSdk<BE, HE>) {
+impl PubsubRelay {
+    pub fn new(node_id: NodeId, timer: Arc<dyn Timer>) -> (Self, PubsubSdk) {
         let s = Self {
-            logic: Arc::new(RwLock::new(PubsubRelayLogic::new(node_id, Arc::new(SystemTimer()), awaker.clone()))),
+            logic: Arc::new(RwLock::new(PubsubRelayLogic::new(node_id))),
             remote: Arc::new(RwLock::new(RemoteRelay::new())),
-            local: Arc::new(RwLock::new(LocalRelay::new(awaker.clone()))),
-            source_binding: Arc::new(RwLock::new(SourceBinding::new(awaker))),
+            local: Arc::new(RwLock::new(LocalRelay::new())),
+            source_binding: Arc::new(RwLock::new(SourceBinding::new())),
         };
-        let sdk = PubsubSdk::new(node_id, s.logic.clone(), s.remote.clone(), s.local.clone(), s.source_binding.clone());
+        let sdk = PubsubSdk::new(node_id, s.logic.clone(), s.remote.clone(), s.local.clone(), s.source_binding.clone(), timer);
         (s, sdk)
     }
 
-    pub fn on_connection_opened(&self, agent: &network::ConnectionAgent<BE, HE>) {
-        self.remote.write().on_connection_opened(agent);
+    pub fn set_awaker(&self, awaker: Arc<dyn Awaker>) {
+        self.logic.write().set_awaker(awaker.clone());
+        self.local.write().set_awaker(awaker.clone());
+        self.source_binding.write().set_awaker(awaker);
     }
 
-    pub fn on_connection_closed(&self, agent: &network::ConnectionAgent<BE, HE>) {
-        self.remote.write().on_connection_closed(agent);
+    pub fn on_connection_opened(&self, conn_id: ConnId, sender: Arc<dyn ConnectionSender>) {
+        self.remote.write().on_connection_opened(conn_id, sender);
     }
 
-    pub fn tick(&self) {
-        let local_fbs = self.logic.write().tick();
+    pub fn on_connection_closed(&self, conn_id: ConnId) {
+        self.remote.write().on_connection_closed(conn_id);
+    }
+
+    pub fn tick(&self, now_ms: u64) {
+        let local_fbs = self.logic.write().tick(now_ms);
         for fb in local_fbs {
             self.local.read().feedback(fb.channel.uuid(), fb);
         }
@@ -120,12 +119,12 @@ where
         }
     }
 
-    pub fn on_event(&self, from: NodeId, conn: ConnId, event: PubsubRemoteEvent) {
-        self.logic.write().on_event(from, conn, event);
+    pub fn on_event(&self, now_ms: u64, from: NodeId, conn: ConnId, event: PubsubRemoteEvent) {
+        self.logic.write().on_event(now_ms, from, conn, event);
     }
 
-    pub fn on_feedback(&self, channel: ChannelIdentify, _from: NodeId, conn: ConnId, fb: feedback::Feedback) {
-        if let Some(local_fb) = self.logic.write().on_feedback(channel, FeedbackConsumerId::Remote(conn), fb) {
+    pub fn on_feedback(&self, now_ms: u64, channel: ChannelIdentify, _from: NodeId, conn: ConnId, fb: feedback::Feedback) {
+        if let Some(local_fb) = self.logic.write().on_feedback(now_ms, channel, FeedbackConsumerId::Remote(conn), fb) {
             self.local.read().feedback(channel.uuid(), local_fb);
         }
     }

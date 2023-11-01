@@ -80,16 +80,16 @@ async fn main() {
 
     let mut plan_cfg = NetworkPlaneConfig {
         router: Arc::new(router),
-        local_node_id: args.node_id,
+        node_id: args.node_id,
         tick_ms: 1000,
-        behavior: vec![Box::new(manual), Box::new(spreads_layer_router), Box::new(key_value)],
+        behaviors: vec![Box::new(manual), Box::new(spreads_layer_router), Box::new(key_value)],
         transport: Box::new(transport),
         timer,
     };
 
     if args.tun_tap {
         let tun_tap = tun_tap::TunTapBehavior::default();
-        plan_cfg.behavior.push(Box::new(tun_tap));
+        plan_cfg.behaviors.push(Box::new(tun_tap));
     }
 
     let mut plane = NetworkPlane::<NodeBehaviorEvent, NodeHandleEvent>::new(plan_cfg);

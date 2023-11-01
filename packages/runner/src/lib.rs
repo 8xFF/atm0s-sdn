@@ -5,10 +5,16 @@ pub use layers_spread_router::SharedRouter;
 pub use layers_spread_router_sync::{LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent, LayersSpreadRouterSyncHandlerEvent};
 pub use manual_discovery::{ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent};
 pub use network::plane::{NetworkPlane, NetworkPlaneConfig};
-pub use network::{convert_enum, BehaviorAgent, ConnectionAgent, CrossHandlerRoute};
+pub use network::{
+    behaviour::{BehaviorContext, ConnectionContext},
+    convert_enum,
+};
 pub use pub_sub::{
     ChannelIdentify, ChannelSourceHashmapReal, ChannelUuid, Consumer, ConsumerRaw, ConsumerSingle, Feedback, FeedbackType, LocalPubId, LocalSubId, NumberInfo, Publisher, PublisherRaw, PubsubSdk,
     PubsubServiceBehaviour, PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent,
 };
 pub use transport_udp::UdpTransport;
-pub use utils::{SystemTimer, Timer};
+pub use utils::{
+    awaker::{Awaker, MockAwaker},
+    SystemTimer, Timer,
+};

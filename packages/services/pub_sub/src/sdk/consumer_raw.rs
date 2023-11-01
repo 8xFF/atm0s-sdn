@@ -3,6 +3,7 @@ use std::sync::Arc;
 use bluesea_identity::NodeId;
 use bytes::Bytes;
 use parking_lot::RwLock;
+use utils::Timer;
 
 use crate::relay::{
     feedback::{Feedback, FeedbackConsumerId, FeedbackType},
@@ -18,6 +19,7 @@ pub struct ConsumerRaw {
     logic: Arc<RwLock<PubsubRelayLogic>>,
     local: Arc<RwLock<LocalRelay>>,
     source_binding: Arc<RwLock<SourceBinding>>,
+    timer: Arc<dyn Timer>,
 }
 
 impl ConsumerRaw {
@@ -28,6 +30,7 @@ impl ConsumerRaw {
         local: Arc<RwLock<LocalRelay>>,
         source_binding: Arc<RwLock<SourceBinding>>,
         tx: async_std::channel::Sender<(LocalSubId, NodeId, ChannelUuid, Bytes)>,
+        timer: Arc<dyn Timer>,
     ) -> Self {
         local.write().on_local_sub(sub_uuid, tx);
         if let Some(sources) = source_binding.write().on_local_sub(channel, sub_uuid) {
@@ -43,6 +46,7 @@ impl ConsumerRaw {
             logic,
             local,
             source_binding,
+            timer,
         }
     }
 
@@ -59,7 +63,7 @@ impl ConsumerRaw {
                 id,
                 feedback_type: feedback_type.clone(),
             };
-            if let Some(local_fb) = self.logic.write().on_feedback(channel, FeedbackConsumerId::Local(self.sub_uuid), fb) {
+            if let Some(local_fb) = self.logic.write().on_feedback(self.timer.now_ms(), channel, FeedbackConsumerId::Local(self.sub_uuid), fb) {
                 self.local.read().feedback(self.channel, local_fb);
             }
         }

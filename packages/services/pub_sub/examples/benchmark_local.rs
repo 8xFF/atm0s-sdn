@@ -35,7 +35,7 @@ enum ImplHandlerEvent {
     Manual(ManualHandlerEvent),
 }
 
-async fn run_node(node_id: NodeId, neighbours: Vec<NodeAddr>) -> (PubsubSdk<ImplBehaviorEvent, ImplHandlerEvent>, NodeAddr) {
+async fn run_node(node_id: NodeId, neighbours: Vec<NodeAddr>) -> (PubsubSdk, NodeAddr) {
     log::info!("Run node {} connect to {:?}", node_id, neighbours);
     let node_addr = Arc::new(NodeAddrBuilder::default());
     node_addr.add_protocol(Protocol::P2p(node_id));
@@ -51,12 +51,12 @@ async fn run_node(node_id: NodeId, neighbours: Vec<NodeAddr>) -> (PubsubSdk<Impl
 
     let router_sync_behaviour = LayersSpreadRouterSyncBehavior::new(router.clone());
     let (kv_behaviour, kv_sdk) = KeyValueBehavior::new(node_id, timer.clone(), 3000);
-    let (pubsub_behavior, pubsub_sdk) = PubsubServiceBehaviour::new(node_id, Box::new(ChannelSourceHashmapReal::new(kv_sdk, node_id)));
+    let (pubsub_behavior, pubsub_sdk) = PubsubServiceBehaviour::new(node_id, Box::new(ChannelSourceHashmapReal::new(kv_sdk, node_id)), timer.clone());
 
     let mut plane = NetworkPlane::<ImplBehaviorEvent, ImplHandlerEvent>::new(NetworkPlaneConfig {
-        local_node_id: node_id,
+        node_id,
         tick_ms: 1000,
-        behavior: vec![Box::new(pubsub_behavior), Box::new(kv_behaviour), Box::new(router_sync_behaviour), Box::new(manual)],
+        behaviors: vec![Box::new(pubsub_behavior), Box::new(kv_behaviour), Box::new(router_sync_behaviour), Box::new(manual)],
         transport,
         timer,
         router: Arc::new(router.clone()),

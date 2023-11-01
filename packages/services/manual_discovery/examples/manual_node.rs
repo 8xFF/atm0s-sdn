@@ -60,9 +60,9 @@ async fn main() {
     });
 
     let mut plane = NetworkPlane::<NodeBehaviorEvent, NodeHandleEvent>::new(NetworkPlaneConfig {
-        local_node_id: args.node_id,
+        node_id: args.node_id,
         tick_ms: 1000,
-        behavior: vec![Box::new(spreads_layer_router), Box::new(manual)],
+        behaviors: vec![Box::new(spreads_layer_router), Box::new(manual)],
         transport: Box::new(transport),
         timer: Arc::new(SystemTimer()),
         router: Arc::new(router),

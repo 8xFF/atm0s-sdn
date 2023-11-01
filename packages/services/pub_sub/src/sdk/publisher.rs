@@ -6,26 +6,21 @@ use network::msg::{MsgHeader, TransportMsg};
 use parking_lot::RwLock;
 
 use crate::{
-    msg::{PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent},
     relay::{feedback::Feedback, local::LocalRelay, logic::PubsubRelayLogic, remote::RemoteRelay, ChannelIdentify, LocalPubId},
     PUBSUB_SERVICE_ID,
 };
 
-pub struct Publisher<BE, HE> {
+pub struct Publisher {
     uuid: LocalPubId,
     channel: ChannelIdentify,
     logic: Arc<RwLock<PubsubRelayLogic>>,
-    remote: Arc<RwLock<RemoteRelay<BE, HE>>>,
+    remote: Arc<RwLock<RemoteRelay>>,
     local: Arc<RwLock<LocalRelay>>,
     fb_rx: async_std::channel::Receiver<Feedback>,
 }
 
-impl<BE, HE> Publisher<BE, HE>
-where
-    BE: From<PubsubServiceBehaviourEvent> + TryInto<PubsubServiceBehaviourEvent> + Send + Sync + 'static,
-    HE: From<PubsubServiceHandlerEvent> + TryInto<PubsubServiceHandlerEvent> + Send + Sync + 'static,
-{
-    pub fn new(uuid: LocalPubId, channel: ChannelIdentify, logic: Arc<RwLock<PubsubRelayLogic>>, remote: Arc<RwLock<RemoteRelay<BE, HE>>>, local: Arc<RwLock<LocalRelay>>) -> Self {
+impl Publisher {
+    pub fn new(uuid: LocalPubId, channel: ChannelIdentify, logic: Arc<RwLock<PubsubRelayLogic>>, remote: Arc<RwLock<RemoteRelay>>, local: Arc<RwLock<LocalRelay>>) -> Self {
         let (tx, rx) = async_std::channel::bounded(100);
         local.write().on_local_pub(channel.uuid(), uuid, tx);
 
@@ -61,7 +56,7 @@ where
     }
 }
 
-impl<BE, HE> Drop for Publisher<BE, HE> {
+impl Drop for Publisher {
     fn drop(&mut self) {
         self.local.write().on_local_unpub(self.channel.uuid(), self.uuid);
     }
