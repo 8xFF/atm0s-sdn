@@ -38,7 +38,7 @@ mod tests {
         let mut tran2 = VnetTransport::new(vnet.clone(), 2, 2, NodeAddr::from(Protocol::Memory(2)));
 
         let connector1 = tran1.connector();
-        let conn_id = connector1.connect_to(2, NodeAddr::from(Protocol::Memory(2))).unwrap().conn_id;
+        connector1.connect_to(11111, 2, NodeAddr::from(Protocol::Memory(2))).unwrap();
 
         match tran2.recv().await.unwrap() {
             TransportEvent::IncomingRequest(node, conn, acceptor) => {
@@ -52,9 +52,9 @@ mod tests {
         }
 
         match tran1.recv().await.unwrap() {
-            TransportEvent::OutgoingRequest(node, conn, acceptor) => {
+            TransportEvent::OutgoingRequest(node, conn, acceptor, local_uuid) => {
                 assert_eq!(node, 2);
-                assert_eq!(conn, conn_id);
+                assert_eq!(local_uuid, 11111);
                 acceptor.accept();
             }
             _ => {
@@ -75,10 +75,10 @@ mod tests {
         };
 
         let (tran1_sender, mut tran1_recv) = match tran1.recv().await.unwrap() {
-            TransportEvent::Outgoing(sender, recv) => {
+            TransportEvent::Outgoing(sender, recv, local_uuid) => {
                 assert_eq!(sender.remote_node_id(), 2);
                 assert_eq!(sender.remote_addr(), NodeAddr::from(Protocol::Memory(2)));
-                assert_eq!(sender.conn_id(), conn_id);
+                assert_eq!(local_uuid, 11111);
                 (sender, recv)
             }
             _ => {
@@ -130,10 +130,11 @@ mod tests {
 
         let mut tran1 = VnetTransport::new(vnet.clone(), 1, 1, NodeAddr::from(Protocol::Memory(1)));
         let connector1 = tran1.connector();
-        let _conn_id = connector1.connect_to(2, NodeAddr::from(Protocol::Memory(2))).unwrap().conn_id;
+        connector1.connect_to(11111, 2, NodeAddr::from(Protocol::Memory(2))).unwrap();
         match tran1.recv().await.unwrap() {
-            TransportEvent::OutgoingError { err, .. } => {
+            TransportEvent::OutgoingError { err, local_uuid, .. } => {
                 assert_eq!(err, OutgoingConnectionError::DestinationNotFound);
+                assert_eq!(local_uuid, 11111);
             }
             _ => {
                 panic!("Need OutgoingError")
@@ -148,10 +149,11 @@ mod tests {
         let mut tran1 = VnetTransport::new(vnet.clone(), 1, 1, NodeAddr::from(Protocol::Memory(1)));
         let mut _tran2 = VnetTransport::new(vnet.clone(), 2, 2, NodeAddr::from(Protocol::Memory(2)));
         let connector1 = tran1.connector();
-        let _conn_id = connector1.connect_to(3, NodeAddr::from(Protocol::Memory(2))).unwrap().conn_id;
+        connector1.connect_to(11111, 3, NodeAddr::from(Protocol::Memory(2))).unwrap();
         match tran1.recv().await.unwrap() {
-            TransportEvent::OutgoingError { err, .. } => {
+            TransportEvent::OutgoingError { err, local_uuid, .. } => {
                 assert_eq!(err, OutgoingConnectionError::AuthenticationError);
+                assert_eq!(local_uuid, 11111);
             }
             _ => {
                 panic!("Need OutgoingError")

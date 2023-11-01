@@ -6,7 +6,7 @@ use std::{
 
 use async_std::channel::Sender;
 use bluesea_identity::{ConnId, NodeAddr, NodeAddrBuilder, NodeId, Protocol};
-use network::transport::{AsyncConnectionAcceptor, ConnectionRejectReason, OutgoingConnectionError, TransportConnectingOutgoing, TransportConnector, TransportEvent};
+use network::transport::{AsyncConnectionAcceptor, ConnectionRejectReason, OutgoingConnectionError, TransportConnector, TransportEvent, TransportOutgoingLocalUuid};
 use utils::{error_handle::ErrorUtils, Timer};
 
 use crate::{
@@ -67,7 +67,7 @@ impl UdpConnector {
 }
 
 impl TransportConnector for UdpConnector {
-    fn connect_to(&self, node_id: NodeId, dest: NodeAddr) -> Result<TransportConnectingOutgoing, OutgoingConnectionError> {
+    fn connect_to(&self, local_uuid: TransportOutgoingLocalUuid, node_id: NodeId, dest: NodeAddr) -> Result<(), OutgoingConnectionError> {
         let remote_addr = Self::multiaddr_to_socketaddr(dest.clone()).map_err(|_| OutgoingConnectionError::UnsupportedProtocol)?;
         let conn_id_uuid = self.conn_id_seed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let conn_id = ConnId::from_out(UDP_PROTOCOL_ID, conn_id_uuid);
@@ -77,11 +77,12 @@ impl TransportConnector for UdpConnector {
         let timer = self.timer.clone();
 
         async_std::task::spawn(async move {
-            if let Err(e) = wait_accept(node_id, conn_id, &tx).await {
+            if let Err(e) = wait_accept(local_uuid, node_id, conn_id, &tx).await {
                 log::error!("Outgoing handshake error {:?}", e);
                 tx.send(TransportEvent::OutgoingError {
+                    local_uuid,
                     node_id,
-                    conn_id,
+                    conn_id: Some(conn_id),
                     err: OutgoingConnectionError::BehaviorRejected(ConnectionRejectReason::Custom("LocalReject".to_string())),
                 })
                 .await
@@ -107,13 +108,14 @@ impl TransportConnector for UdpConnector {
                     let close_notify = Arc::new(async_notify::Notify::new());
                     let sender = Arc::new(UdpClientConnectionSender::new(node_id, dest.clone(), conn_id, socket, close_state.clone(), close_notify.clone()));
                     let receiver = Box::new(UdpClientConnectionReceiver::new(async_socket, conn_id, node_id, dest, timer, close_state, close_notify));
-                    tx.send(TransportEvent::Outgoing(sender, receiver)).await.print_error("Should send incoming event");
+                    tx.send(TransportEvent::Outgoing(sender, receiver, local_uuid)).await.print_error("Should send incoming event");
                 }
                 Err(e) => {
                     log::error!("{:?}", e);
                     tx.send(TransportEvent::OutgoingError {
+                        local_uuid,
                         node_id,
-                        conn_id,
+                        conn_id: Some(conn_id),
                         err: match e {
                             OutgoingHandshakeError::SocketError => OutgoingConnectionError::DestinationNotFound,
                             OutgoingHandshakeError::Timeout => OutgoingConnectionError::AuthenticationError,
@@ -129,15 +131,15 @@ impl TransportConnector for UdpConnector {
             }
         });
 
-        Ok(TransportConnectingOutgoing { conn_id })
+        Ok(())
     }
 }
 
-async fn wait_accept(remote_node: NodeId, conn_id: ConnId, internal_tx: &Sender<TransportEvent>) -> Result<(), OutgoingHandshakeError> {
+async fn wait_accept(local_uuid: TransportOutgoingLocalUuid, remote_node: NodeId, conn_id: ConnId, internal_tx: &Sender<TransportEvent>) -> Result<(), OutgoingHandshakeError> {
     log::info!("[UdpConnector] connect to {} send local check", remote_node);
     let (connection_acceptor, recv) = AsyncConnectionAcceptor::new();
     internal_tx
-        .send(TransportEvent::OutgoingRequest(remote_node, conn_id, connection_acceptor))
+        .send(TransportEvent::OutgoingRequest(remote_node, conn_id, connection_acceptor, local_uuid))
         .await
         .map_err(|_| OutgoingHandshakeError::InternalError)?;
     log::info!("[UdpConnector] connect to {} wait local accept", remote_node);

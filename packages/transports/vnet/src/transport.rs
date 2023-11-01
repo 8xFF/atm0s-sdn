@@ -35,10 +35,15 @@ impl Transport for VnetTransport {
         match self.listener.recv().await {
             None => Err(()),
             Some(VnetListenerEvent::IncomingRequest(node, conn, acceptor)) => Ok(TransportEvent::IncomingRequest(node, conn, acceptor)),
-            Some(VnetListenerEvent::OutgoingRequest(node, conn, acceptor)) => Ok(TransportEvent::OutgoingRequest(node, conn, acceptor)),
+            Some(VnetListenerEvent::OutgoingRequest(node, conn, local_uuid, acceptor)) => Ok(TransportEvent::OutgoingRequest(node, conn, acceptor, local_uuid)),
             Some(VnetListenerEvent::Incoming((sender, recv))) => Ok(TransportEvent::Incoming(sender, recv)),
-            Some(VnetListenerEvent::Outgoing((sender, recv))) => Ok(TransportEvent::Outgoing(sender, recv)),
-            Some(VnetListenerEvent::OutgoingErr(node_id, conn_id, err)) => Ok(TransportEvent::OutgoingError { node_id, conn_id, err }),
+            Some(VnetListenerEvent::Outgoing((sender, recv), local_uuid)) => Ok(TransportEvent::Outgoing(sender, recv, local_uuid)),
+            Some(VnetListenerEvent::OutgoingErr(node_id, conn_id, local_uuid, err)) => Ok(TransportEvent::OutgoingError {
+                node_id,
+                conn_id: Some(conn_id),
+                err,
+                local_uuid,
+            }),
         }
     }
 }
