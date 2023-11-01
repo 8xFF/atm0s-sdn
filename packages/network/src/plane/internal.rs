@@ -227,7 +227,7 @@ impl<BE, HE> PlaneInternal<BE, HE> {
 
     fn pop_behaviours_action(&mut self) {
         for (behaviour, context) in self.behaviors.iter_mut().flatten() {
-            if let Some(action) = behaviour.pop_action() {
+            while let Some(action) = behaviour.pop_action() {
                 self.action_queue.push_back(PlaneInternalAction::BehaviorAction(context.service_id, action));
             }
         }
