@@ -1,3 +1,6 @@
+[![Rust](https://github.com/8xFF/decentralized-sdn/actions/workflows/rust.yml/badge.svg)](https://github.com/8xFF/decentralized-sdn/actions/workflows/rust.yml)
+[![codecov](https://codecov.io/gh/8xFF/decentralized-sdn/graph/badge.svg?token=P8W3LUA0EV)](https://codecov.io/gh/8xFF/decentralized-sdn)
+
 # Bluesea SDN v4: Code name: Pacific Ocean
 
 4.0 version be created with main goals:
