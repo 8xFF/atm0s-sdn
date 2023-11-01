@@ -43,7 +43,7 @@ where
         }
     }
 
-    fn process_logic_actions<BE>(&mut self, ctx: &BehaviorContext)
+    fn process_logic_actions<BE>(&mut self, _ctx: &BehaviorContext)
     where
         BE: Send + Sync + 'static,
     {
@@ -101,21 +101,21 @@ where
         self.process_logic_actions::<BE>(ctx);
     }
 
-    fn on_awake(&mut self, ctx: &BehaviorContext, now_ms: u64) {}
+    fn on_awake(&mut self, _ctx: &BehaviorContext, _now_ms: u64) {}
 
-    fn check_incoming_connection(&mut self, _ctx: &BehaviorContext, now_ms: u64, _node: NodeId, _conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
+    fn check_incoming_connection(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node: NodeId, _conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
         Ok(())
     }
 
-    fn check_outgoing_connection(&mut self, _ctx: &BehaviorContext, now_ms: u64, _node: NodeId, _conn_id: ConnId, local_uuid: TransportOutgoingLocalUuid) -> Result<(), ConnectionRejectReason> {
+    fn check_outgoing_connection(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node: NodeId, _conn_id: ConnId, _local_uuid: TransportOutgoingLocalUuid) -> Result<(), ConnectionRejectReason> {
         Ok(())
     }
 
-    fn on_local_msg(&mut self, _ctx: &BehaviorContext, now_ms: u64, _msg: TransportMsg) {
+    fn on_local_msg(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _msg: TransportMsg) {
         panic!("Should not happend");
     }
 
-    fn on_incoming_connection_connected(&mut self, ctx: &BehaviorContext, now_ms: u64, connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
+    fn on_incoming_connection_connected(&mut self, ctx: &BehaviorContext, _now_ms: u64, connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
         self.add_connection_if_need::<BE>(ctx, connection);
         Some(Box::new(DiscoveryConnectionHandler::new()))
     }
@@ -123,36 +123,36 @@ where
     fn on_outgoing_connection_connected(
         &mut self,
         ctx: &BehaviorContext,
-        now_ms: u64,
+        _now_ms: u64,
         connection: Arc<dyn ConnectionSender>,
-        local_uuid: TransportOutgoingLocalUuid,
+        _local_uuid: TransportOutgoingLocalUuid,
     ) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
         self.add_connection_if_need::<BE>(ctx, connection);
         Some(Box::new(DiscoveryConnectionHandler::new()))
     }
 
-    fn on_incoming_connection_disconnected(&mut self, ctx: &BehaviorContext, now_ms: u64, node_id: NodeId, conn_id: ConnId) {
+    fn on_incoming_connection_disconnected(&mut self, ctx: &BehaviorContext, _now_ms: u64, node_id: NodeId, conn_id: ConnId) {
         self.remove_connection_if_need::<BE>(ctx, node_id, conn_id);
     }
 
-    fn on_outgoing_connection_disconnected(&mut self, ctx: &BehaviorContext, now_ms: u64, node_id: NodeId, conn_id: ConnId) {
+    fn on_outgoing_connection_disconnected(&mut self, ctx: &BehaviorContext, _now_ms: u64, node_id: NodeId, conn_id: ConnId) {
         self.remove_connection_if_need::<BE>(ctx, node_id, conn_id);
     }
 
     fn on_outgoing_connection_error(
         &mut self,
         ctx: &BehaviorContext,
-        now_ms: u64,
+        _now_ms: u64,
         node_id: NodeId,
         _connection_id: Option<ConnId>,
-        local_uuid: TransportOutgoingLocalUuid,
+        _local_uuid: TransportOutgoingLocalUuid,
         _err: &OutgoingConnectionError,
     ) {
         self.logic.on_input(Input::OnConnectError(node_id));
         self.process_logic_actions::<BE>(ctx);
     }
 
-    fn on_handler_event(&mut self, ctx: &BehaviorContext, now_ms: u64, node_id: NodeId, _connection_id: ConnId, event: BE) {
+    fn on_handler_event(&mut self, ctx: &BehaviorContext, _now_ms: u64, node_id: NodeId, _connection_id: ConnId, event: BE) {
         match event.try_into() {
             Ok(DiscoveryBehaviorEvent::OnNetworkMessage(msg)) => {
                 self.logic.on_input(Input::OnData(node_id, msg));
@@ -164,9 +164,9 @@ where
         }
     }
 
-    fn on_started(&mut self, _ctx: &BehaviorContext, now_ms: u64) {}
+    fn on_started(&mut self, _ctx: &BehaviorContext, _now_ms: u64) {}
 
-    fn on_stopped(&mut self, _ctx: &BehaviorContext, now_ms: u64) {}
+    fn on_stopped(&mut self, _ctx: &BehaviorContext, _now_ms: u64) {}
 
     fn pop_action(&mut self) -> Option<NetworkBehaviorAction<HE>> {
         None

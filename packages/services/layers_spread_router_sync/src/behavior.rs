@@ -30,7 +30,7 @@ where
         self.router.dump();
     }
 
-    fn on_awake(&mut self, ctx: &BehaviorContext, now_ms: u64) {}
+    fn on_awake(&mut self, _ctx: &BehaviorContext, _now_ms: u64) {}
 
     fn check_incoming_connection(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node: NodeId, _conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
         Ok(())

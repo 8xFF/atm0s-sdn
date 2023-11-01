@@ -51,7 +51,7 @@ where
         self.send_sync(ctx);
     }
 
-    fn on_awake(&mut self, ctx: &ConnectionContext, now_ms: u64) {}
+    fn on_awake(&mut self, _ctx: &ConnectionContext, _now_ms: u64) {}
 
     fn on_event(&mut self, ctx: &ConnectionContext, _now_ms: u64, event: ConnectionEvent) {
         match event {

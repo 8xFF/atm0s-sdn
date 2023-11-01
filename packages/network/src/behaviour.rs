@@ -28,6 +28,7 @@ pub struct ConnectionContext {
 }
 
 impl ConnectionContext {
+    #[allow(unused)]
     pub(crate) fn new(service_id: u8, local_node_id: NodeId, remote_node_id: NodeId, conn_id: ConnId, awaker: Arc<dyn Awaker>) -> Self {
         Self {
             service_id,

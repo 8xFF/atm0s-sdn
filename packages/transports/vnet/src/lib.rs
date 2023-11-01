@@ -52,7 +52,7 @@ mod tests {
         }
 
         match tran1.recv().await.unwrap() {
-            TransportEvent::OutgoingRequest(node, conn, acceptor, local_uuid) => {
+            TransportEvent::OutgoingRequest(node, _conn, acceptor, local_uuid) => {
                 assert_eq!(node, 2);
                 assert_eq!(local_uuid, 11111);
                 acceptor.accept();

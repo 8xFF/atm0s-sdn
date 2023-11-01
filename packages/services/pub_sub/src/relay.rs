@@ -5,10 +5,7 @@ use bytes::Bytes;
 use network::{msg::TransportMsg, transport::ConnectionSender};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use utils::{
-    awaker::{self, Awaker},
-    Timer,
-};
+use utils::{awaker::Awaker, Timer};
 
 use crate::{msg::PubsubRemoteEvent, PubsubSdk};
 
