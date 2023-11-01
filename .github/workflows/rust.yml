@@ -15,32 +15,28 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
-    - name: Pre-install grcov from cache
-      uses: actions-rs/install@v0.1.2
-      with:
-        crate: grcov
-        version: 0.8.18
-        use-tool-cache: true
-    - uses: actions-rs/toolchain@v1
-      with:
-        toolchain: nightly
-        override: true
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
-      env:
-        CARGO_INCREMENTAL: '0'
-        RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Cpanic=abort -Zpanic_abort_tests'
-        RUSTDOCFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Cpanic=abort -Zpanic_abort_tests'
-    - name: Codecov
-      uses: codecov/codecov-action@v4-beta
-      env:
-        CODECOV_TOKEN: ${{ secrets.CODECOV_ORG_TOKEN }}
-      with:
-        # Repository upload token - get it from codecov.io. Required only for private repositories
-        # token: # optional
-        # Specify whether the Codecov output should be verbose
-        verbose: true
-        fail_ci_if_error: true
+      - uses: actions/checkout@v2
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          override: true
+          toolchain: nightly
+          components: llvm-tools-preview
+      - name: Set up cargo cache
+        uses: Swatinem/rust-cache@v2
+      - name: Test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all --no-fail-fast --all-features
+        env:
+          RUSTFLAGS: "-Zinstrument-coverage"
+      - uses: SierraSoftworks/setup-grcov@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          version: latest
+      - run: grcov . --binary-path target/debug/deps/ -s . -t lcov --ignore-not-existing --ignore '../**' --ignore '/*' -o ./lcov.info
+      - uses: codecov/codecov-action@v1
+        with:
+          token: ${{ secrets.CODECOV_ORG_TOKEN }}
+          file: ./lcov.info
