@@ -131,6 +131,10 @@ impl SourceBinding {
         self.channels.get(&channel).map(|x| x.sources.clone()).unwrap_or_default()
     }
 
+    pub fn consumers_for(&self, channel: ChannelUuid) -> Vec<LocalSubId> {
+        self.channels.get(&channel).map(|x| x.subs.clone()).unwrap_or_default()
+    }
+
     pub fn pop_action(&mut self) -> Option<SourceBindingAction> {
         self.actions.pop_front()
     }

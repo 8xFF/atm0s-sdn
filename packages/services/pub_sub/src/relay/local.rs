@@ -83,7 +83,7 @@ impl LocalRelay {
                 log::trace!("[LocalRelay] relay to local {}", uuid);
                 sender.try_send((*uuid, source, channel, data.clone())).print_error("Should send data");
             } else {
-                log::warn!("[LocalRelay] relay to local {} failed", uuid);
+                log::warn!("[LocalRelay] relay channel {} from {} to local {} consumer not found", channel, source, uuid);
             }
         }
     }
