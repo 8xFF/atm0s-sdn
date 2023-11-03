@@ -54,7 +54,7 @@ where
             }
             e = self.receiver.poll().fuse() => match e {
                 Ok(event) => match event {
-                    ConnectionEvent::Msg(msg) => match self.router.action_for_incomming(&msg.header.route, msg.header.service_id) {
+                    ConnectionEvent::Msg(msg) => match self.router.derive_action(&msg.header.route, msg.header.service_id) {
                         RouteAction::Reject => {
                             Ok(())
                         }

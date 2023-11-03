@@ -54,8 +54,11 @@ impl<BE: Send + Sync + 'static, HE: Send + Sync + 'static> Awaker for HandlerAwa
     }
 }
 
+#[derive(Debug, Eq, PartialEq)]
 pub enum NetworkPlaneInternalEvent<BE> {
+    /// Trigger on_awake() hook for the behavior of the given service.
     AwakeBehaviour { service_id: u8 },
+    /// An Event sent from the Handler layer to the Behaviour layer
     ToBehaviourFromHandler { service_id: u8, node_id: NodeId, conn_id: ConnId, event: BE },
     ToBehaviourLocalMsg { service_id: u8, msg: TransportMsg },
     IncomingDisconnected(NodeId, ConnId),
