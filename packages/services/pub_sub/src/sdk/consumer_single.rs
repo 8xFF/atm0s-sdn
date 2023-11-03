@@ -63,3 +63,39 @@ impl Drop for ConsumerSingle {
         self.local.write().on_local_unsub(self.uuid);
     }
 }
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use parking_lot::RwLock;
+    use utils::MockTimer;
+
+    use crate::{
+        relay::{local::LocalRelay, logic::PubsubRelayLogic},
+        ChannelIdentify, ConsumerSingle,
+    };
+
+    #[test]
+    fn correct_create_and_destroy() {
+        let node_id = 1;
+        let channel = 1111;
+        let channel_source = 2;
+
+        let logic = Arc::new(RwLock::new(PubsubRelayLogic::new(node_id)));
+        let local = Arc::new(RwLock::new(LocalRelay::new()));
+        let timer = Arc::new(MockTimer::default());
+        let sub_uuid = 10000;
+        let consumer = ConsumerSingle::new(sub_uuid, ChannelIdentify::new(channel, channel_source), logic, local, 100, timer);
+
+        assert_eq!(
+            consumer.logic.read().relay(ChannelIdentify::new(channel, channel_source)),
+            Some((vec![].as_slice(), vec![sub_uuid].as_slice()))
+        );
+
+        let logic = consumer.logic.clone();
+        drop(consumer);
+
+        assert_eq!(logic.read().relay(ChannelIdentify::new(channel, channel_source)), None);
+    }
+}

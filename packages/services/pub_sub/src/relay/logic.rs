@@ -217,10 +217,10 @@ impl PubsubRelayLogic {
         if let Some(slot) = self.channels.get_mut(&channel) {
             slot.feedback_processor.on_unsub(FeedbackConsumerId::Local(handler));
             if let Some(index) = slot.local_subscribers.iter().position(|&x| x == handler) {
-                log::info!("[PubsubRelayLogic {}] unsub {} event from {} removed from list", self.node_id, channel, handler);
+                log::info!("[PubsubRelayLogic {}] local unsub {} event from {} removed from list", self.node_id, channel, handler);
                 slot.local_subscribers.swap_remove(index);
             } else {
-                log::info!("[PubsubRelayLogic {}] unsub {} event from {} allready removed from list", self.node_id, channel, handler);
+                log::info!("[PubsubRelayLogic {}] local unsub {} event from {} allready removed from list", self.node_id, channel, handler);
             }
 
             if slot.remote_subscribers.len() == 0 && slot.local_subscribers.len() == 0 {
