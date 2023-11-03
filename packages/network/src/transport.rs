@@ -5,6 +5,8 @@ use std::sync::Arc;
 use thiserror::Error;
 use utils::error_handle::ErrorUtils;
 
+#[cfg(test)]
+use mockall::automock;
 pub type TransportOutgoingLocalUuid = u64;
 
 pub enum TransportEvent {
@@ -60,6 +62,7 @@ pub trait ConnectionAcceptor: Send + Sync {
     fn reject(&self, err: ConnectionRejectReason);
 }
 
+#[cfg_attr(any(test, feature = "mock"), automock)]
 pub trait ConnectionSender: Send + Sync {
     fn remote_node_id(&self) -> NodeId;
     fn conn_id(&self) -> ConnId;
