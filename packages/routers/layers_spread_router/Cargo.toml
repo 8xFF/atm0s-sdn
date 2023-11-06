@@ -16,7 +16,7 @@ parking_lot = { workspace = true }
 
 [dev-dependencies]
 env_logger = { workspace = true }
-criterion = { version = "0.3.4" }
+criterion = { version = "0.5.1" }
 rand = { version = "0.8.5" }
 
 [[bench]]
