@@ -1,9 +1,8 @@
 [![Rust](https://github.com/8xFF/decentralized-sdn/actions/workflows/rust.yml/badge.svg)](https://github.com/8xFF/decentralized-sdn/actions/workflows/rust.yml)
 [![codecov](https://codecov.io/gh/8xFF/decentralized-sdn/graph/badge.svg?token=P8W3LUA0EV)](https://codecov.io/gh/8xFF/decentralized-sdn)
 
-# Planet Scale Ultra Low Latency SDN written in Rust
-
-This project is a planet-scale ultra-low latency Software-Defined Networking (SDN) system. It is designed to support applications such as streaming, Internet of Things (IoT), Virtual Private Networks (VPN), Proxies, and more. The goal of this project is to provide a network infrastructure that can deliver high-quality services with minimal latency, similar to what Cloudflare achieves for their network.
+# Global-Scale Ultra-Low Latency Software-Defined Networking powered by Rust
+This project is a global-scale ultra-low latency Software-Defined Networking (SDN) system. It is designed to support applications such as streaming, Internet of Things (IoT), Virtual Private Networks (VPN), Proxies, and more. The goal of this project is to provide a network infrastructure that can deliver high-quality services with minimal latency, similar to what Cloudflare achieves for their network.
 
 ## Features
 
