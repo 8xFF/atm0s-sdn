@@ -1,6 +1,6 @@
 use bluesea_identity::{NodeAddr, NodeAddrBuilder, Protocol};
 use clap::Parser;
-use key_value::{KeyValueBehaviorEvent, KeyValueHandlerEvent};
+use key_value::{KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueSdkEvent};
 use layers_spread_router::SharedRouter;
 use layers_spread_router_sync::{LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent, LayersSpreadRouterSyncHandlerEvent};
 use manual_discovery::{ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent};
@@ -26,6 +26,11 @@ enum NodeHandleEvent {
     LayersSpreadRouterSync(LayersSpreadRouterSyncHandlerEvent),
     TunTap(TunTapHandlerEvent),
     KeyValue(KeyValueHandlerEvent),
+}
+
+#[derive(convert_enum::From, convert_enum::TryInto)]
+enum NodeSdkEvent {
+    KeyValue(KeyValueSdkEvent),
 }
 
 /// Node with manual network builder
@@ -92,7 +97,7 @@ async fn main() {
         plan_cfg.behaviors.push(Box::new(tun_tap));
     }
 
-    let mut plane = NetworkPlane::<NodeBehaviorEvent, NodeHandleEvent>::new(plan_cfg);
+    let mut plane = NetworkPlane::<NodeBehaviorEvent, NodeHandleEvent, NodeSdkEvent>::new(plan_cfg);
 
     plane.started();
 

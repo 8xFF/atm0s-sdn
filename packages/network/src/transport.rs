@@ -62,7 +62,7 @@ pub trait ConnectionAcceptor: Send + Sync {
     fn reject(&self, err: ConnectionRejectReason);
 }
 
-#[cfg_attr(any(test, feature = "mock"), automock)]
+#[cfg_attr(test, automock)]
 pub trait ConnectionSender: Send + Sync {
     fn remote_node_id(&self) -> NodeId;
     fn conn_id(&self) -> ConnId;

@@ -25,14 +25,14 @@ use utils::{error_handle::ErrorUtils, option_handle::OptionUtils};
 
 use crate::{TunTapBehaviorEvent, TunTapHandler, TunTapHandlerEvent, TUNTAP_SERVICE_ID};
 
-pub struct TunTapBehavior<HE> {
+pub struct TunTapBehavior<HE, SE> {
     join: Option<async_std::task::JoinHandle<()>>,
     local_tx: Sender<TransportMsg>,
     local_rx: Option<Receiver<TransportMsg>>,
-    actions: Arc<RwLock<VecDeque<NetworkBehaviorAction<HE>>>>,
+    actions: Arc<RwLock<VecDeque<NetworkBehaviorAction<HE, SE>>>>,
 }
 
-impl<HE> Default for TunTapBehavior<HE> {
+impl<HE, SE> Default for TunTapBehavior<HE, SE> {
     fn default() -> Self {
         let (local_tx, local_rx) = async_std::channel::bounded(1000);
         Self {
@@ -44,20 +44,22 @@ impl<HE> Default for TunTapBehavior<HE> {
     }
 }
 
-impl<BE, HE> NetworkBehavior<BE, HE> for TunTapBehavior<HE>
+impl<BE, HE, SE> NetworkBehavior<BE, HE, SE> for TunTapBehavior<HE, SE>
 where
     BE: From<TunTapBehaviorEvent> + TryInto<TunTapBehaviorEvent> + Send + Sync + 'static,
     HE: From<TunTapHandlerEvent> + TryInto<TunTapHandlerEvent> + Send + Sync + 'static,
+    SE: Send + Sync + 'static,
 {
     fn service_id(&self) -> u8 {
         TUNTAP_SERVICE_ID
     }
 
-    fn pop_action(&mut self) -> Option<NetworkBehaviorAction<HE>> {
+    fn pop_action(&mut self) -> Option<NetworkBehaviorAction<HE, SE>> {
         self.actions.write().pop_front()
     }
 
     fn on_awake(&mut self, _ctx: &BehaviorContext, _now_ms: u64) {}
+    fn on_sdk_msg(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _from_service: u8, _event: SE) {}
 
     fn on_started(&mut self, ctx: &BehaviorContext, _now_ms: u64) {
         if let Some(rx) = self.local_rx.take() {
@@ -203,7 +205,7 @@ where
     fn on_stopped(&mut self, _ctx: &BehaviorContext, _now_ms: u64) {}
 }
 
-impl<HE> Drop for TunTapBehavior<HE> {
+impl<HE, SE> Drop for TunTapBehavior<HE, SE> {
     fn drop(&mut self) {
         if let Some(join) = self.join.take() {
             async_std::task::spawn(async move {

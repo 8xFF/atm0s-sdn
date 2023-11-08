@@ -34,15 +34,15 @@ pub struct ManualBehaviorConf {
     pub timer: Arc<dyn Timer>,
 }
 
-pub struct ManualBehavior<HE> {
+pub struct ManualBehavior<HE, SE> {
     #[allow(unused)]
     node_id: NodeId,
     neighbours: HashMap<NodeId, NodeSlot>,
     timer: Arc<dyn Timer>,
-    queue_action: VecDeque<NetworkBehaviorAction<HE>>,
+    queue_action: VecDeque<NetworkBehaviorAction<HE, SE>>,
 }
 
-impl<HE> ManualBehavior<HE> {
+impl<HE, SE> ManualBehavior<HE, SE> {
     pub fn new(conf: ManualBehaviorConf) -> Self {
         let mut neighbours = HashMap::new();
         for addr in conf.neighbours {
@@ -68,7 +68,7 @@ impl<HE> ManualBehavior<HE> {
     }
 }
 
-impl<BE, HE> NetworkBehavior<BE, HE> for ManualBehavior<HE>
+impl<BE, HE, SE> NetworkBehavior<BE, HE, SE> for ManualBehavior<HE, SE>
 where
     BE: From<ManualBehaviorEvent> + TryInto<ManualBehaviorEvent> + Send + Sync + 'static,
     HE: From<ManualHandlerEvent> + TryInto<ManualHandlerEvent> + Send + Sync + 'static,
@@ -100,6 +100,8 @@ where
     }
 
     fn on_awake(&mut self, _ctx: &BehaviorContext, _now_ms: u64) {}
+
+    fn on_sdk_msg(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _from_service: u8, _event: SE) {}
 
     fn check_incoming_connection(&mut self, _context: &BehaviorContext, _now_ms: u64, _node: NodeId, _conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
         Ok(())
@@ -187,7 +189,7 @@ where
 
     fn on_stopped(&mut self, _context: &BehaviorContext, _now_ms: u64) {}
 
-    fn pop_action(&mut self) -> Option<NetworkBehaviorAction<HE>> {
+    fn pop_action(&mut self) -> Option<NetworkBehaviorAction<HE, SE>> {
         self.queue_action.pop_front()
     }
 }

@@ -17,7 +17,7 @@ impl LayersSpreadRouterSyncBehavior {
     }
 }
 
-impl<BE, HE> NetworkBehavior<BE, HE> for LayersSpreadRouterSyncBehavior
+impl<BE, HE, SE> NetworkBehavior<BE, HE, SE> for LayersSpreadRouterSyncBehavior
 where
     BE: From<LayersSpreadRouterSyncBehaviorEvent> + TryInto<LayersSpreadRouterSyncBehaviorEvent> + Send + Sync + 'static,
     HE: From<LayersSpreadRouterSyncHandlerEvent> + TryInto<LayersSpreadRouterSyncHandlerEvent> + Send + Sync + 'static,
@@ -31,6 +31,7 @@ where
     }
 
     fn on_awake(&mut self, _ctx: &BehaviorContext, _now_ms: u64) {}
+    fn on_sdk_msg(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _from_service: u8, _event: SE) {}
 
     fn check_incoming_connection(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node: NodeId, _conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
         Ok(())
@@ -79,7 +80,7 @@ where
 
     fn on_stopped(&mut self, _ctx: &BehaviorContext, _now_ms: u64) {}
 
-    fn pop_action(&mut self) -> Option<network::behaviour::NetworkBehaviorAction<HE>> {
+    fn pop_action(&mut self) -> Option<network::behaviour::NetworkBehaviorAction<HE, SE>> {
         None
     }
 }

@@ -14,7 +14,7 @@ mod storage;
 pub use behavior::KeyValueBehavior;
 pub use behavior::KeyValueSdk;
 use bluesea_identity::NodeId;
-pub use msg::{KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueMsg};
+pub use msg::{KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueMsg, KeyValueSdkEvent};
 
 #[cfg(test)]
 mod tests {
