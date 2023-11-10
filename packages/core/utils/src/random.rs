@@ -45,3 +45,23 @@ where
         *self.0.lock().unwrap()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_real_random() {
+        let real_random = RealRandom();
+        let random_number: u32 = real_random.random();
+        assert!(random_number > 0);
+    }
+
+    #[test]
+    fn test_mock_random() {
+        let mock_random = MockRandom::default();
+        mock_random.fake(42);
+        let random_number: u32 = mock_random.random();
+        assert_eq!(random_number, 42);
+    }
+}

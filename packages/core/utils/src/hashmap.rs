@@ -119,3 +119,55 @@ where
         Self::from_iter(arr)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_insert_and_get() {
+        let mut map = HashMap::new();
+        map.insert("key1", "value1");
+        map.insert("key2", "value2");
+        assert_eq!(map.get(&"key1"), Some(&"value1"));
+        assert_eq!(map.get(&"key2"), Some(&"value2"));
+    }
+
+    #[test]
+    fn test_remove() {
+        let mut map = HashMap::new();
+        map.insert("key1", "value1");
+        map.insert("key2", "value2");
+        assert_eq!(map.remove(&"key1"), Some("value1"));
+        assert_eq!(map.get(&"key1"), None);
+    }
+
+    #[test]
+    fn test_contains_key() {
+        let mut map = HashMap::new();
+        map.insert("key1", "value1");
+        assert_eq!(map.contains_key(&"key1"), true);
+        assert_eq!(map.contains_key(&"key2"), false);
+    }
+
+    #[test]
+    fn test_len_and_is_empty() {
+        let mut map = HashMap::new();
+        assert_eq!(map.len(), 0);
+        assert_eq!(map.is_empty(), true);
+        map.insert("key1", "value1");
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.is_empty(), false);
+    }
+
+    #[test]
+    fn test_iter() {
+        let mut map = HashMap::new();
+        map.insert("key1", "value1");
+        map.insert("key2", "value2");
+        let mut iter = map.iter();
+        assert_eq!(iter.next(), Some((&"key1", &"value1")));
+        assert_eq!(iter.next(), Some((&"key2", &"value2")));
+        assert_eq!(iter.next(), None);
+    }
+}

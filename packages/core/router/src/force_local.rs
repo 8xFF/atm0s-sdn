@@ -17,3 +17,29 @@ impl RouterTable for ForceLocalRouter {
         RouteAction::Local
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_path_to_node() {
+        let router = ForceLocalRouter();
+        let dest = NodeId::from(1u32);
+        assert_eq!(router.path_to_node(dest), RouteAction::Local);
+    }
+
+    #[test]
+    fn test_path_to_key() {
+        let router = ForceLocalRouter();
+        let key = NodeId::from(2u32);
+        assert_eq!(router.path_to_key(key), RouteAction::Local);
+    }
+
+    #[test]
+    fn test_path_to_service() {
+        let router = ForceLocalRouter();
+        let service_id = 3;
+        assert_eq!(router.path_to_service(service_id), RouteAction::Local);
+    }
+}
