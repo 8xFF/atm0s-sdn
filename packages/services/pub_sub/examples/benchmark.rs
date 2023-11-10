@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use bluesea_identity::{NodeAddr, NodeAddrBuilder, NodeId, Protocol};
 use bytes::Bytes;
-use key_value::{KeyValueBehavior, KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueMsg};
+use key_value::{KeyValueBehavior, KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueMsg, KeyValueSdkEvent};
 use layers_spread_router::SharedRouter;
 use layers_spread_router_sync::{LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent, LayersSpreadRouterSyncHandlerEvent, LayersSpreadRouterSyncMsg};
 use manual_discovery::{ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent, ManualMsg};
@@ -35,6 +35,11 @@ enum ImplHandlerEvent {
     Manual(ManualHandlerEvent),
 }
 
+#[derive(convert_enum::From, convert_enum::TryInto)]
+enum ImplSdkEvent {
+    KeyValue(KeyValueSdkEvent),
+}
+
 async fn run_node(node_id: NodeId, neighbours: Vec<NodeAddr>) -> (PubsubSdk, NodeAddr) {
     log::info!("Run node {} connect to {:?}", node_id, neighbours);
     let node_addr = Arc::new(NodeAddrBuilder::default());
@@ -53,7 +58,7 @@ async fn run_node(node_id: NodeId, neighbours: Vec<NodeAddr>) -> (PubsubSdk, Nod
     let (kv_behaviour, kv_sdk) = KeyValueBehavior::new(node_id, timer.clone(), 3000);
     let (pubsub_behavior, pubsub_sdk) = PubsubServiceBehaviour::new(node_id, Box::new(ChannelSourceHashmapReal::new(kv_sdk, node_id)), timer.clone());
 
-    let mut plane = NetworkPlane::<ImplBehaviorEvent, ImplHandlerEvent>::new(NetworkPlaneConfig {
+    let mut plane = NetworkPlane::<ImplBehaviorEvent, ImplHandlerEvent, ImplSdkEvent>::new(NetworkPlaneConfig {
         node_id,
         tick_ms: 1000,
         behaviors: vec![Box::new(pubsub_behavior), Box::new(kv_behaviour), Box::new(router_sync_behaviour), Box::new(manual)],

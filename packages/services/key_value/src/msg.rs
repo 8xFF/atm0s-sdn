@@ -11,6 +11,12 @@ pub enum KeyValueBehaviorEvent {
 #[derive(Debug, PartialEq, Eq)]
 pub enum KeyValueHandlerEvent {}
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum KeyValueSdkEvent {
+    Local(KeyValueSdkMsg),
+    FromNode(NodeId, KeyValueSdkMsg),
+}
+
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SimpleRemoteEvent {
     /// Set sub key of key
@@ -73,4 +79,12 @@ pub enum KeyValueMsg {
     SimpleLocal(SimpleLocalEvent),
     HashmapRemote(HashmapRemoteEvent),
     HashmapLocal(HashmapLocalEvent),
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum KeyValueSdkMsg {
+    Set(KeyId, ValueType),
+    Del(KeyId),
+    Sub(KeyId),
+    Unsub(KeyId),
 }

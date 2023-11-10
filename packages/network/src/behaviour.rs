@@ -5,6 +5,9 @@ use bluesea_identity::{ConnId, NodeAddr, NodeId};
 use std::sync::Arc;
 use utils::awaker::Awaker;
 
+#[cfg(test)]
+use mockall::automock;
+
 #[derive(Clone)]
 pub struct BehaviorContext {
     pub service_id: u8,
@@ -62,21 +65,24 @@ pub trait ConnectionHandler<BE, HE>: Send + Sync {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum NetworkBehaviorAction<HE> {
+pub enum NetworkBehaviorAction<HE, SE> {
     ConnectTo(TransportOutgoingLocalUuid, NodeId, NodeAddr),
     ToNet(TransportMsg),
     ToNetConn(ConnId, TransportMsg),
     ToNetNode(NodeId, TransportMsg),
     ToHandler(HandlerRoute, HE),
+    ToSdkService(u8, SE),
     CloseConn(ConnId),
     CloseNode(NodeId),
 }
 
-pub trait NetworkBehavior<BE, HE> {
+#[cfg_attr(test, automock)]
+pub trait NetworkBehavior<BE, HE, SE> {
     fn service_id(&self) -> u8;
     fn on_started(&mut self, ctx: &BehaviorContext, now_ms: u64);
     fn on_tick(&mut self, ctx: &BehaviorContext, now_ms: u64, interval_ms: u64);
     fn on_awake(&mut self, ctx: &BehaviorContext, now_ms: u64);
+    fn on_sdk_msg(&mut self, ctx: &BehaviorContext, now_ms: u64, from_service: u8, event: SE);
     fn on_local_msg(&mut self, ctx: &BehaviorContext, now_ms: u64, msg: TransportMsg);
     fn check_incoming_connection(&mut self, ctx: &BehaviorContext, now_ms: u64, node: NodeId, conn_id: ConnId) -> Result<(), ConnectionRejectReason>;
     fn check_outgoing_connection(&mut self, ctx: &BehaviorContext, now_ms: u64, node: NodeId, conn_id: ConnId, local_uuid: TransportOutgoingLocalUuid) -> Result<(), ConnectionRejectReason>;
@@ -93,5 +99,5 @@ pub trait NetworkBehavior<BE, HE> {
     fn on_outgoing_connection_error(&mut self, ctx: &BehaviorContext, now_ms: u64, node_id: NodeId, conn_id: Option<ConnId>, local_uuid: TransportOutgoingLocalUuid, err: &OutgoingConnectionError);
     fn on_handler_event(&mut self, ctx: &BehaviorContext, now_ms: u64, node_id: NodeId, conn_id: ConnId, event: BE);
     fn on_stopped(&mut self, ctx: &BehaviorContext, now_ms: u64);
-    fn pop_action(&mut self) -> Option<NetworkBehaviorAction<HE>>;
+    fn pop_action(&mut self) -> Option<NetworkBehaviorAction<HE, SE>>;
 }

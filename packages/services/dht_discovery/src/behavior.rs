@@ -18,16 +18,17 @@ pub struct DiscoveryNetworkBehaviorOpts {
     pub timer: Arc<dyn Timer>,
 }
 
-pub struct DiscoveryNetworkBehavior<HE> {
+pub struct DiscoveryNetworkBehavior<HE, SE> {
     logic: DiscoveryLogic,
     opts: DiscoveryNetworkBehaviorOpts,
     connection_group: ConnectionGrouping,
-    outputs: VecDeque<NetworkBehaviorAction<HE>>,
+    outputs: VecDeque<NetworkBehaviorAction<HE, SE>>,
 }
 
-impl<HE> DiscoveryNetworkBehavior<HE>
+impl<HE, SE> DiscoveryNetworkBehavior<HE, SE>
 where
     HE: Send + Sync + 'static,
+    SE: Send + Sync + 'static, // TODO: Update SDK Event
 {
     pub fn new(opts: DiscoveryNetworkBehaviorOpts) -> Self {
         let logic_conf = DiscoveryLogicConf {
@@ -81,10 +82,11 @@ where
     }
 }
 
-impl<BE, HE> NetworkBehavior<BE, HE> for DiscoveryNetworkBehavior<HE>
+impl<BE, HE, SE> NetworkBehavior<BE, HE, SE> for DiscoveryNetworkBehavior<HE, SE>
 where
     BE: TryInto<DiscoveryBehaviorEvent> + From<DiscoveryBehaviorEvent> + Send + Sync + 'static,
     HE: TryInto<DiscoveryHandlerEvent> + From<DiscoveryHandlerEvent> + Send + Sync + 'static,
+    SE: Send + Sync + 'static, // TODO: Update SDK Event
 {
     fn service_id(&self) -> u8 {
         DISCOVERY_SERVICE_ID
@@ -168,7 +170,9 @@ where
 
     fn on_stopped(&mut self, _ctx: &BehaviorContext, _now_ms: u64) {}
 
-    fn pop_action(&mut self) -> Option<NetworkBehaviorAction<HE>> {
+    fn pop_action(&mut self) -> Option<NetworkBehaviorAction<HE, SE>> {
         None
     }
+
+    fn on_sdk_msg(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _from_service: u8, _event: SE) {}
 }

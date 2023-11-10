@@ -3,6 +3,8 @@ name = "utils"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+auto-clear = []
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -11,6 +13,3 @@ log = { workspace = true }
 async-std = { workspace = true }
 async-notify = { workspace = true }
 async-trait = { workspace = true }
-
-[features]
-auto-clear = []

@@ -21,6 +21,10 @@ enum NodeHandleEvent {
     LayersSpreadRouterSync(LayersSpreadRouterSyncHandlerEvent),
 }
 
+#[derive(convert_enum::From, convert_enum::TryInto)]
+enum NodeSdkEvent {
+}
+
 #[derive(convert_enum::From, convert_enum::TryInto, Serialize, Deserialize)]
 enum NodeMsg {
     Manual(ManualMsg),
@@ -59,7 +63,7 @@ async fn main() {
         timer: Arc::new(SystemTimer()),
     });
 
-    let mut plane = NetworkPlane::<NodeBehaviorEvent, NodeHandleEvent>::new(NetworkPlaneConfig {
+    let mut plane = NetworkPlane::<NodeBehaviorEvent, NodeHandleEvent, NodeSdkEvent>::new(NetworkPlaneConfig {
         node_id: args.node_id,
         tick_ms: 1000,
         behaviors: vec![Box::new(spreads_layer_router), Box::new(manual)],

@@ -16,7 +16,7 @@ use utils::Timer;
 
 use self::bus::PlaneBus;
 use self::bus_impl::PlaneBusImpl;
-use self::internal::{PlaneInternal, PlaneInternalAction};
+use self::internal::{PlaneInternal, PlaneInternalAction, SpawnedConnection};
 use self::single_conn::{PlaneSingleConn, PlaneSingleConnInternal};
 
 pub(crate) mod bus;
@@ -57,10 +57,20 @@ impl<BE: Send + Sync + 'static, HE: Send + Sync + 'static> Awaker for HandlerAwa
 #[derive(Debug, Eq, PartialEq)]
 pub enum NetworkPlaneInternalEvent<BE> {
     /// Trigger on_awake() hook for the behavior of the given service.
-    AwakeBehaviour { service_id: u8 },
+    AwakeBehaviour {
+        service_id: u8,
+    },
     /// An Event sent from the Handler layer to the Behaviour layer
-    ToBehaviourFromHandler { service_id: u8, node_id: NodeId, conn_id: ConnId, event: BE },
-    ToBehaviourLocalMsg { service_id: u8, msg: TransportMsg },
+    ToBehaviourFromHandler {
+        service_id: u8,
+        node_id: NodeId,
+        conn_id: ConnId,
+        event: BE,
+    },
+    ToBehaviourLocalMsg {
+        service_id: u8,
+        msg: TransportMsg,
+    },
     IncomingDisconnected(NodeId, ConnId),
     OutgoingDisconnected(NodeId, ConnId),
 }
@@ -71,13 +81,13 @@ pub enum NetworkPlaneError {
     RuntimeError,
 }
 
-pub struct NetworkPlaneConfig<BE, HE> {
+pub struct NetworkPlaneConfig<BE, HE, SE> {
     /// Node_id, which is u32 value
     pub node_id: NodeId,
     /// Tick_ms, each tick_ms miliseconds, network will call tick function on both behavior and handler
     pub tick_ms: u64,
     /// List of behavior
-    pub behaviors: Vec<Box<dyn NetworkBehavior<BE, HE> + Send + Sync>>,
+    pub behaviors: Vec<Box<dyn NetworkBehavior<BE, HE, SE> + Send + Sync>>,
     /// Transport which is used
     pub transport: Box<dyn Transport + Send + Sync>,
     /// Timer for getting timestamp miliseconds
@@ -86,7 +96,7 @@ pub struct NetworkPlaneConfig<BE, HE> {
     pub router: Arc<dyn RouterTable>,
 }
 
-pub struct NetworkPlane<BE, HE> {
+pub struct NetworkPlane<BE, HE, SE> {
     node_id: NodeId,
     tick_ms: u64,
     transport: Box<dyn Transport + Send + Sync>,
@@ -96,17 +106,18 @@ pub struct NetworkPlane<BE, HE> {
     internal_rx: Receiver<NetworkPlaneInternalEvent<BE>>,
     bus: Arc<PlaneBusImpl<BE, HE>>,
     tick_interval: Interval,
-    internal: PlaneInternal<BE, HE>,
+    internal: PlaneInternal<BE, HE, SE>,
 }
 
-impl<BE, HE> NetworkPlane<BE, HE>
+impl<BE, HE, SE> NetworkPlane<BE, HE, SE>
 where
     BE: Send + Sync + 'static,
     HE: Send + Sync + 'static,
+    SE: Send + Sync + 'static,
 {
     /// Creating new network plane, after create need to run
     /// `while let Some(_) = plane.run().await {}`
-    pub fn new(conf: NetworkPlaneConfig<BE, HE>) -> Self {
+    pub fn new(conf: NetworkPlaneConfig<BE, HE, SE>) -> Self {
         let (internal_tx, internal_rx) = unbounded();
         let bus: Arc<PlaneBusImpl<BE, HE>> = Arc::new(PlaneBusImpl::new(conf.node_id, conf.router.clone(), internal_tx.clone()));
 
@@ -178,8 +189,10 @@ where
     fn pop_actions(&mut self, now_ms: u64) {
         while let Some(action) = self.internal.pop_action() {
             match action {
-                PlaneInternalAction::SpawnConnection { outgoing, sender, receiver, handlers } => {
+                PlaneInternalAction::SpawnConnection(spwd_conn)  => {
+                    let SpawnedConnection { outgoing, sender, receiver, handlers } = spwd_conn;
                     let internal_tx = self.internal_tx.clone();
+
                     let tick_ms = self.tick_ms;
                     let timer = self.timer.clone();
                     let router = self.router.clone();
@@ -280,6 +293,7 @@ where
                     NetworkBehaviorAction::CloseNode(node) => {
                         self.bus.close_node(node);
                     }
+                    NetworkBehaviorAction::ToSdkService(_, _) => {}
                 },
             }
         }

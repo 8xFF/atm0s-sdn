@@ -20,6 +20,7 @@ pub enum RouteRule {
 }
 
 /// Determine the destination of an action/message
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RouteAction {
     /// Reject the message
     Reject,
@@ -60,5 +61,52 @@ pub trait RouterTable: Send + Sync {
             RouteRule::ToKey(key) => self.path_to_key(*key),
             RouteRule::ToService(_) => self.path_to_service(service_id),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_local() {
+        let local = RouteAction::Local;
+        let remote = RouteAction::Next(ConnId::from_in(1, 1), 2);
+        let reject = RouteAction::Reject;
+
+        assert!(local.is_local());
+        assert!(!remote.is_local());
+        assert!(!reject.is_local());
+    }
+
+    #[test]
+    fn test_is_reject() {
+        let local = RouteAction::Local;
+        let remote = RouteAction::Next(ConnId::from_in(1, 1), 2);
+        let reject = RouteAction::Reject;
+
+        assert!(!local.is_reject());
+        assert!(!remote.is_reject());
+        assert!(reject.is_reject());
+    }
+
+    #[test]
+    fn test_is_remote() {
+        let local = RouteAction::Local;
+        let remote = RouteAction::Next(ConnId::from_in(1, 1), 2);
+        let reject = RouteAction::Reject;
+
+        assert!(!local.is_remote());
+        assert!(remote.is_remote());
+        assert!(!reject.is_remote());
+    }
+
+    #[test]
+    fn test_derive_action_to_service() {
+        let router = ForceLocalRouter();
+        let route = RouteRule::ToService(3);
+        let service_id = 1;
+
+        assert_eq!(router.derive_action(&route, service_id), RouteAction::Local);
     }
 }

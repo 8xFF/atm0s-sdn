@@ -22,17 +22,17 @@ use self::channel_source::{ChannelSourceHashmap, SourceMapEvent};
 
 pub(crate) mod channel_source;
 
-pub struct PubsubServiceBehaviour<HE> {
+pub struct PubsubServiceBehaviour<HE, SE> {
     node_id: NodeId,
     channel_source_map_tx: Option<Sender<SourceMapEvent>>,
     channel_source_map: Box<dyn ChannelSourceHashmap>,
     relay: PubsubRelay,
     kv_rx_task: Option<JoinHandle<()>>,
     kv_rx_queue: Arc<Mutex<VecDeque<PubsubServiceBehaviourEvent>>>,
-    outputs: VecDeque<NetworkBehaviorAction<HE>>,
+    outputs: VecDeque<NetworkBehaviorAction<HE, SE>>,
 }
 
-impl<HE> PubsubServiceBehaviour<HE> {
+impl<HE, SE> PubsubServiceBehaviour<HE, SE> {
     pub fn new(node_id: NodeId, channel_source_map: Box<dyn ChannelSourceHashmap>, timer: Arc<dyn Timer>) -> (Self, PubsubSdk) {
         let (relay, sdk) = PubsubRelay::new(node_id, timer);
         (
@@ -101,7 +101,7 @@ impl<HE> PubsubServiceBehaviour<HE> {
     }
 }
 
-impl<BE, HE> NetworkBehavior<BE, HE> for PubsubServiceBehaviour<HE>
+impl<BE, HE, SE> NetworkBehavior<BE, HE, SE> for PubsubServiceBehaviour<HE, SE>
 where
     BE: From<PubsubServiceBehaviourEvent> + TryInto<PubsubServiceBehaviourEvent> + Send + Sync + 'static,
     HE: From<PubsubServiceHandlerEvent> + TryInto<PubsubServiceHandlerEvent> + Send + Sync + 'static,
@@ -232,7 +232,9 @@ where
         }
     }
 
-    fn pop_action(&mut self) -> Option<NetworkBehaviorAction<HE>> {
+    fn on_sdk_msg(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _from_service: u8, _event: SE) {}
+
+    fn pop_action(&mut self) -> Option<NetworkBehaviorAction<HE, SE>> {
         self.outputs.pop_front()
     }
 }

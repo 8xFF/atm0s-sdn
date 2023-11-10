@@ -1,5 +1,5 @@
 use crate::handler::KeyValueConnectionHandler;
-use crate::msg::{KeyValueBehaviorEvent, KeyValueMsg};
+use crate::msg::{KeyValueBehaviorEvent, KeyValueMsg, KeyValueSdkEvent};
 use crate::KEY_VALUE_SERVICE_ID;
 use bluesea_identity::{ConnId, NodeId};
 use network::behaviour::{BehaviorContext, ConnectionHandler, NetworkBehavior, NetworkBehaviorAction};
@@ -26,18 +26,19 @@ mod simple_remote;
 pub use sdk::KeyValueSdk;
 
 #[allow(unused)]
-pub struct KeyValueBehavior<HE> {
+pub struct KeyValueBehavior<HE, SE> {
     node_id: NodeId,
     simple_remote: SimpleRemoteStorage,
     simple_local: Arc<RwLock<SimpleLocalStorage>>,
     hashmap_remote: HashmapRemoteStorage,
     hashmap_local: Arc<RwLock<HashmapLocalStorage>>,
-    outputs: VecDeque<NetworkBehaviorAction<HE>>,
+    outputs: VecDeque<NetworkBehaviorAction<HE, SE>>,
 }
 
-impl<HE> KeyValueBehavior<HE>
+impl<HE, SE> KeyValueBehavior<HE, SE>
 where
     HE: Send + Sync + 'static,
+    SE: Send + Sync + 'static,
 {
     #[allow(unused)]
     pub fn new(node_id: NodeId, timer: Arc<dyn Timer>, sync_each_ms: u64) -> (Self, sdk::KeyValueSdk) {
@@ -128,10 +129,11 @@ where
 }
 
 #[allow(unused)]
-impl<BE, HE> NetworkBehavior<BE, HE> for KeyValueBehavior<HE>
+impl<BE, HE, SE> NetworkBehavior<BE, HE, SE> for KeyValueBehavior<HE, SE>
 where
     BE: From<KeyValueBehaviorEvent> + TryInto<KeyValueBehaviorEvent> + Send + Sync + 'static,
     HE: Send + Sync + 'static,
+    SE: From<KeyValueSdkEvent> + TryInto<KeyValueSdkEvent> + Send + Sync + 'static,
 {
     fn service_id(&self) -> u8 {
         KEY_VALUE_SERVICE_ID
@@ -167,6 +169,15 @@ where
             }
             Err(e) => {
                 log::error!("Error on get_payload_bincode: {:?}", e);
+            }
+        }
+    }
+
+    fn on_sdk_msg(&mut self, ctx: &BehaviorContext, now_ms: u64, from_service: u8, event: SE) {
+        if let Ok(event) = event.try_into() {
+            match event {
+                KeyValueSdkEvent::Local(msg) => {}
+                KeyValueSdkEvent::FromNode(node_id, msg) => {}
             }
         }
     }
@@ -213,7 +224,7 @@ where
         log::info!("[KeyValueBehavior {}] on_stopped", self.node_id);
     }
 
-    fn pop_action(&mut self) -> Option<NetworkBehaviorAction<HE>> {
+    fn pop_action(&mut self) -> Option<NetworkBehaviorAction<HE, SE>> {
         self.outputs.pop_front()
     }
 }
@@ -231,12 +242,13 @@ mod tests {
     use utils::{awaker::MockAwaker, MockTimer, Timer};
 
     use crate::{
-        msg::{HashmapLocalEvent, HashmapRemoteEvent, SimpleLocalEvent, SimpleRemoteEvent},
+        msg::{HashmapLocalEvent, HashmapRemoteEvent, SimpleLocalEvent, SimpleRemoteEvent, KeyValueSdkEvent},
         KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueMsg, KEY_VALUE_SERVICE_ID,
     };
 
     type BE = KeyValueBehaviorEvent;
     type HE = KeyValueHandlerEvent;
+    type SE = KeyValueSdkEvent;
 
     #[test]
     fn sdk_simple_set_del_should_fire_event() {
@@ -245,8 +257,8 @@ mod tests {
         let sync_ms = 10000;
         let key = 1000;
         let timer = Arc::new(MockTimer::default());
-        let (mut behaviour, sdk) = super::KeyValueBehavior::<HE>::new(local_node_id, timer.clone(), sync_ms);
-        let behaviour: &mut dyn NetworkBehavior<BE, HE> = &mut behaviour;
+        let (mut behaviour, sdk) = super::KeyValueBehavior::<HE, SE>::new(local_node_id, timer.clone(), sync_ms);
+        let behaviour: &mut dyn NetworkBehavior<BE, HE, SE> = &mut behaviour;
 
         let ctx = BehaviorContext {
             service_id: KEY_VALUE_SERVICE_ID,
@@ -333,8 +345,8 @@ mod tests {
         let key = 1000;
         let sub_key = 111;
         let timer = Arc::new(MockTimer::default());
-        let (mut behaviour, sdk) = super::KeyValueBehavior::<HE>::new(local_node_id, timer.clone(), sync_ms);
-        let behaviour: &mut dyn NetworkBehavior<BE, HE> = &mut behaviour;
+        let (mut behaviour, sdk) = super::KeyValueBehavior::<HE, SE>::new(local_node_id, timer.clone(), sync_ms);
+        let behaviour: &mut dyn NetworkBehavior<BE, HE, SE> = &mut behaviour;
 
         let ctx = BehaviorContext {
             service_id: KEY_VALUE_SERVICE_ID,
@@ -420,8 +432,8 @@ mod tests {
         let sync_ms = 10000;
         let key = 1000;
         let timer = Arc::new(MockTimer::default());
-        let (mut behaviour, _sdk) = super::KeyValueBehavior::<HE>::new(local_node_id, timer.clone(), sync_ms);
-        let behaviour: &mut dyn NetworkBehavior<BE, HE> = &mut behaviour;
+        let (mut behaviour, _sdk) = super::KeyValueBehavior::<HE, SE>::new(local_node_id, timer.clone(), sync_ms);
+        let behaviour: &mut dyn NetworkBehavior<BE, HE, SE> = &mut behaviour;
 
         let ctx = BehaviorContext {
             service_id: KEY_VALUE_SERVICE_ID,
@@ -455,8 +467,8 @@ mod tests {
         let key = 1000;
         let sub_key = 111;
         let timer = Arc::new(MockTimer::default());
-        let (mut behaviour, _sdk) = super::KeyValueBehavior::<HE>::new(local_node_id, timer.clone(), sync_ms);
-        let behaviour: &mut dyn NetworkBehavior<BE, HE> = &mut behaviour;
+        let (mut behaviour, _sdk) = super::KeyValueBehavior::<HE, SE>::new(local_node_id, timer.clone(), sync_ms);
+        let behaviour: &mut dyn NetworkBehavior<BE, HE, SE> = &mut behaviour;
 
         let ctx = BehaviorContext {
             service_id: KEY_VALUE_SERVICE_ID,
@@ -488,8 +500,8 @@ mod tests {
         let sync_ms = 10000;
         let key = 1000;
         let timer = Arc::new(MockTimer::default());
-        let (mut behaviour, sdk) = super::KeyValueBehavior::<HE>::new(local_node_id, timer.clone(), sync_ms);
-        let behaviour: &mut dyn NetworkBehavior<BE, HE> = &mut behaviour;
+        let (mut behaviour, sdk) = super::KeyValueBehavior::<HE, SE>::new(local_node_id, timer.clone(), sync_ms);
+        let behaviour: &mut dyn NetworkBehavior<BE, HE, SE> = &mut behaviour;
 
         let ctx = BehaviorContext {
             service_id: KEY_VALUE_SERVICE_ID,

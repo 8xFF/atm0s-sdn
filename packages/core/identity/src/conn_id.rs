@@ -79,3 +79,56 @@ impl Hash for ConnId {
         state.write_u64(self.value);
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_conn_id_from_out() {
+        let conn_id = ConnId::from_out(1, 123);
+        assert_eq!(conn_id.protocol(), 1);
+        assert_eq!(conn_id.direction(), ConnDirection::Outgoing);
+        assert_eq!(conn_id.uuid(), 123);
+    }
+
+    #[test]
+    fn test_conn_id_from_in() {
+        let conn_id = ConnId::from_in(2, 456);
+        assert_eq!(conn_id.protocol(), 2);
+        assert_eq!(conn_id.direction(), ConnDirection::Incoming);
+        assert_eq!(conn_id.uuid(), 456);
+    }
+
+    #[test]
+    fn test_conn_id_display() {
+        let conn_id = ConnId::from_out(3, 789);
+        assert_eq!(format!("{}", conn_id), "Conn(Outgoing,3,789)");
+    }
+
+    #[test]
+    fn test_conn_id_debug() {
+        let conn_id = ConnId::from_in(4, 101112);
+        assert_eq!(format!("{:?}", conn_id), "\"Conn(Incoming,4,101112)\"");
+    }
+
+    #[test]
+    fn test_conn_id_eq() {
+        let conn_id1 = ConnId::from_out(5, 131415);
+        let conn_id2 = ConnId::from_out(5, 131415);
+        let conn_id3 = ConnId::from_in(5, 131415);
+        assert_eq!(conn_id1, conn_id2);
+        assert_ne!(conn_id1, conn_id3);
+    }
+
+    #[test]
+    fn test_conn_id_hash() {
+        let conn_id1 = ConnId::from_out(6, 161718);
+        let conn_id2 = ConnId::from_out(6, 161718);
+        let conn_id3 = ConnId::from_in(6, 161718);
+        let mut set = std::collections::HashSet::new();
+        set.insert(conn_id1);
+        assert!(set.contains(&conn_id1));
+        assert!(set.contains(&conn_id2));
+        assert!(!set.contains(&conn_id3));
+    }
+}

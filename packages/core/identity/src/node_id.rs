@@ -1,5 +1,6 @@
 pub type NodeId = u32;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NodeSegment {
     Public,
     Private(u8),
@@ -74,6 +75,7 @@ impl NodeIdType for NodeId {
         *self as u8
     }
 
+    // TODO: typo in name, should be eq_until_layer
     fn eq_util_layer(&self, other: &Self) -> u8 {
         if self.layer(3) != other.layer(3) {
             return 4;
@@ -97,6 +99,8 @@ impl NodeIdType for NodeId {
 
 #[cfg(test)]
 mod tests {
+    use crate::NodeSegment;
+
     use super::{NodeId, NodeIdType};
 
     #[test]
@@ -107,12 +111,70 @@ mod tests {
     }
 
     #[test]
-    fn simple_distance() {
+    fn test_random() {
+        let id1 = NodeId::random();
+        let id2 = NodeId::random();
+        assert_ne!(id1, id2);
+    }
+
+    #[test]
+    fn test_segment() {
+        let id1: NodeId = 30;
+        assert_eq!(id1.segment(), NodeSegment::Public);
+    }
+
+    #[test]
+    fn test_distance() {
         let id1: NodeId = 0;
-        assert_eq!(id1.distance_bits(&0), 0);
-        assert_eq!(id1.distance_bits(&1), 1);
-        assert_eq!(id1.distance_bits(&2), 2);
-        assert_eq!(id1.distance_bits(&3), 2);
-        assert_eq!(id1.distance_bits(&u32::MAX), 32);
+        let id2: NodeId = 1;
+        let id3: NodeId = 2;
+        let id4: NodeId = 3;
+        let id5: NodeId = u32::MAX;
+
+        assert_eq!(id1.distance(&id1), 0);
+        assert_eq!(id1.distance_bits(&id1), 0);
+
+        assert_eq!(id1.distance_bits(&id2), 1);
+        assert_eq!(id1.distance_bits(&id3), 2);
+        assert_eq!(id1.distance_bits(&id4), 2);
+        assert_eq!(id1.distance_bits(&id5), 32);
+    }
+
+    #[test]
+    fn test_bucket_index() {
+        let id1: NodeId = 0;
+        let id2: NodeId = 1;
+        let id3: NodeId = 2;
+        let id4: NodeId = 3;
+        let id5: NodeId = u32::MAX;
+
+        assert_eq!(id1.bucket_index(), 0);
+        assert_eq!(id2.bucket_index(), 1);
+        assert_eq!(id3.bucket_index(), 2);
+        assert_eq!(id4.bucket_index(), 2);
+        assert_eq!(id5.bucket_index(), 32);
+    }
+
+    #[test]
+    fn test_layer() {
+        let id1: NodeId = 0x12345678;
+        assert_eq!(id1.layer(0), 0x78);
+        assert_eq!(id1.layer(1), 0x56);
+        assert_eq!(id1.layer(2), 0x34);
+        assert_eq!(id1.layer(3), 0x12);
+    }
+
+    #[test]
+    fn test_eq_util_layer() {
+        let id1: NodeId = 0x12345678;
+        let id2: NodeId = 0x12345679;
+        let id3: NodeId = 0x12345778;
+        let id4: NodeId = 0x12355678;
+        let id5: NodeId = 0x12345678;
+
+        assert_eq!(id1.eq_util_layer(&id2), 1);
+        assert_eq!(id1.eq_util_layer(&id3), 2);
+        assert_eq!(id1.eq_util_layer(&id4), 3);
+        assert_eq!(id1.eq_util_layer(&id5), 0);
     }
 }
