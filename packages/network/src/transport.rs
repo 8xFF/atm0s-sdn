@@ -57,6 +57,7 @@ pub enum ConnectionRejectReason {
     Custom(String),
 }
 
+#[cfg_attr(test, automock)]
 pub trait ConnectionAcceptor: Send + Sync {
     fn accept(&self);
     fn reject(&self, err: ConnectionRejectReason);
@@ -72,6 +73,7 @@ pub trait ConnectionSender: Send + Sync {
 }
 
 #[async_trait::async_trait]
+#[cfg_attr(test, automock)]
 pub trait ConnectionReceiver {
     fn remote_node_id(&self) -> NodeId;
     fn conn_id(&self) -> ConnId;
