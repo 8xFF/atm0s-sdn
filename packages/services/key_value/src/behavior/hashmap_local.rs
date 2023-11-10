@@ -1,5 +1,5 @@
 use crate::{
-    msg::{HashmapLocalEvent, HashmapRemoteEvent},
+    msg::{HashmapLocalEvent, HashmapRemoteEvent, KeyValueSdkEventError},
     KeyId, KeySource, KeyVersion, ReqId, SubKeyId, ValueType,
 };
 use bluesea_identity::NodeId;
@@ -17,12 +17,8 @@ use bluesea_router::RouteRule;
 /// Same with subscribe/unsubscribe
 use std::{
     collections::{HashMap, VecDeque},
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
+    sync::atomic::{AtomicU64, Ordering},
 };
-use utils::awaker::Awaker;
 
 struct KeySlotData {
     value: Option<Vec<u8>>,
@@ -37,7 +33,7 @@ struct KeySlotSubscribe {
     last_sync: u64,
     sub: bool,
     acked: bool,
-    handler: Box<dyn FnMut(KeyId, SubKeyId, Option<Vec<u8>>, KeyVersion, KeySource) + Send + Sync>,
+    handlers: HashMap<(u64, u8), ()>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -47,12 +43,18 @@ pub enum HashmapKeyValueGetError {
 }
 
 struct KeySlotGetCallback {
+    key: KeyId,
     timeout_after_ts: u64,
-    callback: Box<dyn FnOnce(Result<Option<Vec<(SubKeyId, ValueType, KeyVersion, KeySource)>>, HashmapKeyValueGetError>) + Send + Sync>,
+    uuid: u64,
+    service_id: u8,
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct LocalStorageAction(pub(crate) HashmapRemoteEvent, pub(crate) RouteRule);
+pub enum LocalStorageAction {
+    SendNet(HashmapRemoteEvent, RouteRule),
+    LocalOnChanged(u8, u64, KeyId, SubKeyId, Option<ValueType>, KeyVersion, KeySource),
+    LocalOnGet(u8, u64, KeyId, Result<Option<Vec<(SubKeyId, ValueType, KeyVersion, KeySource)>>, KeyValueSdkEventError>),
+}
 
 pub struct HashmapLocalStorage {
     req_id_seed: AtomicU64,
@@ -62,12 +64,11 @@ pub struct HashmapLocalStorage {
     subscribe: HashMap<KeyId, KeySlotSubscribe>,
     output_events: VecDeque<LocalStorageAction>,
     get_queue: HashMap<ReqId, KeySlotGetCallback>,
-    awake_notify: Arc<dyn Awaker>,
 }
 
 impl HashmapLocalStorage {
     /// create new local storage with provided timer and sync_each_ms. Sync_each_ms is used for sync data to remote storage incase of acked
-    pub fn new(awake_notify: Arc<dyn Awaker>, sync_each_ms: u64) -> Self {
+    pub fn new(sync_each_ms: u64) -> Self {
         Self {
             req_id_seed: AtomicU64::new(0),
             version_seed: 0,
@@ -76,12 +77,7 @@ impl HashmapLocalStorage {
             subscribe: HashMap::new(),
             output_events: VecDeque::new(),
             get_queue: HashMap::new(),
-            awake_notify,
         }
-    }
-
-    pub fn change_awake_notify(&mut self, awake_notify: Arc<dyn Awaker>) {
-        self.awake_notify = awake_notify;
     }
 
     fn gen_req_id(&self) -> u64 {
@@ -102,14 +98,16 @@ impl HashmapLocalStorage {
                 let req_id = self.gen_req_id();
                 if let Some(value) = &slot.value {
                     log::debug!("[HashmapLocal] resend set key {} with version {}", key, slot.version);
-                    self.output_events.push_back(LocalStorageAction(
+                    self.output_events.push_back(LocalStorageAction::SendNet(
                         HashmapRemoteEvent::Set(req_id, *key, *sub_key, value.clone(), slot.version, slot.ex.clone()),
                         RouteRule::ToKey(*key as u32),
                     ));
                 } else {
                     log::debug!("[HashmapLocal] resend del key {} with version {}", key, slot.version);
-                    self.output_events
-                        .push_back(LocalStorageAction(HashmapRemoteEvent::Del(req_id, *key, *sub_key, slot.version), RouteRule::ToKey(*key as u32)));
+                    self.output_events.push_back(LocalStorageAction::SendNet(
+                        HashmapRemoteEvent::Del(req_id, *key, *sub_key, slot.version),
+                        RouteRule::ToKey(*key as u32),
+                    ));
                 }
             }
         }
@@ -121,10 +119,11 @@ impl HashmapLocalStorage {
                 if slot.sub {
                     log::debug!("[HashmapLocal] resend sub key {}", key);
                     self.output_events
-                        .push_back(LocalStorageAction(HashmapRemoteEvent::Sub(req_id, *key, slot.ex.clone()), RouteRule::ToKey(*key as u32)));
+                        .push_back(LocalStorageAction::SendNet(HashmapRemoteEvent::Sub(req_id, *key, slot.ex.clone()), RouteRule::ToKey(*key as u32)));
                 } else {
                     log::debug!("[HashmapLocal] resend unsub key {}", key);
-                    self.output_events.push_back(LocalStorageAction(HashmapRemoteEvent::Unsub(req_id, *key), RouteRule::ToKey(*key as u32)));
+                    self.output_events
+                        .push_back(LocalStorageAction::SendNet(HashmapRemoteEvent::Unsub(req_id, *key), RouteRule::ToKey(*key as u32)));
                 }
             }
         }
@@ -136,7 +135,7 @@ impl HashmapLocalStorage {
                 let req_id = self.gen_req_id();
                 if let Some(value) = &slot.value {
                     log::debug!("[HashmapLocal] sync set key {} with version {}", key, slot.version);
-                    self.output_events.push_back(LocalStorageAction(
+                    self.output_events.push_back(LocalStorageAction::SendNet(
                         HashmapRemoteEvent::Set(req_id, *key, *sub_key, value.clone(), slot.version, slot.ex.clone()),
                         RouteRule::ToKey(*key as u32),
                     ));
@@ -163,7 +162,7 @@ impl HashmapLocalStorage {
                 if slot.sub {
                     log::debug!("[HashmapLocal] sync sub key {}", key);
                     self.output_events
-                        .push_back(LocalStorageAction(HashmapRemoteEvent::Sub(req_id, *key, slot.ex.clone()), RouteRule::ToKey(*key as u32)));
+                        .push_back(LocalStorageAction::SendNet(HashmapRemoteEvent::Sub(req_id, *key, slot.ex.clone()), RouteRule::ToKey(*key as u32)));
                 } else {
                     log::debug!("[HashmapLocal] remove sub key {} after acked", key);
                     // Just remove if acked and unsub
@@ -191,7 +190,8 @@ impl HashmapLocalStorage {
         for req_id in timeout_gets {
             if let Some(slot) = self.get_queue.remove(&req_id) {
                 log::debug!("[HashmapLocal] get key {} timeout", req_id);
-                (slot.callback)(Err(HashmapKeyValueGetError::Timeout));
+                self.output_events
+                    .push_back(LocalStorageAction::LocalOnGet(slot.service_id, slot.uuid, slot.key, Err(KeyValueSdkEventError::Timeout)));
             }
         }
 
@@ -229,7 +229,7 @@ impl HashmapLocalStorage {
             }
             HashmapLocalEvent::GetAck(req_id, _key, value) => {
                 if let Some(slot) = self.get_queue.remove(&req_id) {
-                    (slot.callback)(Ok(value))
+                    self.output_events.push_back(LocalStorageAction::LocalOnGet(slot.service_id, slot.uuid, slot.key, Ok(value)));
                 } else {
                 }
             }
@@ -263,18 +263,26 @@ impl HashmapLocalStorage {
                 }
             }
             HashmapLocalEvent::OnKeySet(req_id, key, sub_key, value, version, source) => {
-                self.output_events.push_back(LocalStorageAction(HashmapRemoteEvent::OnKeySetAck(req_id), RouteRule::ToNode(from)));
+                self.output_events
+                    .push_back(LocalStorageAction::SendNet(HashmapRemoteEvent::OnKeySetAck(req_id), RouteRule::ToNode(from)));
                 if let Some(slot) = self.subscribe.get_mut(&key) {
                     if slot.sub {
-                        (slot.handler)(key, sub_key, Some(value), version, source);
+                        for ((uuid, service_id), _) in slot.handlers.iter() {
+                            self.output_events
+                                .push_back(LocalStorageAction::LocalOnChanged(*service_id, *uuid, key, sub_key, Some(value.clone()), version, source));
+                        }
                     }
                 }
             }
             HashmapLocalEvent::OnKeyDel(req_id, key, sub_key, version, source) => {
-                self.output_events.push_back(LocalStorageAction(HashmapRemoteEvent::OnKeyDelAck(req_id), RouteRule::ToNode(from)));
+                self.output_events
+                    .push_back(LocalStorageAction::SendNet(HashmapRemoteEvent::OnKeyDelAck(req_id), RouteRule::ToNode(from)));
                 if let Some(slot) = self.subscribe.get_mut(&key) {
                     if slot.sub {
-                        (slot.handler)(key, sub_key, None, version, source);
+                        for ((uuid, service_id), _) in slot.handlers.iter() {
+                            self.output_events
+                                .push_back(LocalStorageAction::LocalOnChanged(*service_id, *uuid, key, sub_key, None, version, source));
+                        }
                     }
                 }
             }
@@ -300,29 +308,26 @@ impl HashmapLocalStorage {
             },
         );
 
-        self.output_events
-            .push_back(LocalStorageAction(HashmapRemoteEvent::Set(req_id, key, sub_key, value, version, ex), RouteRule::ToKey(key as u32)));
-        self.awake_notify.notify();
+        self.output_events.push_back(LocalStorageAction::SendNet(
+            HashmapRemoteEvent::Set(req_id, key, sub_key, value, version, ex),
+            RouteRule::ToKey(key as u32),
+        ));
     }
 
-    pub fn get(
-        &mut self,
-        now_ms: u64,
-        key: KeyId,
-        callback: Box<dyn FnOnce(Result<Option<Vec<(SubKeyId, ValueType, KeyVersion, KeySource)>>, HashmapKeyValueGetError>) + Send + Sync>,
-        timeout_ms: u64,
-    ) {
+    pub fn get(&mut self, now_ms: u64, key: KeyId, uuid: u64, service_id: u8, timeout_ms: u64) {
         let req_id = self.gen_req_id();
         log::debug!("[HashmapLocal] get key {} with req_id {}", key, req_id);
         self.get_queue.insert(
             req_id,
             KeySlotGetCallback {
+                key,
                 timeout_after_ts: now_ms + timeout_ms,
-                callback,
+                uuid,
+                service_id,
             },
         );
-        self.output_events.push_back(LocalStorageAction(HashmapRemoteEvent::Get(req_id, key), RouteRule::ToKey(key as u32)));
-        self.awake_notify.notify();
+        self.output_events
+            .push_back(LocalStorageAction::SendNet(HashmapRemoteEvent::Get(req_id, key), RouteRule::ToKey(key as u32)));
     }
 
     pub fn del(&mut self, key: KeyId, sub_key: SubKeyId) {
@@ -334,14 +339,14 @@ impl HashmapLocalStorage {
             slot.acked = false;
 
             self.output_events
-                .push_back(LocalStorageAction(HashmapRemoteEvent::Del(req_id, key, sub_key, slot.version), RouteRule::ToKey(key as u32)));
-            self.awake_notify.notify();
+                .push_back(LocalStorageAction::SendNet(HashmapRemoteEvent::Del(req_id, key, sub_key, slot.version), RouteRule::ToKey(key as u32)));
         }
     }
 
-    pub fn subscribe(&mut self, key: KeyId, ex: Option<u64>, handler: Box<dyn FnMut(KeyId, SubKeyId, Option<Vec<u8>>, KeyVersion, KeySource) + Send + Sync>) {
-        if self.subscribe.contains_key(&key) {
+    pub fn subscribe(&mut self, key: KeyId, ex: Option<u64>, uuid: u64, service_id: u8) {
+        if let Some(slot) = self.subscribe.get_mut(&key) {
             log::warn!("[HashmapLocal] subscribe key {} but already subscribed", key);
+            slot.handlers.insert((uuid, service_id), ());
             return;
         }
 
@@ -354,24 +359,28 @@ impl HashmapLocalStorage {
                 last_sync: 0,
                 sub: true,
                 acked: false,
-                handler,
+                handlers: HashMap::from([((uuid, service_id), ())]),
             },
         );
-        self.output_events.push_back(LocalStorageAction(HashmapRemoteEvent::Sub(req_id, key, ex), RouteRule::ToKey(key as u32)));
-        self.awake_notify.notify();
+        self.output_events
+            .push_back(LocalStorageAction::SendNet(HashmapRemoteEvent::Sub(req_id, key, ex), RouteRule::ToKey(key as u32)));
     }
 
-    pub fn unsubscribe(&mut self, key: KeyId) {
+    pub fn unsubscribe(&mut self, key: KeyId, uuid: u64, service_id: u8) {
         let req_id = self.gen_req_id();
         if let Some(slot) = self.subscribe.get_mut(&key) {
-            slot.sub = false;
-            slot.last_sync = 0;
-            slot.acked = false;
+            slot.handlers.remove(&(uuid, service_id));
 
-            log::debug!("[HashmapLocal] unsubscribe key {} with req_id {}", key, req_id);
+            if slot.handlers.is_empty() {
+                slot.sub = false;
+                slot.last_sync = 0;
+                slot.acked = false;
 
-            self.output_events.push_back(LocalStorageAction(HashmapRemoteEvent::Unsub(req_id, key), RouteRule::ToKey(key as u32)));
-            self.awake_notify.notify();
+                log::debug!("[HashmapLocal] unsubscribe key {} with req_id {}", key, req_id);
+
+                self.output_events
+                    .push_back(LocalStorageAction::SendNet(HashmapRemoteEvent::Unsub(req_id, key), RouteRule::ToKey(key as u32)));
+            }
         } else {
             log::warn!("[HashmapLocal] unsubscribe key {} but not subscribed", key);
         }
@@ -380,28 +389,25 @@ impl HashmapLocalStorage {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use bluesea_router::RouteRule;
-    use parking_lot::Mutex;
-    use utils::awaker::{Awaker, MockAwaker};
 
     use crate::{
         behavior::hashmap_local::LocalStorageAction,
-        msg::{HashmapLocalEvent, HashmapRemoteEvent},
+        msg::{HashmapLocalEvent, HashmapRemoteEvent, KeyValueSdkEventError},
     };
 
     use super::HashmapLocalStorage;
 
     #[test]
     fn set_should_mark_after_ack() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(awake_notify.clone(), 10000);
+        let mut storage = HashmapLocalStorage::new(10000);
 
         storage.set(0, 1, 2, vec![1], None);
-        assert_eq!(awake_notify.pop_awake_count(), 1);
 
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Set(0, 1, 2, vec![1], 0, None), RouteRule::ToKey(1))));
+        assert_eq!(
+            storage.pop_action(),
+            Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Set(0, 1, 2, vec![1], 0, None), RouteRule::ToKey(1)))
+        );
         assert_eq!(storage.pop_action(), None);
 
         storage.on_event(2, HashmapLocalEvent::SetAck(0, 1, 2, 0, true));
@@ -415,7 +421,7 @@ mod tests {
     // fn should_renegerate_set_event_if_ack_failed() {
     //     let timer = Arc::new(utils::MockTimer::default());
     //     let awake_notify = Arc::new(MockAwaker::default());
-    //     let mut storage = LocalStorage::new(awake_notify, 10000);
+    //     let mut storage = LocalStorage::new(10000);
 
     //     storage.set(1, vec![1], None);
     //     assert_eq!(storage.pop_action(), Some(LocalStorageAction(RemoteEvent::Set(0, 1, vec![1], 0, None), RouteRule::ToKey(1))));
@@ -435,8 +441,7 @@ mod tests {
 
     #[test]
     fn set_should_generate_new_version() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(awake_notify, 10000);
+        let mut storage = HashmapLocalStorage::new(10000);
 
         storage.set(0, 1, 2, vec![1], None);
         assert!(storage.pop_action().is_some());
@@ -445,7 +450,7 @@ mod tests {
         storage.set(1000, 1, 2, vec![2], None);
         assert_eq!(
             storage.pop_action(),
-            Some(LocalStorageAction(HashmapRemoteEvent::Set(1, 1, 2, vec![2], 65536001, None), RouteRule::ToKey(1)))
+            Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Set(1, 1, 2, vec![2], 65536001, None), RouteRule::ToKey(1)))
         );
         assert_eq!(storage.pop_action(), None);
 
@@ -458,8 +463,7 @@ mod tests {
 
     #[test]
     fn set_should_retry_after_tick_and_not_received_ack() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(awake_notify, 10000);
+        let mut storage = HashmapLocalStorage::new(10000);
 
         storage.set(0, 1, 2, vec![1], None);
         assert!(storage.pop_action().is_some());
@@ -467,14 +471,16 @@ mod tests {
 
         //because dont received ack, should resend event
         storage.tick(0);
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Set(1, 1, 2, vec![1], 0, None), RouteRule::ToKey(1))));
+        assert_eq!(
+            storage.pop_action(),
+            Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Set(1, 1, 2, vec![1], 0, None), RouteRule::ToKey(1)))
+        );
         assert_eq!(storage.pop_action(), None);
     }
 
     #[test]
     fn set_acked_should_resend_each_sync_each_ms() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(awake_notify, 10000);
+        let mut storage = HashmapLocalStorage::new(10000);
 
         storage.set(0, 1, 2, vec![1], None);
         assert!(storage.pop_action().is_some());
@@ -488,13 +494,15 @@ mod tests {
 
         //should resend if timer greater than sync_each_ms
         storage.tick(10001);
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Set(1, 1, 2, vec![1], 0, None), RouteRule::ToKey(1))));
+        assert_eq!(
+            storage.pop_action(),
+            Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Set(1, 1, 2, vec![1], 0, None), RouteRule::ToKey(1)))
+        );
     }
 
     #[test]
     fn del_should_mark_after_ack() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(awake_notify.clone(), 10000);
+        let mut storage = HashmapLocalStorage::new(10000);
 
         storage.set(0, 1, 2, vec![1], None);
         assert!(storage.pop_action().is_some());
@@ -502,8 +510,7 @@ mod tests {
         storage.on_event(2, HashmapLocalEvent::SetAck(0, 1, 2, 0, true));
 
         storage.del(1, 2);
-        assert_eq!(awake_notify.pop_awake_count(), 2);
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Del(1, 1, 2, 0), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Del(1, 1, 2, 0), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
         //after received ack should not resend event
@@ -514,8 +521,7 @@ mod tests {
 
     #[test]
     fn del_should_mark_after_ack_older() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(awake_notify.clone(), 10000);
+        let mut storage = HashmapLocalStorage::new(10000);
 
         storage.set(0, 1, 2, vec![1], None);
         assert!(storage.pop_action().is_some());
@@ -528,7 +534,7 @@ mod tests {
         storage.on_event(2, HashmapLocalEvent::SetAck(0, 1, 2, 0, true));
 
         storage.del(1, 2);
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Del(2, 1, 2, 65536001), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Del(2, 1, 2, 65536001), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
         //after received ack should not resend event
@@ -539,8 +545,7 @@ mod tests {
 
     #[test]
     fn del_should_retry_after_tick_and_not_received_ack() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(awake_notify.clone(), 10000);
+        let mut storage = HashmapLocalStorage::new(10000);
 
         storage.set(0, 1, 2, vec![1], None);
         assert!(storage.pop_action().is_some());
@@ -548,21 +553,19 @@ mod tests {
         storage.on_event(2, HashmapLocalEvent::SetAck(0, 1, 2, 0, true));
 
         storage.del(1, 2);
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Del(1, 1, 2, 0), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Del(1, 1, 2, 0), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
         storage.tick(0);
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Del(2, 1, 2, 0), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Del(2, 1, 2, 0), RouteRule::ToKey(1))));
     }
 
     #[test]
     fn sub_should_mark_after_ack() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(awake_notify.clone(), 10000);
+        let mut storage = HashmapLocalStorage::new(10000);
 
-        storage.subscribe(1, None, Box::new(|_, _, _, _, _| {}));
-        assert_eq!(awake_notify.pop_awake_count(), 1);
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
+        storage.subscribe(1, None, 1111, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
         storage.on_event(2, HashmapLocalEvent::SubAck(0, 1));
@@ -573,19 +576,10 @@ mod tests {
 
     #[test]
     fn sub_event_test() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(awake_notify, 10000);
-        let received_events = Arc::new(Mutex::new(Vec::new()));
+        let mut storage = HashmapLocalStorage::new(10000);
 
-        let received_events_clone = received_events.clone();
-        storage.subscribe(
-            1,
-            None,
-            Box::new(move |key, sub_key, value, version, source| {
-                received_events_clone.lock().push((key, sub_key, value, version, source));
-            }),
-        );
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
+        storage.subscribe(1, None, 11111, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
         storage.on_event(2, HashmapLocalEvent::SubAck(0, 1));
@@ -595,31 +589,33 @@ mod tests {
 
         // fake incoming event
         storage.on_event(2, HashmapLocalEvent::OnKeySet(0, 1, 2, vec![1], 0, 1000));
-        storage.on_event(2, HashmapLocalEvent::OnKeyDel(0, 1, 2, 0, 1000));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::OnKeySetAck(0), RouteRule::ToNode(2))));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::LocalOnChanged(10, 11111, 1, 2, Some(vec![1]), 0, 1000)));
 
-        assert_eq!(*received_events.lock(), vec![(1, 2, Some(vec![1]), 0, 1000), (1, 2, None, 0, 1000),]);
+        storage.on_event(2, HashmapLocalEvent::OnKeyDel(1, 1, 2, 0, 1000));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::OnKeyDelAck(1), RouteRule::ToNode(2))));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::LocalOnChanged(10, 11111, 1, 2, None, 0, 1000)));
+        assert_eq!(storage.pop_action(), None);
     }
 
     #[test]
     fn sub_should_retry_after_tick_and_not_received_ack() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(awake_notify, 10000);
+        let mut storage = HashmapLocalStorage::new(10000);
 
-        storage.subscribe(1, None, Box::new(|_, _, _, _, _| {}));
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
+        storage.subscribe(1, None, 11111, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
         storage.tick(0);
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Sub(1, 1, None), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Sub(1, 1, None), RouteRule::ToKey(1))));
     }
 
     #[test]
     fn sub_acked_should_resend_each_sync_each_ms() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(awake_notify, 10000);
+        let mut storage = HashmapLocalStorage::new(10000);
 
-        storage.subscribe(1, None, Box::new(|_, _, _, _, _| {}));
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
+        storage.subscribe(1, None, 11111, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
         storage.on_event(2, HashmapLocalEvent::SubAck(0, 1));
@@ -629,24 +625,22 @@ mod tests {
 
         //should resend if timer greater than sync_each_ms
         storage.tick(10001);
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Sub(1, 1, None), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Sub(1, 1, None), RouteRule::ToKey(1))));
     }
 
     #[test]
     fn unsub_should_mark_after_ack() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(awake_notify.clone(), 10000);
+        let mut storage = HashmapLocalStorage::new(10000);
 
-        storage.subscribe(1, None, Box::new(|_, _, _, _, _| {}));
+        storage.subscribe(1, None, 11111, 10);
         assert!(storage.pop_action().is_some());
         assert!(storage.pop_action().is_none());
 
         storage.on_event(2, HashmapLocalEvent::SubAck(0, 1));
 
         //sending unsub
-        storage.unsubscribe(1);
-        assert_eq!(awake_notify.pop_awake_count(), 2);
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Unsub(1, 1), RouteRule::ToKey(1))));
+        storage.unsubscribe(1, 11111, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Unsub(1, 1), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
         //after received ack should not resend event
@@ -657,70 +651,52 @@ mod tests {
 
     #[test]
     fn unsub_should_retry_after_tick_if_not_received_ack() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(awake_notify, 10000);
+        let mut storage = HashmapLocalStorage::new(10000);
 
-        storage.subscribe(1, None, Box::new(|_, _, _, _, _| {}));
+        storage.subscribe(1, None, 11111, 10);
         assert!(storage.pop_action().is_some());
         assert!(storage.pop_action().is_none());
 
         storage.on_event(2, HashmapLocalEvent::SubAck(0, 1));
 
         //sending unsub
-        storage.unsubscribe(1);
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Unsub(1, 1), RouteRule::ToKey(1))));
+        storage.unsubscribe(1, 11111, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Unsub(1, 1), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
         //if not received ack should resend event each tick
         storage.tick(0);
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Unsub(2, 1), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Unsub(2, 1), RouteRule::ToKey(1))));
     }
 
     #[test]
     fn get_should_callback_correct_value() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(awake_notify, 10000);
+        let mut storage = HashmapLocalStorage::new(10000);
 
-        let got_value = Arc::new(Mutex::new(None));
-        let got_value_clone = got_value.clone();
-        storage.get(
-            0,
-            1,
-            Box::new(move |result| {
-                *got_value_clone.lock() = Some(result);
-            }),
-            1000,
-        );
+        storage.get(0, 1, 11111, 10, 1000);
 
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Get(0, 1), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Get(0, 1), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
         //fake received result
         storage.on_event(2, HashmapLocalEvent::GetAck(0, 1, Some(vec![(2, vec![1], 0, 1000)])));
-        assert_eq!(*got_value.lock(), Some(Ok(Some(vec![(2, vec![1], 0, 1000)]))));
+
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::LocalOnGet(10, 11111, 1, Ok(Some(vec![(2, vec![1], 0, 1000)])))));
+        assert_eq!(storage.pop_action(), None);
     }
 
     #[test]
     fn get_should_timeout_after_no_ack() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = HashmapLocalStorage::new(awake_notify, 10000);
+        let mut storage = HashmapLocalStorage::new(10000);
 
-        let got_value = Arc::new(Mutex::new(None));
-        let got_value_clone = got_value.clone();
-        storage.get(
-            0,
-            1,
-            Box::new(move |result| {
-                *got_value_clone.lock() = Some(result);
-            }),
-            1000,
-        );
+        storage.get(0, 1, 11111, 10, 1000);
 
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(HashmapRemoteEvent::Get(0, 1), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Get(0, 1), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
         //after timeout should callback error
         storage.tick(1001);
-        assert_eq!(*got_value.lock(), Some(Err(super::HashmapKeyValueGetError::Timeout)));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::LocalOnGet(10, 11111, 1, Err(KeyValueSdkEventError::Timeout))));
+        assert_eq!(storage.pop_action(), None);
     }
 }

@@ -12,9 +12,27 @@ pub enum KeyValueBehaviorEvent {
 pub enum KeyValueHandlerEvent {}
 
 #[derive(Debug, PartialEq, Eq)]
+pub enum KeyValueSdkEventError {
+    NetworkError,
+    Timeout,
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum KeyValueSdkEvent {
-    Local(KeyValueSdkMsg),
-    FromNode(NodeId, KeyValueSdkMsg),
+    Get(u64, KeyId),
+    GetH(u64, KeyId),
+    Set(KeyId, ValueType, Option<u64>),
+    SetH(KeyId, SubKeyId, ValueType, Option<u64>),
+    Del(KeyId),
+    DelH(KeyId, SubKeyId),
+    Sub(u64, KeyId, Option<u64>),
+    SubH(u64, KeyId, Option<u64>),
+    Unsub(u64, KeyId),
+    UnsubH(u64, KeyId),
+    OnGet(u64, KeyId, Result<Option<(ValueType, KeyVersion, KeySource)>, KeyValueSdkEventError>),
+    OnGetH(u64, KeyId, Result<Option<Vec<(SubKeyId, ValueType, KeyVersion, KeySource)>>, KeyValueSdkEventError>),
+    OnKeyChanged(u64, KeyId, Option<ValueType>, KeyVersion, KeySource),
+    OnKeyHChanged(u64, KeyId, SubKeyId, Option<ValueType>, KeyVersion, KeySource),
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -79,12 +97,4 @@ pub enum KeyValueMsg {
     SimpleLocal(SimpleLocalEvent),
     HashmapRemote(HashmapRemoteEvent),
     HashmapLocal(HashmapLocalEvent),
-}
-
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum KeyValueSdkMsg {
-    Set(KeyId, ValueType),
-    Del(KeyId),
-    Sub(KeyId),
-    Unsub(KeyId),
 }

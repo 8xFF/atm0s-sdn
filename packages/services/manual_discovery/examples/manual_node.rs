@@ -22,8 +22,7 @@ enum NodeHandleEvent {
 }
 
 #[derive(convert_enum::From, convert_enum::TryInto)]
-enum NodeSdkEvent {
-}
+enum NodeSdkEvent {}
 
 #[derive(convert_enum::From, convert_enum::TryInto, Serialize, Deserialize)]
 enum NodeMsg {

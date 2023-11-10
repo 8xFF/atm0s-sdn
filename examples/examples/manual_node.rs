@@ -74,7 +74,8 @@ async fn main() {
     });
 
     let spreads_layer_router = LayersSpreadRouterSyncBehavior::new(router.clone());
-    let (key_value, key_value_sdk) = key_value::KeyValueBehavior::new(args.node_id, timer.clone(), 10000);
+    let key_value_sdk = key_value::KeyValueSdk::new();
+    let key_value = key_value::KeyValueBehavior::new(args.node_id, timer.clone(), 10000, Some(Box::new(key_value_sdk.clone())));
 
     if let Some(addr) = args.redis_addr {
         let mut redis_server = RedisServer::new(addr, key_value_sdk);
