@@ -456,5 +456,5 @@ mod tests {
         let conn = Arc::new(sender);
         let _rx = bus.add_conn(conn).expect("Should have rx");
         assert!(bus.to_net_conn(ConnId::from_in(1, 1), TransportMsg::build_unreliable(1, RouteRule::ToService(2), 1, &[1u8])).is_some());
-}
+    }
 }

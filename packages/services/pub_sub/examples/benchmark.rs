@@ -8,7 +8,7 @@ use layers_spread_router_sync::{LayersSpreadRouterSyncBehavior, LayersSpreadRout
 use manual_discovery::{ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent, ManualMsg};
 use network::convert_enum;
 use network::plane::{NetworkPlane, NetworkPlaneConfig};
-use pub_sub::{ChannelSourceHashmapReal, PubsubRemoteEvent, PubsubSdk, PubsubServiceBehaviour, PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent};
+use pub_sub::{PubsubRemoteEvent, PubsubSdk, PubsubServiceBehaviour, PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent};
 use utils::{SystemTimer, Timer};
 
 #[derive(convert_enum::From, convert_enum::TryInto)]
@@ -55,8 +55,8 @@ async fn run_node(node_id: NodeId, neighbours: Vec<NodeAddr>) -> (PubsubSdk, Nod
     });
 
     let router_sync_behaviour = LayersSpreadRouterSyncBehavior::new(router.clone());
-    let (kv_behaviour, kv_sdk) = KeyValueBehavior::new(node_id, timer.clone(), 3000);
-    let (pubsub_behavior, pubsub_sdk) = PubsubServiceBehaviour::new(node_id, Box::new(ChannelSourceHashmapReal::new(kv_sdk, node_id)), timer.clone());
+    let kv_behaviour = KeyValueBehavior::new(node_id, 3000, None);
+    let (pubsub_behavior, pubsub_sdk) = PubsubServiceBehaviour::new(node_id, timer.clone());
 
     let mut plane = NetworkPlane::<ImplBehaviorEvent, ImplHandlerEvent, ImplSdkEvent>::new(NetworkPlaneConfig {
         node_id,

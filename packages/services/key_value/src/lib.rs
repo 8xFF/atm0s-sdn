@@ -11,10 +11,19 @@ mod handler;
 mod msg;
 mod storage;
 
+use std::sync::Arc;
+
 pub use behavior::KeyValueBehavior;
 pub use behavior::KeyValueSdk;
 use bluesea_identity::NodeId;
 pub use msg::{KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueMsg, KeyValueSdkEvent};
+use utils::awaker::Awaker;
+
+pub trait ExternalControl: Send + Sync {
+    fn set_awaker(&self, awaker: Arc<dyn Awaker>);
+    fn on_event(&self, event: KeyValueSdkEvent);
+    fn pop_action(&self) -> Option<KeyValueSdkEvent>;
+}
 
 #[cfg(test)]
 mod tests {

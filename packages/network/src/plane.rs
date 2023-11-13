@@ -189,7 +189,7 @@ where
     fn pop_actions(&mut self, now_ms: u64) {
         while let Some(action) = self.internal.pop_action() {
             match action {
-                PlaneInternalAction::SpawnConnection(spwd_conn)  => {
+                PlaneInternalAction::SpawnConnection(spwd_conn) => {
                     let SpawnedConnection { outgoing, sender, receiver, handlers } = spwd_conn;
                     let internal_tx = self.internal_tx.clone();
 

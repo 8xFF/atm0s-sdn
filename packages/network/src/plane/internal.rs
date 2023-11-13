@@ -273,7 +273,7 @@ mod tests {
     use crate::{
         behaviour::MockNetworkBehavior,
         msg::TransportMsg,
-        transport::{ConnectionReceiver, ConnectionRejectReason, MockConnectionAcceptor, MockConnectionReceiver, MockConnectionSender, OutgoingConnectionError},
+        transport::{ConnectionRejectReason, MockConnectionAcceptor, MockConnectionReceiver, MockConnectionSender, OutgoingConnectionError},
     };
 
     type BE = ();

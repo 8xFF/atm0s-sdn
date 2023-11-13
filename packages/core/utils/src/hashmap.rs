@@ -165,9 +165,8 @@ mod tests {
         let mut map = HashMap::new();
         map.insert("key1", "value1");
         map.insert("key2", "value2");
-        let mut iter = map.iter();
-        assert_eq!(iter.next(), Some((&"key1", &"value1")));
-        assert_eq!(iter.next(), Some((&"key2", &"value2")));
-        assert_eq!(iter.next(), None);
+        let mut slots = map.iter().collect::<Vec<_>>();
+        slots.sort_by_key(|a| a.0);
+        assert_eq!(slots, vec![(&"key1", &"value1"), (&"key2", &"value2")]);
     }
 }
