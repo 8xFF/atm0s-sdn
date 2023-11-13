@@ -1,8 +1,10 @@
 use crate::relay::ChannelIdentify;
-use bluesea_identity::NodeId;
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum PubsubServiceBehaviourEvent {}
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum PubsubServiceHandlerEvent {}
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -13,14 +15,5 @@ pub enum PubsubRemoteEvent {
     UnsubAck(ChannelIdentify, bool), //did it removed, incase of false, it means it already unsubscribed
 }
 
-pub enum PubsubSdkEvent {
-    Local(PubsubSdkMsg),
-    FromNode(NodeId, PubsubSdkMsg),
-}
-
-pub enum PubsubSdkMsg {
-    Sub(ChannelIdentify),
-    Unsub(ChannelIdentify),
-    SubAck(ChannelIdentify, bool),
-    UnsubAck(ChannelIdentify, bool),
-}
+#[derive(Debug, PartialEq, Eq)]
+pub enum PubsubSdkEvent {}

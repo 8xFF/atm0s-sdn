@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::{collections::VecDeque, marker::PhantomData, sync::Arc};
 
 use bluesea_identity::{ConnId, NodeId};
 use bluesea_router::RouteRule;
@@ -17,13 +17,17 @@ use crate::{
     PubsubSdk, PUBSUB_SERVICE_ID,
 };
 
-pub struct PubsubServiceBehaviour<HE, SE> {
+const KEY_VALUE_TIMEOUT_MS: u64 = 30000;
+const KEY_VALUE_SUB_UUID: u64 = 0;
+
+pub struct PubsubServiceBehaviour<BE, HE, SE> {
+    _tmp: PhantomData<BE>,
     node_id: NodeId,
     relay: PubsubRelay,
     outputs: VecDeque<NetworkBehaviorAction<HE, SE>>,
 }
 
-impl<HE, SE> PubsubServiceBehaviour<HE, SE>
+impl<BE, HE, SE> PubsubServiceBehaviour<BE, HE, SE>
 where
     SE: From<KeyValueSdkEvent> + TryInto<KeyValueSdkEvent>,
 {
@@ -31,6 +35,7 @@ where
         let (relay, sdk) = PubsubRelay::new(node_id, timer);
         (
             Self {
+                _tmp: Default::default(),
                 node_id,
                 relay,
                 outputs: VecDeque::new(),
@@ -68,7 +73,7 @@ where
                     log::info!("[PubSubServiceBehaviour {}] on added local channel {} => set Hashmap field", self.node_id, channel);
                     self.outputs.push_back(NetworkBehaviorAction::ToSdkService(
                         KEY_VALUE_SERVICE_ID,
-                        KeyValueSdkEvent::SetH(channel as u64, self.node_id as u64, vec![], Some(30000)).into(),
+                        KeyValueSdkEvent::SetH(channel as u64, self.node_id as u64, vec![], Some(KEY_VALUE_TIMEOUT_MS)).into(),
                     ));
                 }
                 LocalRelayAction::Unpublish(channel) => {
@@ -85,20 +90,24 @@ where
             match action {
                 SourceBindingAction::Subscribe(channel) => {
                     log::info!("[PubSubServiceBehaviour {}] will sub hashmap {}", self.node_id, channel);
-                    self.outputs
-                        .push_back(NetworkBehaviorAction::ToSdkService(KEY_VALUE_SERVICE_ID, KeyValueSdkEvent::SubH(0, channel as u64, Some(30000)).into()));
+                    self.outputs.push_back(NetworkBehaviorAction::ToSdkService(
+                        KEY_VALUE_SERVICE_ID,
+                        KeyValueSdkEvent::SubH(KEY_VALUE_SUB_UUID, channel as u64, Some(KEY_VALUE_TIMEOUT_MS)).into(),
+                    ));
                 }
                 SourceBindingAction::Unsubscribe(channel) => {
                     log::info!("[PubSubServiceBehaviour {}] will unsub hashmap {}", self.node_id, channel);
-                    self.outputs
-                        .push_back(NetworkBehaviorAction::ToSdkService(KEY_VALUE_SERVICE_ID, KeyValueSdkEvent::UnsubH(0, channel as u64).into()));
+                    self.outputs.push_back(NetworkBehaviorAction::ToSdkService(
+                        KEY_VALUE_SERVICE_ID,
+                        KeyValueSdkEvent::UnsubH(KEY_VALUE_SUB_UUID, channel as u64).into(),
+                    ));
                 }
             }
         }
     }
 }
 
-impl<BE, HE, SE> NetworkBehavior<BE, HE, SE> for PubsubServiceBehaviour<HE, SE>
+impl<BE, HE, SE> NetworkBehavior<BE, HE, SE> for PubsubServiceBehaviour<BE, HE, SE>
 where
     BE: From<PubsubServiceBehaviourEvent> + TryInto<PubsubServiceBehaviourEvent> + Send + Sync + 'static,
     HE: From<PubsubServiceHandlerEvent> + TryInto<PubsubServiceHandlerEvent> + Send + Sync + 'static,
@@ -205,5 +214,151 @@ where
 
     fn pop_action(&mut self) -> Option<NetworkBehaviorAction<HE, SE>> {
         self.outputs.pop_front()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use bluesea_identity::ConnId;
+    use bluesea_router::RouteRule;
+    use key_value::{KeyValueSdkEvent, KEY_VALUE_SERVICE_ID};
+    use network::{
+        behaviour::{BehaviorContext, NetworkBehavior, NetworkBehaviorAction},
+        msg::{MsgHeader, TransportMsg},
+    };
+    use utils::{awaker::MockAwaker, MockTimer, Timer};
+
+    use crate::{
+        behaviour::{KEY_VALUE_SUB_UUID, KEY_VALUE_TIMEOUT_MS},
+        handler::CONTROL_META_TYPE,
+        ChannelIdentify, PubsubRemoteEvent, PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent, PUBSUB_SERVICE_ID,
+    };
+
+    type BE = PubsubServiceBehaviourEvent;
+    type HE = PubsubServiceHandlerEvent;
+    type SE = KeyValueSdkEvent;
+
+    #[test]
+    fn publish_unpublish_should_set_del_key() {
+        let local_node_id = 1;
+        let channel = 1000;
+        let timer = Arc::new(MockTimer::default());
+        let (mut behaviour, sdk) = super::PubsubServiceBehaviour::<BE, HE, SE>::new(local_node_id, timer.clone());
+
+        let ctx = BehaviorContext {
+            service_id: PUBSUB_SERVICE_ID,
+            node_id: local_node_id,
+            awaker: Arc::new(MockAwaker::default()),
+        };
+
+        behaviour.on_started(&ctx, 0);
+
+        let publisher = sdk.create_publisher(channel);
+        assert_eq!(ctx.awaker.pop_awake_count(), 1);
+
+        behaviour.on_awake(&ctx, timer.now_ms());
+        assert_eq!(
+            behaviour.pop_action(),
+            Some(NetworkBehaviorAction::ToSdkService(
+                KEY_VALUE_SERVICE_ID,
+                KeyValueSdkEvent::SetH(channel as u64, local_node_id as u64, vec![], Some(KEY_VALUE_TIMEOUT_MS)).into()
+            ))
+        );
+
+        drop(publisher);
+
+        assert_eq!(ctx.awaker.pop_awake_count(), 1);
+
+        behaviour.on_awake(&ctx, timer.now_ms());
+        assert_eq!(
+            behaviour.pop_action(),
+            Some(NetworkBehaviorAction::ToSdkService(
+                KEY_VALUE_SERVICE_ID,
+                KeyValueSdkEvent::DelH(channel as u64, local_node_id as u64).into()
+            ))
+        );
+    }
+
+    #[test]
+    fn sub_unsub_direct_should_send_net() {
+        let local_node_id = 1;
+        let source_node_id = 10;
+        let channel_uuid = 1000;
+        let channel = ChannelIdentify::new(channel_uuid, source_node_id);
+        let timer = Arc::new(MockTimer::default());
+        let (mut behaviour, sdk) = super::PubsubServiceBehaviour::<BE, HE, SE>::new(local_node_id, timer.clone());
+
+        let ctx = BehaviorContext {
+            service_id: PUBSUB_SERVICE_ID,
+            node_id: local_node_id,
+            awaker: Arc::new(MockAwaker::default()),
+        };
+
+        behaviour.on_started(&ctx, 0);
+
+        let consumer = sdk.create_consumer_single(channel, None);
+        assert_eq!(ctx.awaker.pop_awake_count(), 1);
+
+        behaviour.on_awake(&ctx, timer.now_ms());
+        let mut expected_header = MsgHeader::build_reliable(PUBSUB_SERVICE_ID, RouteRule::Direct, 0);
+        expected_header.meta = CONTROL_META_TYPE;
+        let expected_msg = TransportMsg::from_payload_bincode(expected_header, &PubsubRemoteEvent::Sub(channel));
+        assert_eq!(behaviour.pop_action(), Some(NetworkBehaviorAction::ToNetNode(source_node_id, expected_msg)));
+
+        // after handle ack should not resend
+        behaviour
+            .relay
+            .on_event(timer.now_ms(), source_node_id, ConnId::from_in(0, 0), PubsubRemoteEvent::SubAck(channel, true));
+
+        drop(consumer);
+
+        behaviour.on_awake(&ctx, timer.now_ms());
+        let mut expected_header = MsgHeader::build_reliable(PUBSUB_SERVICE_ID, RouteRule::Direct, 0);
+        expected_header.meta = CONTROL_META_TYPE;
+        let expected_msg = TransportMsg::from_payload_bincode(expected_header, &PubsubRemoteEvent::Unsub(channel));
+        assert_eq!(behaviour.pop_action(), Some(NetworkBehaviorAction::ToNetConn(ConnId::from_in(0, 0), expected_msg)));
+    }
+
+    #[test]
+    fn sub_unsub_should_sub_unsub_key() {
+        let local_node_id = 1;
+        let channel = 1000;
+        let timer = Arc::new(MockTimer::default());
+        let (mut behaviour, sdk) = super::PubsubServiceBehaviour::<BE, HE, SE>::new(local_node_id, timer.clone());
+
+        let ctx = BehaviorContext {
+            service_id: PUBSUB_SERVICE_ID,
+            node_id: local_node_id,
+            awaker: Arc::new(MockAwaker::default()),
+        };
+
+        behaviour.on_started(&ctx, 0);
+
+        let consumer = sdk.create_consumer(channel, None);
+        assert_eq!(ctx.awaker.pop_awake_count(), 1);
+
+        behaviour.on_awake(&ctx, timer.now_ms());
+        assert_eq!(
+            behaviour.pop_action(),
+            Some(NetworkBehaviorAction::ToSdkService(
+                KEY_VALUE_SERVICE_ID,
+                KeyValueSdkEvent::SubH(KEY_VALUE_SUB_UUID, channel as u64, Some(KEY_VALUE_TIMEOUT_MS)).into()
+            ))
+        );
+
+        drop(consumer);
+
+        assert_eq!(ctx.awaker.pop_awake_count(), 1);
+
+        behaviour.on_awake(&ctx, timer.now_ms());
+        assert_eq!(
+            behaviour.pop_action(),
+            Some(NetworkBehaviorAction::ToSdkService(
+                KEY_VALUE_SERVICE_ID,
+                KeyValueSdkEvent::UnsubH(KEY_VALUE_SUB_UUID, channel as u64).into()
+            ))
+        );
     }
 }

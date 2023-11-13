@@ -55,7 +55,7 @@ async fn run_node(node_id: NodeId, neighbours: Vec<NodeAddr>) -> (PubsubSdk, Nod
     });
 
     let router_sync_behaviour = LayersSpreadRouterSyncBehavior::new(router.clone());
-    let kv_behaviour = KeyValueBehavior::new(node_id, timer.clone(), 3000, None);
+    let kv_behaviour = KeyValueBehavior::new(node_id, 3000, None);
     let (pubsub_behavior, pubsub_sdk) = PubsubServiceBehaviour::new(node_id, timer.clone());
 
     let mut plane = NetworkPlane::<ImplBehaviorEvent, ImplHandlerEvent, ImplSdkEvent>::new(NetworkPlaneConfig {
