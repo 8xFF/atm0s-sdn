@@ -16,7 +16,7 @@ serde = { workspace = true }
 log = { workspace = true }
 utils = { workspace = true }
 futures-util = "0.3"
-async-bincode = { version = "0.7.1", features = ["futures"], default-features = false }
+async-bincode = { version = "0.7.2", features = ["futures"], default-features = false }
 
 [dev-dependencies]
 bluesea-router = { workspace = true }
