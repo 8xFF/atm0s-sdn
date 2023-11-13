@@ -16,6 +16,8 @@ mod pub_sub;
 pub type SimpleKeyValueSubscriber = pub_sub::Subscriber<u64, (KeyId, Option<ValueType>, KeyVersion, KeySource)>;
 pub type HashmapKeyValueSubscriber = pub_sub::Subscriber<u64, (KeyId, SubKeyId, Option<ValueType>, KeyVersion, KeySource)>;
 
+static SDK_SUB_UUID: u64 = 0x11;
+
 #[derive(Clone)]
 pub struct KeyValueSdk {
     req_id_gen: Arc<Mutex<u64>>,
@@ -69,12 +71,12 @@ impl KeyValueSdk {
         let (subscriber, is_new) = self.simple_publisher.subscribe(
             key,
             Box::new(move || {
-                actions.write().push_back(crate::KeyValueSdkEvent::Unsub(0, key));
+                actions.write().push_back(crate::KeyValueSdkEvent::Unsub(SDK_SUB_UUID, key));
                 awaker.read().as_ref().unwrap().notify();
             }),
         );
         if is_new {
-            self.actions.write().push_back(crate::KeyValueSdkEvent::Sub(0, key, ex));
+            self.actions.write().push_back(crate::KeyValueSdkEvent::Sub(SDK_SUB_UUID, key, ex));
             self.awaker.read().as_ref().unwrap().notify();
         }
 
@@ -110,12 +112,12 @@ impl KeyValueSdk {
         let (subscriber, is_new) = self.hashmap_publisher.subscribe(
             key,
             Box::new(move || {
-                actions.write().push_back(crate::KeyValueSdkEvent::UnsubH(0, key));
+                actions.write().push_back(crate::KeyValueSdkEvent::UnsubH(SDK_SUB_UUID, key));
                 awaker.read().as_ref().unwrap().notify();
             }),
         );
         if is_new {
-            self.actions.write().push_back(crate::KeyValueSdkEvent::SubH(0, key, ex));
+            self.actions.write().push_back(crate::KeyValueSdkEvent::SubH(SDK_SUB_UUID, key, ex));
             self.awaker.read().as_ref().unwrap().notify();
         }
 
@@ -124,14 +126,14 @@ impl KeyValueSdk {
 
     pub fn hsubscribe_raw(&self, key: u64, uuid: u64, ex: Option<u64>, tx: Sender<(KeyId, SubKeyId, Option<ValueType>, KeyVersion, KeySource)>) {
         if self.hashmap_publisher.sub_raw(key, uuid, tx) {
-            self.actions.write().push_back(crate::KeyValueSdkEvent::SubH(0, key, ex));
+            self.actions.write().push_back(crate::KeyValueSdkEvent::SubH(SDK_SUB_UUID, key, ex));
             self.awaker.read().as_ref().unwrap().notify();
         }
     }
 
     pub fn hunsubscribe_raw(&self, key: u64, uuid: u64) {
         if self.hashmap_publisher.unsub_raw(key, uuid) {
-            self.actions.write().push_back(crate::KeyValueSdkEvent::UnsubH(0, key));
+            self.actions.write().push_back(crate::KeyValueSdkEvent::UnsubH(SDK_SUB_UUID, key));
             self.awaker.read().as_ref().unwrap().notify();
         }
     }
@@ -178,5 +180,102 @@ impl ExternalControl for KeyValueSdk {
 
     fn pop_action(&self) -> Option<KeyValueSdkEvent> {
         self.actions.write().pop_front()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::{sync::Arc, time::Duration};
+
+    use utils::awaker::{Awaker, MockAwaker};
+
+    use crate::{behavior::sdk::SDK_SUB_UUID, ExternalControl, KeyValueSdk, KeyValueSdkEvent};
+
+    #[async_std::test]
+    async fn sdk_get_should_fire_awaker_and_action() {
+        let sdk = KeyValueSdk::new();
+        let awaker = Arc::new(MockAwaker::default());
+
+        sdk.set_awaker(awaker.clone());
+
+        async_std::future::timeout(Duration::from_millis(100), sdk.get(1000, 100)).await.expect_err("Should timeout");
+        assert_eq!(awaker.pop_awake_count(), 1);
+        assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::Get(1, 1000, 100)));
+
+        async_std::future::timeout(Duration::from_millis(100), sdk.hget(1000, 100)).await.expect_err("Should timeout");
+        assert_eq!(awaker.pop_awake_count(), 1);
+        assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::GetH(2, 1000, 100)));
+    }
+
+    #[test]
+    fn sdk_set_should_fire_awaker_and_action() {
+        let sdk = KeyValueSdk::new();
+        let awaker = Arc::new(MockAwaker::default());
+
+        sdk.set_awaker(awaker.clone());
+
+        sdk.set(1000, vec![1], Some(20000));
+        assert_eq!(awaker.pop_awake_count(), 1);
+
+        assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::Set(1000, vec![1], Some(20000))));
+
+        sdk.del(1000);
+        assert_eq!(awaker.pop_awake_count(), 1);
+
+        assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::Del(1000)))
+    }
+
+    #[test]
+    fn sdk_sub_should_fire_awaker_and_action() {
+        let sdk = KeyValueSdk::new();
+        let awaker = Arc::new(MockAwaker::default());
+
+        sdk.set_awaker(awaker.clone());
+
+        let handler = sdk.subscribe(1000, Some(20000));
+        assert_eq!(awaker.pop_awake_count(), 1);
+
+        assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::Sub(SDK_SUB_UUID, 1000, Some(20000))));
+
+        drop(handler);
+        assert_eq!(awaker.pop_awake_count(), 1);
+
+        assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::Unsub(SDK_SUB_UUID, 1000)))
+    }
+
+    #[test]
+    fn sdk_hset_should_fire_awaker_and_action() {
+        let sdk = KeyValueSdk::new();
+        let awaker = Arc::new(MockAwaker::default());
+
+        sdk.set_awaker(awaker.clone());
+
+        sdk.hset(1000, 11, vec![1], Some(20000));
+        assert_eq!(awaker.pop_awake_count(), 1);
+
+        assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::SetH(1000, 11, vec![1], Some(20000))));
+
+        sdk.hdel(1000, 11);
+        assert_eq!(awaker.pop_awake_count(), 1);
+
+        assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::DelH(1000, 11)))
+    }
+
+    #[test]
+    fn sdk_hsub_should_fire_awaker_and_action() {
+        let sdk = KeyValueSdk::new();
+        let awaker = Arc::new(MockAwaker::default());
+
+        sdk.set_awaker(awaker.clone());
+
+        let handler = sdk.hsubscribe(1000, Some(20000));
+        assert_eq!(awaker.pop_awake_count(), 1);
+
+        assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::SubH(SDK_SUB_UUID, 1000, Some(20000))));
+
+        drop(handler);
+        assert_eq!(awaker.pop_awake_count(), 1);
+
+        assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::UnsubH(SDK_SUB_UUID, 1000)))
     }
 }
