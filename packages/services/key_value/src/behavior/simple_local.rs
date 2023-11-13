@@ -40,6 +40,7 @@ struct KeySlotSubscribe {
 pub enum SimpleKeyValueGetError {
     NetworkError,
     Timeout,
+    InternalError,
 }
 
 struct KeySlotGetCallback {

@@ -15,12 +15,13 @@ pub enum KeyValueHandlerEvent {}
 pub enum KeyValueSdkEventError {
     NetworkError,
     Timeout,
+    InternalError,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum KeyValueSdkEvent {
-    Get(u64, KeyId),
-    GetH(u64, KeyId),
+    Get(u64, KeyId, u64),
+    GetH(u64, KeyId, u64),
     Set(KeyId, ValueType, Option<u64>),
     SetH(KeyId, SubKeyId, ValueType, Option<u64>),
     Del(KeyId),

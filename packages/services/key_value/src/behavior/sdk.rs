@@ -1,10 +1,13 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::Arc,
+};
 
 use async_std::channel::Sender;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use utils::awaker::Awaker;
 
-use crate::{ExternalControl, KeyId, KeySource, KeyValueSdkEvent, KeyVersion, SubKeyId, ValueType};
+use crate::{msg::KeyValueSdkEventError, ExternalControl, KeyId, KeySource, KeyValueSdkEvent, KeyVersion, SubKeyId, ValueType};
 
 use super::{hashmap_local::HashmapKeyValueGetError, simple_local::SimpleKeyValueGetError};
 
@@ -15,19 +18,25 @@ pub type HashmapKeyValueSubscriber = pub_sub::Subscriber<u64, (KeyId, SubKeyId, 
 
 #[derive(Clone)]
 pub struct KeyValueSdk {
+    req_id_gen: Arc<Mutex<u64>>,
     awaker: Arc<RwLock<Option<Arc<dyn Awaker>>>>,
     simple_publisher: Arc<pub_sub::PublisherManager<u64, (KeyId, Option<ValueType>, KeyVersion, KeySource)>>,
     hashmap_publisher: Arc<pub_sub::PublisherManager<u64, (KeyId, SubKeyId, Option<ValueType>, KeyVersion, KeySource)>>,
+    simple_get_queue: Arc<Mutex<HashMap<u64, Sender<Result<Option<(ValueType, KeyVersion, KeySource)>, SimpleKeyValueGetError>>>>>,
+    hashmap_get_queue: Arc<Mutex<HashMap<u64, Sender<Result<Option<Vec<(SubKeyId, ValueType, KeyVersion, KeySource)>>, HashmapKeyValueGetError>>>>>,
     actions: Arc<RwLock<VecDeque<crate::KeyValueSdkEvent>>>,
 }
 
 impl KeyValueSdk {
     pub fn new() -> Self {
         Self {
+            req_id_gen: Arc::new(Mutex::new(0)),
             awaker: Arc::new(RwLock::new(None)),
             simple_publisher: Arc::new(pub_sub::PublisherManager::new()),
             hashmap_publisher: Arc::new(pub_sub::PublisherManager::new()),
             actions: Arc::new(RwLock::new(VecDeque::new())),
+            simple_get_queue: Arc::new(Mutex::new(HashMap::new())),
+            hashmap_get_queue: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -37,7 +46,16 @@ impl KeyValueSdk {
     }
 
     pub async fn get(&self, key: KeyId, timeout_ms: u64) -> Result<Option<(ValueType, KeyVersion, KeySource)>, SimpleKeyValueGetError> {
-        todo!()
+        let req_id = {
+            let mut req_id_gen = self.req_id_gen.lock();
+            *req_id_gen += 1;
+            *req_id_gen
+        };
+        self.actions.write().push_back(crate::KeyValueSdkEvent::Get(req_id, key, timeout_ms));
+        self.awaker.read().as_ref().unwrap().notify();
+        let (tx, rx) = async_std::channel::bounded(1);
+        self.simple_get_queue.lock().insert(req_id, tx);
+        rx.recv().await.map_err(|_| SimpleKeyValueGetError::InternalError)?
     }
 
     pub fn del(&self, key: KeyId) {
@@ -69,7 +87,16 @@ impl KeyValueSdk {
     }
 
     pub async fn hget(&self, key: KeyId, timeout_ms: u64) -> Result<Option<Vec<(SubKeyId, ValueType, KeyVersion, KeySource)>>, HashmapKeyValueGetError> {
-        todo!()
+        let req_id = {
+            let mut req_id_gen = self.req_id_gen.lock();
+            *req_id_gen += 1;
+            *req_id_gen
+        };
+        self.actions.write().push_back(crate::KeyValueSdkEvent::GetH(req_id, key, timeout_ms));
+        self.awaker.read().as_ref().unwrap().notify();
+        let (tx, rx) = async_std::channel::bounded(1);
+        self.hashmap_get_queue.lock().insert(req_id, tx);
+        rx.recv().await.map_err(|_| HashmapKeyValueGetError::InternalError)?
     }
 
     pub fn hdel(&self, key: KeyId, sub_key: SubKeyId) {
@@ -122,6 +149,28 @@ impl ExternalControl for KeyValueSdk {
             }
             KeyValueSdkEvent::OnKeyHChanged(_uuid, key, sub_key, value, version, source) => {
                 self.hashmap_publisher.publish(key, (key, sub_key, value, version, source));
+            }
+            KeyValueSdkEvent::OnGet(req_id, key, res) => {
+                if let Some(tx) = self.simple_get_queue.lock().remove(&req_id) {
+                    if let Err(e) = tx.try_send(res.map_err(|e| match e {
+                        KeyValueSdkEventError::NetworkError => SimpleKeyValueGetError::NetworkError,
+                        KeyValueSdkEventError::Timeout => SimpleKeyValueGetError::Timeout,
+                        KeyValueSdkEventError::InternalError => SimpleKeyValueGetError::InternalError,
+                    })) {
+                        log::error!("[KeyValueSdk] send get result request {req_id} for key {key} error: {:?}", e);
+                    }
+                }
+            }
+            KeyValueSdkEvent::OnGetH(req_id, key, res) => {
+                if let Some(tx) = self.hashmap_get_queue.lock().remove(&req_id) {
+                    if let Err(e) = tx.try_send(res.map_err(|e| match e {
+                        KeyValueSdkEventError::NetworkError => HashmapKeyValueGetError::NetworkError,
+                        KeyValueSdkEventError::Timeout => HashmapKeyValueGetError::Timeout,
+                        KeyValueSdkEventError::InternalError => HashmapKeyValueGetError::InternalError,
+                    })) {
+                        log::error!("[KeyValueSdk] send get result request {req_id} for key {key} error: {:?}", e);
+                    }
+                }
             }
             _ => {}
         }
