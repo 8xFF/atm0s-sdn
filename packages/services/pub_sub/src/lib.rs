@@ -8,7 +8,7 @@ mod msg;
 mod relay;
 mod sdk;
 
-pub use behaviour::{channel_source::ChannelSourceHashmapMock, channel_source::ChannelSourceHashmapReal, PubsubServiceBehaviour};
+pub use behaviour::PubsubServiceBehaviour;
 pub use msg::{PubsubRemoteEvent, PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent};
 pub use relay::{feedback::Feedback, feedback::FeedbackType, feedback::NumberInfo, ChannelIdentify, ChannelUuid, LocalPubId, LocalSubId};
 pub use sdk::{consumer::Consumer, consumer_raw::ConsumerRaw, consumer_single::ConsumerSingle, publisher::Publisher, publisher_raw::PublisherRaw, PubsubSdk};
@@ -19,7 +19,7 @@ mod tests {
     use async_std::task::JoinHandle;
     use bluesea_identity::{NodeAddr, NodeAddrBuilder, NodeId, Protocol};
     use bytes::Bytes;
-    use key_value::{KeyValueBehavior, KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueMsg, KeyValueSdkEvent};
+    use key_value::{KeyValueBehavior, KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueMsg, KeyValueSdk, KeyValueSdkEvent};
     use layers_spread_router::SharedRouter;
     use layers_spread_router_sync::{LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent, LayersSpreadRouterSyncHandlerEvent, LayersSpreadRouterSyncMsg};
     use manual_discovery::{ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent, ManualMsg};
@@ -31,11 +31,8 @@ mod tests {
     use transport_vnet::VnetEarth;
     use utils::{option_handle::OptionUtils, SystemTimer};
 
+    use crate::msg::{PubsubRemoteEvent, PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent};
     use crate::relay::feedback::{FeedbackType, NumberInfo};
-    use crate::{
-        msg::{PubsubRemoteEvent, PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent},
-        ChannelSourceHashmapReal,
-    };
     use crate::{PubsubSdk, PubsubServiceBehaviour};
 
     #[derive(convert_enum::From, convert_enum::TryInto)]
@@ -64,7 +61,7 @@ mod tests {
 
     #[derive(convert_enum::From, convert_enum::TryInto)]
     enum ImplSdkEvent {
-        KeyValue(KeyValueSdkEvent)
+        KeyValue(KeyValueSdkEvent),
     }
 
     async fn run_node(vnet: Arc<VnetEarth>, node_id: NodeId, neighbours: Vec<NodeAddr>) -> (PubsubSdk, NodeAddr, JoinHandle<()>) {
@@ -83,8 +80,9 @@ mod tests {
         });
 
         let router_sync_behaviour = LayersSpreadRouterSyncBehavior::new(router.clone());
-        let (kv_behaviour, kv_sdk) = KeyValueBehavior::new(node_id, timer.clone(), 3000);
-        let (pubsub_behavior, pubsub_sdk) = PubsubServiceBehaviour::new(node_id, Box::new(ChannelSourceHashmapReal::new(kv_sdk, node_id)), timer.clone());
+        let kv_sdk = KeyValueSdk::new();
+        let kv_behaviour = KeyValueBehavior::new(node_id, 3000, Some(Box::new(kv_sdk.clone())));
+        let (pubsub_behavior, pubsub_sdk) = PubsubServiceBehaviour::new(node_id, timer.clone());
 
         let mut plane = NetworkPlane::<ImplBehaviorEvent, ImplHandlerEvent, ImplSdkEvent>::new(NetworkPlaneConfig {
             node_id,

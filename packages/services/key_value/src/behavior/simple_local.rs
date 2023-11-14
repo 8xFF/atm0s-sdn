@@ -1,5 +1,5 @@
 use crate::{
-    msg::{SimpleLocalEvent, SimpleRemoteEvent},
+    msg::{KeyValueSdkEventError, SimpleLocalEvent, SimpleRemoteEvent},
     KeyId, KeySource, KeyVersion, ReqId, ValueType,
 };
 use bluesea_identity::NodeId;
@@ -17,12 +17,8 @@ use bluesea_router::RouteRule;
 /// Same with subscribe/unsubscribe
 use std::{
     collections::{HashMap, VecDeque},
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
+    sync::atomic::{AtomicU64, Ordering},
 };
-use utils::awaker::Awaker;
 
 struct KeySlotData {
     value: Option<Vec<u8>>,
@@ -37,22 +33,29 @@ struct KeySlotSubscribe {
     last_sync: u64,
     sub: bool,
     acked: bool,
-    handler: Box<dyn FnMut(KeyId, Option<Vec<u8>>, KeyVersion, KeySource) + Send + Sync>,
+    handlers: HashMap<(u64, u8), ()>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum SimpleKeyValueGetError {
     NetworkError,
     Timeout,
+    InternalError,
 }
 
 struct KeySlotGetCallback {
+    key: KeyId,
     timeout_after_ts: u64,
-    callback: Box<dyn FnOnce(Result<Option<(ValueType, KeyVersion, KeySource)>, SimpleKeyValueGetError>) + Send + Sync>,
+    uuid: u64,
+    service_id: u8,
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct LocalStorageAction(pub(crate) SimpleRemoteEvent, pub(crate) RouteRule);
+pub enum LocalStorageAction {
+    SendNet(SimpleRemoteEvent, RouteRule),
+    LocalOnChanged(u8, u64, KeyId, Option<ValueType>, KeyVersion, KeySource),
+    LocalOnGet(u8, u64, KeyId, Result<Option<(ValueType, KeyVersion, KeySource)>, KeyValueSdkEventError>),
+}
 
 pub struct SimpleLocalStorage {
     req_id_seed: AtomicU64,
@@ -62,12 +65,11 @@ pub struct SimpleLocalStorage {
     subscribe: HashMap<KeyId, KeySlotSubscribe>,
     output_events: VecDeque<LocalStorageAction>,
     get_queue: HashMap<ReqId, KeySlotGetCallback>,
-    awake_notify: Arc<dyn Awaker>,
 }
 
 impl SimpleLocalStorage {
     /// create new local storage with provided timer and sync_each_ms. Sync_each_ms is used for sync data to remote storage incase of acked
-    pub fn new(awake_notify: Arc<dyn Awaker>, sync_each_ms: u64) -> Self {
+    pub fn new(sync_each_ms: u64) -> Self {
         Self {
             req_id_seed: AtomicU64::new(0),
             version_seed: 0,
@@ -76,12 +78,7 @@ impl SimpleLocalStorage {
             subscribe: HashMap::new(),
             output_events: VecDeque::new(),
             get_queue: HashMap::new(),
-            awake_notify,
         }
-    }
-
-    pub fn change_awake_notify(&mut self, awake_notify: Arc<dyn Awaker>) {
-        self.awake_notify = awake_notify;
     }
 
     fn gen_req_id(&self) -> u64 {
@@ -102,14 +99,14 @@ impl SimpleLocalStorage {
                 let req_id = self.gen_req_id();
                 if let Some(value) = &slot.value {
                     log::debug!("[SimpleLocal] resend set key {} with version {}", key, slot.version);
-                    self.output_events.push_back(LocalStorageAction(
+                    self.output_events.push_back(LocalStorageAction::SendNet(
                         SimpleRemoteEvent::Set(req_id, *key, value.clone(), slot.version, slot.ex.clone()),
                         RouteRule::ToKey(*key as u32),
                     ));
                 } else {
                     log::debug!("[SimpleLocal] resend del key {} with version {}", key, slot.version);
                     self.output_events
-                        .push_back(LocalStorageAction(SimpleRemoteEvent::Del(req_id, *key, slot.version), RouteRule::ToKey(*key as u32)));
+                        .push_back(LocalStorageAction::SendNet(SimpleRemoteEvent::Del(req_id, *key, slot.version), RouteRule::ToKey(*key as u32)));
                 }
             }
         }
@@ -121,10 +118,11 @@ impl SimpleLocalStorage {
                 if slot.sub {
                     log::debug!("[SimpleLocal] resend sub key {}", key);
                     self.output_events
-                        .push_back(LocalStorageAction(SimpleRemoteEvent::Sub(req_id, *key, slot.ex.clone()), RouteRule::ToKey(*key as u32)));
+                        .push_back(LocalStorageAction::SendNet(SimpleRemoteEvent::Sub(req_id, *key, slot.ex.clone()), RouteRule::ToKey(*key as u32)));
                 } else {
                     log::debug!("[SimpleLocal] resend unsub key {}", key);
-                    self.output_events.push_back(LocalStorageAction(SimpleRemoteEvent::Unsub(req_id, *key), RouteRule::ToKey(*key as u32)));
+                    self.output_events
+                        .push_back(LocalStorageAction::SendNet(SimpleRemoteEvent::Unsub(req_id, *key), RouteRule::ToKey(*key as u32)));
                 }
             }
         }
@@ -136,7 +134,7 @@ impl SimpleLocalStorage {
                 let req_id = self.gen_req_id();
                 if let Some(value) = &slot.value {
                     log::debug!("[SimpleLocal] sync set key {} with version {}", key, slot.version);
-                    self.output_events.push_back(LocalStorageAction(
+                    self.output_events.push_back(LocalStorageAction::SendNet(
                         SimpleRemoteEvent::Set(req_id, *key, value.clone(), slot.version, slot.ex.clone()),
                         RouteRule::ToKey(*key as u32),
                     ));
@@ -163,7 +161,7 @@ impl SimpleLocalStorage {
                 if slot.sub {
                     log::debug!("[SimpleLocal] sync sub key {}", key);
                     self.output_events
-                        .push_back(LocalStorageAction(SimpleRemoteEvent::Sub(req_id, *key, slot.ex.clone()), RouteRule::ToKey(*key as u32)));
+                        .push_back(LocalStorageAction::SendNet(SimpleRemoteEvent::Sub(req_id, *key, slot.ex.clone()), RouteRule::ToKey(*key as u32)));
                 } else {
                     log::debug!("[SimpleLocal] remove sub key {} after acked", key);
                     // Just remove if acked and unsub
@@ -191,7 +189,8 @@ impl SimpleLocalStorage {
         for req_id in timeout_gets {
             if let Some(slot) = self.get_queue.remove(&req_id) {
                 log::debug!("[SimpleLocal] get key {} timeout", req_id);
-                (slot.callback)(Err(SimpleKeyValueGetError::Timeout));
+                self.output_events
+                    .push_back(LocalStorageAction::LocalOnGet(slot.service_id, slot.uuid, slot.key, Err(KeyValueSdkEventError::Timeout)));
             }
         }
 
@@ -229,7 +228,7 @@ impl SimpleLocalStorage {
             }
             SimpleLocalEvent::GetAck(req_id, _key, value) => {
                 if let Some(slot) = self.get_queue.remove(&req_id) {
-                    (slot.callback)(Ok(value))
+                    self.output_events.push_back(LocalStorageAction::LocalOnGet(slot.service_id, slot.uuid, slot.key, Ok(value)));
                 } else {
                 }
             }
@@ -263,18 +262,25 @@ impl SimpleLocalStorage {
                 }
             }
             SimpleLocalEvent::OnKeySet(req_id, key, value, version, source) => {
-                self.output_events.push_back(LocalStorageAction(SimpleRemoteEvent::OnKeySetAck(req_id), RouteRule::ToNode(from)));
+                self.output_events
+                    .push_back(LocalStorageAction::SendNet(SimpleRemoteEvent::OnKeySetAck(req_id), RouteRule::ToNode(from)));
                 if let Some(slot) = self.subscribe.get_mut(&key) {
                     if slot.sub {
-                        (slot.handler)(key, Some(value), version, source);
+                        for ((uuid, service_id), _) in slot.handlers.iter() {
+                            self.output_events
+                                .push_back(LocalStorageAction::LocalOnChanged(*service_id, *uuid, key, Some(value.clone()), version, source));
+                        }
                     }
                 }
             }
             SimpleLocalEvent::OnKeyDel(req_id, key, version, source) => {
-                self.output_events.push_back(LocalStorageAction(SimpleRemoteEvent::OnKeyDelAck(req_id), RouteRule::ToNode(from)));
+                self.output_events
+                    .push_back(LocalStorageAction::SendNet(SimpleRemoteEvent::OnKeyDelAck(req_id), RouteRule::ToNode(from)));
                 if let Some(slot) = self.subscribe.get_mut(&key) {
                     if slot.sub {
-                        (slot.handler)(key, None, version, source);
+                        for ((uuid, service_id), _) in slot.handlers.iter() {
+                            self.output_events.push_back(LocalStorageAction::LocalOnChanged(*service_id, *uuid, key, None, version, source));
+                        }
                     }
                 }
             }
@@ -301,22 +307,23 @@ impl SimpleLocalStorage {
         );
 
         self.output_events
-            .push_back(LocalStorageAction(SimpleRemoteEvent::Set(req_id, key, value, version, ex), RouteRule::ToKey(key as u32)));
-        self.awake_notify.notify();
+            .push_back(LocalStorageAction::SendNet(SimpleRemoteEvent::Set(req_id, key, value, version, ex), RouteRule::ToKey(key as u32)));
     }
 
-    pub fn get(&mut self, now_ms: u64, key: KeyId, callback: Box<dyn FnOnce(Result<Option<(ValueType, KeyVersion, KeySource)>, SimpleKeyValueGetError>) + Send + Sync>, timeout_ms: u64) {
+    pub fn get(&mut self, now_ms: u64, key: KeyId, uuid: u64, service_id: u8, timeout_ms: u64) {
         let req_id = self.gen_req_id();
         log::debug!("[SimpleLocal] get key {} with req_id {}", key, req_id);
         self.get_queue.insert(
             req_id,
             KeySlotGetCallback {
+                key,
                 timeout_after_ts: now_ms + timeout_ms,
-                callback,
+                uuid,
+                service_id,
             },
         );
-        self.output_events.push_back(LocalStorageAction(SimpleRemoteEvent::Get(req_id, key), RouteRule::ToKey(key as u32)));
-        self.awake_notify.notify();
+        self.output_events
+            .push_back(LocalStorageAction::SendNet(SimpleRemoteEvent::Get(req_id, key), RouteRule::ToKey(key as u32)));
     }
 
     pub fn del(&mut self, key: KeyId) {
@@ -328,14 +335,14 @@ impl SimpleLocalStorage {
             slot.acked = false;
 
             self.output_events
-                .push_back(LocalStorageAction(SimpleRemoteEvent::Del(req_id, key, slot.version), RouteRule::ToKey(key as u32)));
-            self.awake_notify.notify();
+                .push_back(LocalStorageAction::SendNet(SimpleRemoteEvent::Del(req_id, key, slot.version), RouteRule::ToKey(key as u32)));
         }
     }
 
-    pub fn subscribe(&mut self, key: KeyId, ex: Option<u64>, handler: Box<dyn FnMut(KeyId, Option<Vec<u8>>, KeyVersion, KeySource) + Send + Sync>) {
-        if self.subscribe.contains_key(&key) {
+    pub fn subscribe(&mut self, key: KeyId, ex: Option<u64>, uuid: u64, service_id: u8) {
+        if let Some(slot) = self.subscribe.get_mut(&key) {
             log::warn!("[SimpleLocal] subscribe key {} but already subscribed", key);
+            slot.handlers.insert((uuid, service_id), ());
             return;
         }
 
@@ -348,24 +355,27 @@ impl SimpleLocalStorage {
                 last_sync: 0,
                 sub: true,
                 acked: false,
-                handler,
+                handlers: HashMap::from([((uuid, service_id), ())]),
             },
         );
-        self.output_events.push_back(LocalStorageAction(SimpleRemoteEvent::Sub(req_id, key, ex), RouteRule::ToKey(key as u32)));
-        self.awake_notify.notify();
+        self.output_events
+            .push_back(LocalStorageAction::SendNet(SimpleRemoteEvent::Sub(req_id, key, ex), RouteRule::ToKey(key as u32)));
     }
 
-    pub fn unsubscribe(&mut self, key: KeyId) {
+    pub fn unsubscribe(&mut self, key: KeyId, uuid: u64, service_id: u8) {
         let req_id = self.gen_req_id();
         if let Some(slot) = self.subscribe.get_mut(&key) {
-            slot.sub = false;
-            slot.last_sync = 0;
-            slot.acked = false;
+            slot.handlers.remove(&(uuid, service_id));
+            if slot.handlers.is_empty() {
+                slot.sub = false;
+                slot.last_sync = 0;
+                slot.acked = false;
 
-            log::debug!("[SimpleLocal] unsubscribe key {} with req_id {}", key, req_id);
+                log::debug!("[SimpleLocal] unsubscribe key {} with req_id {}", key, req_id);
 
-            self.output_events.push_back(LocalStorageAction(SimpleRemoteEvent::Unsub(req_id, key), RouteRule::ToKey(key as u32)));
-            self.awake_notify.notify();
+                self.output_events
+                    .push_back(LocalStorageAction::SendNet(SimpleRemoteEvent::Unsub(req_id, key), RouteRule::ToKey(key as u32)));
+            }
         } else {
             log::warn!("[SimpleLocal] unsubscribe key {} but not subscribed", key);
         }
@@ -374,28 +384,25 @@ impl SimpleLocalStorage {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use bluesea_router::RouteRule;
-    use parking_lot::Mutex;
-    use utils::awaker::{Awaker, MockAwaker};
 
     use crate::{
         behavior::simple_local::LocalStorageAction,
-        msg::{SimpleLocalEvent, SimpleRemoteEvent},
+        msg::{KeyValueSdkEventError, SimpleLocalEvent, SimpleRemoteEvent},
     };
 
     use super::SimpleLocalStorage;
 
     #[test]
     fn set_should_mark_after_ack() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = SimpleLocalStorage::new(awake_notify.clone(), 10000);
+        let mut storage = SimpleLocalStorage::new(10000);
 
         storage.set(0, 1, vec![1], None);
-        assert_eq!(awake_notify.pop_awake_count(), 1);
 
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(SimpleRemoteEvent::Set(0, 1, vec![1], 0, None), RouteRule::ToKey(1))));
+        assert_eq!(
+            storage.pop_action(),
+            Some(LocalStorageAction::SendNet(SimpleRemoteEvent::Set(0, 1, vec![1], 0, None), RouteRule::ToKey(1)))
+        );
         assert_eq!(storage.pop_action(), None);
 
         storage.on_event(2, SimpleLocalEvent::SetAck(0, 1, 0, true));
@@ -409,7 +416,7 @@ mod tests {
     // fn should_renegerate_set_event_if_ack_failed() {
     //     let timer = Arc::new(utils::MockTimer::default());
     //     let awake_notify = Arc::new(MockAwaker::default());
-    //     let mut storage = LocalStorage::new(awake_notify, 10000);
+    //     let mut storage = LocalStorage::new(10000);
 
     //     storage.set(1, vec![1], None);
     //     assert_eq!(storage.pop_action(), Some(LocalStorageAction(RemoteEvent::Set(0, 1, vec![1], 0, None), RouteRule::ToKey(1))));
@@ -429,8 +436,7 @@ mod tests {
 
     #[test]
     fn set_should_generate_new_version() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = SimpleLocalStorage::new(awake_notify, 10000);
+        let mut storage = SimpleLocalStorage::new(10000);
 
         storage.set(0, 1, vec![1], None);
         assert!(storage.pop_action().is_some());
@@ -439,7 +445,7 @@ mod tests {
         storage.set(1000, 1, vec![2], None);
         assert_eq!(
             storage.pop_action(),
-            Some(LocalStorageAction(SimpleRemoteEvent::Set(1, 1, vec![2], 65536001, None), RouteRule::ToKey(1)))
+            Some(LocalStorageAction::SendNet(SimpleRemoteEvent::Set(1, 1, vec![2], 65536001, None), RouteRule::ToKey(1)))
         );
         assert_eq!(storage.pop_action(), None);
 
@@ -452,8 +458,7 @@ mod tests {
 
     #[test]
     fn set_should_retry_after_tick_and_not_received_ack() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = SimpleLocalStorage::new(awake_notify, 10000);
+        let mut storage = SimpleLocalStorage::new(10000);
 
         storage.set(0, 1, vec![1], None);
         assert!(storage.pop_action().is_some());
@@ -461,14 +466,16 @@ mod tests {
 
         //because dont received ack, should resend event
         storage.tick(0);
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(SimpleRemoteEvent::Set(1, 1, vec![1], 0, None), RouteRule::ToKey(1))));
+        assert_eq!(
+            storage.pop_action(),
+            Some(LocalStorageAction::SendNet(SimpleRemoteEvent::Set(1, 1, vec![1], 0, None), RouteRule::ToKey(1)))
+        );
         assert_eq!(storage.pop_action(), None);
     }
 
     #[test]
     fn set_acked_should_resend_each_sync_each_ms() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = SimpleLocalStorage::new(awake_notify, 10000);
+        let mut storage = SimpleLocalStorage::new(10000);
 
         storage.set(0, 1, vec![1], None);
         assert!(storage.pop_action().is_some());
@@ -482,13 +489,15 @@ mod tests {
 
         //should resend if timer greater than sync_each_ms
         storage.tick(10001);
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(SimpleRemoteEvent::Set(1, 1, vec![1], 0, None), RouteRule::ToKey(1))));
+        assert_eq!(
+            storage.pop_action(),
+            Some(LocalStorageAction::SendNet(SimpleRemoteEvent::Set(1, 1, vec![1], 0, None), RouteRule::ToKey(1)))
+        );
     }
 
     #[test]
     fn del_should_mark_after_ack() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = SimpleLocalStorage::new(awake_notify.clone(), 10000);
+        let mut storage = SimpleLocalStorage::new(10000);
 
         storage.set(0, 1, vec![1], None);
         assert!(storage.pop_action().is_some());
@@ -496,8 +505,7 @@ mod tests {
         storage.on_event(2, SimpleLocalEvent::SetAck(0, 1, 0, true));
 
         storage.del(1);
-        assert_eq!(awake_notify.pop_awake_count(), 2);
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(SimpleRemoteEvent::Del(1, 1, 0), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(SimpleRemoteEvent::Del(1, 1, 0), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
         //after received ack should not resend event
@@ -508,8 +516,7 @@ mod tests {
 
     #[test]
     fn del_should_mark_after_ack_older() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = SimpleLocalStorage::new(awake_notify.clone(), 10000);
+        let mut storage = SimpleLocalStorage::new(10000);
 
         storage.set(0, 1, vec![1], None);
         assert!(storage.pop_action().is_some());
@@ -522,7 +529,7 @@ mod tests {
         storage.on_event(2, SimpleLocalEvent::SetAck(0, 1, 0, true));
 
         storage.del(1);
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(SimpleRemoteEvent::Del(2, 1, 65536001), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(SimpleRemoteEvent::Del(2, 1, 65536001), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
         //after received ack should not resend event
@@ -533,8 +540,7 @@ mod tests {
 
     #[test]
     fn del_should_retry_after_tick_and_not_received_ack() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = SimpleLocalStorage::new(awake_notify.clone(), 10000);
+        let mut storage = SimpleLocalStorage::new(10000);
 
         storage.set(0, 1, vec![1], None);
         assert!(storage.pop_action().is_some());
@@ -542,21 +548,19 @@ mod tests {
         storage.on_event(2, SimpleLocalEvent::SetAck(0, 1, 0, true));
 
         storage.del(1);
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(SimpleRemoteEvent::Del(1, 1, 0), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(SimpleRemoteEvent::Del(1, 1, 0), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
         storage.tick(0);
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(SimpleRemoteEvent::Del(2, 1, 0), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(SimpleRemoteEvent::Del(2, 1, 0), RouteRule::ToKey(1))));
     }
 
     #[test]
     fn sub_should_mark_after_ack() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = SimpleLocalStorage::new(awake_notify.clone(), 10000);
+        let mut storage = SimpleLocalStorage::new(10000);
 
-        storage.subscribe(1, None, Box::new(|_, _, _, _| {}));
-        assert_eq!(awake_notify.pop_awake_count(), 1);
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(SimpleRemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
+        storage.subscribe(1, None, 11111, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(SimpleRemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
         storage.on_event(2, SimpleLocalEvent::SubAck(0, 1));
@@ -567,19 +571,9 @@ mod tests {
 
     #[test]
     fn sub_event_test() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = SimpleLocalStorage::new(awake_notify, 10000);
-        let received_events = Arc::new(Mutex::new(Vec::new()));
-
-        let received_events_clone = received_events.clone();
-        storage.subscribe(
-            1,
-            None,
-            Box::new(move |key, value, version, source| {
-                received_events_clone.lock().push((key, value, version, source));
-            }),
-        );
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(SimpleRemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
+        let mut storage = SimpleLocalStorage::new(10000);
+        storage.subscribe(1, None, 11111, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(SimpleRemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
         storage.on_event(2, SimpleLocalEvent::SubAck(0, 1));
@@ -589,31 +583,34 @@ mod tests {
 
         // fake incoming event
         storage.on_event(2, SimpleLocalEvent::OnKeySet(0, 1, vec![1], 0, 1000));
-        storage.on_event(2, SimpleLocalEvent::OnKeyDel(0, 1, 0, 1000));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(SimpleRemoteEvent::OnKeySetAck(0), RouteRule::ToNode(2))));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::LocalOnChanged(10, 11111, 1, Some(vec![1]), 0, 1000)));
 
-        assert_eq!(*received_events.lock(), vec![(1, Some(vec![1]), 0, 1000), (1, None, 0, 1000),]);
+        storage.on_event(2, SimpleLocalEvent::OnKeyDel(1, 1, 0, 1000));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(SimpleRemoteEvent::OnKeyDelAck(1), RouteRule::ToNode(2))));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::LocalOnChanged(10, 11111, 1, None, 0, 1000)));
+
+        assert_eq!(storage.pop_action(), None);
     }
 
     #[test]
     fn sub_should_retry_after_tick_and_not_received_ack() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = SimpleLocalStorage::new(awake_notify, 10000);
+        let mut storage = SimpleLocalStorage::new(10000);
 
-        storage.subscribe(1, None, Box::new(|_, _, _, _| {}));
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(SimpleRemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
+        storage.subscribe(1, None, 11111, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(SimpleRemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
         storage.tick(0);
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(SimpleRemoteEvent::Sub(1, 1, None), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(SimpleRemoteEvent::Sub(1, 1, None), RouteRule::ToKey(1))));
     }
 
     #[test]
     fn sub_acked_should_resend_each_sync_each_ms() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = SimpleLocalStorage::new(awake_notify, 10000);
+        let mut storage = SimpleLocalStorage::new(10000);
 
-        storage.subscribe(1, None, Box::new(|_, _, _, _| {}));
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(SimpleRemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
+        storage.subscribe(1, None, 11111, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(SimpleRemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
         storage.on_event(2, SimpleLocalEvent::SubAck(0, 1));
@@ -623,24 +620,22 @@ mod tests {
 
         //should resend if timer greater than sync_each_ms
         storage.tick(10001);
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(SimpleRemoteEvent::Sub(1, 1, None), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(SimpleRemoteEvent::Sub(1, 1, None), RouteRule::ToKey(1))));
     }
 
     #[test]
     fn unsub_should_mark_after_ack() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = SimpleLocalStorage::new(awake_notify.clone(), 10000);
+        let mut storage = SimpleLocalStorage::new(10000);
 
-        storage.subscribe(1, None, Box::new(|_, _, _, _| {}));
+        storage.subscribe(1, None, 11111, 10);
         assert!(storage.pop_action().is_some());
         assert!(storage.pop_action().is_none());
 
         storage.on_event(2, SimpleLocalEvent::SubAck(0, 1));
 
         //sending unsub
-        storage.unsubscribe(1);
-        assert_eq!(awake_notify.pop_awake_count(), 2);
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(SimpleRemoteEvent::Unsub(1, 1), RouteRule::ToKey(1))));
+        storage.unsubscribe(1, 11111, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(SimpleRemoteEvent::Unsub(1, 1), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
         //after received ack should not resend event
@@ -651,70 +646,52 @@ mod tests {
 
     #[test]
     fn unsub_should_retry_after_tick_if_not_received_ack() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = SimpleLocalStorage::new(awake_notify, 10000);
+        let mut storage = SimpleLocalStorage::new(10000);
 
-        storage.subscribe(1, None, Box::new(|_, _, _, _| {}));
+        storage.subscribe(1, None, 11111, 10);
         assert!(storage.pop_action().is_some());
         assert!(storage.pop_action().is_none());
 
         storage.on_event(2, SimpleLocalEvent::SubAck(0, 1));
 
         //sending unsub
-        storage.unsubscribe(1);
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(SimpleRemoteEvent::Unsub(1, 1), RouteRule::ToKey(1))));
+        storage.unsubscribe(1, 11111, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(SimpleRemoteEvent::Unsub(1, 1), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
         //if not received ack should resend event each tick
         storage.tick(0);
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(SimpleRemoteEvent::Unsub(2, 1), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(SimpleRemoteEvent::Unsub(2, 1), RouteRule::ToKey(1))));
     }
 
     #[test]
     fn get_should_callback_correct_value() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = SimpleLocalStorage::new(awake_notify, 10000);
+        let mut storage = SimpleLocalStorage::new(10000);
+        storage.get(0, 1, 11111, 10, 1000);
 
-        let got_value = Arc::new(Mutex::new(None));
-        let got_value_clone = got_value.clone();
-        storage.get(
-            0,
-            1,
-            Box::new(move |result| {
-                *got_value_clone.lock() = Some(result);
-            }),
-            1000,
-        );
-
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(SimpleRemoteEvent::Get(0, 1), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(SimpleRemoteEvent::Get(0, 1), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
         //fake received result
         storage.on_event(2, SimpleLocalEvent::GetAck(0, 1, Some((vec![1], 0, 1000))));
-        assert_eq!(*got_value.lock(), Some(Ok(Some((vec![1], 0, 1000)))));
+
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::LocalOnGet(10, 11111, 1, Ok(Some((vec![1], 0, 1000))))));
+        assert_eq!(storage.pop_action(), None);
     }
 
     #[test]
     fn get_should_timeout_after_no_ack() {
-        let awake_notify = Arc::new(MockAwaker::default());
-        let mut storage = SimpleLocalStorage::new(awake_notify, 10000);
+        let mut storage = SimpleLocalStorage::new(10000);
 
-        let got_value = Arc::new(Mutex::new(None));
-        let got_value_clone = got_value.clone();
-        storage.get(
-            0,
-            1,
-            Box::new(move |result| {
-                *got_value_clone.lock() = Some(result);
-            }),
-            1000,
-        );
+        storage.get(0, 1, 11111, 10, 1000);
 
-        assert_eq!(storage.pop_action(), Some(LocalStorageAction(SimpleRemoteEvent::Get(0, 1), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(SimpleRemoteEvent::Get(0, 1), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
 
         //after timeout should callback error
         storage.tick(1001);
-        assert_eq!(*got_value.lock(), Some(Err(super::SimpleKeyValueGetError::Timeout)));
+
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::LocalOnGet(10, 11111, 1, Err(KeyValueSdkEventError::Timeout))));
+        assert_eq!(storage.pop_action(), None);
     }
 }
