@@ -34,13 +34,6 @@ impl ConnId {
     /// # Returns
     ///
     /// A new `ConnId` instance.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// // create a new incoming connection ID
-    /// let conn_id = ConnId::from(1, ConnDirection::Incoming, 123456789);
-    /// ```
     fn from(protocol: u8, direction: ConnDirection, uuid: u64) -> ConnId {
         let value = uuid << 16 | ((protocol as u64) << 8) | (direction.to_byte() as u64);
         ConnId { value }
@@ -74,7 +67,7 @@ impl ConnId {
     /// # Example
     ///
     /// ```
-    /// use identity::ConnId;
+    /// use bluesea_identity::ConnId;
     ///
     /// let conn_id = ConnId::from_in(1, 123456789);
     /// ```
