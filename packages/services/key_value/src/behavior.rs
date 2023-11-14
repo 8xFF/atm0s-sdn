@@ -225,15 +225,13 @@ where
     }
 
     fn on_awake(&mut self, ctx: &BehaviorContext, now_ms: u64) {
-        loop {
-            if let Some(external) = &self.external {
-                while let Some(event) = external.pop_action() {
-                    log::info!("[KeyValueBehavior {}] external event: {:?}", self.node_id, event);
-                    self.process_sdk_event(ctx, now_ms, KEY_VALUE_SERVICE_ID, event);
-                    break;
-                }
+        while let Some(external) = &self.external {
+            if let Some(event) = external.pop_action() {
+                log::info!("[KeyValueBehavior {}] external event: {:?}", self.node_id, event);
+                self.process_sdk_event(ctx, now_ms, KEY_VALUE_SERVICE_ID, event);
+            } else {
+                break;
             }
-            break;
         }
         self.pop_all_events::<BE>(ctx);
     }
