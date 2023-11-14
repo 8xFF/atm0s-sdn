@@ -99,3 +99,11 @@ pub enum KeyValueMsg {
     HashmapRemote(HashmapRemoteEvent),
     HashmapLocal(HashmapLocalEvent),
 }
+
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum KeyValueSdkMsg {
+    Set(KeyId, ValueType),
+    Del(KeyId),
+    Sub(KeyId),
+    Unsub(KeyId),
+}

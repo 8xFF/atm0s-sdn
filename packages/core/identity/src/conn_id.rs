@@ -23,23 +23,64 @@ impl ConnDirection {
 }
 
 impl ConnId {
+    /// Creates a new `ConnId` from the given protocol, connection direction, and UUID.
+    ///
+    /// # Arguments
+    ///
+    /// * `protocol` - A `u8` representing the protocol used for the connection.
+    /// * `direction` - A `ConnDirection` enum representing the direction of the connection.
+    /// * `uuid` - A `u64` representing the UUID of the connection.
+    ///
+    /// # Returns
+    ///
+    /// A new `ConnId` instance.
     fn from(protocol: u8, direction: ConnDirection, uuid: u64) -> ConnId {
         let value = uuid << 16 | ((protocol as u64) << 8) | (direction.to_byte() as u64);
         ConnId { value }
     }
 
+    /// Creates a new outgoing `ConnId` from the given `protocol` and `uuid`.
+    ///
+    /// # Arguments
+    ///
+    /// * `protocol` - An unsigned 8-bit integer representing the protocol.
+    /// * `uuid` - An unsigned 64-bit integer representing the UUID.
+    ///
+    /// # Returns
+    ///
+    /// A new `ConnId` instance.
     pub fn from_out(protocol: u8, uuid: u64) -> ConnId {
         Self::from(protocol, ConnDirection::Outgoing, uuid)
     }
 
+    /// Creates a new incoming `ConnId` from the given `protocol` and `uuid`.
+    ///
+    /// # Arguments
+    ///
+    /// * `protocol` - A `u8` representing the protocol.
+    /// * `uuid` - A `u64` representing the UUID.
+    ///
+    /// # Returns
+    ///
+    /// A new incoming `ConnId` instance.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use bluesea_identity::ConnId;
+    ///
+    /// let conn_id = ConnId::from_in(1, 123456789);
+    /// ```
     pub fn from_in(protocol: u8, uuid: u64) -> ConnId {
         Self::from(protocol, ConnDirection::Incoming, uuid)
     }
 
+    /// Returns the protocol of the connection ID.
     pub fn protocol(&self) -> u8 {
         (self.value >> 8) as u8
     }
 
+    /// Returns the direction of the connection.
     pub fn direction(&self) -> ConnDirection {
         match self.value as u8 {
             0 => ConnDirection::Outgoing,
@@ -47,6 +88,7 @@ impl ConnId {
         }
     }
 
+    /// Returns the UUID of the connection ID.
     pub fn uuid(&self) -> u64 {
         self.value >> 16
     }

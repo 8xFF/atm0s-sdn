@@ -1,3 +1,5 @@
+///! A router that forces all traffic to be routed locally.
+///! This is useful for testing.
 use bluesea_identity::NodeId;
 
 use crate::{RouteAction, RouterTable};

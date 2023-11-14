@@ -15,6 +15,8 @@ pub enum HandlerRoute {
     Conn(ConnId),
 }
 
+/// A trait representing a plane bus that is both Send and Sync.
+/// This is used to send messages between the different layers (network, behavior and handler).
 pub(crate) trait PlaneBus<BE, HE>: Send + Sync {
     /// Trigger the internal awake behaviour event for the given service.
     /// This will call the on_awaker() method of the behaviour.
