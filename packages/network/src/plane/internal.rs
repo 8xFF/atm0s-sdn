@@ -15,14 +15,14 @@ pub enum PlaneInternalError {
     InvalidServiceId(u8),
 }
 
-pub struct SpawnedConnection<BE, HE> {
+pub struct Connection<BE, HE> {
     pub outgoing: bool,
     pub sender: Arc<dyn ConnectionSender>,
     pub receiver: Box<dyn ConnectionReceiver + Send>,
     pub handlers: Vec<Option<Box<dyn ConnectionHandler<BE, HE>>>>,
 }
 
-impl<BE, HE> fmt::Debug for SpawnedConnection<BE, HE> {
+impl<BE, HE> fmt::Debug for Connection<BE, HE> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SpawnedConnection")
             .field("outgoing", &self.outgoing)
@@ -33,24 +33,31 @@ impl<BE, HE> fmt::Debug for SpawnedConnection<BE, HE> {
     }
 }
 
-impl<BE, HE> PartialEq for SpawnedConnection<BE, HE> {
+impl<BE, HE> PartialEq for Connection<BE, HE> {
     fn eq(&self, other: &Self) -> bool {
         let self_handlers_count = self.handlers.iter().filter(|h| h.is_some()).count();
         let other_handlers_count = other.handlers.iter().filter(|h| h.is_some()).count();
         self.outgoing == other.outgoing && self.sender.conn_id() == other.sender.conn_id() && self.receiver.conn_id() == other.receiver.conn_id() && self_handlers_count == other_handlers_count
     }
 }
-impl<BE, HE> Eq for SpawnedConnection<BE, HE> {}
+impl<BE, HE> Eq for Connection<BE, HE> {}
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum PlaneInternalAction<BE, HE, SE> {
-    SpawnConnection(SpawnedConnection<BE, HE>),
+    /// Spawns a new connection with the given parameters.
+    SpawnConnection(Connection<BE, HE>),
+    /// Represents a behavior action in the network plane.
+    /// It contains a u8 identifier and a NetworkBehaviorAction with HE and SE type parameters.
     BehaviorAction(u8, NetworkBehaviorAction<HE, SE>),
 }
 
+/// A struct representing the internal state of the network.
 pub struct PlaneInternal<BE, HE, SE> {
+    /// Represents the current Node ID.
     node_id: NodeId,
+    /// Represents the queue of actions to be processed.
     action_queue: VecDeque<PlaneInternalAction<BE, HE, SE>>,
+    /// Represents the list of behaviors.
     behaviors: Vec<Option<(Box<dyn NetworkBehavior<BE, HE, SE> + Send + Sync>, BehaviorContext)>>,
 }
 
@@ -74,6 +81,11 @@ impl<BE, HE, SE> PlaneInternal<BE, HE, SE> {
         }
     }
 
+    /// Notify the plane that it has started.
+    ///
+    /// # Arguments
+    ///
+    /// * `now_ms` - The current time in milliseconds.
     pub fn started(&mut self, now_ms: u64) {
         log::info!("[NetworkPlane {}] started", self.node_id);
         for (behaviour, agent) in self.behaviors.iter_mut().flatten() {
@@ -83,6 +95,13 @@ impl<BE, HE, SE> PlaneInternal<BE, HE, SE> {
         self.pop_behaviours_action(now_ms);
     }
 
+    /// This function is called on every tick of the network plane's event loop.
+    ///
+    /// # Arguments
+    ///
+    /// * `now_ms` - The current time in milliseconds.
+    /// * `interval_ms` - The interval between ticks in milliseconds.
+    ///
     pub fn on_tick(&mut self, now_ms: u64, interval_ms: u64) {
         for (behaviour, context) in self.behaviors.iter_mut().flatten() {
             behaviour.on_tick(context, now_ms, interval_ms);
@@ -91,6 +110,21 @@ impl<BE, HE, SE> PlaneInternal<BE, HE, SE> {
         self.pop_behaviours_action(now_ms);
     }
 
+    /// This function is called when the network plane receives an internal event.
+    ///
+    /// # Arguments
+    ///
+    /// * `now_ms` - The current time in milliseconds.
+    /// * `event` - The internal event to be processed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the service ID is invalid.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the service ID is invalid.
+    ///
     pub fn on_internal_event(&mut self, now_ms: u64, event: NetworkPlaneInternalEvent<BE>) -> Result<(), PlaneInternalError> {
         let res = match event {
             NetworkPlaneInternalEvent::AwakeBehaviour { service_id } => {
@@ -149,6 +183,16 @@ impl<BE, HE, SE> PlaneInternal<BE, HE, SE> {
         res
     }
 
+    /// Handles a transport event and updates the internal state of the plane.
+    ///
+    /// # Arguments
+    ///
+    /// * `now_ms` - The current time in milliseconds.
+    /// * `event` - The transport event to handle.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the event was handled successfully, otherwise returns a `PlaneInternalError`.
     pub fn on_transport_event(&mut self, now_ms: u64, event: TransportEvent) -> Result<(), PlaneInternalError> {
         match event {
             TransportEvent::IncomingRequest(node, conn_id, acceptor) => {
@@ -188,7 +232,7 @@ impl<BE, HE, SE> PlaneInternal<BE, HE, SE> {
                 for (behaviour, context) in self.behaviors.iter_mut().flatten() {
                     handlers[behaviour.service_id() as usize] = behaviour.on_incoming_connection_connected(context, now_ms, sender.clone());
                 }
-                self.action_queue.push_back(PlaneInternalAction::SpawnConnection(SpawnedConnection {
+                self.action_queue.push_back(PlaneInternalAction::SpawnConnection(Connection {
                     outgoing: false,
                     sender,
                     receiver,
@@ -206,7 +250,7 @@ impl<BE, HE, SE> PlaneInternal<BE, HE, SE> {
                 for (behaviour, context) in self.behaviors.iter_mut().flatten() {
                     handlers[behaviour.service_id() as usize] = behaviour.on_outgoing_connection_connected(context, now_ms, sender.clone(), local_uuid);
                 }
-                self.action_queue.push_back(PlaneInternalAction::SpawnConnection(SpawnedConnection {
+                self.action_queue.push_back(PlaneInternalAction::SpawnConnection(Connection {
                     outgoing: true,
                     sender,
                     receiver,
@@ -225,6 +269,11 @@ impl<BE, HE, SE> PlaneInternal<BE, HE, SE> {
         Ok(())
     }
 
+    /// Stops the plane and updates its state.
+    ///
+    /// # Arguments
+    ///
+    /// * `now_ms` - The current time in milliseconds.
     pub fn stopped(&mut self, now_ms: u64) {
         log::info!("[NetworkPlane {}] stopped", self.node_id);
         for (behaviour, agent) in self.behaviors.iter_mut().flatten() {
@@ -234,10 +283,17 @@ impl<BE, HE, SE> PlaneInternal<BE, HE, SE> {
         self.pop_behaviours_action(now_ms);
     }
 
+    /// Pops and returns the last element from the `PlaneInternalAction` action queue.
+    /// Returns `None` if the stack is empty.
     pub fn pop_action(&mut self) -> Option<PlaneInternalAction<BE, HE, SE>> {
         self.action_queue.pop_front()
     }
 
+    /// Pops and processes the actions from the behaviors action queue.
+    ///
+    /// # Arguments
+    ///
+    /// * `now_ms` - The current time in milliseconds.
     fn pop_behaviours_action(&mut self, now_ms: u64) {
         let mut sdk_msgs = vec![];
         for (behaviour, context) in self.behaviors.iter_mut().flatten() {
@@ -273,7 +329,7 @@ mod tests {
     use crate::{
         behaviour::MockNetworkBehavior,
         msg::TransportMsg,
-        transport::{ConnectionReceiver, ConnectionRejectReason, MockConnectionAcceptor, MockConnectionReceiver, MockConnectionSender, OutgoingConnectionError},
+        transport::{ConnectionRejectReason, MockConnectionAcceptor, MockConnectionReceiver, MockConnectionSender, OutgoingConnectionError},
     };
 
     type BE = ();
@@ -287,7 +343,7 @@ mod tests {
         let mut mock_receiver = MockConnectionReceiver::new();
         mock_receiver.expect_conn_id().return_const(ConnId::from_in(0, 0));
 
-        let spawned_connection = super::SpawnedConnection::<BE, HE> {
+        let spawned_connection = super::Connection::<BE, HE> {
             outgoing: true,
             sender: Arc::new(mock_sender),
             receiver: Box::new(mock_receiver),
@@ -311,14 +367,14 @@ mod tests {
         let mut mock_receiver_c = MockConnectionReceiver::new();
         mock_receiver_c.expect_conn_id().return_const(ConnId::from_in(0, 0));
 
-        let spawned_connection_1 = super::SpawnedConnection::<BE, HE> {
+        let spawned_connection_1 = super::Connection::<BE, HE> {
             outgoing: true,
             sender: Arc::new(mock_sender),
             receiver: Box::new(mock_receiver),
             handlers: vec![],
         };
 
-        let spawned_connection_2 = super::SpawnedConnection::<BE, HE> {
+        let spawned_connection_2 = super::Connection::<BE, HE> {
             outgoing: true,
             sender: Arc::new(mock_sender_c),
             receiver: Box::new(mock_receiver_c),
@@ -579,7 +635,7 @@ mod tests {
         assert_eq!(internal.action_queue.len(), 1);
         assert_eq!(
             internal.pop_action(),
-            Some(super::PlaneInternalAction::SpawnConnection(super::SpawnedConnection {
+            Some(super::PlaneInternalAction::SpawnConnection(super::Connection {
                 outgoing: false,
                 sender: Arc::new(mock_sender_c),
                 receiver: mock_receiver_c,
@@ -611,7 +667,7 @@ mod tests {
         assert_eq!(internal.action_queue.len(), 1);
         assert_eq!(
             internal.pop_action(),
-            Some(super::PlaneInternalAction::SpawnConnection(super::SpawnedConnection {
+            Some(super::PlaneInternalAction::SpawnConnection(super::Connection {
                 outgoing: true,
                 sender: Arc::new(mock_sender_c),
                 receiver: mock_receiver_c,

@@ -1,25 +1,54 @@
 pub type NodeId = u32;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Enum representing a segment of a node ID.
 pub enum NodeSegment {
     Public,
     Private(u8),
 }
 
 pub trait NodeIdType: Clone {
+    /// Generates a random `NodeId`.
     fn random() -> NodeId;
+    /// Returns the segment of the node ID.
     fn segment(&self) -> NodeSegment;
+    /// Calculates the distance between two NodeIds.
     fn distance(&self, other: &NodeId) -> u32;
+    /// Calculates the distance in bits between two NodeIds.
+    ///
+    /// # Arguments
+    ///
+    /// * `other` - The other NodeId to calculate the distance to.
+    ///
+    /// # Returns
+    ///
+    /// The distance in bits between the two NodeIds.
     fn distance_bits(&self, other: &NodeId) -> u8;
+    /// Returns the index of the bucket that this node ID belongs to.
     fn bucket_index(&self) -> u8;
 
+    /// Builds a new `NodeId` with the given geographic location, group, and index.
+    ///
+    /// # Arguments
+    ///
+    /// * `geo1` - The first geographic location byte.
+    /// * `geo2` - The second geographic location byte.
+    /// * `group` - The group byte.
+    /// * `index` - The index byte.
     fn build(geo1: u8, geo2: u8, group: u8, index: u8) -> Self;
+    /// Builds a `NodeId` from a zone ID, group, and index.
     fn build2(zone_id: u16, group: u8, index: u8) -> Self;
+    /// Returns the value of the layer of the node at the given index.
     fn layer(&self, index: u8) -> u8;
+    /// Returns the first geographic location byte.
     fn geo1(&self) -> u8;
+    /// Returns the second geographic location byte.
     fn geo2(&self) -> u8;
+    /// Returns the group byte.
     fn group(&self) -> u8;
+    /// Returns the index byte.
     fn index(&self) -> u8;
+    /// Returns the number of layers that the two NodeIds are equal up to.
     fn eq_util_layer(&self, other: &Self) -> u8;
 }
 

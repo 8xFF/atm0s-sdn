@@ -76,6 +76,7 @@ pub struct MsgHeader {
 }
 
 impl MsgHeader {
+    /// Builds a reliable message with the given service ID, route rule, and stream ID.
     pub fn build_reliable(service_id: u8, route: RouteRule, stream_id: u32) -> Self {
         Self {
             version: 0,
@@ -90,6 +91,7 @@ impl MsgHeader {
         }
     }
 
+    /// Builds an unreliable message with the given service ID, route rule, and stream ID.
     pub fn build_unreliable(service_id: u8, route: RouteRule, stream_id: u32) -> Self {
         Self {
             version: 0,
@@ -104,7 +106,19 @@ impl MsgHeader {
         }
     }
 
-    /// deseriaze from bytes, return actual header size
+    /// Parses a byte slice into a `Msg` struct and returns the number of bytes read.
+    ///
+    /// # Arguments
+    ///
+    /// * `bytes` - A byte slice containing the message to be parsed.
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing the parsed `Msg` struct and the number of bytes read.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `MsgHeaderError` if the message header is invalid.
     pub fn from_bytes(bytes: &[u8]) -> Result<(Self, usize), MsgHeaderError> {
         if bytes.len() < 8 {
             return Err(MsgHeaderError::TooSmall);
@@ -202,7 +216,15 @@ impl MsgHeader {
         ))
     }
 
-    /// seriaze to bytes, return actual written size
+    /// Converts the message to a byte representation and appends it to the given output vector.
+    ///
+    /// # Arguments
+    ///
+    /// * `output` - A mutable vector of bytes to append the serialized message to.
+    ///
+    /// # Returns
+    ///
+    /// An `Option` containing the number of bytes written if the output vector was large enough, or `None` if the output vector was too small.
     pub fn to_bytes(&self, output: &mut Vec<u8>) -> Option<usize> {
         if output.remaining_mut() < self.serialize_size() {
             return None;
@@ -255,6 +277,16 @@ impl MsgHeader {
         )
     }
 
+    /// Rewrite the route in the given buffer with the new route rule.
+    ///
+    /// # Arguments
+    ///
+    /// * `buf` - A mutable slice of bytes representing the buffer to rewrite the route in.
+    /// * `new_route` - The new route rule to use for rewriting the route.
+    ///
+    /// # Returns
+    ///
+    /// An `Option` containing `()` if the route was successfully rewritten, or `None` if the buffer is too small to hold the new route.
     pub fn rewrite_route(buf: &mut [u8], new_route: RouteRule) -> Option<()> {
         if buf.len() < 8 {
             return None;
@@ -284,7 +316,7 @@ impl MsgHeader {
         Some(())
     }
 
-    // return actual size
+    /// Returns the size of the serialized message.
     pub fn serialize_size(&self) -> usize {
         8 + if self.from_node.is_some() {
             4
@@ -303,13 +335,26 @@ impl MsgHeader {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// A struct representing a transport message.
 pub struct TransportMsg {
     buffer: Vec<u8>,
     pub header: MsgHeader,
     pub payload_start: usize,
 }
 
+/// TransportMsg represents a message that can be sent over the network.
+/// It contains methods for building, modifying, and extracting data from the message.
 impl TransportMsg {
+    /// Builds a raw message from a message header and payload.
+    ///
+    /// # Arguments
+    ///
+    /// * `header` - The message header.
+    /// * `payload` - The message payload.
+    ///
+    /// # Returns
+    ///
+    /// A new `TransportMsg` instance.
     pub fn build_raw(header: MsgHeader, payload: &[u8]) -> Self {
         let header_size = header.serialize_size();
         let mut buffer = Vec::with_capacity(header_size + payload.len());
@@ -323,6 +368,18 @@ impl TransportMsg {
         }
     }
 
+    /// Builds a reliable message from a service ID, route rule, stream ID, and payload.
+    ///
+    /// # Arguments
+    ///
+    /// * `service_id` - The service ID of the message.
+    /// * `route` - The route rule of the message.
+    /// * `stream_id` - The stream ID of the message.
+    /// * `payload` - The payload of the message.
+    ///
+    /// # Returns
+    ///
+    /// A new `TransportMsg` instance.
     pub fn build_reliable(service_id: u8, route: RouteRule, stream_id: u32, payload: &[u8]) -> Self {
         let header = MsgHeader::build_reliable(service_id, route, stream_id);
         let header_size = header.serialize_size();
@@ -337,6 +394,18 @@ impl TransportMsg {
         }
     }
 
+    /// Builds an unreliable message from a service ID, route rule, stream ID, and payload.
+    ///
+    /// # Arguments
+    ///
+    /// * `service_id` - The service ID of the message.
+    /// * `route` - The route rule of the message.
+    /// * `stream_id` - The stream ID of the message.
+    /// * `payload` - The payload of the message.
+    ///
+    /// # Returns
+    ///
+    /// A new `TransportMsg` instance.
     pub fn build_unreliable(service_id: u8, route: RouteRule, stream_id: u32, payload: &[u8]) -> Self {
         let header = MsgHeader::build_unreliable(service_id, route, stream_id);
         let header_size = header.serialize_size();
@@ -350,10 +419,21 @@ impl TransportMsg {
         }
     }
 
+    /// Takes ownership of the message and returns its buffer.
     pub fn take(self) -> Vec<u8> {
         self.buffer
     }
 
+    /// Constructs a TransportMsg from a buffer.
+    ///
+    /// # Arguments
+    ///
+    /// * `buf` - A vector of bytes containing the message to be parsed.
+    ///
+    /// # Returns
+    ///
+    /// A new `TransportMsg` instance.
+    ///
     pub fn from_vec(buf: Vec<u8>) -> Result<Self, MsgHeaderError> {
         let (header, header_size) = MsgHeader::from_bytes(&buf)?;
         Ok(Self {
@@ -363,26 +443,57 @@ impl TransportMsg {
         })
     }
 
+    /// Returns a reference to the message buffer.
     pub fn get_buf(&self) -> &[u8] {
         &self.buffer
     }
 
+    /// Returns a reference to the message payload.
     pub fn payload(&self) -> &[u8] {
         &self.buffer[self.payload_start..]
     }
 
+    /// Returns a mutable reference to the message payload.
     pub fn payload_mut(&mut self) -> &mut [u8] {
         &mut self.buffer[self.payload_start..]
     }
 
+    /// Rewrites the route rule in the message header.
+    ///
+    /// # Arguments
+    ///
+    /// * `new_route` - The new route rule to use for rewriting the route.
+    ///
+    /// # Returns
+    ///
+    /// An `Option` containing `()` if the route was successfully rewritten, or `None` if the buffer is too small to hold the new route.
     pub fn rewrite_route(&mut self, new_route: RouteRule) -> Option<()> {
         MsgHeader::rewrite_route(&mut self.buffer, new_route)
     }
 
+    /// Deserializes the message payload into a given type using bincode.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `M` - The type to deserialize the payload into.
+    ///
+    /// # Returns
+    ///
+    /// A `bincode::Result` containing the deserialized payload.
     pub fn get_payload_bincode<M: DeserializeOwned>(&self) -> bincode::Result<M> {
         bincode::deserialize::<M>(self.payload())
     }
 
+    /// Constructs a TransportMsg from a message header and payload using bincode.
+    ///
+    /// # Arguments
+    ///
+    /// * `header` - The message header.
+    /// * `msg` - The message payload.
+    ///
+    /// # Returns
+    ///
+    /// A new `TransportMsg` instance.
     pub fn from_payload_bincode<M: Serialize>(header: MsgHeader, msg: &M) -> Self {
         let header_size = header.serialize_size();
         let payload_size = bincode::serialized_size(msg).expect("Should serialize payload");

@@ -16,7 +16,7 @@ use utils::Timer;
 
 use self::bus::PlaneBus;
 use self::bus_impl::PlaneBusImpl;
-use self::internal::{PlaneInternal, PlaneInternalAction, SpawnedConnection};
+use self::internal::{PlaneInternal, PlaneInternalAction, Connection};
 use self::single_conn::{PlaneSingleConn, PlaneSingleConnInternal};
 
 pub(crate) mod bus;
@@ -190,7 +190,7 @@ where
         while let Some(action) = self.internal.pop_action() {
             match action {
                 PlaneInternalAction::SpawnConnection(spwd_conn)  => {
-                    let SpawnedConnection { outgoing, sender, receiver, handlers } = spwd_conn;
+                    let Connection { outgoing, sender, receiver, handlers } = spwd_conn;
                     let internal_tx = self.internal_tx.clone();
 
                     let tick_ms = self.tick_ms;

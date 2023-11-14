@@ -35,6 +35,11 @@ where
         self.pop_actions();
     }
 
+    /// Asynchronously receives data from the connection.
+    /// This method will use select! to polls from the bus, the connection, and the tick interval
+    /// to act accordingly. Usually, this method should be called in a loop.
+    ///
+    /// Returns `Ok(())` if successful, or `Err(())` if an error occurred.
     pub async fn recv(&mut self) -> Result<(), ()> {
         let res = select! {
             _ = self.tick_interval.next().fuse() => {
@@ -101,13 +106,15 @@ where
         res
     }
 
+    /// Ends the connection.
     pub fn end(&mut self) {
         self.internal.on_close(self.timer.now_ms());
         self.pop_actions();
     }
 
+    /// Pops and processes the handlers actions
     fn pop_actions(&mut self) {
-        while let Some((service_id, action)) = self.internal.pop_action() {
+        while let Some((service_id, action)) = self.internal.pop_handler_actions() {
             match action {
                 ConnectionHandlerAction::ToBehaviour(event) => {
                     self.bus.to_behaviour_from_handler(service_id, self.sender.remote_node_id(), self.sender.conn_id(), event);
@@ -189,7 +196,7 @@ impl<BE, HE> PlaneSingleConnInternal<BE, HE> {
         }
     }
 
-    pub fn pop_action(&mut self) -> Option<(u8, ConnectionHandlerAction<BE, HE>)> {
+    pub fn pop_handler_actions(&mut self) -> Option<(u8, ConnectionHandlerAction<BE, HE>)> {
         for (handler, context) in self.handlers.iter_mut().flatten() {
             if let Some(action) = handler.pop_action() {
                 return Some((context.service_id, action));

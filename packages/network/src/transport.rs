@@ -9,11 +9,26 @@ use utils::error_handle::ErrorUtils;
 use mockall::automock;
 pub type TransportOutgoingLocalUuid = u64;
 
+/// Enum representing events that can occur in the transport layer.
+///
+///
+//
+///
+///
 pub enum TransportEvent {
+    /// `IncomingRequest` represents an incoming request from a node with the given `NodeId` and `ConnId`,
+    /// which is accepted by the `ConnectionAcceptor` trait object.
     IncomingRequest(NodeId, ConnId, Box<dyn ConnectionAcceptor>),
+    /// `OutgoingRequest` represents an outgoing request to a node with the given `NodeId` and `ConnId`,
+    /// which is accepted by the `ConnectionAcceptor` trait object, and has a `TransportOutgoingLocalUuid`.
     OutgoingRequest(NodeId, ConnId, Box<dyn ConnectionAcceptor>, TransportOutgoingLocalUuid),
+    /// `Incoming` represents an incoming connection with the given `ConnectionSender` and `ConnectionReceiver`.
     Incoming(Arc<dyn ConnectionSender>, Box<dyn ConnectionReceiver + Send>),
+    /// `Outgoing` represents an outgoing connection with the given `ConnectionSender`, `ConnectionReceiver`,
+    /// and `TransportOutgoingLocalUuid`.
     Outgoing(Arc<dyn ConnectionSender>, Box<dyn ConnectionReceiver + Send>, TransportOutgoingLocalUuid),
+    /// `OutgoingError` represents an error that occurred while attempting to establish an outgoing connection,
+    /// with the given `TransportOutgoingLocalUuid`, `NodeId`, `ConnId`, and `OutgoingConnectionError`.
     OutgoingError {
         local_uuid: TransportOutgoingLocalUuid,
         node_id: NodeId,
