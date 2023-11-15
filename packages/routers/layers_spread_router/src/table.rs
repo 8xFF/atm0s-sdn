@@ -156,7 +156,7 @@ impl Table {
         Some(TableSync(res))
     }
 
-    pub fn dump(&self) {
+    pub fn log_dump(&self) {
         let mut slots = vec![];
         for (index, dest) in self.dests.iter().enumerate() {
             if !dest.is_empty() {
@@ -164,6 +164,16 @@ impl Table {
             }
         }
         log::info!("[Table {}/{}/{}] slots: {:?}", self.node_id, self.layer, self.node_id.layer(self.layer), slots);
+    }
+
+    pub fn print_dump(&self) {
+        let mut slots = vec![];
+        for (index, dest) in self.dests.iter().enumerate() {
+            if !dest.is_empty() {
+                slots.push(index);
+            }
+        }
+        println!("[Table {}/{}/{}] slots: {:?}", self.node_id, self.layer, self.node_id.layer(self.layer), slots);
     }
 }
 

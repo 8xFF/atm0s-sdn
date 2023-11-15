@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+reedline-repl-rs = { version = "1.0.7", features = ["async"] }
 bluesea-identity = { workspace = true }
 bluesea-router = { workspace = true }
 utils = { workspace = true }
@@ -15,6 +16,7 @@ async-std = { workspace = true }
 layers-spread-router = { workspace = true }
 manual-discovery = { workspace = true }
 key-value = { workspace = true }
+pub-sub = { workspace = true }
 transport-udp = { workspace = true }
 transport-tcp = { workspace = true }
 layers-spread-router-sync = { workspace = true }

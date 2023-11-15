@@ -64,8 +64,12 @@ impl SharedRouter {
         self.router.write().apply_sync(conn, src, src_send_metric, sync);
     }
 
-    pub fn dump(&self) {
-        self.router.read().dump();
+    pub fn log_dump(&self) {
+        self.router.read().log_dump();
+    }
+
+    pub fn print_dump(&self) {
+        self.router.read().print_dump();
     }
 }
 
@@ -95,5 +99,23 @@ impl RouterTable for SharedRouter {
             },
             None => RouteAction::Reject,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::SharedRouter;
+    use bluesea_identity::NodeId;
+
+    #[test]
+    fn log_dump_test() {
+        let router = SharedRouter::new(NodeId::from(1u32));
+        router.log_dump();
+    }
+
+    #[test]
+    fn print_dump_test() {
+        let router = SharedRouter::new(NodeId::from(1u32));
+        router.print_dump();
     }
 }
