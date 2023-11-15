@@ -78,26 +78,26 @@ jobs:
       # this breaks on aarch64 and this if conditional isn't working for some reason: TODO: investigate
       #- name: Strip release binary
       #  if: runner.target != 'aarch64-unknown-linux-musl' && runner.target != 'aarch64-apple-darwin'
-      #  run: strip "target/${{ matrix.target }}/release/manual-node"
+      #  run: strip "target/${{ matrix.target }}/release/examples/manual_node"
 
       - name: Create checksum
         id: make-checksum
-        working-directory: ./target/${{ matrix.target }}/release
+        working-directory: ./target/${{ matrix.target }}/release/examples
         run: |
-          name="manual-node-${{ matrix.target }}.sha256sum"
+          name="manual_node-${{ matrix.target }}.sha256sum"
           if [[ "$RUNNER_OS" != "macOS" ]]; then
-            sha256sum "manual-node" > "${name}"
+            sha256sum "manual_node" > "${name}"
           else
-            shasum -a 256 "manual-node" > "${name}"
+            shasum -a 256 "manual_node" > "${name}"
           fi
           echo "::set-output name=name::${name}"
 
       - name: Tar release
         id: make-artifact
-        working-directory: ./target/${{ matrix.target }}/release
+        working-directory: ./target/${{ matrix.target }}/release/examples
         run: |
-          name="manual-node-${{ matrix.target }}.tar.gz"
-          tar cvzf "${name}" "manual-node"
+          name="manual_node-${{ matrix.target }}.tar.gz"
+          tar cvzf "${name}" "manual_node"
           echo "::set-output name=name::${name}"
 
       - name: Upload release archive
@@ -106,8 +106,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.create-release.outputs.upload_url }} 
-          asset_path: ./target/${{ matrix.target }}/release/${{ steps.make-artifact.outputs.name }}
-          asset_name: manual-node-${{matrix.target}}.tar.gz
+          asset_path: ./target/${{ matrix.target }}/release/examples/${{ steps.make-artifact.outputs.name }}
+          asset_name: manual_node-${{matrix.target}}.tar.gz
           asset_content_type: application/octet-stream
 
       - name: Upload checksum
@@ -116,8 +116,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.create-release.outputs.upload_url }} 
-          asset_path: ./target/${{ matrix.target }}/release/${{ steps.make-checksum.outputs.name }}
-          asset_name: manual-node-${{matrix.target}}.sha256sum
+          asset_path: ./target/${{ matrix.target }}/release/examples/${{ steps.make-checksum.outputs.name }}
+          asset_name: manual_node-${{matrix.target}}.sha256sum
           asset_content_type: text/plain
 
   create-release:
