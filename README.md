@@ -2,7 +2,7 @@
  <a href="https://github.com/8xFF/decentralized-sdn/actions">
   <img src="https://github.com/8xFF/decentralized-sdn/actions/workflows/rust.yml/badge.svg?branch=master">
  </a>
- <a href="https://codecov.io/gh/webrtc-rs/webrtc">
+ <a href="https://codecov.io/gh/8xff/decentralized-sdn">
   <img src="https://codecov.io/gh/8xff/decentralized-sdn/branch/master/graph/badge.svg">
  </a>
  <a href="https://deps.rs/repo/github/8xff/decentralized-sdn">
