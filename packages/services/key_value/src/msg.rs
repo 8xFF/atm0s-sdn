@@ -11,14 +11,14 @@ pub enum KeyValueBehaviorEvent {
 #[derive(Debug, PartialEq, Eq)]
 pub enum KeyValueHandlerEvent {}
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum KeyValueSdkEventError {
     NetworkError,
     Timeout,
     InternalError,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum KeyValueSdkEvent {
     Get(u64, KeyId, u64),
     GetH(u64, KeyId, u64),
@@ -98,4 +98,12 @@ pub enum KeyValueMsg {
     SimpleLocal(SimpleLocalEvent),
     HashmapRemote(HashmapRemoteEvent),
     HashmapLocal(HashmapLocalEvent),
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum KeyValueSdkMsg {
+    Set(KeyId, ValueType),
+    Del(KeyId),
+    Sub(KeyId),
+    Unsub(KeyId),
 }

@@ -18,6 +18,7 @@ impl NodeAddrType for NodeAddr {
     }
 }
 
+/// A builder for creating `NodeAddr` instances.
 pub struct NodeAddrBuilder {
     addr: Mutex<NodeAddr>,
 }
@@ -29,10 +30,12 @@ impl Default for NodeAddrBuilder {
 }
 
 impl NodeAddrBuilder {
+    /// Adds a protocol to the node address.
     pub fn add_protocol(&self, protocol: Protocol) {
         self.addr.lock().push(protocol);
     }
 
+    /// Get the node address.
     pub fn addr(&self) -> NodeAddr {
         (*self.addr.lock()).clone()
     }
