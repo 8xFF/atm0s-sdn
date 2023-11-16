@@ -225,15 +225,13 @@ where
     }
 
     fn on_awake(&mut self, ctx: &BehaviorContext, now_ms: u64) {
-        loop {
-            if let Some(external) = &self.external {
-                while let Some(event) = external.pop_action() {
-                    log::info!("[KeyValueBehavior {}] external event: {:?}", self.node_id, event);
-                    self.process_sdk_event(ctx, now_ms, KEY_VALUE_SERVICE_ID, event);
-                    break;
-                }
+        while let Some(external) = &self.external {
+            if let Some(event) = external.pop_action() {
+                log::info!("[KeyValueBehavior {}] external event: {:?}", self.node_id, event);
+                self.process_sdk_event(ctx, now_ms, KEY_VALUE_SERVICE_ID, event);
+            } else {
+                break;
             }
-            break;
         }
         self.pop_all_events::<BE>(ctx);
     }
@@ -330,7 +328,7 @@ mod tests {
 
     use crate::{
         msg::{HashmapLocalEvent, HashmapRemoteEvent, KeyValueSdkEvent, SimpleLocalEvent, SimpleRemoteEvent},
-        KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueMsg, KEY_VALUE_SERVICE_ID,
+        KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueMsg, MockExternalControl, KEY_VALUE_SERVICE_ID,
     };
 
     type BE = KeyValueBehaviorEvent;
@@ -580,5 +578,38 @@ mod tests {
         expected_header.from_node = Some(local_node_id);
         let expected_msg = TransportMsg::from_payload_bincode(expected_header, &KeyValueMsg::SimpleRemote(SimpleRemoteEvent::Sub(0, key, None)));
         assert_eq!(behaviour.pop_action(), Some(NetworkBehaviorAction::ToNet(expected_msg)));
+    }
+
+    #[test]
+    fn test_on_awake() {
+        let local_node_id = 1;
+        let sync_ms = 10000;
+        let key = 1000;
+        let mut mock_external_control = Box::new(MockExternalControl::default());
+        let mut external_action: Vec<Option<KeyValueSdkEvent>> = vec![None, Some(KeyValueSdkEvent::Sub(0, key, None))];
+        mock_external_control.expect_pop_action().returning(move || external_action.pop().unwrap());
+
+
+        let mut behaviour = super::KeyValueBehavior::<HE, SE>::new(local_node_id, sync_ms, Some(mock_external_control));
+        let behaviour: &mut dyn NetworkBehavior<BE, HE, SE> = &mut behaviour;
+
+        let ctx = BehaviorContext {
+            service_id: KEY_VALUE_SERVICE_ID,
+            node_id: local_node_id,
+            awaker: Arc::new(MockAwaker::default()),
+        };
+
+        behaviour.on_awake(&ctx, 0);
+
+        let mut expected_header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, RouteRule::ToKey(key as u32), 0);
+        expected_header.from_node = Some(local_node_id);
+
+        assert_eq!(
+            behaviour.pop_action(),
+            Some(NetworkBehaviorAction::ToNet(TransportMsg::from_payload_bincode(
+                expected_header,
+                &KeyValueMsg::SimpleRemote(SimpleRemoteEvent::Sub(0, key, None))
+            )))
+        );
     }
 }
