@@ -1,6 +1,6 @@
 pub use bluesea_identity::{NodeAddr, NodeAddrBuilder, NodeId, Protocol};
 pub use bluesea_router::RouteRule;
-pub use key_value::{KeyId, KeySource, KeyValueBehavior, KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueMsg, KeyValueSdk, KeyVersion, SubKeyId, ValueType};
+pub use key_value::{KeyId, KeySource, KeyValueBehavior, KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueMsg, KeyValueSdk, KeyValueSdkEvent, KeyVersion, SubKeyId, ValueType};
 pub use layers_spread_router::SharedRouter;
 pub use layers_spread_router_sync::{LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent, LayersSpreadRouterSyncHandlerEvent};
 pub use manual_discovery::{ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent};
