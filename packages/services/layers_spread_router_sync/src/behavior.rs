@@ -27,7 +27,7 @@ where
     }
 
     fn on_tick(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _interal_ms: u64) {
-        self.router.dump();
+        self.router.log_dump();
     }
 
     fn on_awake(&mut self, _ctx: &BehaviorContext, _now_ms: u64) {}

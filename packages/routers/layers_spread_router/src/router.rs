@@ -160,11 +160,20 @@ impl Router {
         }
     }
 
-    pub fn dump(&self) {
-        self.service_registry.dump();
+    pub fn log_dump(&self) {
+        self.service_registry.log_dump();
         log::info!("[Router {}] dump begin", self.local_node_id);
         for i in 0..4 {
-            self.tables[3 - i].dump();
+            self.tables[3 - i].log_dump();
+        }
+        log::info!("[Router {}] dump end", self.local_node_id);
+    }
+
+    pub fn print_dump(&self) {
+        self.service_registry.print_dump();
+        log::info!("[Router {}] dump begin", self.local_node_id);
+        for i in 0..4 {
+            self.tables[3 - i].print_dump();
         }
         log::info!("[Router {}] dump end", self.local_node_id);
     }

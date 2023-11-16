@@ -98,7 +98,7 @@ impl Registry {
         RegistrySync(res)
     }
 
-    pub fn dump(&self) {
+    pub fn log_dump(&self) {
         let mut local_services = vec![];
         for (index, service_id) in self.local_destinations.iter().enumerate() {
             if *service_id {
@@ -115,6 +115,25 @@ impl Registry {
             }
         }
         log::info!("[Registry {}] local services: {:?} remote services: {:?}, nexts {:?}", self.node_id, local_services, slots, nexts);
+    }
+
+    pub fn print_dump(&self) {
+        let mut local_services = vec![];
+        for (index, service_id) in self.local_destinations.iter().enumerate() {
+            if *service_id {
+                local_services.push(index);
+            }
+        }
+
+        let mut slots = vec![];
+        let mut nexts = vec![];
+        for (index, dest) in self.remote_destinations.iter().enumerate() {
+            if !dest.is_empty() {
+                slots.push(index);
+                nexts.push(dest.next(&[]));
+            }
+        }
+        println!("[Registry {}] local services: {:?} remote services: {:?}, nexts {:?}", self.node_id, local_services, slots, nexts);
     }
 }
 
