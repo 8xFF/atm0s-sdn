@@ -1,4 +1,4 @@
-use bluesea_identity::{NodeAddr, NodeId};
+use p_8xff_sdn_identity::{NodeAddr, NodeId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]

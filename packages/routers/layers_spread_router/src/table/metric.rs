@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use bluesea_identity::NodeId;
+use p_8xff_sdn_identity::NodeId;
 use serde::{Deserialize, Serialize};
 
 pub const BANDWIDTH_LIMIT: u32 = 10000; //10Mbps

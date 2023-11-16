@@ -1,5 +1,5 @@
 use crate::kbucket::K_BUCKET;
-use bluesea_identity::{NodeAddr, NodeId};
+use p_8xff_sdn_identity::{NodeAddr, NodeId};
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum FindKeyRequestStatus {
@@ -194,7 +194,7 @@ impl FindKeyRequest {
 #[cfg(test)]
 mod tests {
     use super::{FindKeyRequest, FindKeyRequestStatus};
-    use bluesea_identity::{NodeAddr, Protocol};
+    use p_8xff_sdn_identity::{NodeAddr, Protocol};
 
     #[derive(PartialEq, Debug)]
     enum Msg {}

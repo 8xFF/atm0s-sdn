@@ -4,9 +4,9 @@ use std::{
 };
 
 use async_std::channel::Sender;
-use bluesea_identity::NodeId;
 use bytes::Bytes;
-use utils::{awaker::Awaker, error_handle::ErrorUtils};
+use p_8xff_sdn_identity::NodeId;
+use p_8xff_sdn_utils::{awaker::Awaker, error_handle::ErrorUtils};
 
 use super::{feedback::Feedback, ChannelUuid, LocalSubId};
 
@@ -29,7 +29,7 @@ impl LocalRelay {
             consumers: HashMap::new(),
             producer_fbs: HashMap::new(),
             actions: VecDeque::new(),
-            awaker: Arc::new(utils::awaker::MockAwaker::default()),
+            awaker: Arc::new(p_8xff_sdn_utils::awaker::MockAwaker::default()),
         }
     }
 
@@ -98,7 +98,7 @@ mod tests {
     use std::sync::Arc;
 
     use bytes::Bytes;
-    use utils::awaker::Awaker;
+    use p_8xff_sdn_utils::awaker::Awaker;
 
     use crate::{
         relay::{feedback::FeedbackType, local::LocalRelayAction},
@@ -107,7 +107,7 @@ mod tests {
 
     #[test]
     fn first_pub_should_awake_and_output_action() {
-        let awake = Arc::new(utils::awaker::MockAwaker::default());
+        let awake = Arc::new(p_8xff_sdn_utils::awaker::MockAwaker::default());
         let mut relay = super::LocalRelay::new();
         relay.set_awaker(awake.clone());
 

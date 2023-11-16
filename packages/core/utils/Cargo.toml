@@ -1,7 +1,8 @@
 [package]
-name = "utils"
-version = "0.1.0"
+name = "p-8xff-sdn-utils"
+version = "0.0.0"
 edition = "2021"
+publish = false
 
 [features]
 auto-clear = []

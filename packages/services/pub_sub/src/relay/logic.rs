@@ -3,8 +3,8 @@ use std::{
     sync::Arc,
 };
 
-use bluesea_identity::{ConnId, NodeId};
-use utils::awaker::{Awaker, MockAwaker};
+use p_8xff_sdn_identity::{ConnId, NodeId};
+use p_8xff_sdn_utils::awaker::{Awaker, MockAwaker};
 
 use crate::{msg::PubsubRemoteEvent, PUBSUB_CHANNEL_RESYNC_MS, PUBSUB_CHANNEL_TIMEOUT_MS};
 
@@ -380,8 +380,8 @@ impl PubsubRelayLogic {
 mod tests {
     use std::sync::Arc;
 
-    use bluesea_identity::{ConnId, NodeId};
-    use utils::awaker::{Awaker, MockAwaker};
+    use p_8xff_sdn_identity::{ConnId, NodeId};
+    use p_8xff_sdn_utils::awaker::{Awaker, MockAwaker};
 
     use crate::{
         msg::PubsubRemoteEvent,

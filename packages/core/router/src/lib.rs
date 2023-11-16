@@ -1,9 +1,9 @@
 mod force_local;
 mod force_node;
 
-use bluesea_identity::{ConnId, NodeId};
 pub use force_local::ForceLocalRouter;
 pub use force_node::ForceNodeRouter;
+use p_8xff_sdn_identity::{ConnId, NodeId};
 
 #[cfg(any(test, feature = "mock"))]
 use mockall::automock;

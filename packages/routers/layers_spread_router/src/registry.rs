@@ -1,9 +1,9 @@
-use bluesea_identity::{ConnId, NodeId};
+use p_8xff_sdn_identity::{ConnId, NodeId};
 use std::collections::HashMap;
 
 use crate::ServiceDestination;
+use p_8xff_sdn_utils::init_array::init_array;
 use serde::{Deserialize, Serialize};
-use utils::init_array::init_array;
 
 use crate::table::{Dest, Metric, Path};
 
@@ -142,7 +142,7 @@ mod tests {
     use crate::registry::{Registry, RegistrySync, REGISTRY_LOCAL_BW};
     use crate::table::Metric;
     use crate::ServiceDestination;
-    use bluesea_identity::{ConnId, NodeId};
+    use p_8xff_sdn_identity::{ConnId, NodeId};
 
     #[test]
     fn create_manual() {

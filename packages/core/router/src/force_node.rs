@@ -1,6 +1,6 @@
 ///! ForceNodeRouter is a router that always routes to a specific node.
 ///! This is useful for testing.
-use bluesea_identity::{ConnId, NodeId};
+use p_8xff_sdn_identity::{ConnId, NodeId};
 
 use crate::{RouteAction, RouterTable};
 

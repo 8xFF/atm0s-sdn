@@ -1,6 +1,6 @@
 use crate::kbucket::bucket::KBucket;
 use crate::kbucket::entry::EntryState;
-use bluesea_identity::{NodeAddr, NodeId, NodeIdType};
+use p_8xff_sdn_identity::{NodeAddr, NodeId, NodeIdType};
 
 pub mod bucket;
 pub mod entry;
@@ -208,7 +208,7 @@ impl KBucketTableWrap {
 #[cfg(test)]
 mod tests {
     use crate::kbucket::{KBucketTable, KBucketTableWrap};
-    use bluesea_identity::{NodeAddr, Protocol};
+    use p_8xff_sdn_identity::{NodeAddr, Protocol};
 
     #[test]
     fn simple_table() {

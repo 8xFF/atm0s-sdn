@@ -1,15 +1,16 @@
 [package]
-name = "key-value"
+name = "p-8xff-sdn-key-value"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bluesea-identity = { workspace = true }
-bluesea-router = { workspace = true }
-utils = { workspace = true }
-network = { workspace = true }
+p-8xff-sdn-identity = { workspace = true }
+p-8xff-sdn-router = { workspace = true }
+p-8xff-sdn-utils = { workspace = true }
+p-8xff-sdn-network = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }
@@ -20,4 +21,4 @@ mockall = { workspace = true }
 [dev-dependencies]
 env_logger = { workspace = true }
 allocation-counter = { workspace = true }
-utils = { workspace = true, features = ["auto-clear"] }
+p-8xff-sdn-utils = { workspace = true, features = ["auto-clear"] }

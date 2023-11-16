@@ -4,8 +4,8 @@ use std::{
 };
 
 use async_std::channel::Sender;
+use p_8xff_sdn_utils::awaker::Awaker;
 use parking_lot::{Mutex, RwLock};
-use utils::awaker::Awaker;
 
 use crate::{msg::KeyValueSdkEventError, ExternalControl, KeyId, KeySource, KeyValueSdkEvent, KeyVersion, SubKeyId, ValueType};
 
@@ -187,7 +187,7 @@ impl ExternalControl for KeyValueSdk {
 mod test {
     use std::{sync::Arc, time::Duration};
 
-    use utils::awaker::{Awaker, MockAwaker};
+    use p_8xff_sdn_utils::awaker::{Awaker, MockAwaker};
 
     use crate::{behavior::sdk::SDK_SUB_UUID, ExternalControl, KeyValueSdk, KeyValueSdkEvent};
 

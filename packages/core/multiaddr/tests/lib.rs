@@ -1,5 +1,5 @@
 use data_encoding::HEXUPPER;
-use multiaddr::*;
+use p_8xff_sdn_multiaddr::*;
 use quickcheck::{Arbitrary, Gen, QuickCheck};
 use std::{
     borrow::Cow,

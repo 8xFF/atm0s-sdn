@@ -1,5 +1,5 @@
 [package]
-name = "runner"
+name = "p-8xff-sdn-runner"
 version = "0.1.0"
 edition = "2021"
 
@@ -9,14 +9,14 @@ edition = "2021"
 thiserror = { workspace = true }
 async-std = { workspace = true }
 
-bluesea-identity = { workspace = true }
-bluesea-router = { workspace = true }
-utils = { workspace = true }
-network = { workspace = true }
-transport-udp = { workspace = true }
-transport-tcp = { workspace = true }
-layers-spread-router = { workspace = true }
-layers-spread-router-sync = { workspace = true }
-manual-discovery = { workspace = true }
-key-value = { workspace = true }
-pub-sub = { workspace = true }
+p-8xff-sdn-identity = { workspace = true }
+p-8xff-sdn-router = { workspace = true }
+p-8xff-sdn-utils = { workspace = true }
+p-8xff-sdn-network = { workspace = true }
+p-8xff-sdn-transport-udp = { workspace = true }
+p-8xff-sdn-transport-tcp = { workspace = true }
+p-8xff-sdn-layers-spread-router = { workspace = true }
+p-8xff-sdn-layers-spread-router-sync = { workspace = true }
+p-8xff-sdn-manual-discovery = { workspace = true }
+p-8xff-sdn-key-value = { workspace = true }
+p-8xff-sdn-pub-sub = { workspace = true }

@@ -1,4 +1,4 @@
-use bluesea_identity::{NodeAddr, NodeId};
+use p_8xff_sdn_identity::{NodeAddr, NodeId};
 
 pub enum EntryState {
     Connecting { distance: NodeId, addr: NodeAddr, started_at: u64 },

@@ -1,16 +1,16 @@
 [package]
-name = "redis-server"
+name = "p-8xff-sdn-redis-server"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bluesea-identity = { workspace = true }
-bluesea-router = { workspace = true }
-utils = { workspace = true }
-network = { workspace = true }
-key-value = { workspace = true }
+p-8xff-sdn-identity = { workspace = true }
+p-8xff-sdn-router = { workspace = true }
+p-8xff-sdn-utils = { workspace = true }
+p-8xff-sdn-network = { workspace = true }
+p-8xff-sdn-key-value = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }
 async-std = { workspace = true }

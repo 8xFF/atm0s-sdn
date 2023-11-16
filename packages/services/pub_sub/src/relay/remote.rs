@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
-use bluesea_identity::ConnId;
-use network::{msg::TransportMsg, transport::ConnectionSender};
+use p_8xff_sdn_identity::ConnId;
+use p_8xff_sdn_network::{msg::TransportMsg, transport::ConnectionSender};
 
 pub struct RemoteRelay {
     remotes: HashMap<ConnId, Arc<dyn ConnectionSender>>,

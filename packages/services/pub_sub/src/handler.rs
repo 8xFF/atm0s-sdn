@@ -1,5 +1,5 @@
-use bluesea_identity::NodeId;
-use network::{
+use p_8xff_sdn_identity::NodeId;
+use p_8xff_sdn_network::{
     behaviour::{ConnectionContext, ConnectionHandler},
     transport::ConnectionEvent,
 };
@@ -28,7 +28,7 @@ where
 
     fn on_awake(&mut self, _ctx: &ConnectionContext, _now_ms: u64) {}
 
-    fn on_event(&mut self, ctx: &ConnectionContext, now_ms: u64, event: network::transport::ConnectionEvent) {
+    fn on_event(&mut self, ctx: &ConnectionContext, now_ms: u64, event: p_8xff_sdn_network::transport::ConnectionEvent) {
         match event {
             ConnectionEvent::Msg(msg) => match msg.header.meta {
                 CONTROL_META_TYPE => {
@@ -57,13 +57,13 @@ where
         }
     }
 
-    fn on_other_handler_event(&mut self, _ctx: &ConnectionContext, _now_ms: u64, _from_node: bluesea_identity::NodeId, _from_conn: bluesea_identity::ConnId, _event: HE) {}
+    fn on_other_handler_event(&mut self, _ctx: &ConnectionContext, _now_ms: u64, _from_node: p_8xff_sdn_identity::NodeId, _from_conn: p_8xff_sdn_identity::ConnId, _event: HE) {}
 
     fn on_behavior_event(&mut self, _ctx: &ConnectionContext, _now_ms: u64, _event: HE) {}
 
     fn on_closed(&mut self, _ctx: &ConnectionContext, _now_ms: u64) {}
 
-    fn pop_action(&mut self) -> Option<network::behaviour::ConnectionHandlerAction<BE, HE>> {
+    fn pop_action(&mut self) -> Option<p_8xff_sdn_network::behaviour::ConnectionHandlerAction<BE, HE>> {
         None
     }
 }

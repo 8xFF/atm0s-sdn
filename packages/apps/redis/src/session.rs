@@ -2,10 +2,10 @@ use std::hash::{Hash, Hasher};
 
 use async_std::net::TcpStream;
 use async_std::prelude::*;
-use utils::error_handle::ErrorUtils;
+use p_8xff_sdn_key_value::KeyValueSdk;
+use p_8xff_sdn_utils::error_handle::ErrorUtils;
 
 use super::cmd::RedisCmd;
-use crate::KeyValueSdk;
 
 fn key_hash(key: &str) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();

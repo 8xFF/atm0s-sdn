@@ -1,6 +1,6 @@
 use crate::kbucket::entry::{Entry, EntryState};
 use crate::kbucket::K_BUCKET;
-use bluesea_identity::{NodeAddr, NodeId};
+use p_8xff_sdn_identity::{NodeAddr, NodeId};
 
 pub struct KBucket {
     #[allow(unused)]
@@ -184,7 +184,7 @@ impl KBucket {
 #[cfg(test)]
 mod tests {
     use crate::kbucket::bucket::KBucket;
-    use bluesea_identity::{NodeAddr, Protocol};
+    use p_8xff_sdn_identity::{NodeAddr, Protocol};
 
     #[test]
     fn simple_add_get() {

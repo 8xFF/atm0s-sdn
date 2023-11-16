@@ -2,26 +2,17 @@
 name = "examples"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+p-8xff-sdn-runner = { workspace = true }
+p-8xff-sdn-tun-tap = { workspace = true }
+p-8xff-sdn-redis-server = { workspace = true }
 reedline-repl-rs = { version = "1.0.7", features = ["async"] }
-bluesea-identity = { workspace = true }
-bluesea-router = { workspace = true }
-utils = { workspace = true }
-network = { workspace = true }
 thiserror = { workspace = true }
 async-std = { workspace = true }
-layers-spread-router = { workspace = true }
-manual-discovery = { workspace = true }
-key-value = { workspace = true }
-pub-sub = { workspace = true }
-transport-udp = { workspace = true }
-transport-tcp = { workspace = true }
-layers-spread-router-sync = { workspace = true }
-tun-tap = { workspace = true }
-redis-server = { workspace = true }
 
 env_logger = { workspace = true }
 async-trait = { workspace = true }

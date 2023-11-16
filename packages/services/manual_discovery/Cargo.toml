@@ -1,15 +1,16 @@
 [package]
-name = "manual-discovery"
+name = "p-8xff-sdn-manual-discovery"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 async-trait = { workspace = true }
-bluesea-identity = { workspace = true }
-utils = { workspace = true }
-network = { workspace = true }
+p-8xff-sdn-identity = { workspace = true }
+p-8xff-sdn-utils = { workspace = true }
+p-8xff-sdn-network = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
 parking_lot = { workspace = true }
@@ -18,9 +19,9 @@ serde = { workspace = true }
 [dev-dependencies]
 async-std = { workspace = true }
 env_logger = { workspace = true }
-layers-spread-router = { workspace = true }
-layers-spread-router-sync = { workspace = true }
-transport-vnet = { workspace = true }
-transport-tcp = { workspace = true }
+p-8xff-sdn-layers-spread-router = { workspace = true }
+p-8xff-sdn-layers-spread-router-sync = { workspace = true }
+p-8xff-sdn-transport-vnet = { workspace = true }
+p-8xff-sdn-transport-tcp = { workspace = true }
 clap = { workspace = true }
 rand = { workspace = true }

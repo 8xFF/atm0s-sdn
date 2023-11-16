@@ -1,17 +1,18 @@
 [package]
-name = "dht-discovery"
+name = "p-8xff-sdn-dht-discovery"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+p-8xff-sdn-identity = { workspace = true }
+p-8xff-sdn-router = { workspace = true }
+p-8xff-sdn-utils = { workspace = true }
+p-8xff-sdn-network = { workspace = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }
-bluesea-identity = { workspace = true }
-bluesea-router = { workspace = true }
-utils = { workspace = true }
-network = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
 parking_lot = { workspace = true }
@@ -21,4 +22,4 @@ serde = { workspace = true }
 rand = "0.8"
 async-std = { workspace = true }
 env_logger = { workspace = true }
-transport-vnet = { workspace = true }
+p-8xff-sdn-transport-vnet = { workspace = true }

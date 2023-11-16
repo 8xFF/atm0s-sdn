@@ -1,7 +1,7 @@
 use crate::node_id::NodeId;
 use parking_lot::Mutex;
-pub type NodeAddr = multiaddr::Multiaddr;
-pub use multiaddr::Protocol;
+pub type NodeAddr = p_8xff_sdn_multiaddr::Multiaddr;
+pub use p_8xff_sdn_multiaddr::Protocol;
 
 pub trait NodeAddrType {
     fn node_id(&self) -> Option<NodeId>;

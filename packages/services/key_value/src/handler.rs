@@ -1,9 +1,9 @@
 use std::collections::VecDeque;
 
 use crate::msg::{KeyValueBehaviorEvent, KeyValueMsg};
-use bluesea_identity::{ConnId, NodeId};
-use network::behaviour::{ConnectionContext, ConnectionHandler, ConnectionHandlerAction};
-use network::transport::ConnectionEvent;
+use p_8xff_sdn_identity::{ConnId, NodeId};
+use p_8xff_sdn_network::behaviour::{ConnectionContext, ConnectionHandler, ConnectionHandlerAction};
+use p_8xff_sdn_network::transport::ConnectionEvent;
 
 pub struct KeyValueConnectionHandler<BE, HE> {
     ouputs: VecDeque<ConnectionHandlerAction<BE, HE>>,
@@ -60,15 +60,15 @@ mod test {
     use std::sync::Arc;
 
     use crate::{msg::SimpleLocalEvent, KeyValueBehaviorEvent, KeyValueMsg, KEY_VALUE_SERVICE_ID};
-    use bluesea_identity::ConnId;
-    use bluesea_router::RouteRule;
-    use network::{
+    use p_8xff_sdn_identity::ConnId;
+    use p_8xff_sdn_network::{
         behaviour::{ConnectionContext, ConnectionHandler, ConnectionHandlerAction},
         convert_enum,
         msg::{MsgHeader, TransportMsg},
         transport::ConnectionEvent,
     };
-    use utils::awaker::MockAwaker;
+    use p_8xff_sdn_router::RouteRule;
+    use p_8xff_sdn_utils::awaker::MockAwaker;
 
     use super::KeyValueConnectionHandler;
 

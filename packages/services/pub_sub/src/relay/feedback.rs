@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use bluesea_identity::ConnId;
+use p_8xff_sdn_identity::ConnId;
 use serde::{Deserialize, Serialize};
 
 use crate::ChannelIdentify;
