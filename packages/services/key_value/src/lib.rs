@@ -18,7 +18,10 @@ pub use behavior::KeyValueSdk;
 use bluesea_identity::NodeId;
 pub use msg::{KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueMsg, KeyValueSdkEvent};
 use utils::awaker::Awaker;
+#[cfg(test)]
+use mockall::automock;
 
+#[cfg_attr(test, automock)]
 pub trait ExternalControl: Send + Sync {
     fn set_awaker(&self, awaker: Arc<dyn Awaker>);
     fn on_event(&self, event: KeyValueSdkEvent);
