@@ -48,7 +48,7 @@ Each node in the network is embeded with Geo-Location data inside its ID. A Node
   - Layer3: Inner Geo Group Table (City level)
   - Layer4: Inner Group Index Table (DC level)
 
-*TODO: Graphics instead of bulletlist*
+TODO: Graphics instead of bulletlist
 TODO: an ARCHITECTURE.md with general information about: Project, System structure, Design philosophy, ...
 ## Getting started
 
@@ -57,77 +57,52 @@ cargo add 8xff-sdn
 ```
 
 ### Create a group chat application (Optional)
-Visit [Tutorial]()
-TODO: Create chat example
+You can refer to [the chat_example file here](examples/examples/chat_example.rs) to get started on the basic of building an application for the network.
 
 ### Demo group chat application
-
-#### Prerequisites:
-To run this demo, you can:
-
-  - Build from source code
-
-```bash
-cargo build --package chat-example
-```
-
-  - Download prebuild
-
-```bash
-wget https://.....
-``` 
-
-  - Follow the above [Create a chat application]()
-
 #### Running manual discovery multi nodes in single device
 
 Start node1:
 
 ```bash
-RUST_LOG=info chat-example --node-id 1 --node-port 5001
+cargo run --example chat_example -- --node-id 0
 ```
 
 Start node2:
 
 ```bash
-RUST_LOG=info chat-example --node-id 2 --neighbour-addr node+p2p://localhost:5001
+cargo run --example chat_example --node-id 1 --neighbour /p2p/0/ip4/127.0.0.1/udp/50000
 ```
 
 In node1
 
 ```shell
-> route
-TODO route table here
-> join room1
-```
-
-In node1
-
-```shell
-> route
-TODO route table here
-> join room1
+> router
+[Registry 0] local services: [] remote services: [], nexts []
+[Table 0/3/0] slots: []
+[Table 0/2/0] slots: []
+[Table 0/1/0] slots: []
+[Table 0/0/0] slots: [1]
+# Join the room using join command with room id
+> join 1
 ```
 
 In node2
 
 ```shell
-> join room1
+> join 1
 > send hello
 ```
 
 Now, in node1 will received message from node2
 
 ```shell
-> message from node(1): hello
-> send hi!
+Node 1 to room 1: hello
 ```
 
-Now, in node will received message from node1
-
 Available commands:
-
-  - `route`: Print route table
+  - `help`: Show available commands and description
+  - `router`: Print routing table
   - `join`: Join a room
   - `send`: Send a message to room
   - `leave`: Leave joined room
@@ -139,13 +114,13 @@ It also can start chat-example in multi nodes and connect over LAN or Internet
 Start node1:
 
 ```bash
-RUST_LOG=info chat-example --node-id 1 --node-port 5001
+cargo run --example chat_example --node-id 0
 ```
 
 Start node2:
 
 ```bash
-RUST_LOG=info chat-example --node-id 2 --neighbour-addr node+p2p://IP_HERE:5001
+cargo run --example chat_example --node-id 1 --neighbours /p2p/0/ip4/[IP_HERE]/udp/50000
 ```
 
 
