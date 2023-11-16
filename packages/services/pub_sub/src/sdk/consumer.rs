@@ -13,6 +13,7 @@ use crate::relay::{
     ChannelIdentify, ChannelUuid, LocalSubId,
 };
 
+#[derive(Clone)]
 pub struct Consumer {
     uuid: LocalSubId,
     channel: ChannelUuid,
