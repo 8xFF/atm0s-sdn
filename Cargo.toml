@@ -5,6 +5,7 @@ independent = true
 resolver = "2"
 members = [
     "packages/generic_tests",
+    "packages/integration_tests",
     "packages/network",
     "packages/core/utils",
     "packages/core/identity",

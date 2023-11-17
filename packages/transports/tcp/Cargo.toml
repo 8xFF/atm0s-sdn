@@ -19,8 +19,3 @@ log = { workspace = true }
 atm0s-sdn-utils = { workspace = true }
 futures-util = "0.3"
 async-bincode = { version = "0.7.2", features = ["futures"], default-features = false }
-
-[dev-dependencies]
-atm0s-sdn-router = { workspace = true }
-env_logger = { workspace = true }
-async-std = { workspace = true }

@@ -15,7 +15,6 @@ atm0s-sdn-redis-server = { workspace = true }
 reedline-repl-rs = { version = "1.0.7", features = ["async"] }
 thiserror = { workspace = true }
 async-std = { workspace = true }
-
 env_logger = { workspace = true }
 async-trait = { workspace = true }
 log = { workspace = true }
@@ -23,3 +22,4 @@ parking_lot = { workspace = true }
 serde = { workspace = true }
 clap = { workspace = true }
 rand = { workspace = true }
+bytes = "*"

@@ -1,12 +1,12 @@
-use atm0s_sdn_identity::{NodeAddr, NodeAddrBuilder, Protocol};
-use atm0s_sdn_layers_spread_router::SharedRouter;
-use atm0s_sdn_layers_spread_router_sync::*;
-use atm0s_sdn_manual_discovery::*;
-use atm0s_sdn_network::convert_enum;
-use atm0s_sdn_network::plane::{NetworkPlane, NetworkPlaneConfig};
-use atm0s_sdn_utils::SystemTimer;
+use atm0s_sdn::convert_enum;
+use atm0s_sdn::SharedRouter;
+use atm0s_sdn::SystemTimer;
+use atm0s_sdn::{
+    LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent, LayersSpreadRouterSyncHandlerEvent, ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent, NodeAddr,
+    NodeAddrBuilder, Protocol, UdpTransport,
+};
+use atm0s_sdn::{NetworkPlane, NetworkPlaneConfig};
 use clap::Parser;
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 #[derive(convert_enum::From, convert_enum::TryInto)]
@@ -23,12 +23,6 @@ enum NodeHandleEvent {
 
 #[derive(convert_enum::From, convert_enum::TryInto)]
 enum NodeSdkEvent {}
-
-#[derive(convert_enum::From, convert_enum::TryInto, Serialize, Deserialize)]
-enum NodeMsg {
-    Manual(ManualMsg),
-    LayersSpreadRouterSync(LayersSpreadRouterSyncMsg),
-}
 
 /// Node with manual network builder
 #[derive(Parser, Debug)]
@@ -49,7 +43,7 @@ async fn main() {
     let args: Args = Args::parse();
     let node_addr_builder = Arc::new(NodeAddrBuilder::default());
     node_addr_builder.add_protocol(Protocol::P2p(args.node_id));
-    let transport = atm0s_sdn_transport_tcp::TcpTransport::new(args.node_id, 0, node_addr_builder.clone()).await;
+    let transport = UdpTransport::new(args.node_id, 0, node_addr_builder.clone()).await;
     let node_addr = node_addr_builder.addr();
     log::info!("Listen on addr {}", node_addr);
 
