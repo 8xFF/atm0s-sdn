@@ -1,6 +1,6 @@
 [package]
 name = "atm0s-sdn-manual-discovery"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Manual discovery service in atm0s-sdn"
 license = "MIT"

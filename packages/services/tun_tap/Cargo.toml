@@ -1,6 +1,6 @@
 [package]
 name = "atm0s-sdn-tun-tap"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Tun/Tap service in atm0s-sdn"
 license = "MIT"

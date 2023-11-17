@@ -1,6 +1,6 @@
 [package]
 name = "atm0s-sdn-redis-server"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "A simple redis server for atm0s-sdn"
 license = "MIT"
