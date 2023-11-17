@@ -1,4 +1,4 @@
-use p_8xff_sdn_layers_spread_router::RouterSync;
+use atm0s_sdn_layers_spread_router::RouterSync;
 use serde::{Deserialize, Serialize};
 
 pub enum LayersSpreadRouterSyncBehaviorEvent {}

@@ -1,4 +1,4 @@
-use p_8xff_sdn_identity::{NodeAddr, NodeId};
+use atm0s_sdn_identity::{NodeAddr, NodeId};
 
 pub enum EntryState {
     Connecting { distance: NodeId, addr: NodeAddr, started_at: u64 },

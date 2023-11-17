@@ -7,9 +7,9 @@ publish = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-p-8xff-sdn-runner = { workspace = true }
-p-8xff-sdn-tun-tap = { workspace = true }
-p-8xff-sdn-redis-server = { workspace = true }
+atm0s-sdn = { workspace = true }
+atm0s-sdn-tun-tap = { workspace = true }
+atm0s-sdn-redis-server = { workspace = true }
 reedline-repl-rs = { version = "1.0.7", features = ["async"] }
 thiserror = { workspace = true }
 async-std = { workspace = true }

@@ -2,8 +2,8 @@ use crate::find_key_request::{FindKeyRequest, FindKeyRequestStatus};
 use crate::kbucket::entry::EntryState;
 use crate::kbucket::KBucketTableWrap;
 use crate::msg::DiscoveryMsg;
-use p_8xff_sdn_identity::{NodeAddr, NodeId};
-use p_8xff_sdn_utils::Timer;
+use atm0s_sdn_identity::{NodeAddr, NodeId};
+use atm0s_sdn_utils::Timer;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
@@ -210,8 +210,8 @@ impl DiscoveryLogic {
 #[cfg(test)]
 mod test {
     use crate::logic::{Action, DiscoveryLogic, DiscoveryLogicConf, DiscoveryMsg, Input};
-    use p_8xff_sdn_identity::{NodeAddr, Protocol};
-    use p_8xff_sdn_utils::SystemTimer;
+    use atm0s_sdn_identity::{NodeAddr, Protocol};
+    use atm0s_sdn_utils::SystemTimer;
     use std::sync::Arc;
 
     #[test]

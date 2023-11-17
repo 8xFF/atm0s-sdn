@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use p_8xff_sdn_identity::{ConnId, NodeId, NodeIdType};
-use p_8xff_sdn_utils::init_array::init_array;
+use atm0s_sdn_identity::{ConnId, NodeId, NodeIdType};
+use atm0s_sdn_utils::init_array::init_array;
 use serde::{Deserialize, Serialize};
 
 pub use dest::Dest;
@@ -180,7 +180,7 @@ impl Table {
 #[cfg(test)]
 mod tests {
     use crate::table::{Metric, Path, Table, TableSync};
-    use p_8xff_sdn_identity::{ConnId, NodeId, NodeIdType};
+    use atm0s_sdn_identity::{ConnId, NodeId, NodeIdType};
 
     #[test]
     fn create_manual() {

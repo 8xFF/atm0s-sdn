@@ -1,5 +1,5 @@
 [package]
-name = "p-8xff-sdn-generic-tests"
+name = "atm0s-sdn-generic-tests"
 version = "0.1.0"
 edition = "2021"
 publish = false

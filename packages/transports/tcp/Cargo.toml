@@ -1,5 +1,5 @@
 [package]
-name = "p-8xff-sdn-transport-tcp"
+name = "atm0s-sdn-transport-tcp"
 version = "0.1.0"
 edition = "2021"
 publish = false
@@ -7,19 +7,19 @@ publish = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-p-8xff-sdn-network = { workspace = true }
+atm0s-sdn-network = { workspace = true }
 async-trait = { workspace = true }
 parking_lot = { workspace = true }
-p-8xff-sdn-identity = { workspace = true }
+atm0s-sdn-identity = { workspace = true }
 bincode = { workspace = true }
 async-std = { workspace = true }
 serde = { workspace = true }
 log = { workspace = true }
-p-8xff-sdn-utils = { workspace = true }
+atm0s-sdn-utils = { workspace = true }
 futures-util = "0.3"
 async-bincode = { version = "0.7.2", features = ["futures"], default-features = false }
 
 [dev-dependencies]
-p-8xff-sdn-router = { workspace = true }
+atm0s-sdn-router = { workspace = true }
 env_logger = { workspace = true }
 async-std = { workspace = true }

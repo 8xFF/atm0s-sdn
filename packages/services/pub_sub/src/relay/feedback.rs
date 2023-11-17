@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use p_8xff_sdn_identity::ConnId;
+use atm0s_sdn_identity::ConnId;
 use serde::{Deserialize, Serialize};
 
 use crate::ChannelIdentify;

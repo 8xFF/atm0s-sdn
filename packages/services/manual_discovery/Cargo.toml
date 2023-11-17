@@ -1,5 +1,5 @@
 [package]
-name = "p-8xff-sdn-manual-discovery"
+name = "atm0s-sdn-manual-discovery"
 version = "0.1.0"
 edition = "2021"
 publish = false
@@ -8,9 +8,9 @@ publish = false
 
 [dependencies]
 async-trait = { workspace = true }
-p-8xff-sdn-identity = { workspace = true }
-p-8xff-sdn-utils = { workspace = true }
-p-8xff-sdn-network = { workspace = true }
+atm0s-sdn-identity = { workspace = true }
+atm0s-sdn-utils = { workspace = true }
+atm0s-sdn-network = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
 parking_lot = { workspace = true }
@@ -19,9 +19,9 @@ serde = { workspace = true }
 [dev-dependencies]
 async-std = { workspace = true }
 env_logger = { workspace = true }
-p-8xff-sdn-layers-spread-router = { workspace = true }
-p-8xff-sdn-layers-spread-router-sync = { workspace = true }
-p-8xff-sdn-transport-vnet = { workspace = true }
-p-8xff-sdn-transport-tcp = { workspace = true }
+atm0s-sdn-layers-spread-router = { workspace = true }
+atm0s-sdn-layers-spread-router-sync = { workspace = true }
+atm0s-sdn-transport-vnet = { workspace = true }
+atm0s-sdn-transport-tcp = { workspace = true }
 clap = { workspace = true }
 rand = { workspace = true }

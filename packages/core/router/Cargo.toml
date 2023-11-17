@@ -1,5 +1,5 @@
 [package]
-name = "p-8xff-sdn-router"
+name = "atm0s-sdn-router"
 version = "0.1.0"
 edition = "2021"
 publish = false
@@ -10,5 +10,5 @@ mock = ["mockall"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-p-8xff-sdn-identity = { workspace = true }
+atm0s-sdn-identity = { workspace = true }
 mockall = { workspace = true, optional = true }

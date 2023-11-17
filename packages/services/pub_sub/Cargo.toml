@@ -1,5 +1,5 @@
 [package]
-name = "p-8xff-sdn-pub-sub"
+name = "atm0s-sdn-pub-sub"
 version = "0.1.0"
 edition = "2021"
 publish = false
@@ -9,11 +9,11 @@ publish = false
 [dependencies]
 log = { workspace = true }
 async-trait = { workspace = true }
-p-8xff-sdn-identity = { workspace = true }
-p-8xff-sdn-router = { workspace = true }
-p-8xff-sdn-key-value = { workspace = true }
-p-8xff-sdn-utils = { workspace = true }
-p-8xff-sdn-network = { workspace = true }
+atm0s-sdn-identity = { workspace = true }
+atm0s-sdn-router = { workspace = true }
+atm0s-sdn-key-value = { workspace = true }
+atm0s-sdn-utils = { workspace = true }
+atm0s-sdn-network = { workspace = true }
 async-std = { workspace = true }
 serde = { workspace = true }
 parking_lot = { workspace = true }
@@ -21,8 +21,8 @@ bytes = "*"
 
 [dev-dependencies]
 env_logger = { workspace = true }
-p-8xff-sdn-transport-vnet = { workspace = true }
-p-8xff-sdn-transport-udp = { workspace = true }
-p-8xff-sdn-layers-spread-router = { workspace = true }
-p-8xff-sdn-layers-spread-router-sync = { workspace = true }
-p-8xff-sdn-manual-discovery = { workspace = true }
+atm0s-sdn-transport-vnet = { workspace = true }
+atm0s-sdn-transport-udp = { workspace = true }
+atm0s-sdn-layers-spread-router = { workspace = true }
+atm0s-sdn-layers-spread-router-sync = { workspace = true }
+atm0s-sdn-manual-discovery = { workspace = true }

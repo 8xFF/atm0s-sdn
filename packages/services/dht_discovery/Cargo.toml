@@ -1,5 +1,5 @@
 [package]
-name = "p-8xff-sdn-dht-discovery"
+name = "atm0s-sdn-dht-discovery"
 version = "0.1.0"
 edition = "2021"
 publish = false
@@ -7,10 +7,10 @@ publish = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-p-8xff-sdn-identity = { workspace = true }
-p-8xff-sdn-router = { workspace = true }
-p-8xff-sdn-utils = { workspace = true }
-p-8xff-sdn-network = { workspace = true }
+atm0s-sdn-identity = { workspace = true }
+atm0s-sdn-router = { workspace = true }
+atm0s-sdn-utils = { workspace = true }
+atm0s-sdn-network = { workspace = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }
 thiserror = { workspace = true }
@@ -22,4 +22,4 @@ serde = { workspace = true }
 rand = "0.8"
 async-std = { workspace = true }
 env_logger = { workspace = true }
-p-8xff-sdn-transport-vnet = { workspace = true }
+atm0s-sdn-transport-vnet = { workspace = true }

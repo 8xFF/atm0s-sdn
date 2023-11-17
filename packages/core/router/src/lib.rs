@@ -3,7 +3,7 @@ mod force_node;
 
 pub use force_local::ForceLocalRouter;
 pub use force_node::ForceNodeRouter;
-use p_8xff_sdn_identity::{ConnId, NodeId};
+use atm0s_sdn_identity::{ConnId, NodeId};
 
 #[cfg(any(test, feature = "mock"))]
 use mockall::automock;

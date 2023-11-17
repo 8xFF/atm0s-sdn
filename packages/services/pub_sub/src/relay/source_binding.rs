@@ -3,8 +3,8 @@ use std::{
     sync::Arc,
 };
 
-use p_8xff_sdn_identity::NodeId;
-use p_8xff_sdn_utils::awaker::Awaker;
+use atm0s_sdn_identity::NodeId;
+use atm0s_sdn_utils::awaker::Awaker;
 
 use super::{ChannelUuid, LocalSubId};
 
@@ -30,7 +30,7 @@ impl SourceBinding {
         Self {
             channels: HashMap::new(),
             actions: VecDeque::new(),
-            awaker: Arc::new(p_8xff_sdn_utils::awaker::MockAwaker::default()),
+            awaker: Arc::new(atm0s_sdn_utils::awaker::MockAwaker::default()),
         }
     }
 
@@ -144,7 +144,7 @@ impl SourceBinding {
 mod tests {
     use std::sync::Arc;
 
-    use p_8xff_sdn_utils::awaker::Awaker;
+    use atm0s_sdn_utils::awaker::Awaker;
 
     use crate::relay::source_binding::SourceBindingAction;
 
@@ -163,7 +163,7 @@ mod tests {
 
     #[test]
     fn local_sub_unsub_should_correct() {
-        let awake = Arc::new(p_8xff_sdn_utils::awaker::MockAwaker::default());
+        let awake = Arc::new(atm0s_sdn_utils::awaker::MockAwaker::default());
         let mut bindding = SourceBinding::new();
         bindding.set_awaker(awake.clone());
 
