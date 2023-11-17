@@ -7,7 +7,7 @@ publish = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-atm0s-sdn = { workspace = true }
+atm0s-sdn = { workspace = true, features = ["all"]}
 atm0s-sdn-tun-tap = { workspace = true }
 atm0s-sdn-redis-server = { workspace = true }
 reedline-repl-rs = { version = "1.0.7", features = ["async"] }
