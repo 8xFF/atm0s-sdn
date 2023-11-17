@@ -9,6 +9,7 @@ license = "MIT"
 
 [dependencies]
 atm0s-sdn-network = { workspace = true }
+atm0s-sdn-router = { workspace = true }
 async-trait = { workspace = true }
 parking_lot = { workspace = true }
 atm0s-sdn-identity = { workspace = true }
@@ -17,4 +18,3 @@ async-std = { workspace = true }
 [dev-dependencies]
 bincode = { workspace = true }
 serde = { workspace = true }
-atm0s-sdn-router = { workspace = true }

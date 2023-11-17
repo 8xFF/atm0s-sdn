@@ -19,11 +19,3 @@ async-std = { workspace = true }
 serde = { workspace = true }
 parking_lot = { workspace = true }
 bytes = "*"
-
-[dev-dependencies]
-env_logger = { workspace = true }
-atm0s-sdn-transport-vnet = { workspace = true }
-atm0s-sdn-transport-udp = { workspace = true }
-atm0s-sdn-layers-spread-router = { workspace = true }
-atm0s-sdn-layers-spread-router-sync = { workspace = true }
-atm0s-sdn-manual-discovery = { workspace = true }

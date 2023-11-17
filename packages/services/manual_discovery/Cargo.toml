@@ -16,13 +16,3 @@ thiserror = { workspace = true }
 log = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true }
-
-[dev-dependencies]
-async-std = { workspace = true }
-env_logger = { workspace = true }
-atm0s-sdn-layers-spread-router = { workspace = true }
-atm0s-sdn-layers-spread-router-sync = { workspace = true }
-atm0s-sdn-transport-vnet = { workspace = true }
-atm0s-sdn-transport-tcp = { workspace = true }
-clap = { workspace = true }
-rand = { workspace = true }
