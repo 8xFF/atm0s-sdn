@@ -13,13 +13,13 @@ mod storage;
 
 use std::sync::Arc;
 
+use atm0s_sdn_identity::NodeId;
+use atm0s_sdn_utils::awaker::Awaker;
 pub use behavior::KeyValueBehavior;
 pub use behavior::KeyValueSdk;
 #[cfg(test)]
 use mockall::automock;
 pub use msg::{KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueMsg, KeyValueSdkEvent};
-use atm0s_sdn_identity::NodeId;
-use atm0s_sdn_utils::awaker::Awaker;
 
 #[cfg_attr(test, automock)]
 pub trait ExternalControl: Send + Sync {

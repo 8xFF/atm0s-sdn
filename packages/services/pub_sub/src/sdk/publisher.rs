@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use bytes::Bytes;
 use atm0s_sdn_network::msg::{MsgHeader, TransportMsg};
 use atm0s_sdn_router::RouteRule;
+use bytes::Bytes;
 use parking_lot::RwLock;
 
 use crate::{
