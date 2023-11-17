@@ -1,5 +1,5 @@
-use data_encoding::HEXUPPER;
 use atm0s_sdn_multiaddr::*;
+use data_encoding::HEXUPPER;
 use quickcheck::{Arbitrary, Gen, QuickCheck};
 use std::{
     borrow::Cow,

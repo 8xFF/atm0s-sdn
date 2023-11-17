@@ -1,12 +1,9 @@
 use std::{sync::Arc, time::Duration};
 
-use atm0s_sdn::{NodeAddrBuilder, UdpTransport};
-use atm0s_sdn::{
-    TransportMsg,
-    ConnectionEvent, Transport, TransportEvent,
-};
-use atm0s_sdn::RouteRule;
 use atm0s_sdn::ErrorUtils;
+use atm0s_sdn::RouteRule;
+use atm0s_sdn::{ConnectionEvent, Transport, TransportEvent, TransportMsg};
+use atm0s_sdn::{NodeAddrBuilder, UdpTransport};
 
 #[async_std::main]
 async fn main() {

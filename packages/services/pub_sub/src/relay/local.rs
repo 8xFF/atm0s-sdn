@@ -4,9 +4,9 @@ use std::{
 };
 
 use async_std::channel::Sender;
-use bytes::Bytes;
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_utils::{awaker::Awaker, error_handle::ErrorUtils};
+use bytes::Bytes;
 
 use super::{feedback::Feedback, ChannelUuid, LocalSubId};
 
@@ -97,8 +97,8 @@ impl LocalRelay {
 mod tests {
     use std::sync::Arc;
 
-    use bytes::Bytes;
     use atm0s_sdn_utils::awaker::Awaker;
+    use bytes::Bytes;
 
     use crate::{
         relay::{feedback::FeedbackType, local::LocalRelayAction},

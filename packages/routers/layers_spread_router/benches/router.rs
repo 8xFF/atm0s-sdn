@@ -1,8 +1,8 @@
 use std::vec;
 
-use criterion::{criterion_group, criterion_main, Criterion};
 use atm0s_sdn_identity::ConnId;
 use atm0s_sdn_layers_spread_router::{Metric, RegistrySync, Router, RouterSync, SharedRouter};
+use criterion::{criterion_group, criterion_main, Criterion};
 
 criterion_group!(benches, benchmark_empty, benchmark_single, benchmark_full, benchmark_full_shared);
 criterion_main!(benches);
