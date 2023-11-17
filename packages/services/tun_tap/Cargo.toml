@@ -16,5 +16,5 @@ atm0s-sdn-utils = { workspace = true }
 atm0s-sdn-network = { workspace = true }
 async-std = { workspace = true }
 futures = "0.3"
-tun = { git = "https://github.com/giangndm-bluesea/rust-tun.git", hash = "d05f882cab35373e26016867f4ed100158b759c7" }
+tun-sync = "0.1.1"
 parking_lot = { workspace = true }
