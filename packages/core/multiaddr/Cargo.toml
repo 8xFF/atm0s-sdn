@@ -8,7 +8,7 @@ keywords = ["multiaddr", "ipfs"]
 license = "MIT"
 name = "atm0s-sdn-multiaddr"
 readme = "README.md"
-version = "0.18.0"
+version = "0.1.0"
 
 
 [features]

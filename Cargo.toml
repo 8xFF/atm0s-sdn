@@ -25,23 +25,23 @@ members = [
 ]
 
 [workspace.dependencies]
-atm0s-sdn-identity = { path = "packages/core/identity" }
-atm0s-sdn-router = { path = "packages/core/router" }
-atm0s-sdn-layers-spread-router = { path = "packages/routers/layers_spread_router" }
-atm0s-sdn-multiaddr = { path = "packages/core/multiaddr" }
-atm0s-sdn-utils = { package = "atm0s-sdn-utils", path = "packages/core/utils" }
-atm0s-sdn = { package = "atm0s-sdn", path = "packages/runner" }
-atm0s-sdn-network = { package = "atm0s-sdn-network", path = "packages/network" }
-atm0s-sdn-manual-discovery = { package = "atm0s-sdn-manual-discovery", path = "packages/services/manual_discovery" }
-atm0s-sdn-dht-discovery = { package = "atm0s-sdn-dht-discovery", path = "packages/services/dht_discovery" }
-atm0s-sdn-layers-spread-router-sync = { package = "atm0s-sdn-layers-spread-router-sync", path = "packages/services/layers_spread_router_sync" }
-atm0s-sdn-tun-tap = { package = "atm0s-sdn-tun-tap", path = "packages/services/tun_tap" }
-atm0s-sdn-key-value = { package = "atm0s-sdn-key-value", path = "packages/services/key_value" }
-atm0s-sdn-pub-sub = { package = "atm0s-sdn-pub-sub", path = "packages/services/pub_sub" }
-atm0s-sdn-transport-vnet = { package = "atm0s-sdn-transport-vnet", path = "packages/transports/vnet" }
-atm0s-sdn-transport-tcp = { package = "atm0s-sdn-transport-tcp", path = "packages/transports/tcp" }
-atm0s-sdn-transport-udp = { package = "atm0s-sdn-transport-udp", path = "packages/transports/udp" }
-atm0s-sdn-redis-server = { package = "atm0s-sdn-redis-server", path = "packages/apps/redis" }
+atm0s-sdn-identity = { path = "packages/core/identity", version = "0.1.0"}
+atm0s-sdn-router = { path = "packages/core/router", version = "0.1.0" }
+atm0s-sdn-layers-spread-router = { path = "packages/routers/layers_spread_router", version = "0.1.0" }
+atm0s-sdn-multiaddr = { path = "packages/core/multiaddr", version = "0.1.0" }
+atm0s-sdn-utils = { package = "atm0s-sdn-utils", path = "packages/core/utils", version = "0.1.0" }
+atm0s-sdn = { package = "atm0s-sdn", path = "packages/runner", version = "0.1.0" }
+atm0s-sdn-network = { package = "atm0s-sdn-network", path = "packages/network", version = "0.1.0" }
+atm0s-sdn-manual-discovery = { package = "atm0s-sdn-manual-discovery", path = "packages/services/manual_discovery", version = "0.1.0" }
+atm0s-sdn-dht-discovery = { package = "atm0s-sdn-dht-discovery", path = "packages/services/dht_discovery", version = "0.1.0" }
+atm0s-sdn-layers-spread-router-sync = { package = "atm0s-sdn-layers-spread-router-sync", path = "packages/services/layers_spread_router_sync", version = "0.1.0" }
+atm0s-sdn-tun-tap = { package = "atm0s-sdn-tun-tap", path = "packages/services/tun_tap", version = "0.1.0" }
+atm0s-sdn-key-value = { package = "atm0s-sdn-key-value", path = "packages/services/key_value", version = "0.1.0" }
+atm0s-sdn-pub-sub = { package = "atm0s-sdn-pub-sub", path = "packages/services/pub_sub", version = "0.1.0" }
+atm0s-sdn-transport-vnet = { package = "atm0s-sdn-transport-vnet", path = "packages/transports/vnet", version = "0.1.0" }
+atm0s-sdn-transport-tcp = { package = "atm0s-sdn-transport-tcp", path = "packages/transports/tcp", version = "0.1.0" }
+atm0s-sdn-transport-udp = { package = "atm0s-sdn-transport-udp", path = "packages/transports/udp", version = "0.1.0" }
+atm0s-sdn-redis-server = { package = "atm0s-sdn-redis-server", path = "packages/apps/redis", version = "0.1.0" }
 bincode = "1.3.3"
 serde = { version = "1.0", features = ["derive"] }
 async-trait = "0.1"
