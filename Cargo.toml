@@ -54,6 +54,6 @@ log = "0.4"
 rand = "0.8"
 parking_lot = "0.12"
 env_logger = "0.10"
-allocation-counter = { version = "*" }
+allocation-counter = { version = "0.8.1" }
 clap = { version = "4.4.8", features = ["derive", "env"] }
 mockall = "0.11.4"

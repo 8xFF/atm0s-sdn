@@ -22,4 +22,4 @@ parking_lot = { workspace = true }
 serde = { workspace = true }
 clap = { workspace = true }
 rand = { workspace = true }
-bytes = "*"
+bytes = "1.5.0"
