@@ -66,7 +66,7 @@ where
             let ctx = ctx.clone();
             let actions = self.actions.clone();
             let join = async_std::task::spawn(async move {
-                let mut config = tun::Configuration::default();
+                let mut config = tun_sync::Configuration::default();
                 let node_id = ctx.node_id.clone();
                 let ip_addr: IpAddr = IpAddr::V4(Ipv4Addr::new(10, 33, node_id.layer(1), node_id.layer(0)));
 
@@ -82,7 +82,7 @@ where
                     config.packet_information(true);
                 });
 
-                let mut dev = tun::create(&config).unwrap();
+                let mut dev: tun_sync::platform::Device = tun_sync::create(&config).unwrap();
                 log::info!("created tun device fd {}", dev.as_raw_fd());
 
                 #[cfg(any(target_os = "macos", target_os = "ios"))]
