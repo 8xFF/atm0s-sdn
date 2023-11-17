@@ -1,4 +1,4 @@
-use bluesea_identity::{ConnId, NodeId};
+use atm0s_sdn_identity::{ConnId, NodeId};
 use std::cmp::Ordering;
 
 use crate::table::Metric;
@@ -30,7 +30,7 @@ impl Ord for Path {
 mod tests {
     use std::cmp::Ordering;
 
-    use bluesea_identity::ConnId;
+    use atm0s_sdn_identity::ConnId;
 
     use crate::{Metric, Path};
 

@@ -1,18 +1,19 @@
 [package]
-name = "pub-sub"
+name = "atm0s-sdn-pub-sub"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 log = { workspace = true }
 async-trait = { workspace = true }
-bluesea-identity = { workspace = true }
-bluesea-router = { workspace = true }
-key-value = { workspace = true }
-utils = { workspace = true }
-network = { workspace = true }
+atm0s-sdn-identity = { workspace = true }
+atm0s-sdn-router = { workspace = true }
+atm0s-sdn-key-value = { workspace = true }
+atm0s-sdn-utils = { workspace = true }
+atm0s-sdn-network = { workspace = true }
 async-std = { workspace = true }
 serde = { workspace = true }
 parking_lot = { workspace = true }
@@ -20,8 +21,8 @@ bytes = "*"
 
 [dev-dependencies]
 env_logger = { workspace = true }
-transport-vnet = { workspace = true }
-transport-udp = { workspace = true }
-layers-spread-router = { workspace = true }
-layers-spread-router-sync = { workspace = true }
-manual-discovery = { workspace = true }
+atm0s-sdn-transport-vnet = { workspace = true }
+atm0s-sdn-transport-udp = { workspace = true }
+atm0s-sdn-layers-spread-router = { workspace = true }
+atm0s-sdn-layers-spread-router-sync = { workspace = true }
+atm0s-sdn-manual-discovery = { workspace = true }

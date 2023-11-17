@@ -1,5 +1,5 @@
 [package]
-name = "tun-tap"
+name = "atm0s-sdn-tun-tap"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,10 +8,10 @@ edition = "2021"
 [dependencies]
 log = { workspace = true }
 async-trait = { workspace = true }
-bluesea-identity = { workspace = true }
-bluesea-router = { workspace = true }
-utils = { workspace = true }
-network = { workspace = true }
+atm0s-sdn-identity = { workspace = true }
+atm0s-sdn-router = { workspace = true }
+atm0s-sdn-utils = { workspace = true }
+atm0s-sdn-network = { workspace = true }
 async-std = { workspace = true }
 futures = "0.3"
 tun = { git = "https://github.com/giangndm-bluesea/rust-tun.git", hash = "d05f882cab35373e26016867f4ed100158b759c7" }

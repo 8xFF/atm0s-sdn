@@ -1,7 +1,7 @@
+use atm0s_sdn_utils::hashmap::HashMap;
+use atm0s_sdn_utils::vec_dequeue::VecDeque;
 use std::collections::hash_map;
 use std::hash::Hash;
-use utils::hashmap::HashMap;
-use utils::vec_dequeue::VecDeque;
 
 #[derive(Eq, PartialEq, Debug)]
 pub enum OutputEvent<Key, Value, Source, Handler> {

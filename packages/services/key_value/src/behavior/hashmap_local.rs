@@ -2,8 +2,8 @@ use crate::{
     msg::{HashmapLocalEvent, HashmapRemoteEvent, KeyValueSdkEventError},
     KeyId, KeySource, KeyVersion, ReqId, SubKeyId, ValueType,
 };
-use bluesea_identity::NodeId;
-use bluesea_router::RouteRule;
+use atm0s_sdn_identity::NodeId;
+use atm0s_sdn_router::RouteRule;
 /// This hashmap local storage is used for storing and act with remote storage
 /// Main idea is we using sdk to act with local storage, and local storage will sync that data to remote
 /// Local storage allow us to set/get/del/subscribe/unsubscribe
@@ -390,7 +390,7 @@ impl HashmapLocalStorage {
 
 #[cfg(test)]
 mod tests {
-    use bluesea_router::RouteRule;
+    use atm0s_sdn_router::RouteRule;
 
     use crate::{
         behavior::hashmap_local::LocalStorageAction,

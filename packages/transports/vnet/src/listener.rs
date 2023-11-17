@@ -1,7 +1,7 @@
 use crate::connection::VnetConnection;
 use async_std::channel::Receiver;
-use bluesea_identity::{ConnId, NodeId};
-use network::transport::{ConnectionAcceptor, OutgoingConnectionError, TransportOutgoingLocalUuid};
+use atm0s_sdn_identity::{ConnId, NodeId};
+use atm0s_sdn_network::transport::{ConnectionAcceptor, OutgoingConnectionError, TransportOutgoingLocalUuid};
 
 pub enum VnetListenerEvent {
     IncomingRequest(NodeId, ConnId, Box<dyn ConnectionAcceptor>),

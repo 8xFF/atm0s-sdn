@@ -2,9 +2,9 @@ use std::collections::VecDeque;
 
 use crate::msg::{DiscoveryBehaviorEvent, DiscoveryHandlerEvent};
 use crate::DiscoveryMsg;
-use bluesea_identity::{ConnId, NodeId};
-use network::behaviour::{ConnectionContext, ConnectionHandler, ConnectionHandlerAction};
-use network::transport::ConnectionEvent;
+use atm0s_sdn_identity::{ConnId, NodeId};
+use atm0s_sdn_network::behaviour::{ConnectionContext, ConnectionHandler, ConnectionHandlerAction};
+use atm0s_sdn_network::transport::ConnectionEvent;
 
 pub struct DiscoveryConnectionHandler<BE, HE> {
     outputs: VecDeque<ConnectionHandlerAction<BE, HE>>,

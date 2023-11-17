@@ -6,8 +6,8 @@ use crate::{
     msg::{HashmapLocalEvent, HashmapRemoteEvent},
     KeyId, ValueType,
 };
-use bluesea_identity::NodeId;
-use bluesea_router::RouteRule;
+use atm0s_sdn_identity::NodeId;
+use atm0s_sdn_router::RouteRule;
 use std::collections::VecDeque;
 
 use super::event_acks::EventAckManager;
@@ -136,7 +136,7 @@ impl HashmapRemoteStorage {
 mod tests {
     use super::RemoteStorageAction;
     use crate::msg::{HashmapLocalEvent, HashmapRemoteEvent};
-    use bluesea_router::RouteRule;
+    use atm0s_sdn_router::RouteRule;
 
     #[test]
     fn receive_set_dersiered_send_ack() {

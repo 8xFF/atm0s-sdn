@@ -22,7 +22,7 @@
  </a>
 </p>
 
-# Global-scaled Ultra-low latency Decentralized SDN
+# Atm0s SDN: Global-scaled Ultra-low latency Decentralized SDN
 
 A SAN I/O driven, open-source decentralized network infrastructure that can deliver high-quality data with minimal latency and efficient cost, similar to what Cloudflare achieves for their network.
 

@@ -1,4 +1,4 @@
-use bluesea_identity::{ConnId, NodeId, NodeIdType};
+use atm0s_sdn_identity::{ConnId, NodeId, NodeIdType};
 use serde::{Deserialize, Serialize};
 
 use crate::registry::{Registry, RegistrySync};
@@ -187,7 +187,7 @@ mod tests {
     use crate::router::{Router, RouterSync};
     use crate::table::{Metric, Path, TableSync};
     use crate::ServiceDestination;
-    use bluesea_identity::{ConnId, NodeId, NodeIdType};
+    use atm0s_sdn_identity::{ConnId, NodeId, NodeIdType};
 
     #[test]
     fn create_manual_multi_layers() {

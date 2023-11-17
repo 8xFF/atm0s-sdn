@@ -67,7 +67,7 @@ impl ConnId {
     /// # Example
     ///
     /// ```
-    /// use bluesea_identity::ConnId;
+    /// use atm0s_sdn_identity::ConnId;
     ///
     /// let conn_id = ConnId::from_in(1, 123456789);
     /// ```

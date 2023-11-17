@@ -1,8 +1,8 @@
 use crate::router::{Router, RouterSync};
 use crate::table::{Metric, Path};
 use crate::ServiceDestination;
-use bluesea_identity::{ConnId, NodeId};
-use bluesea_router::{RouteAction, RouterTable};
+use atm0s_sdn_identity::{ConnId, NodeId};
+use atm0s_sdn_router::{RouteAction, RouterTable};
 use parking_lot::RwLock;
 use std::sync::Arc;
 
@@ -105,7 +105,7 @@ impl RouterTable for SharedRouter {
 #[cfg(test)]
 mod tests {
     use crate::SharedRouter;
-    use bluesea_identity::NodeId;
+    use atm0s_sdn_identity::NodeId;
 
     #[test]
     fn log_dump_test() {

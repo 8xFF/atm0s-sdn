@@ -1,7 +1,8 @@
 [package]
-name = "utils"
+name = "atm0s-sdn-utils"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 [features]
 auto-clear = []

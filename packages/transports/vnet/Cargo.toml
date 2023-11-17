@@ -1,18 +1,19 @@
 [package]
-name = "vnet"
+name = "atm0s-sdn-transport-vnet"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-network = { workspace = true }
+atm0s-sdn-network = { workspace = true }
 async-trait = { workspace = true }
 parking_lot = { workspace = true }
-bluesea-identity = { workspace = true }
+atm0s-sdn-identity = { workspace = true }
 async-std = { workspace = true }
 
 [dev-dependencies]
 bincode = { workspace = true }
 serde = { workspace = true }
-bluesea-router = { workspace = true }
+atm0s-sdn-router = { workspace = true }

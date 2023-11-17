@@ -11,12 +11,12 @@ pub use transport::VnetTransport;
 #[cfg(test)]
 mod tests {
     use crate::{VnetEarth, VnetTransport};
-    use bluesea_identity::{ConnDirection, NodeAddr, NodeId, Protocol};
-    use bluesea_router::RouteRule;
-    use network::{
+    use atm0s_sdn_identity::{ConnDirection, NodeAddr, NodeId, Protocol};
+    use atm0s_sdn_network::{
         msg::TransportMsg,
         transport::{ConnectionEvent, ConnectionStats, OutgoingConnectionError, Transport, TransportEvent},
     };
+    use atm0s_sdn_router::RouteRule;
     use serde::{Deserialize, Serialize};
     use std::sync::Arc;
 

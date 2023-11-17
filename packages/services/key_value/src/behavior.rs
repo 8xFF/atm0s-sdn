@@ -1,10 +1,10 @@
 use crate::handler::KeyValueConnectionHandler;
 use crate::msg::{KeyValueBehaviorEvent, KeyValueMsg, KeyValueSdkEvent};
 use crate::{ExternalControl, KEY_VALUE_SERVICE_ID};
-use bluesea_identity::{ConnId, NodeId};
-use network::behaviour::{BehaviorContext, ConnectionHandler, NetworkBehavior, NetworkBehaviorAction};
-use network::msg::{MsgHeader, TransportMsg};
-use network::transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, TransportOutgoingLocalUuid};
+use atm0s_sdn_identity::{ConnId, NodeId};
+use atm0s_sdn_network::behaviour::{BehaviorContext, ConnectionHandler, NetworkBehavior, NetworkBehaviorAction};
+use atm0s_sdn_network::msg::{MsgHeader, TransportMsg};
+use atm0s_sdn_network::transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, TransportOutgoingLocalUuid};
 use std::collections::VecDeque;
 use std::sync::Arc;
 
@@ -318,13 +318,13 @@ where
 mod tests {
     use std::sync::Arc;
 
-    use bluesea_identity::ConnId;
-    use bluesea_router::RouteRule;
-    use network::{
+    use atm0s_sdn_identity::ConnId;
+    use atm0s_sdn_network::{
         behaviour::{BehaviorContext, NetworkBehavior, NetworkBehaviorAction},
         msg::{MsgHeader, TransportMsg},
     };
-    use utils::awaker::MockAwaker;
+    use atm0s_sdn_router::RouteRule;
+    use atm0s_sdn_utils::awaker::MockAwaker;
 
     use crate::{
         msg::{HashmapLocalEvent, HashmapRemoteEvent, KeyValueSdkEvent, SimpleLocalEvent, SimpleRemoteEvent},
@@ -588,7 +588,6 @@ mod tests {
         let mut mock_external_control = Box::new(MockExternalControl::default());
         let mut external_action: Vec<Option<KeyValueSdkEvent>> = vec![None, Some(KeyValueSdkEvent::Sub(0, key, None))];
         mock_external_control.expect_pop_action().returning(move || external_action.pop().unwrap());
-
 
         let mut behaviour = super::KeyValueBehavior::<HE, SE>::new(local_node_id, sync_ms, Some(mock_external_control));
         let behaviour: &mut dyn NetworkBehavior<BE, HE, SE> = &mut behaviour;

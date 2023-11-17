@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use bluesea_identity::{ConnId, NodeId, NodeIdType};
+use atm0s_sdn_identity::{ConnId, NodeId, NodeIdType};
+use atm0s_sdn_utils::init_array::init_array;
 use serde::{Deserialize, Serialize};
-use utils::init_array::init_array;
 
 pub use dest::Dest;
 pub use metric::{Metric, BANDWIDTH_LIMIT};
@@ -180,7 +180,7 @@ impl Table {
 #[cfg(test)]
 mod tests {
     use crate::table::{Metric, Path, Table, TableSync};
-    use bluesea_identity::{ConnId, NodeId, NodeIdType};
+    use atm0s_sdn_identity::{ConnId, NodeId, NodeIdType};
 
     #[test]
     fn create_manual() {
