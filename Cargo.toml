@@ -2,6 +2,7 @@
 independent = true
 
 [workspace]
+resolver = "2"
 members = [
     "packages/generic_tests",
     "packages/network",
