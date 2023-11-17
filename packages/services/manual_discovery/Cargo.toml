@@ -2,7 +2,8 @@
 name = "atm0s-sdn-manual-discovery"
 version = "0.1.0"
 edition = "2021"
-
+description = "Manual discovery service in atm0s-sdn"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

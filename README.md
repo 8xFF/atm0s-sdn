@@ -5,6 +5,12 @@
  <a href="https://codecov.io/gh/8xff/decentralized-sdn">
   <img src="https://codecov.io/gh/8xff/decentralized-sdn/branch/master/graph/badge.svg">
  </a>
+ <a href="https://codecov.io/gh/8xff/decentralized-sdn">
+  <img src="https://codecov.io/gh/8xff/decentralized-sdn/branch/master/graph/badge.svg">
+ </a>
+ <a href="https://app.codacy.com/gh/8xFF/atm0s-sdn/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade">
+  <img src="https://app.codacy.com/project/badge/Grade/c8d34f07fe5f417084aac8d8a1ef3857"/>
+ </a>
  <a href="https://deps.rs/repo/github/8xff/decentralized-sdn">
   <img src="https://deps.rs/repo/github/8xff/decentralized-sdn/status.svg">
  </a>
