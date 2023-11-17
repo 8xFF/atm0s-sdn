@@ -1,3 +1,31 @@
+# Changelog
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [0.1.0](https://github.com/8xFF/atm0s-sdn/releases/tag/atm0s-sdn-multiaddr-v0.1.0) - 2023-11-17
+
+### Fixed
+- fixing some clippy
+
+### Other
+- auto release with release-plz ([#62](https://github.com/8xFF/atm0s-sdn/pull/62))
+- Rename package to atm0s-sdn ([#61](https://github.com/8xFF/atm0s-sdn/pull/61))
+- Update Rust crate unsigned-varint to 0.8 ([#34](https://github.com/8xFF/atm0s-sdn/pull/34))
+- Update Rust crate percent-encoding to 2.3.0 ([#33](https://github.com/8xFF/atm0s-sdn/pull/33))
+- Update Rust crate url to 2.4.1 ([#35](https://github.com/8xFF/atm0s-sdn/pull/35))
+- Update Rust crate serde to 1.0.192 ([#40](https://github.com/8xFF/atm0s-sdn/pull/40))
+- Update Rust crate data-encoding to 2.4 ([#32](https://github.com/8xFF/atm0s-sdn/pull/32))
+- Update Rust crate byteorder to 1.5.0 ([#28](https://github.com/8xFF/atm0s-sdn/pull/28))
+- Update Rust crate serde to 1.0.190 ([#22](https://github.com/8xFF/atm0s-sdn/pull/22))
+- Update Rust crate rand to 0.8.5 ([#21](https://github.com/8xFF/atm0s-sdn/pull/21))
+- continue fixing warn
+- change format for longer max line width for better reading
+- added transport tcp and fixing test for multiaddr
+- added multiaddr custom ver, added manual discovery by specific neighbor address
 # 0.18.0 - unreleased
 
 - Add `WebTransport` instance for `Multiaddr`. See [PR 70].
