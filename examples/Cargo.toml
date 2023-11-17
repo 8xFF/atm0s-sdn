@@ -2,6 +2,8 @@
 name = "examples"
 version = "0.1.0"
 edition = "2021"
+description = "Examples for atm0s-sdn"
+license = "MIT"
 publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

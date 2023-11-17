@@ -2,7 +2,8 @@
 name = "atm0s-sdn-router"
 version = "0.1.0"
 edition = "2021"
-
+description = "Router interface for atm0s-sdn"
+license = "MIT"
 
 [features]
 mock = ["mockall"]
