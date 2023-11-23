@@ -1,0 +1,22 @@
+[workspace]
+git_release_enable = false
+
+[[package]]
+name = "atm0s-sdn"
+git_release_enable = true
+changelog_include = [
+    "atm0s-sdn-identity",
+    "atm0s-sdn-router",
+    "atm0s-sdn-layers-spread-router", 
+    "atm0s-sdn-multiaddr", 
+    "atm0s-sdn-utils", 
+    "atm0s-sdn-network",
+    "atm0s-sdn-manual-discovery",
+    "atm0s-sdn-dht-discovery",
+    "atm0s-sdn-layers-spread-router-sync",
+    "atm0s-sdn-key-value",
+    "atm0s-sdn-pub-sub",
+    "atm0s-sdn-transport-vnet",
+    "atm0s-sdn-transport-tcp",
+    "atm0s-sdn-transport-udp",
+]
