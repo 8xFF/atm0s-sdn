@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
-    sync::Arc,
+    sync::{atomic::AtomicU64, Arc},
 };
 
 use async_std::channel::Sender;
@@ -16,11 +16,10 @@ mod pub_sub;
 pub type SimpleKeyValueSubscriber = pub_sub::Subscriber<u64, (KeyId, Option<ValueType>, KeyVersion, KeySource)>;
 pub type HashmapKeyValueSubscriber = pub_sub::Subscriber<u64, (KeyId, SubKeyId, Option<ValueType>, KeyVersion, KeySource)>;
 
-static SDK_SUB_UUID: u64 = 0x11;
-
 #[derive(Clone)]
 pub struct KeyValueSdk {
-    req_id_gen: Arc<Mutex<u64>>,
+    req_id_gen: Arc<AtomicU64>,
+    uuid_gen: Arc<AtomicU64>,
     awaker: Arc<RwLock<Option<Arc<dyn Awaker>>>>,
     simple_publisher: Arc<pub_sub::PublisherManager<u64, (KeyId, Option<ValueType>, KeyVersion, KeySource)>>,
     hashmap_publisher: Arc<pub_sub::PublisherManager<u64, (KeyId, SubKeyId, Option<ValueType>, KeyVersion, KeySource)>>,
@@ -32,7 +31,8 @@ pub struct KeyValueSdk {
 impl KeyValueSdk {
     pub fn new() -> Self {
         Self {
-            req_id_gen: Arc::new(Mutex::new(0)),
+            req_id_gen: Arc::new(AtomicU64::new(0)),
+            uuid_gen: Arc::new(AtomicU64::new(0)),
             awaker: Arc::new(RwLock::new(None)),
             simple_publisher: Arc::new(pub_sub::PublisherManager::new()),
             hashmap_publisher: Arc::new(pub_sub::PublisherManager::new()),
@@ -48,11 +48,7 @@ impl KeyValueSdk {
     }
 
     pub async fn get(&self, key: KeyId, timeout_ms: u64) -> Result<Option<(ValueType, KeyVersion, KeySource)>, SimpleKeyValueGetError> {
-        let req_id = {
-            let mut req_id_gen = self.req_id_gen.lock();
-            *req_id_gen += 1;
-            *req_id_gen
-        };
+        let req_id = self.req_id_gen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.actions.write().push_back(crate::KeyValueSdkEvent::Get(req_id, key, timeout_ms));
         self.awaker.read().as_ref().unwrap().notify();
         let (tx, rx) = async_std::channel::bounded(1);
@@ -66,19 +62,19 @@ impl KeyValueSdk {
     }
 
     pub fn subscribe(&self, key: KeyId, ex: Option<u64>) -> SimpleKeyValueSubscriber {
+        let sub_uuid = self.uuid_gen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let actions = self.actions.clone();
         let awaker = self.awaker.clone();
-        let (subscriber, is_new) = self.simple_publisher.subscribe(
+        let subscriber = self.simple_publisher.subscribe(
             key,
             Box::new(move || {
-                actions.write().push_back(crate::KeyValueSdkEvent::Unsub(SDK_SUB_UUID, key));
+                actions.write().push_back(crate::KeyValueSdkEvent::Unsub(sub_uuid, key));
                 awaker.read().as_ref().unwrap().notify();
             }),
         );
-        if is_new {
-            self.actions.write().push_back(crate::KeyValueSdkEvent::Sub(SDK_SUB_UUID, key, ex));
-            self.awaker.read().as_ref().unwrap().notify();
-        }
+
+        self.actions.write().push_back(crate::KeyValueSdkEvent::Sub(sub_uuid, key, ex));
+        self.awaker.read().as_ref().unwrap().notify();
 
         subscriber
     }
@@ -89,11 +85,7 @@ impl KeyValueSdk {
     }
 
     pub async fn hget(&self, key: KeyId, timeout_ms: u64) -> Result<Option<Vec<(SubKeyId, ValueType, KeyVersion, KeySource)>>, HashmapKeyValueGetError> {
-        let req_id = {
-            let mut req_id_gen = self.req_id_gen.lock();
-            *req_id_gen += 1;
-            *req_id_gen
-        };
+        let req_id = self.req_id_gen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.actions.write().push_back(crate::KeyValueSdkEvent::GetH(req_id, key, timeout_ms));
         self.awaker.read().as_ref().unwrap().notify();
         let (tx, rx) = async_std::channel::bounded(1);
@@ -107,35 +99,33 @@ impl KeyValueSdk {
     }
 
     pub fn hsubscribe(&self, key: u64, ex: Option<u64>) -> HashmapKeyValueSubscriber {
+        let sub_uuid = self.uuid_gen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let actions = self.actions.clone();
         let awaker = self.awaker.clone();
-        let (subscriber, is_new) = self.hashmap_publisher.subscribe(
+        let subscriber = self.hashmap_publisher.subscribe(
             key,
             Box::new(move || {
-                actions.write().push_back(crate::KeyValueSdkEvent::UnsubH(SDK_SUB_UUID, key));
+                actions.write().push_back(crate::KeyValueSdkEvent::UnsubH(sub_uuid, key));
                 awaker.read().as_ref().unwrap().notify();
             }),
         );
-        if is_new {
-            self.actions.write().push_back(crate::KeyValueSdkEvent::SubH(SDK_SUB_UUID, key, ex));
-            self.awaker.read().as_ref().unwrap().notify();
-        }
+
+        self.actions.write().push_back(crate::KeyValueSdkEvent::SubH(sub_uuid, key, ex));
+        self.awaker.read().as_ref().unwrap().notify();
 
         subscriber
     }
 
     pub fn hsubscribe_raw(&self, key: u64, uuid: u64, ex: Option<u64>, tx: Sender<(KeyId, SubKeyId, Option<ValueType>, KeyVersion, KeySource)>) {
-        if self.hashmap_publisher.sub_raw(key, uuid, tx) {
-            self.actions.write().push_back(crate::KeyValueSdkEvent::SubH(SDK_SUB_UUID, key, ex));
-            self.awaker.read().as_ref().unwrap().notify();
-        }
+        self.hashmap_publisher.sub_raw(key, uuid, tx);
+        self.actions.write().push_back(crate::KeyValueSdkEvent::SubH(uuid, key, ex));
+        self.awaker.read().as_ref().unwrap().notify();
     }
 
     pub fn hunsubscribe_raw(&self, key: u64, uuid: u64) {
-        if self.hashmap_publisher.unsub_raw(key, uuid) {
-            self.actions.write().push_back(crate::KeyValueSdkEvent::UnsubH(SDK_SUB_UUID, key));
-            self.awaker.read().as_ref().unwrap().notify();
-        }
+        self.hashmap_publisher.unsub_raw(key, uuid);
+        self.actions.write().push_back(crate::KeyValueSdkEvent::UnsubH(uuid, key));
+        self.awaker.read().as_ref().unwrap().notify();
     }
 }
 
@@ -189,7 +179,7 @@ mod test {
 
     use atm0s_sdn_utils::awaker::{Awaker, MockAwaker};
 
-    use crate::{behavior::sdk::SDK_SUB_UUID, ExternalControl, KeyValueSdk, KeyValueSdkEvent};
+    use crate::{ExternalControl, KeyValueSdk, KeyValueSdkEvent};
 
     #[async_std::test]
     async fn sdk_get_should_fire_awaker_and_action() {
@@ -200,11 +190,11 @@ mod test {
 
         async_std::future::timeout(Duration::from_millis(100), sdk.get(1000, 100)).await.expect_err("Should timeout");
         assert_eq!(awaker.pop_awake_count(), 1);
-        assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::Get(1, 1000, 100)));
+        assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::Get(0, 1000, 100)));
 
         async_std::future::timeout(Duration::from_millis(100), sdk.hget(1000, 100)).await.expect_err("Should timeout");
         assert_eq!(awaker.pop_awake_count(), 1);
-        assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::GetH(2, 1000, 100)));
+        assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::GetH(1, 1000, 100)));
     }
 
     #[test]
@@ -232,15 +222,22 @@ mod test {
 
         sdk.set_awaker(awaker.clone());
 
-        let handler = sdk.subscribe(1000, Some(20000));
-        assert_eq!(awaker.pop_awake_count(), 1);
+        let handler1 = sdk.subscribe(1000, Some(20000));
+        let handler2 = sdk.subscribe(1000, Some(20000));
 
-        assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::Sub(SDK_SUB_UUID, 1000, Some(20000))));
+        assert_eq!(awaker.pop_awake_count(), 2);
 
-        drop(handler);
-        assert_eq!(awaker.pop_awake_count(), 1);
+        assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::Sub(0, 1000, Some(20000))));
+        assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::Sub(1, 1000, Some(20000))));
+        assert_eq!(sdk.pop_action(), None);
 
-        assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::Unsub(SDK_SUB_UUID, 1000)))
+        drop(handler1);
+        drop(handler2);
+        assert_eq!(awaker.pop_awake_count(), 2);
+
+        assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::Unsub(0, 1000)));
+        assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::Unsub(1, 1000)));
+        assert_eq!(sdk.pop_action(), None);
     }
 
     #[test]
@@ -254,11 +251,13 @@ mod test {
         assert_eq!(awaker.pop_awake_count(), 1);
 
         assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::SetH(1000, 11, vec![1], Some(20000))));
+        assert_eq!(sdk.pop_action(), None);
 
         sdk.hdel(1000, 11);
         assert_eq!(awaker.pop_awake_count(), 1);
 
-        assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::DelH(1000, 11)))
+        assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::DelH(1000, 11)));
+        assert_eq!(sdk.pop_action(), None);
     }
 
     #[test]
@@ -271,11 +270,13 @@ mod test {
         let handler = sdk.hsubscribe(1000, Some(20000));
         assert_eq!(awaker.pop_awake_count(), 1);
 
-        assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::SubH(SDK_SUB_UUID, 1000, Some(20000))));
+        assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::SubH(0, 1000, Some(20000))));
+        assert_eq!(sdk.pop_action(), None);
 
         drop(handler);
         assert_eq!(awaker.pop_awake_count(), 1);
 
-        assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::UnsubH(SDK_SUB_UUID, 1000)))
+        assert_eq!(sdk.pop_action(), Some(KeyValueSdkEvent::UnsubH(0, 1000)));
+        assert_eq!(sdk.pop_action(), None);
     }
 }

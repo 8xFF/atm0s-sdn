@@ -9,8 +9,7 @@ use atm0s_sdn_utils::error_handle::ErrorUtils;
 use parking_lot::RwLock;
 
 struct SubscribeContainer<T> {
-    subscribers: HashMap<u64, Sender<T>>,
-    clear_handler: Box<dyn FnOnce() + Send + Sync>,
+    subscribers: HashMap<u64, (Sender<T>, Box<dyn FnOnce() + Send + Sync>)>,
 }
 
 pub struct PublisherManager<K, T> {
@@ -26,80 +25,64 @@ impl<K: Hash + Eq + Copy, T: Clone> PublisherManager<K, T> {
         }
     }
 
-    pub fn sub_raw(&self, key: K, uuid: u64, tx: Sender<T>) -> bool {
+    pub fn sub_raw(&self, key: K, uuid: u64, tx: Sender<T>) {
         let mut subscribers = self.subscribers.write();
         match subscribers.entry(key) {
             std::collections::hash_map::Entry::Occupied(mut entry) => {
-                entry.get_mut().subscribers.insert(uuid, tx);
-                false
+                entry.get_mut().subscribers.insert(uuid, (tx, Box::new(|| {})));
             }
             std::collections::hash_map::Entry::Vacant(entry) => {
+                let clear_handler: Box<dyn FnOnce() + Send + Sync> = Box::new(|| {});
                 entry.insert(SubscribeContainer {
-                    subscribers: HashMap::from([(uuid, tx)]),
-                    clear_handler: Box::new(|| {}),
+                    subscribers: HashMap::from([(uuid, (tx, clear_handler))]),
                 });
-                true
             }
         }
     }
 
-    pub fn unsub_raw(&self, key: K, uuid: u64) -> bool {
+    pub fn unsub_raw(&self, key: K, uuid: u64) {
         let mut subscribers = self.subscribers.write();
-        let should_remove = {
-            if let Some(container) = subscribers.get_mut(&key) {
-                container.subscribers.remove(&uuid);
-                container.subscribers.is_empty()
-            } else {
-                false
+        if let Some(container) = subscribers.get_mut(&key) {
+            if let Some((_, clear_handler)) = container.subscribers.remove(&uuid) {
+                clear_handler();
             }
-        };
-
-        if should_remove {
-            if let Some(container) = subscribers.remove(&key) {
-                (container.clear_handler)();
+            if container.subscribers.is_empty() {
+                subscribers.remove(&key);
             }
         }
-
-        should_remove
     }
 
     /// subscribe and return Subscriber and is_new
     /// is_new is true if this is the first subscriber
     /// is_new is false if this is not the first subscriber
     /// If Subscriber is drop, it automatically unsubscribe
-    pub fn subscribe(&self, key: K, clear_handler: Box<dyn FnOnce() + Send + Sync>) -> (Subscriber<K, T>, bool) {
+    pub fn subscribe(&self, key: K, clear_handler: Box<dyn FnOnce() + Send + Sync>) -> Subscriber<K, T> {
         let mut subscribers = self.subscribers.write();
         let uuid = self.uuid.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let (tx, rx) = async_std::channel::unbounded();
-        let is_new = match subscribers.entry(key) {
+        match subscribers.entry(key) {
             std::collections::hash_map::Entry::Occupied(mut entry) => {
-                entry.get_mut().subscribers.insert(uuid, tx);
-                false
+                entry.get_mut().subscribers.insert(uuid, (tx, clear_handler));
             }
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(SubscribeContainer {
-                    subscribers: HashMap::from([(uuid, tx)]),
-                    clear_handler,
+                    subscribers: HashMap::from([(uuid, (tx, clear_handler))]),
                 });
-                true
             }
         };
 
-        (
-            Subscriber {
-                uuid,
-                key,
-                subscribers: self.subscribers.clone(),
-                rx,
-            },
-            is_new,
-        )
+        Subscriber {
+            uuid,
+            key,
+            subscribers: self.subscribers.clone(),
+            rx,
+        }
     }
 
     pub fn publish(&self, key: K, data: T) {
         let subscribers = self.subscribers.read();
         if let Some(container) = subscribers.get(&key) {
-            for (_, tx) in container.subscribers.iter() {
+            for (_, (tx, _)) in container.subscribers.iter() {
                 tx.send_blocking(data.clone()).print_error("Should send event");
             }
         }
@@ -122,16 +105,12 @@ impl<K: Hash + Eq + Copy, T> Subscriber<K, T> {
 impl<K: Hash + Eq + Copy, T> Drop for Subscriber<K, T> {
     fn drop(&mut self) {
         let mut subscribers = self.subscribers.write();
-        let should_remove = {
-            let container = subscribers.get_mut(&self.key).expect("Should have subscribers");
-            container.subscribers.remove(&self.uuid);
-            container.subscribers.is_empty()
-        };
-
-        if should_remove {
-            if let Some(container) = subscribers.remove(&self.key) {
-                (container.clear_handler)();
-            }
+        let container = subscribers.get_mut(&self.key).expect("Should have subscribers");
+        if let Some((_, clear_handler)) = container.subscribers.remove(&self.uuid) {
+            clear_handler();
+        }
+        if container.subscribers.is_empty() {
+            subscribers.remove(&self.key);
         }
     }
 }
@@ -147,23 +126,21 @@ mod tests {
         {
             let destroy_count = Arc::new(AtomicU8::new(0));
             let destroy_count_c = destroy_count.clone();
-            let (mut sub1, is_new) = pub_manager.subscribe(
+            let mut sub1 = pub_manager.subscribe(
                 1,
                 Box::new(move || {
                     destroy_count_c.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 }),
             );
-            assert!(is_new);
-            let (mut sub2, is_new) = pub_manager.subscribe(1, Box::new(|| {}));
-            assert!(!is_new);
+
+            let mut sub2 = pub_manager.subscribe(1, Box::new(|| {}));
             let destroy_count_c = destroy_count.clone();
-            let (mut sub3, is_new) = pub_manager.subscribe(
+            let mut sub3 = pub_manager.subscribe(
                 2,
                 Box::new(move || {
                     destroy_count_c.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 }),
             );
-            assert!(is_new);
 
             pub_manager.publish(1, 1);
             pub_manager.publish(2, 2);
@@ -195,12 +172,9 @@ mod tests {
         let pub_manager = super::PublisherManager::<u64, u64>::new();
 
         let info = allocation_counter::measure(|| {
-            let (sub1, is_new) = pub_manager.subscribe(1, Box::new(|| {}));
-            assert!(is_new);
-            let (sub2, is_new) = pub_manager.subscribe(1, Box::new(|| {}));
-            assert!(!is_new);
-            let (sub3, is_new) = pub_manager.subscribe(2, Box::new(|| {}));
-            assert!(is_new);
+            let sub1 = pub_manager.subscribe(1, Box::new(|| {}));
+            let sub2 = pub_manager.subscribe(1, Box::new(|| {}));
+            let sub3 = pub_manager.subscribe(2, Box::new(|| {}));
 
             // drop sub1
             drop(sub1);
