@@ -1,6 +1,6 @@
 [package]
 name = "atm0s-sdn"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 repository = "https://github.com/8xFF/atm0s-sdn"
 description = "Decentralized Ultra-Low-Latency Software Defined Network"
