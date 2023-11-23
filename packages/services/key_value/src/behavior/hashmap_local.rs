@@ -4,6 +4,7 @@ use crate::{
 };
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_router::RouteRule;
+use small_map::SmallMap;
 /// This hashmap local storage is used for storing and act with remote storage
 /// Main idea is we using sdk to act with local storage, and local storage will sync that data to remote
 /// Local storage allow us to set/get/del/subscribe/unsubscribe
@@ -33,7 +34,8 @@ struct KeySlotSubscribe {
     last_sync: u64,
     sub: bool,
     acked: bool,
-    handlers: HashMap<(u64, u8), ()>,
+    handlers: SmallMap<16, (u64, u8), ()>,
+    values: HashMap<SubKeyId, (ValueType, KeyVersion, KeySource)>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -273,12 +275,14 @@ impl HashmapLocalStorage {
                                 .push_back(LocalStorageAction::LocalOnChanged(*service_id, *uuid, key, sub_key, Some(value.clone()), version, source));
                         }
                     }
+                    slot.values.insert(sub_key, (value, version, source));
                 }
             }
             HashmapLocalEvent::OnKeyDel(req_id, key, sub_key, version, source) => {
                 self.output_events
                     .push_back(LocalStorageAction::SendNet(HashmapRemoteEvent::OnKeyDelAck(req_id), RouteRule::ToNode(from)));
                 if let Some(slot) = self.subscribe.get_mut(&key) {
+                    slot.values.remove(&sub_key);
                     if slot.sub {
                         for ((uuid, service_id), _) in slot.handlers.iter() {
                             self.output_events
@@ -346,13 +350,19 @@ impl HashmapLocalStorage {
 
     pub fn subscribe(&mut self, key: KeyId, ex: Option<u64>, uuid: u64, service_id: u8) {
         if let Some(slot) = self.subscribe.get_mut(&key) {
-            log::warn!("[HashmapLocal] subscribe key {} but already subscribed", key);
+            log::debug!("[HashmapLocal] subscribe key {} but already subscribed -> only add to handlers list", key);
             slot.handlers.insert((uuid, service_id), ());
+            for (sub_key, value) in slot.values.iter() {
+                self.output_events
+                    .push_back(LocalStorageAction::LocalOnChanged(service_id, uuid, key, *sub_key, Some(value.0.clone()), value.1, value.2));
+            }
             return;
         }
 
         let req_id = self.gen_req_id();
         log::debug!("[HashmapLocal] subscribe key {} with req_id {}", key, req_id);
+        let mut handlers = SmallMap::new();
+        handlers.insert((uuid, service_id), ());
         self.subscribe.insert(
             key,
             KeySlotSubscribe {
@@ -360,7 +370,8 @@ impl HashmapLocalStorage {
                 last_sync: 0,
                 sub: true,
                 acked: false,
-                handlers: HashMap::from([((uuid, service_id), ())]),
+                handlers,
+                values: HashMap::new(),
             },
         );
         self.output_events
@@ -596,6 +607,43 @@ mod tests {
         storage.on_event(2, HashmapLocalEvent::OnKeyDel(1, 1, 2, 0, 1000));
         assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::OnKeyDelAck(1), RouteRule::ToNode(2))));
         assert_eq!(storage.pop_action(), Some(LocalStorageAction::LocalOnChanged(10, 11111, 1, 2, None, 0, 1000)));
+        assert_eq!(storage.pop_action(), None);
+    }
+
+    #[test]
+    fn sub_multi_times_test() {
+        let mut storage = HashmapLocalStorage::new(10000);
+        storage.subscribe(1, None, 11111, 10);
+        storage.subscribe(1, None, 22222, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), None);
+
+        storage.on_event(2, HashmapLocalEvent::SubAck(0, 1));
+
+        // fake incoming event
+        storage.on_event(2, HashmapLocalEvent::OnKeySet(0, 1, 2, vec![1], 0, 1000));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::OnKeySetAck(0), RouteRule::ToNode(2))));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::LocalOnChanged(10, 11111, 1, 2, Some(vec![1]), 0, 1000)));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::LocalOnChanged(10, 22222, 1, 2, Some(vec![1]), 0, 1000)));
+    }
+
+    #[test]
+    fn sub_multi_times_after_test() {
+        let mut storage = HashmapLocalStorage::new(10000);
+        storage.subscribe(1, None, 11111, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), None);
+
+        storage.on_event(2, HashmapLocalEvent::SubAck(0, 1));
+
+        // fake incoming event
+        storage.on_event(2, HashmapLocalEvent::OnKeySet(0, 1, 2, vec![1], 0, 1000));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::OnKeySetAck(0), RouteRule::ToNode(2))));
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::LocalOnChanged(10, 11111, 1, 2, Some(vec![1]), 0, 1000)));
+        assert_eq!(storage.pop_action(), None);
+
+        storage.subscribe(1, None, 22222, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::LocalOnChanged(10, 22222, 1, 2, Some(vec![1]), 0, 1000)));
         assert_eq!(storage.pop_action(), None);
     }
 

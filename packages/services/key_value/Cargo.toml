@@ -18,6 +18,7 @@ serde = { workspace = true }
 async-std = { workspace = true }
 parking_lot = { workspace = true }
 mockall = { workspace = true }
+small-map = { workspace = true }
 
 [dev-dependencies]
 env_logger = { workspace = true }
