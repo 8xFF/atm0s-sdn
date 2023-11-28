@@ -17,7 +17,7 @@ default = ["url"]
 [dependencies]
 arrayref = "0.3"
 byteorder = "1.5.0"
-data-encoding = "2.4"
+data-encoding = "2.5"
 multibase = "0.9.1"
 percent-encoding = "2.3.0"
 serde = "1.0.193"
