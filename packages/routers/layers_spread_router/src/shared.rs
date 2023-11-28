@@ -28,10 +28,6 @@ impl SharedRouter {
         self.router.read().size()
     }
 
-    pub fn register_service(&self, service_id: u8) {
-        self.router.write().register_service(service_id)
-    }
-
     pub fn service_next(&self, service_id: u8, excepts: &[NodeId]) -> Option<ServiceDestination> {
         self.router.read().service_next(service_id, excepts)
     }
@@ -74,6 +70,10 @@ impl SharedRouter {
 }
 
 impl RouterTable for SharedRouter {
+    fn register_service(&self, service_id: u8) {
+        self.router.write().register_service(service_id)
+    }
+
     fn path_to_node(&self, dest: NodeId) -> RouteAction {
         if self.node_id == dest {
             return RouteAction::Local;

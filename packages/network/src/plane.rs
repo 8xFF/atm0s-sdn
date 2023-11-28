@@ -123,6 +123,7 @@ where
 
         let mut new_behaviours = vec![];
         for behaviour in conf.behaviors {
+            conf.router.register_service(behaviour.service_id());
             let awake = BehaviourAwake {
                 service_id: behaviour.service_id(),
                 bus: bus.clone(),
