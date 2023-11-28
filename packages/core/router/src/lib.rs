@@ -46,6 +46,8 @@ impl RouteAction {
 
 #[cfg_attr(any(test, feature = "mock"), automock)]
 pub trait RouterTable: Send + Sync {
+    /// Register service
+    fn register_service(&self, service_id: u8);
     /// Determine the next action for the given destination node
     fn path_to_node(&self, dest: NodeId) -> RouteAction;
     /// Determine the next action for the given key
