@@ -41,9 +41,17 @@ struct Args {
     #[arg(env, long)]
     node_id: u32,
 
-    /// Neighbors
+    /// Neighbours
     #[arg(env, long)]
-    neighbours: Vec<NodeAddr>,
+    seeds: Vec<NodeAddr>,
+
+    /// Local tags
+    #[arg(env, long)]
+    tags: Vec<String>,
+
+    /// Tags of nodes to connect
+    #[arg(env, long)]
+    connect_tags: Vec<String>,
 
     /// Enable tun-tap
     #[arg(env, long)]
@@ -69,8 +77,10 @@ async fn main() {
 
     let manual = ManualBehavior::new(ManualBehaviorConf {
         node_id: args.node_id,
-        neighbours: args.neighbours.clone(),
-        timer: timer.clone(),
+        node_addr,
+        seeds: args.seeds.clone(),
+        local_tags: args.tags,
+        connect_tags: args.connect_tags,
     });
 
     let spreads_layer_router: LayersSpreadRouterSyncBehavior = LayersSpreadRouterSyncBehavior::new(router.clone());

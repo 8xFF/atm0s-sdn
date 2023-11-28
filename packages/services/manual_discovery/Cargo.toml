@@ -12,6 +12,7 @@ async-trait = { workspace = true }
 atm0s-sdn-identity = { workspace = true }
 atm0s-sdn-utils = { workspace = true }
 atm0s-sdn-network = { workspace = true }
+atm0s-sdn-key-value = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
 parking_lot = { workspace = true }
