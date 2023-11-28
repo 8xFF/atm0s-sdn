@@ -114,6 +114,6 @@ where
     }
 
     fn pop_action(&mut self) -> Option<ConnectionHandlerAction<BE, HE>> {
-        None
+        self.actions.pop_back()
     }
 }
