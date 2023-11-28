@@ -7,7 +7,7 @@ use crate::{RouteAction, RouterTable};
 pub struct ForceLocalRouter();
 
 impl RouterTable for ForceLocalRouter {
-    fn register_service(&self, service_id: u8) {}
+    fn register_service(&self, _service_id: u8) {}
 
     fn path_to_node(&self, _dest: NodeId) -> RouteAction {
         RouteAction::Local
