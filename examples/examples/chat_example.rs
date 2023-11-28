@@ -39,7 +39,7 @@ struct Args {
 
     /// Neighbors
     #[arg(env, long)]
-    neighbours: Vec<NodeAddr>,
+    seeds: Vec<NodeAddr>,
 }
 struct Context {
     node_id: u32,
@@ -142,8 +142,10 @@ async fn main() {
     // In this example, we use the manual behavior, which is used to manually add neighbors.
     let manual = ManualBehavior::new(ManualBehaviorConf {
         node_id: args.node_id,
-        neighbours: args.neighbours.clone(),
-        timer: timer.clone(),
+        node_addr,
+        seeds: args.seeds.clone(),
+        local_tags: vec![],
+        connect_tags: vec![],
     });
 
     // The layers spread router behavior is used to route messages to the correct node using the router created earlier.

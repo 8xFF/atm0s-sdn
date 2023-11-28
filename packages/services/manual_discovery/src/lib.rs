@@ -1,4 +1,4 @@
-pub static MANUAL_SERVICE_ID: u8 = 1;
+pub static MANUAL_DISCOVERY_SERVICE_ID: u8 = 1;
 
 mod behavior;
 mod handler;

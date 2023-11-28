@@ -34,8 +34,8 @@ mod tests {
         KeyValue(KeyValueSdkEvent),
     }
 
-    async fn run_node(vnet: Arc<VnetEarth>, node_id: NodeId, neighbours: Vec<NodeAddr>) -> (PubsubSdk, NodeAddr, JoinHandle<()>) {
-        log::info!("Run node {} connect to {:?}", node_id, neighbours);
+    async fn run_node(vnet: Arc<VnetEarth>, node_id: NodeId, seeds: Vec<NodeAddr>) -> (PubsubSdk, NodeAddr, JoinHandle<()>) {
+        log::info!("Run node {} connect to {:?}", node_id, seeds);
         let node_addr = Arc::new(NodeAddrBuilder::default());
         node_addr.add_protocol(Protocol::P2p(node_id));
         node_addr.add_protocol(Protocol::Memory(node_id as u64));
@@ -45,8 +45,10 @@ mod tests {
         let router = SharedRouter::new(node_id);
         let manual = ManualBehavior::new(ManualBehaviorConf {
             node_id,
-            neighbours,
-            timer: timer.clone(),
+            node_addr: node_addr.addr(),
+            seeds,
+            local_tags: vec![],
+            connect_tags: vec![],
         });
 
         let router_sync_behaviour = LayersSpreadRouterSyncBehavior::new(router.clone());

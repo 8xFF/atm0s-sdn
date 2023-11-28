@@ -225,6 +225,22 @@ mod tests {
     }
 
     #[test]
+    fn simple_relay_route() {
+        // 2 - 1 - 3
+        let (_node2, _conn2, mut router2) = create_router(2);
+        router2.set_direct(ConnId::from_in(0, 0), 1, Metric::new(0, vec![1, 2], 0));
+        assert_eq!(router2.tables[0].slots(), vec![1]);
+
+        router2.apply_sync(
+            ConnId::from_in(0, 0),
+            1,
+            Metric::new(0, vec![1, 2], 0),
+            RouterSync(RegistrySync(vec![]), [Some(TableSync(vec![(3, Metric::new(0, vec![3, 1], 0))])), None, None, None]),
+        );
+        assert_eq!(router2.tables[0].slots(), vec![1, 3]);
+    }
+
+    #[test]
     fn complex_sync_same_zone() {
         // A -1- B -1- C -1- F
         // |1    |1

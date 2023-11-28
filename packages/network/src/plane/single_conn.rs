@@ -121,6 +121,7 @@ where
                     self.bus.to_behaviour_from_handler(service_id, self.sender.remote_node_id(), self.sender.conn_id(), event);
                 }
                 ConnectionHandlerAction::ToNet(msg) => {
+                    log::debug!("sending msg to net");
                     self.sender.send(msg);
                 }
                 ConnectionHandlerAction::ToNetConn(conn, msg) => {

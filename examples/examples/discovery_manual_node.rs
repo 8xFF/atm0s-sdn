@@ -1,4 +1,8 @@
 use atm0s_sdn::convert_enum;
+use atm0s_sdn::KeyValueBehavior;
+use atm0s_sdn::KeyValueBehaviorEvent;
+use atm0s_sdn::KeyValueHandlerEvent;
+use atm0s_sdn::KeyValueSdkEvent;
 use atm0s_sdn::SharedRouter;
 use atm0s_sdn::SystemTimer;
 use atm0s_sdn::{
@@ -13,16 +17,20 @@ use std::sync::Arc;
 enum NodeBehaviorEvent {
     Manual(ManualBehaviorEvent),
     LayersSpreadRouterSync(LayersSpreadRouterSyncBehaviorEvent),
+    KeyValue(KeyValueBehaviorEvent),
 }
 
 #[derive(convert_enum::From, convert_enum::TryInto)]
 enum NodeHandleEvent {
     Manual(ManualHandlerEvent),
     LayersSpreadRouterSync(LayersSpreadRouterSyncHandlerEvent),
+    KeyValue(KeyValueHandlerEvent),
 }
 
 #[derive(convert_enum::From, convert_enum::TryInto)]
-enum NodeSdkEvent {}
+enum NodeSdkEvent {
+    KeyValue(KeyValueSdkEvent),
+}
 
 /// Node with manual network builder
 #[derive(Parser, Debug)]
@@ -34,7 +42,7 @@ struct Args {
 
     /// Neighbors
     #[arg(env, long)]
-    neighbours: Vec<NodeAddr>,
+    seeds: Vec<NodeAddr>,
 }
 
 #[async_std::main]
@@ -49,17 +57,20 @@ async fn main() {
 
     let router = SharedRouter::new(args.node_id);
     let spreads_layer_router = LayersSpreadRouterSyncBehavior::new(router.clone());
+    let key_value = KeyValueBehavior::<NodeHandleEvent, NodeSdkEvent>::new(args.node_id, 3000, None);
 
     let manual = ManualBehavior::new(ManualBehaviorConf {
         node_id: args.node_id,
-        neighbours: args.neighbours.clone(),
-        timer: Arc::new(SystemTimer()),
+        node_addr: node_addr_builder.addr(),
+        seeds: args.seeds,
+        local_tags: vec![],
+        connect_tags: vec![],
     });
 
     let mut plane = NetworkPlane::<NodeBehaviorEvent, NodeHandleEvent, NodeSdkEvent>::new(NetworkPlaneConfig {
         node_id: args.node_id,
         tick_ms: 1000,
-        behaviors: vec![Box::new(spreads_layer_router), Box::new(manual)],
+        behaviors: vec![Box::new(spreads_layer_router), Box::new(key_value), Box::new(manual)],
         transport: Box::new(transport),
         timer: Arc::new(SystemTimer()),
         router: Arc::new(router),
