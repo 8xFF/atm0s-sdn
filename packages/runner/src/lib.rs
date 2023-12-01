@@ -29,8 +29,8 @@ pub use atm0s_sdn_pub_sub::{
     PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent,
 };
 
-#[cfg(feature = "pub-sub")]
-pub use atm0s_sdn_rpc::{RpcBehavior, RpcBox, RpcBoxBehaviour, RpcBoxEvent, RpcBoxHandler, RpcError, RpcHandler, RpcRequest};
+#[cfg(feature = "rpc")]
+pub use atm0s_sdn_rpc::{RpcBehavior, RpcBox, RpcError, RpcHandler, RpcIdGenerate, RpcMsg, RpcMsgParam, RpcQueue, RpcResponse};
 
 #[cfg(feature = "transport-tcp")]
 pub use atm0s_sdn_transport_tcp::TcpTransport;

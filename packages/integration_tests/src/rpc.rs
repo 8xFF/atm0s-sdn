@@ -6,13 +6,9 @@ mod test {
     use atm0s_sdn::{
         convert_enum, KeyValueBehavior, KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueSdkEvent, LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent,
         LayersSpreadRouterSyncHandlerEvent, ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent, NetworkPlane, NetworkPlaneConfig, NodeAddr, NodeAddrBuilder, NodeId, Protocol,
-        RouteRule, RpcBehavior, RpcBox, RpcBoxEvent, RpcRequest, SharedRouter, SystemTimer,
+        RouteRule, RpcBox, RpcMsg, RpcMsgParam, SharedRouter, SystemTimer,
     };
     use atm0s_sdn_transport_vnet::VnetEarth;
-
-    type Event = u16;
-    type Request = u32;
-    type Response = u64;
 
     #[derive(convert_enum::From, convert_enum::TryInto)]
     enum BE {
@@ -33,7 +29,7 @@ mod test {
         KeyValue(KeyValueSdkEvent),
     }
 
-    async fn run_node(vnet: Arc<VnetEarth>, rpc_service_id: u8, node_id: NodeId, seeds: Vec<NodeAddr>) -> (RpcBox<Event, Request, Response>, NodeAddr, JoinHandle<()>) {
+    async fn run_node(vnet: Arc<VnetEarth>, rpc_service_id: u8, node_id: NodeId, seeds: Vec<NodeAddr>) -> (RpcBox, NodeAddr, JoinHandle<()>) {
         log::info!("Run node {} connect to {:?}", node_id, seeds);
         let node_addr = Arc::new(NodeAddrBuilder::default());
         node_addr.add_protocol(Protocol::P2p(node_id));
@@ -50,7 +46,7 @@ mod test {
             connect_tags: vec![],
         });
         let mut rpc_box = RpcBox::new(node_id, rpc_service_id, timer.clone());
-        let rpc_behaviour = RpcBehavior::new(rpc_service_id, rpc_box.behaviour());
+        let rpc_behaviour = rpc_box.behaviour();
         let kv_behaviour = KeyValueBehavior::new(node_id, 3000, None);
         let router_sync_behaviour = LayersSpreadRouterSyncBehavior::new(router.clone());
 
@@ -81,29 +77,35 @@ mod test {
 
         let emiter = rpc.emitter();
 
-        emiter.emit(service_id, RouteRule::ToService(0), 111);
-        assert_eq!(rpc.recv().timeout(Duration::from_millis(300)).await, Ok(Some(RpcBoxEvent::Event(111))));
+        emiter.emit(service_id, RouteRule::ToService(0), "event1", vec![1, 2, 3]);
+        assert_eq!(
+            rpc.recv().timeout(Duration::from_millis(300)).await,
+            Ok(Some(RpcMsg {
+                cmd: "event1".to_string(),
+                from_node_id: node_id,
+                from_service_id: service_id,
+                param: RpcMsgParam::Event(vec![1, 2, 3])
+            }))
+        );
 
         async_std::task::spawn(async move {
-            let res = emiter.request(100, RouteRule::ToService(0), 1111, 10000).timeout(Duration::from_secs(2)).await;
-            assert_eq!(res, Ok(Ok(11111)));
+            let res = emiter.request(100, RouteRule::ToService(0), "echo", vec![1, 2, 3], 10000).timeout(Duration::from_secs(2)).await;
+            assert_eq!(res, Ok(Ok(vec![1, 2, 3])));
         });
 
         let req = rpc.recv().timeout(Duration::from_millis(300)).await.unwrap().unwrap();
         assert_eq!(
             req,
-            RpcBoxEvent::Request(RpcRequest {
-                dest_node: node_id,
-                dest_service_id: service_id,
-                req: 1111,
-                req_id: 0,
-            })
+            RpcMsg {
+                cmd: "echo".to_string(),
+                from_node_id: node_id,
+                from_service_id: service_id,
+                param: RpcMsgParam::Request { req_id: 0, param: vec![1, 2, 3] }
+            }
         );
 
-        if let RpcBoxEvent::Request(req) = req {
-            let res = rpc.response_for(&req);
-            res.success(11111);
-        }
+        let res = rpc.response_for(req);
+        res.success(vec![1, 2, 3]);
 
         async_std::task::sleep(Duration::from_millis(300)).await;
 
@@ -127,29 +129,38 @@ mod test {
 
         let emiter1 = rpc1.emitter();
 
-        emiter1.emit(service_id2, RouteRule::ToService(0), 111);
-        assert_eq!(rpc2.recv().timeout(Duration::from_millis(300)).await, Ok(Some(RpcBoxEvent::Event(111))));
+        emiter1.emit(service_id2, RouteRule::ToService(0), "event1", vec![1, 2, 3]);
+        assert_eq!(
+            rpc2.recv().timeout(Duration::from_millis(300)).await,
+            Ok(Some(RpcMsg {
+                cmd: "event1".to_string(),
+                from_node_id: node_id1,
+                from_service_id: service_id1,
+                param: RpcMsgParam::Event(vec![1, 2, 3])
+            }))
+        );
 
         async_std::task::spawn(async move {
-            let res = emiter1.request(service_id2, RouteRule::ToService(0), 1111, 10000).timeout(Duration::from_secs(2)).await;
-            assert_eq!(res, Ok(Ok(11111)));
+            let res = emiter1
+                .request(service_id2, RouteRule::ToService(0), "echo", vec![1, 2, 3], 10000)
+                .timeout(Duration::from_secs(2))
+                .await;
+            assert_eq!(res, Ok(Ok(vec![1, 2, 3])));
         });
 
         let req = rpc2.recv().timeout(Duration::from_millis(300)).await.unwrap().unwrap();
         assert_eq!(
             req,
-            RpcBoxEvent::Request(RpcRequest {
-                dest_node: node_id1,
-                dest_service_id: service_id1,
-                req: 1111,
-                req_id: 0,
-            })
+            RpcMsg {
+                cmd: "echo".to_string(),
+                from_node_id: node_id1,
+                from_service_id: service_id1,
+                param: RpcMsgParam::Request { req_id: 0, param: vec![1, 2, 3] }
+            }
         );
 
-        if let RpcBoxEvent::Request(req) = req {
-            let res = rpc2.response_for(&req);
-            res.success(11111);
-        }
+        let res = rpc2.response_for(req);
+        res.success(vec![1, 2, 3]);
 
         async_std::task::sleep(Duration::from_millis(300)).await;
 
