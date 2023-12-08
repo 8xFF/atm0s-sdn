@@ -104,8 +104,8 @@ mod test {
             }
         );
 
-        let res = rpc.response_for(req);
-        res.success(vec![1, 2, 3]);
+        let req = rpc.parse_request::<Vec<u8>, _>(req).expect("Should ok");
+        req.success(vec![1, 2, 3]);
 
         async_std::task::sleep(Duration::from_millis(300)).await;
 
@@ -159,8 +159,8 @@ mod test {
             }
         );
 
-        let res = rpc2.response_for(req);
-        res.success(vec![1, 2, 3]);
+        let req = rpc2.parse_request::<Vec<u8>, _>(req).expect("Should ok");
+        req.success(vec![1, 2, 3]);
 
         async_std::task::sleep(Duration::from_millis(300)).await;
 

@@ -30,7 +30,7 @@ pub use atm0s_sdn_pub_sub::{
 };
 
 #[cfg(feature = "rpc")]
-pub use atm0s_sdn_rpc::{RpcBehavior, RpcBox, RpcError, RpcHandler, RpcIdGenerate, RpcMsg, RpcMsgParam, RpcQueue, RpcResponse};
+pub use atm0s_sdn_rpc::{RpcBehavior, RpcBox, RpcEmitter, RpcError, RpcHandler, RpcIdGenerate, RpcMsg, RpcMsgParam, RpcQueue, RpcRequest};
 
 #[cfg(feature = "transport-tcp")]
 pub use atm0s_sdn_transport_tcp::TcpTransport;

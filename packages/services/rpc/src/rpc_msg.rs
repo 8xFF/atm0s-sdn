@@ -3,7 +3,7 @@ use atm0s_sdn_network::msg::{MsgHeader, TransportMsg};
 use atm0s_sdn_router::RouteRule;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub enum RpcError {
     Timeout,
     LocalQueueError,
@@ -79,30 +79,30 @@ impl RpcMsg {
         matches!(&self.param, RpcMsgParam::Event { .. })
     }
 
-    pub fn take_event<E: TryFrom<Vec<u8>>>(self) -> Option<E> {
-        if let RpcMsgParam::Event(e) = self.param {
+    pub fn parse_event<E: for<'a> TryFrom<&'a [u8]>>(&self) -> Option<E> {
+        if let RpcMsgParam::Event(e) = &self.param {
             E::try_from(e).ok()
         } else {
             None
         }
     }
 
-    pub fn take_request<Req: TryFrom<Vec<u8>>>(self) -> Option<(u64, Req)> {
-        if let RpcMsgParam::Request { req_id, param } = self.param {
-            Req::try_from(param).ok().map(|req| (req_id, req))
+    pub fn parse_request<Req: for<'a> TryFrom<&'a [u8]>>(&self) -> Option<(u64, Req)> {
+        if let RpcMsgParam::Request { req_id, param } = &self.param {
+            Req::try_from(param).ok().map(|req| (*req_id, req))
         } else {
             None
         }
     }
 
-    pub fn take_answer<Res: TryFrom<Vec<u8>>>(self) -> Option<(u64, Result<Res, RpcError>)> {
-        if let RpcMsgParam::Answer { req_id, param } = self.param {
+    pub fn parse_answer<Res: for<'a> TryFrom<&'a [u8]>>(&self) -> Option<(u64, Result<Res, RpcError>)> {
+        if let RpcMsgParam::Answer { req_id, param } = &self.param {
             match param {
                 Ok(buf) => {
                     let res = Res::try_from(buf).ok()?;
-                    Some((req_id, Ok(res)))
+                    Some((*req_id, Ok(res)))
                 }
-                Err(e) => Some((req_id, Err(e))),
+                Err(e) => Some((*req_id, Err(e.clone()))),
             }
         } else {
             None

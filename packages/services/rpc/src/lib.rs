@@ -8,7 +8,8 @@ mod rpc_queue;
 
 pub use behaviour::RpcBehavior;
 pub use handler::RpcHandler;
-pub use rpc_box::{RpcBox, RpcResponse};
+pub use rpc_box::{RpcBox, RpcRequest};
+pub use rpc_emitter::*;
 pub use rpc_id_gen::*;
 pub use rpc_msg::*;
 pub use rpc_queue::*;

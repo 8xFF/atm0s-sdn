@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, sync::Arc};
+use std::sync::Arc;
 
 use async_std::channel::{Receiver, Sender};
 use atm0s_sdn_identity::NodeId;
@@ -12,18 +12,27 @@ use crate::{
     RpcBehavior,
 };
 
-pub struct RpcResponse<Res: Into<Vec<u8>>> {
-    pub(crate) _tmp: PhantomData<Res>,
-    pub req: RpcMsg,
+pub struct RpcRequest<Param: for<'a> TryFrom<&'a [u8]>, Res: Into<Vec<u8>>> {
+    pub(crate) _tmp: Option<Res>,
+    pub(crate) req: RpcMsg,
+    pub(crate) param: Param,
     pub(crate) rpc_queue: Arc<Mutex<RpcQueue<Sender<Result<RpcMsg, RpcError>>>>>,
 }
 
-impl<Res: Into<Vec<u8>>> RpcResponse<Res> {
-    pub fn success(self, res: Res) {
+impl<Param: for<'a> TryFrom<&'a [u8]>, Res: Into<Vec<u8>>> RpcRequest<Param, Res> {
+    pub fn param(&self) -> &Param {
+        &self.param
+    }
+
+    pub fn answer(&self, res: Result<Res, RpcError>) {
+        self.rpc_queue.lock().answer_for(&self.req, res);
+    }
+
+    pub fn success(&self, res: Res) {
         self.rpc_queue.lock().answer_for(&self.req, Ok(res));
     }
 
-    pub fn error(self, err: &str) {
+    pub fn error(&self, err: &str) {
         self.rpc_queue.lock().answer_for::<Res>(&self.req, Err(RpcError::RuntimeError(err.to_string())));
     }
 }
@@ -63,11 +72,19 @@ impl RpcBox {
         }
     }
 
-    pub fn response_for<Res: Into<Vec<u8>>>(&self, req: RpcMsg) -> RpcResponse<Res> {
-        RpcResponse {
-            _tmp: Default::default(),
-            req,
-            rpc_queue: self.rpc_queue.clone(),
+    /// Convert req into request with Param and Res type, if not it will auto reply with DeserializeError
+    pub fn parse_request<Param: for<'a> TryFrom<&'a [u8]>, Res: Into<Vec<u8>>>(&self, req: RpcMsg) -> Option<RpcRequest<Param, Res>> {
+        assert!(req.is_request());
+        if let Some((_req_id, param)) = req.parse_request() {
+            Some(RpcRequest {
+                _tmp: Default::default(),
+                param,
+                req,
+                rpc_queue: self.rpc_queue.clone(),
+            })
+        } else {
+            self.rpc_queue.lock().answer_for::<Res>(&req, Err(RpcError::DeserializeError));
+            None
         }
     }
 
