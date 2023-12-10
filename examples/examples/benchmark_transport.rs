@@ -51,7 +51,7 @@ async fn main() {
             }
             Ok(TransportEvent::Outgoing(trans1_sender, mut trans1_receiver, _)) => {
                 let mut msg_count = 0;
-                trans1_sender.send(TransportMsg::build_reliable(0, RouteRule::Direct, 0, &[0; 10]));
+                trans1_sender.send(TransportMsg::build(0, RouteRule::Direct, 0, 0, &[0; 10]));
                 let mut last_send = std::time::Instant::now();
                 while msg_count < 1000000 {
                     match trans1_receiver.poll().await {

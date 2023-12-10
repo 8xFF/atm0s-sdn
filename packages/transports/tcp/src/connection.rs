@@ -1,7 +1,7 @@
 use crate::msg::TcpMsg;
 use async_bincode::futures::AsyncBincodeStream;
 use async_bincode::AsyncDestination;
-use async_std::channel::{bounded, unbounded, RecvError, Sender};
+use async_std::channel::{bounded, RecvError, Sender};
 use async_std::net::{Shutdown, TcpStream};
 use async_std::task::JoinHandle;
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
@@ -36,7 +36,6 @@ pub struct TcpConnectionSender {
     remote_node_id: NodeId,
     remote_addr: NodeAddr,
     conn_id: ConnId,
-    reliable_sender: Sender<OutgoingEvent>,
     unreliable_sender: Sender<OutgoingEvent>,
     task: Option<JoinHandle<()>>,
 }
@@ -51,7 +50,6 @@ impl TcpConnectionSender {
         mut socket: AsyncBincodeStreamU16,
         timer: Arc<dyn Timer>,
     ) -> (Self, Sender<OutgoingEvent>) {
-        let (reliable_sender, r_rx) = unbounded();
         let (unreliable_sender, unr_rx) = bounded(unreliable_queue_size);
 
         let task = async_std::task::spawn(async move {
@@ -61,7 +59,6 @@ impl TcpConnectionSender {
 
             loop {
                 let msg: Result<OutgoingEvent, RecvError> = select! {
-                    e = r_rx.recv().fuse() => e,
                     e = unr_rx.recv().fuse() => e,
                     _ = tick_interval.next().fuse() => {
                         log::debug!("[TcpConnectionSender {} => {}] sending Ping", node_id, remote_node_id);
@@ -97,11 +94,10 @@ impl TcpConnectionSender {
                 remote_addr,
                 remote_node_id,
                 conn_id,
-                reliable_sender: reliable_sender.clone(),
-                unreliable_sender,
+                unreliable_sender: unreliable_sender.clone(),
                 task: Some(task),
             },
-            reliable_sender,
+            unreliable_sender,
         )
     }
 }
@@ -120,13 +116,7 @@ impl ConnectionSender for TcpConnectionSender {
     }
 
     fn send(&self, msg: TransportMsg) {
-        if msg.header.reliable {
-            if let Err(e) = self.reliable_sender.send_blocking(OutgoingEvent::Msg(TcpMsg::Msg(msg.take()))) {
-                log::error!("[ConnectionSender] send reliable msg error {:?}", e);
-            } else {
-                log::debug!("[ConnectionSender] send reliable msg");
-            }
-        } else if let Err(e) = self.unreliable_sender.try_send(OutgoingEvent::Msg(TcpMsg::Msg(msg.take()))) {
+        if let Err(e) = self.unreliable_sender.try_send(OutgoingEvent::Msg(TcpMsg::Msg(msg.take()))) {
             log::error!("[ConnectionSender] send unreliable msg error {:?}", e);
         } else {
             log::debug!("[ConnectionSender] send unreliable msg");
@@ -167,7 +157,7 @@ pub struct TcpConnectionReceiver {
     pub(crate) conn_id: ConnId,
     pub(crate) socket: AsyncBincodeStreamU16,
     pub(crate) timer: Arc<dyn Timer>,
-    pub(crate) reliable_sender: Sender<OutgoingEvent>,
+    pub(crate) unreliable_sender: Sender<OutgoingEvent>,
 }
 
 #[async_trait::async_trait]
@@ -198,7 +188,7 @@ impl ConnectionReceiver for TcpConnectionReceiver {
                         },
                         TcpMsg::Ping(sent_ts) => {
                             log::debug!("[ConnectionReceiver {} => {}] on Ping => reply Pong", self.node_id, self.remote_node_id);
-                            self.reliable_sender.send_blocking(OutgoingEvent::Msg(TcpMsg::Pong(sent_ts))).print_error("Should send Pong");
+                            self.unreliable_sender.try_send(OutgoingEvent::Msg(TcpMsg::Pong(sent_ts))).print_error("Should send Pong");
                         }
                         TcpMsg::Pong(ping_sent_ts) => {
                             //TODO est speed and over_use state
@@ -218,7 +208,7 @@ impl ConnectionReceiver for TcpConnectionReceiver {
                 }
                 Err(_) => {
                     log::info!("[ConnectionReceiver {} => {}] stream closed", self.node_id, self.remote_node_id);
-                    self.reliable_sender.send_blocking(OutgoingEvent::ClosedNotify).print_error("Should send CloseNotify");
+                    self.unreliable_sender.try_send(OutgoingEvent::ClosedNotify).print_error("Should send CloseNotify");
                     break Err(());
                 }
             }

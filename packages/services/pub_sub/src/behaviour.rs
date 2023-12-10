@@ -48,12 +48,12 @@ where
         while let Some((node, conn, action)) = self.relay.pop_logic_action() {
             let msg = match action {
                 PubsubRelayLogicOutput::Event(e) => {
-                    let mut header = MsgHeader::build_reliable(PUBSUB_SERVICE_ID, RouteRule::Direct, 0);
+                    let mut header = MsgHeader::build(PUBSUB_SERVICE_ID, RouteRule::Direct);
                     header.meta = CONTROL_META_TYPE;
                     TransportMsg::from_payload_bincode(header, &e)
                 }
                 PubsubRelayLogicOutput::Feedback(fb) => {
-                    let mut header = MsgHeader::build_reliable(PUBSUB_SERVICE_ID, RouteRule::Direct, 0);
+                    let mut header = MsgHeader::build(PUBSUB_SERVICE_ID, RouteRule::Direct);
                     header.meta = FEEDBACK_TYPE;
                     TransportMsg::from_payload_bincode(header, &fb)
                 }
@@ -302,7 +302,7 @@ mod test {
         assert_eq!(ctx.awaker.pop_awake_count(), 1);
 
         behaviour.on_awake(&ctx, timer.now_ms());
-        let mut expected_header = MsgHeader::build_reliable(PUBSUB_SERVICE_ID, RouteRule::Direct, 0);
+        let mut expected_header = MsgHeader::build(PUBSUB_SERVICE_ID, RouteRule::Direct);
         expected_header.meta = CONTROL_META_TYPE;
         let expected_msg = TransportMsg::from_payload_bincode(expected_header, &PubsubRemoteEvent::Sub(channel));
         assert_eq!(behaviour.pop_action(), Some(NetworkBehaviorAction::ToNetNode(source_node_id, expected_msg)));
@@ -315,7 +315,7 @@ mod test {
         drop(consumer);
 
         behaviour.on_awake(&ctx, timer.now_ms());
-        let mut expected_header = MsgHeader::build_reliable(PUBSUB_SERVICE_ID, RouteRule::Direct, 0);
+        let mut expected_header = MsgHeader::build(PUBSUB_SERVICE_ID, RouteRule::Direct);
         expected_header.meta = CONTROL_META_TYPE;
         let expected_msg = TransportMsg::from_payload_bincode(expected_header, &PubsubRemoteEvent::Unsub(channel));
         assert_eq!(behaviour.pop_action(), Some(NetworkBehaviorAction::ToNetConn(ConnId::from_in(0, 0), expected_msg)));

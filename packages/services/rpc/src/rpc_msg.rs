@@ -126,7 +126,7 @@ impl RpcMsg {
     }
 
     pub fn to_transport_msg(&self, to_service_id: u8, rule: RouteRule) -> TransportMsg {
-        let mut header = MsgHeader::build_reliable(to_service_id, rule, 0);
+        let mut header = MsgHeader::build(to_service_id, rule);
         header.from_node = Some(self.from_node_id);
         let buf: Vec<u8> = bincode::serialize(self).expect("Should serialize");
         TransportMsg::build_raw(header, &buf)

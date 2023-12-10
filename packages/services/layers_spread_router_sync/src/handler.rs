@@ -33,7 +33,13 @@ where
     fn send_sync(&mut self, ctx: &ConnectionContext) {
         let sync = self.router.create_sync(ctx.remote_node_id);
         log::info!("[LayersSpreadRouterHander {} {}/{}] send RouterSync", ctx.local_node_id, ctx.remote_node_id, ctx.conn_id);
-        let sync_msg = TransportMsg::build_reliable(FAST_PATH_ROUTE_SERVICE_ID, RouteRule::Direct, 0, &bincode::serialize(&LayersSpreadRouterSyncMsg::Sync(sync)).unwrap());
+        let sync_msg = TransportMsg::build(
+            FAST_PATH_ROUTE_SERVICE_ID,
+            RouteRule::Direct,
+            0,
+            0,
+            &bincode::serialize(&LayersSpreadRouterSyncMsg::Sync(sync)).unwrap(),
+        );
         self.actions.push_back(ConnectionHandlerAction::ToNet(sync_msg));
     }
 }

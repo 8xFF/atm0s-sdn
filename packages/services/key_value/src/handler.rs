@@ -87,7 +87,7 @@ mod test {
             service_id: KEY_VALUE_SERVICE_ID,
             awaker: Arc::new(MockAwaker::default()),
         };
-        let mut trans_msg = TransportMsg::build_reliable(KEY_VALUE_SERVICE_ID, RouteRule::Direct, 0, &vec![]);
+        let mut trans_msg = TransportMsg::build(KEY_VALUE_SERVICE_ID, RouteRule::Direct, 0, 0, &vec![]);
         trans_msg.header.from_node = Some(1);
         handler.on_event(&ctx, 0, ConnectionEvent::Msg(trans_msg));
         assert_eq!(handler.pop_action(), None);
@@ -104,7 +104,7 @@ mod test {
             awaker: Arc::new(MockAwaker::default()),
         };
 
-        let mut header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, RouteRule::Direct, 0);
+        let mut header = MsgHeader::build(KEY_VALUE_SERVICE_ID, RouteRule::Direct);
         header.from_node = Some(1);
         let msg = KeyValueMsg::SimpleLocal(SimpleLocalEvent::SetAck(0, 0, 0, false));
         let trans_msg = TransportMsg::from_payload_bincode(header, &msg);
@@ -123,7 +123,7 @@ mod test {
             awaker: Arc::new(MockAwaker::default()),
         };
 
-        let mut header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, RouteRule::Direct, 0);
+        let mut header = MsgHeader::build(KEY_VALUE_SERVICE_ID, RouteRule::Direct);
         header.from_node = None;
         let msg = KeyValueMsg::SimpleLocal(SimpleLocalEvent::SetAck(0, 0, 0, false));
         let trans_msg = TransportMsg::from_payload_bincode(header, &msg);

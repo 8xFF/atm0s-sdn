@@ -15,8 +15,8 @@ enum Msg {
     Pong,
 }
 
-fn create_reliable(msg: Msg) -> TransportMsg {
-    TransportMsg::build_reliable(0, RouteRule::Direct, 0, &bincode::serialize(&msg).unwrap())
+fn create_msg(msg: Msg) -> TransportMsg {
+    TransportMsg::build(0, RouteRule::Direct, 0, 0, &bincode::serialize(&msg).unwrap())
 }
 
 pub async fn simple_network<T: Transport>(mut tran1: T, node1_addr: NodeAddr, mut tran2: T, node2_addr: NodeAddr) {
@@ -74,9 +74,9 @@ pub async fn simple_network<T: Transport>(mut tran1: T, node1_addr: NodeAddr, mu
             ConnectionEvent::Stats(_stats) => {}
             e => panic!("Should received stats {:?}", e),
         }
-        tran2_sender.send(create_reliable(Msg::Ping));
+        tran2_sender.send(create_msg(Msg::Ping));
         let received_event = tran2_recv.poll().await.unwrap();
-        assert_eq!(received_event, ConnectionEvent::Msg(create_reliable(Msg::Ping)));
+        assert_eq!(received_event, ConnectionEvent::Msg(create_msg(Msg::Ping)));
         assert_eq!(tran2_recv.poll().await, Err(()));
     });
 
@@ -86,9 +86,9 @@ pub async fn simple_network<T: Transport>(mut tran1: T, node1_addr: NodeAddr, mu
     }
 
     let received_event = tran1_recv.poll().await.unwrap();
-    assert_eq!(received_event, ConnectionEvent::Msg(create_reliable(Msg::Ping)));
+    assert_eq!(received_event, ConnectionEvent::Msg(create_msg(Msg::Ping)));
 
-    tran1_sender.send(create_reliable(Msg::Ping));
+    tran1_sender.send(create_msg(Msg::Ping));
     async_std::task::sleep(Duration::from_millis(100)).await;
 
     tran1_sender.close();

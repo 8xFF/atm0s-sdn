@@ -24,47 +24,48 @@ pub enum MsgHeaderError {
 ///     0                   1                   2                   3
 ///     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-///    |V=0|R|F|V|  S |      TTL      |    Service     |      Meta     |
+///    |V=0|F| R |  _  |      TTL      |    Service     |      Meta    |
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-///    |                         Stream ID                             |
+///    |                         StreamID                              |
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-///    |                         Route Destination (Option)            |
-///    +=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
-///    |                         FromNodeId (Option)                   |
+///    |           MsgId (Opt)        | PartIndex(Opt) | PartCount(Opt)|
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-///    |                         ValidateCode (Option)                 |
+///    |                         RouteDestination (Opt)                |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///    |                         FromNodeId (Opt)                      |
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 /// ```
 ///
 /// In there
 ///
-/// - version (V) : 2 bits (now is 0)
-/// - reliable (R): 1 bits
-/// - from (F)    : 1 bits, If this bit is set, from node_id will occupy 32 bits in header
-/// - validation (V): 1 bits
-/// - route type (S): 3 bits
+/// - Version (V) : 2 bits (now is 0)
+/// - From (F)    : 1 bits, If this bit is set, from node_id will occupy 32 bits in header
+/// - Route Type (R): 2 bits
 ///
 ///     - 0: Direct : which node received this msg will handle it, no route destionation
 ///     - 1: ToNode : which node received this msg will route it to node_id
 ///     - 2: ToService : which node received this msg will route it to service meta
 ///     - 3: ToKey : which node received this msg will route it to key
-///     - 4-7: Reserved
-/// - ttl (TTL): 8 bits
-/// - service id (Service): 8 bits
-/// - meta (M): 8 bits (can use freely)
-/// - route destination (Route Destination): 32 bits (if S is not Direct)
+///  - Not Used Yet: 3 bits (always 0)
+///
+/// - Ttl (TTL): 8 bits
+/// - Service id (Service): 8 bits
+/// - Meta (M): 8 bits (can use freely)
+/// - Route destination (Route Destination): 32 bits (if S is not Direct)
 ///
 ///     - If route type is ToNode, this field is 32bit node_id
 ///     - If route type is ToService, this field is service meta
 ///     - If route type is ToKey, this field is 32bit key
-/// - stream id (Stream ID): 32 bits
-/// - from_id (FromNodeId): 32 bits (optional if F bit is set)
-/// - validate_code (ValidateCode): 32 bits (optional if V bit is set)
 ///
+/// - Stream ID: 32 bits
+/// - FromNodeId: 32 bits (optional if F bit is set)
+///
+///
+///
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MsgHeader {
     pub version: u8,
-    pub reliable: bool,
     pub ttl: u8,
     pub service_id: u8,
     pub route: RouteRule,
@@ -72,38 +73,44 @@ pub struct MsgHeader {
     pub stream_id: u32,
     /// Which can be anonymous or specific node
     pub from_node: Option<NodeId>,
-    pub validate_code: Option<u32>,
 }
 
 impl MsgHeader {
-    /// Builds a reliable message with the given service ID, route rule, and stream ID.
-    pub fn build_reliable(service_id: u8, route: RouteRule, stream_id: u32) -> Self {
+    /// Builds a message with the given service_id, route rule.
+    pub fn build(service_id: u8, route: RouteRule) -> Self {
         Self {
             version: 0,
-            reliable: true,
             ttl: DEFAULT_MSG_TTL,
             service_id,
             route,
             meta: 0,
-            stream_id,
+            stream_id: 0,
             from_node: None,
-            validate_code: None,
         }
     }
 
-    /// Builds an unreliable message with the given service ID, route rule, and stream ID.
-    pub fn build_unreliable(service_id: u8, route: RouteRule, stream_id: u32) -> Self {
-        Self {
-            version: 0,
-            reliable: false,
-            ttl: DEFAULT_MSG_TTL,
-            service_id,
-            route,
-            meta: 0,
-            stream_id,
-            from_node: None,
-            validate_code: None,
-        }
+    /// Set ttl
+    pub fn set_ttl(&mut self, ttl: u8) -> &mut Self {
+        self.ttl = ttl;
+        self
+    }
+
+    /// Set meta
+    pub fn set_meta(&mut self, meta: u8) -> &mut Self {
+        self.meta = meta;
+        self
+    }
+
+    /// Set stream_id
+    pub fn set_stream_id(&mut self, stream_id: u32) -> &mut Self {
+        self.stream_id = stream_id;
+        self
+    }
+
+    /// Set from node
+    pub fn set_from_node(&mut self, from_node: Option<NodeId>) -> &mut Self {
+        self.from_node = from_node;
+        self
     }
 
     /// Parses a byte slice into a `Msg` struct and returns the number of bytes read.
@@ -119,15 +126,15 @@ impl MsgHeader {
     /// # Errors
     ///
     /// Returns a `MsgHeaderError` if the message header is invalid.
+    #[allow(unused_assignments)]
     pub fn from_bytes(bytes: &[u8]) -> Result<(Self, usize), MsgHeaderError> {
         if bytes.len() < 8 {
             return Err(MsgHeaderError::TooSmall);
         }
-        let version = bytes[0] >> 6;
-        let reliable = (bytes[0] >> 5) & 1 == 1;
-        let from_bit = (bytes[0] >> 4) & 1 == 1;
-        let validate_bit = (bytes[0] >> 3) & 1 == 1;
-        let route_type = bytes[0] & 7;
+        let version = bytes[0] >> 6; //2 bits
+        let from_bit = (bytes[0] >> 5) & 1 == 1; //1 bit
+        let route_type = (bytes[0] >> 3) & 3; //2 bits
+        let _not_used_yet = bytes[0] & 7; //3 bits
 
         if version != 0 {
             return Err(MsgHeaderError::InvalidVersion);
@@ -180,31 +187,8 @@ impl MsgHeader {
             None
         };
 
-        let validate_code = if validate_bit {
-            if bytes.len() < ptr + 4 {
-                return Err(MsgHeaderError::TooSmall);
-            }
-            Some(u32::from_be_bytes([bytes[ptr], bytes[ptr + 1], bytes[ptr + 2], bytes[ptr + 3]]))
-        } else {
-            None
-        };
-        Ok((
-            Self {
-                version,
-                reliable,
-                ttl,
-                service_id,
-                route,
-                meta,
-                stream_id,
-                from_node,
-                validate_code,
-            },
+        let len =
             8 + if from_node.is_some() {
-                4
-            } else {
-                0
-            } + if validate_code.is_some() {
                 4
             } else {
                 0
@@ -212,7 +196,19 @@ impl MsgHeader {
                 0
             } else {
                 4
+            };
+
+        Ok((
+            Self {
+                version,
+                ttl,
+                service_id,
+                route,
+                meta,
+                stream_id,
+                from_node,
             },
+            len,
         ))
     }
 
@@ -235,7 +231,7 @@ impl MsgHeader {
             RouteRule::ToService(_) => ROUTE_RULE_TO_SERVICE,
             RouteRule::ToKey(_) => ROUTE_RULE_TO_KEY,
         };
-        output.push((self.version << 6) | ((self.reliable as u8) << 5) | ((self.from_node.is_some() as u8) << 4) | ((self.validate_code.is_some() as u8) << 3) | route_type);
+        output.push((self.version << 6) | ((self.from_node.is_some() as u8) << 5) | route_type << 3);
         output.push(self.ttl);
         output.push(self.service_id);
         output.push(self.meta);
@@ -257,15 +253,8 @@ impl MsgHeader {
         if let Some(from_node) = self.from_node {
             output.extend_from_slice(&from_node.to_be_bytes());
         }
-        if let Some(validate_code) = self.validate_code {
-            output.extend_from_slice(&validate_code.to_be_bytes());
-        }
         Some(
             8 + if self.from_node.is_some() {
-                4
-            } else {
-                0
-            } + if self.validate_code.is_some() {
                 4
             } else {
                 0
@@ -326,10 +315,6 @@ impl MsgHeader {
             0
         } else {
             4
-        } + if self.validate_code.is_some() {
-            4
-        } else {
-            0
         }
     }
 }
@@ -368,7 +353,7 @@ impl TransportMsg {
         }
     }
 
-    /// Builds a reliable message from a service ID, route rule, stream ID, and payload.
+    /// Builds a message from a service ID, route rule, stream ID, and payload.
     ///
     /// # Arguments
     ///
@@ -380,37 +365,13 @@ impl TransportMsg {
     /// # Returns
     ///
     /// A new `TransportMsg` instance.
-    pub fn build_reliable(service_id: u8, route: RouteRule, stream_id: u32, payload: &[u8]) -> Self {
-        let header = MsgHeader::build_reliable(service_id, route, stream_id);
+    pub fn build(service_id: u8, route: RouteRule, meta: u8, stream_id: u32, payload: &[u8]) -> Self {
+        let mut header = MsgHeader::build(service_id, route);
+        header.set_meta(meta).set_stream_id(stream_id);
         let header_size = header.serialize_size();
         let mut buffer = Vec::with_capacity(header_size + payload.len());
         let header_size = header.to_bytes(&mut buffer).expect("Should serialize header");
 
-        buffer.extend_from_slice(payload);
-        Self {
-            buffer,
-            header,
-            payload_start: header_size,
-        }
-    }
-
-    /// Builds an unreliable message from a service ID, route rule, stream ID, and payload.
-    ///
-    /// # Arguments
-    ///
-    /// * `service_id` - The service ID of the message.
-    /// * `route` - The route rule of the message.
-    /// * `stream_id` - The stream ID of the message.
-    /// * `payload` - The payload of the message.
-    ///
-    /// # Returns
-    ///
-    /// A new `TransportMsg` instance.
-    pub fn build_unreliable(service_id: u8, route: RouteRule, stream_id: u32, payload: &[u8]) -> Self {
-        let header = MsgHeader::build_unreliable(service_id, route, stream_id);
-        let header_size = header.serialize_size();
-        let mut buffer = Vec::with_capacity(header_size + payload.len());
-        header.to_bytes(&mut buffer);
         buffer.extend_from_slice(payload);
         Self {
             buffer,
@@ -518,27 +479,23 @@ mod tests {
         let mut buf = vec![0u8; 16];
         let header = MsgHeader {
             version: 0,
-            reliable: false,
             ttl: 0,
             service_id: 0,
             route: RouteRule::Direct,
             meta: 0,
             stream_id: 0,
             from_node: None,
-            validate_code: None,
         };
         header.to_bytes(&mut buf);
         assert_eq!(header.serialize_size(), 8);
         let (header, _) = MsgHeader::from_bytes(&buf).unwrap();
         assert_eq!(header.serialize_size(), 8);
         assert_eq!(header.version, 0);
-        assert_eq!(header.reliable, false);
         assert_eq!(header.ttl, 0);
         assert_eq!(header.service_id, 0);
         assert_eq!(header.route, RouteRule::Direct);
         assert_eq!(header.stream_id, 0);
         assert_eq!(header.from_node, None);
-        assert_eq!(header.validate_code, None);
     }
 
     /// test header without option2
@@ -547,26 +504,22 @@ mod tests {
         let mut buf = Vec::with_capacity(16);
         let header = MsgHeader {
             version: 0,
-            reliable: true,
             ttl: 10,
             service_id: 88,
             route: RouteRule::Direct,
             meta: 0,
             stream_id: 1234,
             from_node: None,
-            validate_code: None,
         };
         header.to_bytes(&mut buf);
         assert_eq!(header.serialize_size(), 8);
         let (header, _) = MsgHeader::from_bytes(&buf).unwrap();
         assert_eq!(header.version, 0);
-        assert_eq!(header.reliable, true);
         assert_eq!(header.ttl, 10);
         assert_eq!(header.service_id, 88);
         assert_eq!(header.route, RouteRule::Direct);
         assert_eq!(header.stream_id, 1234);
         assert_eq!(header.from_node, None);
-        assert_eq!(header.validate_code, None);
     }
 
     /// test header without option
@@ -575,26 +528,22 @@ mod tests {
         let mut buf = Vec::with_capacity(16);
         let header = MsgHeader {
             version: 0,
-            reliable: false,
             ttl: 0,
             service_id: 0,
             route: RouteRule::ToNode(0),
             meta: 0,
             stream_id: 0,
             from_node: None,
-            validate_code: None,
         };
         header.to_bytes(&mut buf);
         assert_eq!(header.serialize_size(), 12);
         let (header, _) = MsgHeader::from_bytes(&buf).unwrap();
         assert_eq!(header.version, 0);
-        assert_eq!(header.reliable, false);
         assert_eq!(header.ttl, 0);
         assert_eq!(header.service_id, 0);
         assert_eq!(header.route, RouteRule::ToNode(0));
         assert_eq!(header.stream_id, 0);
         assert_eq!(header.from_node, None);
-        assert_eq!(header.validate_code, None);
     }
 
     /// test header without option
@@ -603,27 +552,23 @@ mod tests {
         let mut buf = Vec::with_capacity(16);
         let header = MsgHeader {
             version: 0,
-            reliable: true,
             ttl: 66,
             service_id: 33,
             route: RouteRule::ToNode(111),
             meta: 55,
             stream_id: 222,
             from_node: Some(1000),
-            validate_code: Some(1000),
         };
         header.to_bytes(&mut buf);
-        assert_eq!(header.serialize_size(), 20);
+        assert_eq!(header.serialize_size(), 16);
         let (header, _) = MsgHeader::from_bytes(&buf).unwrap();
         assert_eq!(header.version, 0);
-        assert_eq!(header.reliable, true);
         assert_eq!(header.ttl, 66);
         assert_eq!(header.service_id, 33);
         assert_eq!(header.route, RouteRule::ToNode(111));
         assert_eq!(header.meta, 55);
         assert_eq!(header.stream_id, 222);
         assert_eq!(header.from_node, Some(1000));
-        assert_eq!(header.validate_code, Some(1000));
     }
 
     /// test header with router dest
@@ -632,26 +577,22 @@ mod tests {
         let mut buf = Vec::with_capacity(16);
         let header = MsgHeader {
             version: 0,
-            reliable: true,
             ttl: 10,
             service_id: 88,
             route: RouteRule::ToNode(1000),
             meta: 0,
             stream_id: 1234,
             from_node: None,
-            validate_code: None,
         };
         header.to_bytes(&mut buf);
         assert_eq!(header.serialize_size(), 12);
         let (header, _) = MsgHeader::from_bytes(&buf).unwrap();
         assert_eq!(header.version, 0);
-        assert_eq!(header.reliable, true);
         assert_eq!(header.ttl, 10);
         assert_eq!(header.service_id, 88);
         assert_eq!(header.route, RouteRule::ToNode(1000));
         assert_eq!(header.stream_id, 1234);
         assert_eq!(header.from_node, None);
-        assert_eq!(header.validate_code, None);
     }
 
     /// test header with option: from_node
@@ -660,26 +601,22 @@ mod tests {
         let mut buf = Vec::with_capacity(16);
         let header = MsgHeader {
             version: 0,
-            reliable: false,
             ttl: 0,
             service_id: 0,
             route: RouteRule::ToNode(0),
             meta: 0,
             stream_id: 0,
             from_node: Some(0),
-            validate_code: None,
         };
         header.to_bytes(&mut buf);
         assert_eq!(header.serialize_size(), 16);
         let (header, _) = MsgHeader::from_bytes(&buf).unwrap();
         assert_eq!(header.version, 0);
-        assert_eq!(header.reliable, false);
         assert_eq!(header.ttl, 0);
         assert_eq!(header.service_id, 0);
         assert_eq!(header.route, RouteRule::ToNode(0));
         assert_eq!(header.stream_id, 0);
         assert_eq!(header.from_node, Some(0));
-        assert_eq!(header.validate_code, None);
     }
 
     /// test header with option: validate_code
@@ -688,26 +625,22 @@ mod tests {
         let mut buf = Vec::with_capacity(16);
         let header = MsgHeader {
             version: 0,
-            reliable: false,
             ttl: 0,
             service_id: 0,
             route: RouteRule::ToNode(0),
             meta: 0,
             stream_id: 0,
             from_node: None,
-            validate_code: Some(0),
         };
         header.to_bytes(&mut buf);
-        assert_eq!(header.serialize_size(), 16);
+        assert_eq!(header.serialize_size(), 12);
         let (header, _) = MsgHeader::from_bytes(&buf).unwrap();
         assert_eq!(header.version, 0);
-        assert_eq!(header.reliable, false);
         assert_eq!(header.ttl, 0);
         assert_eq!(header.service_id, 0);
         assert_eq!(header.route, RouteRule::ToNode(0));
         assert_eq!(header.stream_id, 0);
         assert_eq!(header.from_node, None);
-        assert_eq!(header.validate_code, Some(0));
     }
 
     /// test header with option: from_node and validate_code
@@ -716,26 +649,22 @@ mod tests {
         let mut buf = Vec::with_capacity(20);
         let header = MsgHeader {
             version: 0,
-            reliable: false,
             ttl: 0,
             service_id: 0,
             route: RouteRule::ToNode(0),
             meta: 0,
             stream_id: 0,
             from_node: Some(0),
-            validate_code: Some(0),
         };
         header.to_bytes(&mut buf);
-        assert_eq!(header.serialize_size(), 20);
+        assert_eq!(header.serialize_size(), 16);
         let (header, _) = MsgHeader::from_bytes(&buf).unwrap();
         assert_eq!(header.version, 0);
-        assert_eq!(header.reliable, false);
         assert_eq!(header.ttl, 0);
         assert_eq!(header.service_id, 0);
         assert_eq!(header.route, RouteRule::ToNode(0));
         assert_eq!(header.stream_id, 0);
         assert_eq!(header.from_node, Some(0));
-        assert_eq!(header.validate_code, Some(0));
     }
 
     /// test with invalid version
@@ -744,26 +673,15 @@ mod tests {
         let mut buf = Vec::with_capacity(16);
         let header = MsgHeader {
             version: 1,
-            reliable: false,
             ttl: 0,
             service_id: 0,
             route: RouteRule::ToNode(0),
             meta: 0,
             stream_id: 0,
             from_node: None,
-            validate_code: None,
         };
         header.to_bytes(&mut buf);
         let err = MsgHeader::from_bytes(&buf).unwrap_err();
         assert_eq!(err, MsgHeaderError::InvalidVersion);
-    }
-
-    /// test with invalid route
-    #[test]
-    fn test_with_invalid_route() {
-        //this is bytes of invalid route header
-        let buf = [0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
-        let err = MsgHeader::from_bytes(&buf).unwrap_err();
-        assert_eq!(err, MsgHeaderError::InvalidRoute);
     }
 }

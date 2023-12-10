@@ -355,7 +355,7 @@ mod tests {
 
         let bus = PlaneBusImpl::<BE, HE>::new(local_node_id, router, plane_tx);
 
-        assert!(bus.to_net(TransportMsg::build_unreliable(1, RouteRule::ToService(2), 1, &[1u8])).is_none());
+        assert!(bus.to_net(TransportMsg::build(1, RouteRule::ToService(2), 0, 1, &[1u8])).is_none());
     }
 
     #[async_std::test]
@@ -370,13 +370,13 @@ mod tests {
 
         assert_eq!(plane_rx.try_recv(), Err(TryRecvError::Empty));
 
-        assert!(bus.to_net(TransportMsg::build_unreliable(1, RouteRule::ToService(2), 1, &[1u8])).is_some());
+        assert!(bus.to_net(TransportMsg::build(1, RouteRule::ToService(2), 0, 1, &[1u8])).is_some());
 
         assert_eq!(
             plane_rx.try_recv(),
             Ok(NetworkPlaneInternalEvent::ToBehaviourLocalMsg {
                 service_id: 1,
-                msg: TransportMsg::build_unreliable(1, RouteRule::ToService(2), 1, &[1u8]),
+                msg: TransportMsg::build(1, RouteRule::ToService(2), 0, 1, &[1u8]),
             })
         );
     }
@@ -397,7 +397,7 @@ mod tests {
         let _rx = bus.add_conn(conn).expect("Should have rx");
         assert_eq!(plane_rx.try_recv(), Err(TryRecvError::Empty));
 
-        assert!(bus.to_net(TransportMsg::build_unreliable(1, RouteRule::ToService(2), 1, &[1u8])).is_some());
+        assert!(bus.to_net(TransportMsg::build(1, RouteRule::ToService(2), 0, 1, &[1u8])).is_some());
     }
 
     #[async_std::test]
@@ -412,13 +412,13 @@ mod tests {
 
         assert_eq!(plane_rx.try_recv(), Err(TryRecvError::Empty));
 
-        assert!(bus.to_net_node(2u32, TransportMsg::build_unreliable(1, RouteRule::ToService(2), 1, &[1u8])).is_some());
+        assert!(bus.to_net_node(2u32, TransportMsg::build(1, RouteRule::ToService(2), 0, 1, &[1u8])).is_some());
 
         assert_eq!(
             plane_rx.try_recv(),
             Ok(NetworkPlaneInternalEvent::ToBehaviourLocalMsg {
                 service_id: 1,
-                msg: TransportMsg::build_unreliable(1, RouteRule::ToService(2), 1, &[1u8]),
+                msg: TransportMsg::build(1, RouteRule::ToService(2), 0, 1, &[1u8]),
             })
         );
     }
@@ -439,7 +439,7 @@ mod tests {
         let _rx = bus.add_conn(conn).expect("Should have rx");
         assert_eq!(plane_rx.try_recv(), Err(TryRecvError::Empty));
 
-        assert!(bus.to_net_node(2u32, TransportMsg::build_unreliable(1, RouteRule::ToService(2), 1, &[1u8])).is_some());
+        assert!(bus.to_net_node(2u32, TransportMsg::build(1, RouteRule::ToService(2), 0, 1, &[1u8])).is_some());
     }
 
     #[async_std::test]
@@ -455,6 +455,6 @@ mod tests {
 
         let conn = Arc::new(sender);
         let _rx = bus.add_conn(conn).expect("Should have rx");
-        assert!(bus.to_net_conn(ConnId::from_in(1, 1), TransportMsg::build_unreliable(1, RouteRule::ToService(2), 1, &[1u8])).is_some());
+        assert!(bus.to_net_conn(ConnId::from_in(1, 1), TransportMsg::build(1, RouteRule::ToService(2), 0, 1, &[1u8])).is_some());
     }
 }
