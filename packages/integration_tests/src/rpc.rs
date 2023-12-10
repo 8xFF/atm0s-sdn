@@ -6,7 +6,7 @@ mod test {
     use atm0s_sdn::{
         convert_enum, KeyValueBehavior, KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueSdkEvent, LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent,
         LayersSpreadRouterSyncHandlerEvent, ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent, NetworkPlane, NetworkPlaneConfig, NodeAddr, NodeAddrBuilder, NodeId, Protocol,
-        RouteRule, RpcBox, RpcMsg, RpcMsgParam, SharedRouter, SystemTimer,
+        RouteRule, RpcBox, RpcError, RpcMsg, RpcMsgParam, SharedRouter, SystemTimer,
     };
     use atm0s_sdn_transport_vnet::VnetEarth;
 
@@ -76,6 +76,7 @@ mod test {
         let (mut rpc, _addr, join) = run_node(vnet.clone(), service_id, node_id, vec![]).await;
 
         let emiter = rpc.emitter();
+        let emiter2 = rpc.emitter();
 
         emiter.emit(service_id, RouteRule::ToService(0), "event1", vec![1, 2, 3]);
         assert_eq!(
@@ -91,6 +92,12 @@ mod test {
         async_std::task::spawn(async move {
             let res = emiter.request(100, RouteRule::ToService(0), "echo", vec![1, 2, 3], 10000).timeout(Duration::from_secs(2)).await;
             assert_eq!(res, Ok(Ok(vec![1, 2, 3])));
+
+            let res = emiter
+                .request::<_, Vec<u8>>(100, RouteRule::ToService(0), "fake_error", vec![2, 3, 4], 10000)
+                .timeout(Duration::from_secs(2))
+                .await;
+            assert_eq!(res, Ok(Err(RpcError::RuntimeError("FAKE_ERROR".to_string()))));
         });
 
         let req = rpc.recv().timeout(Duration::from_millis(300)).await.unwrap().unwrap();
@@ -104,8 +111,21 @@ mod test {
             }
         );
 
-        let req = rpc.parse_request::<Vec<u8>, _>(req).expect("Should ok");
+        let req = emiter2.parse_request::<Vec<u8>, _>(req).expect("Should ok");
         req.success(vec![1, 2, 3]);
+
+        let req = rpc.recv().timeout(Duration::from_millis(300)).await.unwrap().unwrap();
+        assert_eq!(
+            req,
+            RpcMsg {
+                cmd: "fake_error".to_string(),
+                from_node_id: node_id,
+                from_service_id: service_id,
+                param: RpcMsgParam::Request { req_id: 1, param: vec![2, 3, 4] }
+            }
+        );
+
+        emiter2.answer_for::<Vec<u8>>(req, Err(RpcError::RuntimeError("FAKE_ERROR".to_string())));
 
         async_std::task::sleep(Duration::from_millis(300)).await;
 
@@ -128,6 +148,7 @@ mod test {
         async_std::task::sleep(Duration::from_millis(300)).await;
 
         let emiter1 = rpc1.emitter();
+        let emiter2 = rpc2.emitter();
 
         emiter1.emit(service_id2, RouteRule::ToService(0), "event1", vec![1, 2, 3]);
         assert_eq!(
@@ -146,6 +167,12 @@ mod test {
                 .timeout(Duration::from_secs(2))
                 .await;
             assert_eq!(res, Ok(Ok(vec![1, 2, 3])));
+
+            let res = emiter1
+                .request::<_, Vec<u8>>(service_id2, RouteRule::ToService(0), "fake_error", vec![2, 3, 4], 10000)
+                .timeout(Duration::from_secs(2))
+                .await;
+            assert_eq!(res, Ok(Err(RpcError::RuntimeError("FAKE_ERROR".to_string()))));
         });
 
         let req = rpc2.recv().timeout(Duration::from_millis(300)).await.unwrap().unwrap();
@@ -159,8 +186,21 @@ mod test {
             }
         );
 
-        let req = rpc2.parse_request::<Vec<u8>, _>(req).expect("Should ok");
+        let req = emiter2.parse_request::<Vec<u8>, _>(req).expect("Should ok");
         req.success(vec![1, 2, 3]);
+
+        let req = rpc2.recv().timeout(Duration::from_millis(300)).await.unwrap().unwrap();
+        assert_eq!(
+            req,
+            RpcMsg {
+                cmd: "fake_error".to_string(),
+                from_node_id: node_id1,
+                from_service_id: service_id1,
+                param: RpcMsgParam::Request { req_id: 1, param: vec![2, 3, 4] }
+            }
+        );
+
+        emiter2.answer_for::<Vec<u8>>(req, Err(RpcError::RuntimeError("FAKE_ERROR".to_string())));
 
         async_std::task::sleep(Duration::from_millis(300)).await;
 

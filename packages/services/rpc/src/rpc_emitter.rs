@@ -44,4 +44,9 @@ impl RpcEmitter {
             None
         }
     }
+
+    /// Send answer for a request
+    pub fn answer_for<Res: Into<Vec<u8>>>(&self, req: RpcMsg, answer: Result<Res, RpcError>) {
+        self.rpc_queue.lock().answer_for::<Res>(&req, answer);
+    }
 }

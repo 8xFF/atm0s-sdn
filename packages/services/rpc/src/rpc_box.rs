@@ -72,22 +72,6 @@ impl RpcBox {
         }
     }
 
-    /// Convert req into request with Param and Res type, if not it will auto reply with DeserializeError
-    pub fn parse_request<Param: for<'a> TryFrom<&'a [u8]>, Res: Into<Vec<u8>>>(&self, req: RpcMsg) -> Option<RpcRequest<Param, Res>> {
-        assert!(req.is_request());
-        if let Some((_req_id, param)) = req.parse_request() {
-            Some(RpcRequest {
-                _tmp: Default::default(),
-                param,
-                req,
-                rpc_queue: self.rpc_queue.clone(),
-            })
-        } else {
-            self.rpc_queue.lock().answer_for::<Res>(&req, Err(RpcError::DeserializeError));
-            None
-        }
-    }
-
     pub async fn recv(&mut self) -> Option<RpcMsg> {
         self.rx.recv().await.ok()
     }
