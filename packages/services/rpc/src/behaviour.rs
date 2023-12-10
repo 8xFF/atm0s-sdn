@@ -41,14 +41,19 @@ impl<BE, HE, SE> NetworkBehavior<BE, HE, SE> for RpcBehavior {
 
     fn on_sdk_msg(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _from_service: u8, _event: SE) {}
 
-    fn on_local_msg(&mut self, _ctx: &BehaviorContext, _now_ms: u64, msg: TransportMsg) {
-        if let Ok(msg) = RpcMsg::try_from(&msg) {
+    fn on_local_msg(&mut self, _ctx: &BehaviorContext, now_ms: u64, msg: TransportMsg) {
+        let mut rpc_queue = self.rpc_queue.lock();
+        if let Some(msg) = rpc_queue.on_msg(now_ms, msg) {
             if msg.is_answer() {
                 let req_id = msg.req_id().expect("Should has");
-                if let Some(tx) = self.rpc_queue.lock().take_request(req_id) {
+                if let Some(tx) = rpc_queue.take_request(req_id) {
+                    log::info!("[RpcBehaviour] on answer {}", msg.cmd);
                     tx.try_send(Ok(msg)).print_error("Should send");
+                } else {
+                    log::warn!("[RpcBehaviour] on answer {} without tx", msg.cmd);
                 }
             } else {
+                log::info!("[RpcBehaviour] on request {}", msg.cmd);
                 self.tx.try_send(msg).print_error("Should send");
             }
         }

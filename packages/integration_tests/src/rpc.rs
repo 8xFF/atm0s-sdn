@@ -78,20 +78,20 @@ mod test {
         let emiter = rpc.emitter();
         let emiter2 = rpc.emitter();
 
-        emiter.emit(service_id, RouteRule::ToService(0), "event1", vec![1, 2, 3]);
+        emiter.emit(service_id, RouteRule::ToService(0), "event1", vec![1; 5000]);
         assert_eq!(
             rpc.recv().timeout(Duration::from_millis(300)).await,
             Ok(Some(RpcMsg {
                 cmd: "event1".to_string(),
                 from_node_id: node_id,
                 from_service_id: service_id,
-                param: RpcMsgParam::Event(vec![1, 2, 3])
+                param: RpcMsgParam::Event(vec![1; 5000])
             }))
         );
 
         async_std::task::spawn(async move {
-            let res = emiter.request(100, RouteRule::ToService(0), "echo", vec![1, 2, 3], 10000).timeout(Duration::from_secs(2)).await;
-            assert_eq!(res, Ok(Ok(vec![1, 2, 3])));
+            let res = emiter.request(100, RouteRule::ToService(0), "echo", vec![2; 5000], 10000).timeout(Duration::from_secs(2)).await;
+            assert_eq!(res, Ok(Ok(vec![2; 5000])));
 
             let res = emiter
                 .request::<_, Vec<u8>>(100, RouteRule::ToService(0), "fake_error", vec![2, 3, 4], 10000)
@@ -107,12 +107,12 @@ mod test {
                 cmd: "echo".to_string(),
                 from_node_id: node_id,
                 from_service_id: service_id,
-                param: RpcMsgParam::Request { req_id: 0, param: vec![1, 2, 3] }
+                param: RpcMsgParam::Request { req_id: 0, param: vec![2; 5000] }
             }
         );
 
         let req = emiter2.parse_request::<Vec<u8>, _>(req).expect("Should ok");
-        req.success(vec![1, 2, 3]);
+        req.success(vec![2; 5000]);
 
         let req = rpc.recv().timeout(Duration::from_millis(300)).await.unwrap().unwrap();
         assert_eq!(
@@ -150,23 +150,23 @@ mod test {
         let emiter1 = rpc1.emitter();
         let emiter2 = rpc2.emitter();
 
-        emiter1.emit(service_id2, RouteRule::ToService(0), "event1", vec![1, 2, 3]);
+        emiter1.emit(service_id2, RouteRule::ToService(0), "event1", vec![1; 5000]);
         assert_eq!(
             rpc2.recv().timeout(Duration::from_millis(300)).await,
             Ok(Some(RpcMsg {
                 cmd: "event1".to_string(),
                 from_node_id: node_id1,
                 from_service_id: service_id1,
-                param: RpcMsgParam::Event(vec![1, 2, 3])
+                param: RpcMsgParam::Event(vec![1; 5000])
             }))
         );
 
         async_std::task::spawn(async move {
             let res = emiter1
-                .request(service_id2, RouteRule::ToService(0), "echo", vec![1, 2, 3], 10000)
+                .request(service_id2, RouteRule::ToService(0), "echo", vec![2; 5000], 10000)
                 .timeout(Duration::from_secs(2))
                 .await;
-            assert_eq!(res, Ok(Ok(vec![1, 2, 3])));
+            assert_eq!(res, Ok(Ok(vec![2; 5000])));
 
             let res = emiter1
                 .request::<_, Vec<u8>>(service_id2, RouteRule::ToService(0), "fake_error", vec![2, 3, 4], 10000)
@@ -182,12 +182,12 @@ mod test {
                 cmd: "echo".to_string(),
                 from_node_id: node_id1,
                 from_service_id: service_id1,
-                param: RpcMsgParam::Request { req_id: 0, param: vec![1, 2, 3] }
+                param: RpcMsgParam::Request { req_id: 0, param: vec![2; 5000] }
             }
         );
 
         let req = emiter2.parse_request::<Vec<u8>, _>(req).expect("Should ok");
-        req.success(vec![1, 2, 3]);
+        req.success(vec![2; 5000]);
 
         let req = rpc2.recv().timeout(Duration::from_millis(300)).await.unwrap().unwrap();
         assert_eq!(

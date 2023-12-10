@@ -60,7 +60,7 @@ where
             }
             e = self.receiver.poll().fuse() => match e {
                 Ok(event) => match event {
-                    ConnectionEvent::Msg(msg) => match self.router.derive_action(&msg.header.route, msg.header.service_id) {
+                    ConnectionEvent::Msg(msg) => match self.router.derive_action(&msg.header.route, msg.header.to_service_id) {
                         RouteAction::Reject => {
                             Ok(())
                         }
@@ -70,9 +70,9 @@ where
                                 self.node_id,
                                 self.receiver.remote_node_id(),
                                 self.receiver.conn_id(),
-                                msg.header.service_id
+                                msg.header.to_service_id
                             );
-                            self.internal.on_event(self.timer.now_ms(), Some(msg.header.service_id), ConnectionEvent::Msg(msg));
+                            self.internal.on_event(self.timer.now_ms(), Some(msg.header.to_service_id), ConnectionEvent::Msg(msg));
                             Ok(())
                         }
                         RouteAction::Next(conn, node_id) => {
@@ -84,7 +84,7 @@ where
                                 self.receiver.conn_id(),
                                 conn,
                                 node_id,
-                                msg.header.service_id,
+                                msg.header.to_service_id,
                                 msg.header.route,
                             );
                             self.bus.to_net_conn(conn, msg).print_none("Should send to conn");

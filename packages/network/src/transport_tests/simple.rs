@@ -16,7 +16,7 @@ enum Msg {
 }
 
 fn create_msg(msg: Msg) -> TransportMsg {
-    TransportMsg::build(0, RouteRule::Direct, 0, 0, &bincode::serialize(&msg).unwrap())
+    TransportMsg::build(0, 0, RouteRule::Direct, 0, 0, &bincode::serialize(&msg).unwrap())
 }
 
 pub async fn simple_network<T: Transport>(mut tran1: T, node1_addr: NodeAddr, mut tran2: T, node2_addr: NodeAddr) {

@@ -117,7 +117,7 @@ where
                                     continue;
                                 } else {
                                     log::debug!("forward tun {} bytes to {}", amount, dest);
-                                    let msg = TransportMsg::build(TUNTAP_SERVICE_ID, RouteRule::ToNode(dest), 0, 0, &buf[0..amount]);
+                                    let msg = TransportMsg::build(TUNTAP_SERVICE_ID, TUNTAP_SERVICE_ID, RouteRule::ToNode(dest), 0, 0, &buf[0..amount]);
                                     let mut actions = actions.write();
                                     actions.push_back(NetworkBehaviorAction::ToNet(msg));
                                     if actions.len() == 1 {

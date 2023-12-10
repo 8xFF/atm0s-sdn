@@ -1,6 +1,5 @@
 use atm0s_sdn_identity::NodeId;
-use atm0s_sdn_network::msg::{MsgHeader, TransportMsg};
-use atm0s_sdn_router::RouteRule;
+use atm0s_sdn_network::msg::MsgHeader;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
@@ -23,12 +22,21 @@ pub enum RpcMsgParam {
 pub struct RpcMsg {
     #[serde(skip)]
     pub from_node_id: NodeId,
+    #[serde(skip)]
     pub from_service_id: u8,
     pub cmd: String,
     pub param: RpcMsgParam,
 }
 
 impl RpcMsg {
+    pub fn from_header_payload(header: &MsgHeader, payload: &[u8]) -> Option<Self> {
+        let from_node_id = header.from_node?;
+        let mut rpc = bincode::deserialize::<Self>(payload).ok()?;
+        rpc.from_node_id = from_node_id;
+        rpc.from_service_id = header.from_service_id;
+        Some(rpc)
+    }
+
     pub fn create_request<Req: Into<Vec<u8>>>(from_node_id: NodeId, from_service_id: u8, cmd: &str, req_id: u64, param: Req) -> RpcMsg {
         RpcMsg {
             from_node_id,
@@ -123,23 +131,5 @@ impl RpcMsg {
         } else {
             panic!("Current msg is not a request")
         }
-    }
-
-    pub fn to_transport_msg(&self, to_service_id: u8, rule: RouteRule) -> TransportMsg {
-        let mut header = MsgHeader::build(to_service_id, rule);
-        header.from_node = Some(self.from_node_id);
-        let buf: Vec<u8> = bincode::serialize(self).expect("Should serialize");
-        TransportMsg::build_raw(header, &buf)
-    }
-}
-
-impl TryFrom<&TransportMsg> for RpcMsg {
-    type Error = ();
-
-    fn try_from(value: &TransportMsg) -> Result<Self, Self::Error> {
-        let from_node_id = value.header.from_node.ok_or(())?;
-        let mut rpc = bincode::deserialize::<Self>(value.payload()).map_err(|_| ())?;
-        rpc.from_node_id = from_node_id;
-        Ok(rpc)
     }
 }

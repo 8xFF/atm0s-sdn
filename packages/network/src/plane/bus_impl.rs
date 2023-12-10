@@ -160,18 +160,23 @@ where
     }
 
     fn to_net(&self, msg: TransportMsg) -> Option<()> {
-        log::debug!("[PlaneBusImpl {}] send_to_net service: {} route: {:?}", self.node_id, msg.header.service_id, msg.header.route);
-        match self.router.derive_action(&msg.header.route, msg.header.service_id) {
+        log::debug!("[PlaneBusImpl {}] send_to_net service: {} route: {:?}", self.node_id, msg.header.to_service_id, msg.header.route);
+        match self.router.derive_action(&msg.header.route, msg.header.to_service_id) {
             RouteAction::Reject => {
-                log::warn!("[PlaneBusImpl {}] send_to_net reject {} {:?}", self.node_id, msg.header.service_id, msg.header.route);
+                log::warn!("[PlaneBusImpl {}] send_to_net reject {} {:?}", self.node_id, msg.header.to_service_id, msg.header.route);
                 None
             }
             RouteAction::Local => {
-                log::debug!("[PlaneBusImpl {}] send_to_net service: {} route: {:?} => local", self.node_id, msg.header.service_id, msg.header.route);
+                log::debug!(
+                    "[PlaneBusImpl {}] send_to_net service: {} route: {:?} => local",
+                    self.node_id,
+                    msg.header.to_service_id,
+                    msg.header.route
+                );
                 // TODO: may be have other way to send to local without serializing and deserializing
                 self.plane_tx
                     .send_blocking(NetworkPlaneInternalEvent::ToBehaviourLocalMsg {
-                        service_id: msg.header.service_id,
+                        service_id: msg.header.to_service_id,
                         msg: msg,
                     })
                     .print_error("Should send to behaviour transport msg");
@@ -182,7 +187,7 @@ where
                     log::debug!(
                         "[PlaneBusImpl {}] send_to_net service: {} route: {:?} => next conn ({})",
                         self.node_id,
-                        msg.header.service_id,
+                        msg.header.to_service_id,
                         msg.header.route,
                         conn
                     );
@@ -197,17 +202,17 @@ where
     }
 
     fn to_net_node(&self, node: NodeId, msg: TransportMsg) -> Option<()> {
-        log::debug!("[PlaneBusImpl {}] send_to_net_node service: {} route: ToNode({})", self.node_id, msg.header.service_id, node);
-        match self.router.derive_action(&RouteRule::ToNode(node), msg.header.service_id) {
+        log::debug!("[PlaneBusImpl {}] send_to_net_node service: {} route: ToNode({})", self.node_id, msg.header.to_service_id, node);
+        match self.router.derive_action(&RouteRule::ToNode(node), msg.header.to_service_id) {
             RouteAction::Reject => {
-                log::warn!("[PlaneBusImpl {}] send_to_net reject {} ToNode({})", self.node_id, msg.header.service_id, node);
+                log::warn!("[PlaneBusImpl {}] send_to_net reject {} ToNode({})", self.node_id, msg.header.to_service_id, node);
                 None
             }
             RouteAction::Local => {
                 // TODO: may be have other way to send to local without serializing and deserializing
                 self.plane_tx
                     .send_blocking(NetworkPlaneInternalEvent::ToBehaviourLocalMsg {
-                        service_id: msg.header.service_id,
+                        service_id: msg.header.to_service_id,
                         msg: msg,
                     })
                     .print_error("Should send to behaviour transport msg");
@@ -226,7 +231,7 @@ where
     }
 
     fn to_net_conn(&self, conn_id: ConnId, msg: TransportMsg) -> Option<()> {
-        log::debug!("[PlaneBusImpl {}] send_to_net_direct service: {} conn: {}", self.node_id, msg.header.service_id, conn_id);
+        log::debug!("[PlaneBusImpl {}] send_to_net_direct service: {} conn: {}", self.node_id, msg.header.to_service_id, conn_id);
         let conns = self.conns.read();
         let (_, sender) = conns.get(&conn_id)?;
         sender.send(msg);
@@ -355,7 +360,7 @@ mod tests {
 
         let bus = PlaneBusImpl::<BE, HE>::new(local_node_id, router, plane_tx);
 
-        assert!(bus.to_net(TransportMsg::build(1, RouteRule::ToService(2), 0, 1, &[1u8])).is_none());
+        assert!(bus.to_net(TransportMsg::build(1, 1, RouteRule::ToService(2), 0, 1, &[1u8])).is_none());
     }
 
     #[async_std::test]
@@ -370,13 +375,13 @@ mod tests {
 
         assert_eq!(plane_rx.try_recv(), Err(TryRecvError::Empty));
 
-        assert!(bus.to_net(TransportMsg::build(1, RouteRule::ToService(2), 0, 1, &[1u8])).is_some());
+        assert!(bus.to_net(TransportMsg::build(1, 1, RouteRule::ToService(2), 0, 1, &[1u8])).is_some());
 
         assert_eq!(
             plane_rx.try_recv(),
             Ok(NetworkPlaneInternalEvent::ToBehaviourLocalMsg {
                 service_id: 1,
-                msg: TransportMsg::build(1, RouteRule::ToService(2), 0, 1, &[1u8]),
+                msg: TransportMsg::build(1, 1, RouteRule::ToService(2), 0, 1, &[1u8]),
             })
         );
     }
@@ -397,7 +402,7 @@ mod tests {
         let _rx = bus.add_conn(conn).expect("Should have rx");
         assert_eq!(plane_rx.try_recv(), Err(TryRecvError::Empty));
 
-        assert!(bus.to_net(TransportMsg::build(1, RouteRule::ToService(2), 0, 1, &[1u8])).is_some());
+        assert!(bus.to_net(TransportMsg::build(1, 1, RouteRule::ToService(2), 0, 1, &[1u8])).is_some());
     }
 
     #[async_std::test]
@@ -412,13 +417,13 @@ mod tests {
 
         assert_eq!(plane_rx.try_recv(), Err(TryRecvError::Empty));
 
-        assert!(bus.to_net_node(2u32, TransportMsg::build(1, RouteRule::ToService(2), 0, 1, &[1u8])).is_some());
+        assert!(bus.to_net_node(2u32, TransportMsg::build(1, 1, RouteRule::ToService(2), 0, 1, &[1u8])).is_some());
 
         assert_eq!(
             plane_rx.try_recv(),
             Ok(NetworkPlaneInternalEvent::ToBehaviourLocalMsg {
                 service_id: 1,
-                msg: TransportMsg::build(1, RouteRule::ToService(2), 0, 1, &[1u8]),
+                msg: TransportMsg::build(1, 1, RouteRule::ToService(2), 0, 1, &[1u8]),
             })
         );
     }
@@ -439,7 +444,7 @@ mod tests {
         let _rx = bus.add_conn(conn).expect("Should have rx");
         assert_eq!(plane_rx.try_recv(), Err(TryRecvError::Empty));
 
-        assert!(bus.to_net_node(2u32, TransportMsg::build(1, RouteRule::ToService(2), 0, 1, &[1u8])).is_some());
+        assert!(bus.to_net_node(2u32, TransportMsg::build(1, 1, RouteRule::ToService(2), 0, 1, &[1u8])).is_some());
     }
 
     #[async_std::test]
@@ -455,6 +460,6 @@ mod tests {
 
         let conn = Arc::new(sender);
         let _rx = bus.add_conn(conn).expect("Should have rx");
-        assert!(bus.to_net_conn(ConnId::from_in(1, 1), TransportMsg::build(1, RouteRule::ToService(2), 0, 1, &[1u8])).is_some());
+        assert!(bus.to_net_conn(ConnId::from_in(1, 1), TransportMsg::build(1, 1, RouteRule::ToService(2), 0, 1, &[1u8])).is_some());
     }
 }

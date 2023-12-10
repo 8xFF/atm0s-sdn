@@ -26,12 +26,13 @@ impl<BE, HE> ConnectionHandler<BE, HE> for RpcHandler {
 
     fn on_awake(&mut self, _ctx: &ConnectionContext, _now_ms: u64) {}
 
-    fn on_event(&mut self, _ctx: &ConnectionContext, _now_ms: u64, event: ConnectionEvent) {
+    fn on_event(&mut self, _ctx: &ConnectionContext, now_ms: u64, event: ConnectionEvent) {
         if let ConnectionEvent::Msg(msg) = event {
-            if let Ok(msg) = RpcMsg::try_from(&msg) {
+            let mut rpc_queue = self.rpc_queue.lock();
+            if let Some(msg) = rpc_queue.on_msg(now_ms, msg) {
                 if msg.is_answer() {
                     let req_id = msg.req_id().expect("Should has");
-                    if let Some(tx) = self.rpc_queue.lock().take_request(req_id) {
+                    if let Some(tx) = rpc_queue.take_request(req_id) {
                         tx.try_send(Ok(msg)).print_error("Should send");
                     }
                 } else {

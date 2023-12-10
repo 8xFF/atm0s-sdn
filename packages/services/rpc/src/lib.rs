@@ -5,6 +5,7 @@ mod rpc_emitter;
 mod rpc_id_gen;
 mod rpc_msg;
 mod rpc_queue;
+mod rpc_reliable;
 
 pub use behaviour::RpcBehavior;
 pub use handler::RpcHandler;

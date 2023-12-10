@@ -27,7 +27,7 @@ mod tests {
     }
 
     fn build_msg(to_node: NodeId, msg: Msg) -> TransportMsg {
-        TransportMsg::build(0, RouteRule::ToNode(to_node), 0, 0, &bincode::serialize(&msg).unwrap())
+        TransportMsg::build(0, 0, RouteRule::ToNode(to_node), 0, 0, &bincode::serialize(&msg).unwrap())
     }
 
     #[async_std::test]

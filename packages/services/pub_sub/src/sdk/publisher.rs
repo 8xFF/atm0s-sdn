@@ -41,8 +41,9 @@ impl Publisher {
     pub fn send(&self, data: Bytes) {
         if let Some((remotes, locals)) = self.logic.read().relay(self.channel) {
             if remotes.len() > 0 {
-                let mut header = MsgHeader::build(PUBSUB_SERVICE_ID, RouteRule::Direct);
-                header.set_from_node(Some(self.channel.source())).set_stream_id(self.channel.uuid());
+                let header = MsgHeader::build(PUBSUB_SERVICE_ID, PUBSUB_SERVICE_ID, RouteRule::Direct)
+                    .set_from_node(Some(self.channel.source()))
+                    .set_stream_id(self.channel.uuid());
                 let msg = TransportMsg::build_raw(header, &data);
                 self.remote.read().relay(remotes, &msg);
             }

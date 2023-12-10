@@ -24,15 +24,13 @@ pub enum MsgHeaderError {
 ///     0                   1                   2                   3
 ///     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-///    |V=0|F| R |  _  |      TTL      |    Service     |      Meta    |
+///    |V=0|F| R | Meta|      TTL      |  FromService   |  ToService   |
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ///    |                         StreamID                              |
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-///    |           MsgId (Opt)        | PartIndex(Opt) | PartCount(Opt)|
+///    |                         FromNodeId (Opt)                      |
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ///    |                         RouteDestination (Opt)                |
-///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-///    |                         FromNodeId (Opt)                      |
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 /// ```
 ///
@@ -46,7 +44,7 @@ pub enum MsgHeaderError {
 ///     - 1: ToNode : which node received this msg will route it to node_id
 ///     - 2: ToService : which node received this msg will route it to service meta
 ///     - 3: ToKey : which node received this msg will route it to key
-///  - Not Used Yet: 3 bits (always 0)
+///  - Meta: 3 bits
 ///
 /// - Ttl (TTL): 8 bits
 /// - Service id (Service): 8 bits
@@ -67,7 +65,8 @@ pub enum MsgHeaderError {
 pub struct MsgHeader {
     pub version: u8,
     pub ttl: u8,
-    pub service_id: u8,
+    pub from_service_id: u8,
+    pub to_service_id: u8,
     pub route: RouteRule,
     pub meta: u8,
     pub stream_id: u32,
@@ -77,11 +76,25 @@ pub struct MsgHeader {
 
 impl MsgHeader {
     /// Builds a message with the given service_id, route rule.
-    pub fn build(service_id: u8, route: RouteRule) -> Self {
+    pub fn new() -> Self {
         Self {
             version: 0,
             ttl: DEFAULT_MSG_TTL,
-            service_id,
+            from_service_id: 0,
+            to_service_id: 0,
+            route: RouteRule::Direct,
+            meta: 0,
+            stream_id: 0,
+            from_node: None,
+        }
+    }
+
+    pub fn build(from_service_id: u8, to_service_id: u8, route: RouteRule) -> Self {
+        Self {
+            version: 0,
+            ttl: DEFAULT_MSG_TTL,
+            from_service_id,
+            to_service_id,
             route,
             meta: 0,
             stream_id: 0,
@@ -90,26 +103,45 @@ impl MsgHeader {
     }
 
     /// Set ttl
-    pub fn set_ttl(&mut self, ttl: u8) -> &mut Self {
+    pub fn set_ttl(mut self, ttl: u8) -> Self {
         self.ttl = ttl;
         self
     }
 
     /// Set meta
-    pub fn set_meta(&mut self, meta: u8) -> &mut Self {
+    pub fn set_meta(mut self, meta: u8) -> Self {
+        assert!(meta <= 7);
         self.meta = meta;
         self
     }
 
     /// Set stream_id
-    pub fn set_stream_id(&mut self, stream_id: u32) -> &mut Self {
+    pub fn set_stream_id(mut self, stream_id: u32) -> Self {
         self.stream_id = stream_id;
         self
     }
 
     /// Set from node
-    pub fn set_from_node(&mut self, from_node: Option<NodeId>) -> &mut Self {
+    pub fn set_from_node(mut self, from_node: Option<NodeId>) -> Self {
         self.from_node = from_node;
+        self
+    }
+
+    /// Set from service_id
+    pub fn set_from_service_id(mut self, service_id: u8) -> Self {
+        self.from_service_id = service_id;
+        self
+    }
+
+    /// Set to service_id
+    pub fn set_to_service_id(mut self, service_id: u8) -> Self {
+        self.to_service_id = service_id;
+        self
+    }
+
+    /// Set rule
+    pub fn set_route(mut self, route: RouteRule) -> Self {
+        self.route = route;
         self
     }
 
@@ -134,18 +166,29 @@ impl MsgHeader {
         let version = bytes[0] >> 6; //2 bits
         let from_bit = (bytes[0] >> 5) & 1 == 1; //1 bit
         let route_type = (bytes[0] >> 3) & 3; //2 bits
-        let _not_used_yet = bytes[0] & 7; //3 bits
+        let meta = bytes[0] & 7; //3 bits
 
         if version != 0 {
             return Err(MsgHeaderError::InvalidVersion);
         }
 
         let ttl = bytes[1];
-        let service_id = bytes[2];
-        let meta = bytes[3];
+        let from_service_id = bytes[2];
+        let to_service_id = bytes[3];
         let stream_id = u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
 
         let mut ptr = 8;
+
+        let from_node = if from_bit {
+            if bytes.len() < ptr + 4 {
+                return Err(MsgHeaderError::TooSmall);
+            }
+            let from_node_id = NodeId::from_be_bytes([bytes[ptr], bytes[ptr + 1], bytes[ptr + 2], bytes[ptr + 3]]);
+            ptr += 4;
+            Some(from_node_id)
+        } else {
+            None
+        };
 
         let route = match route_type {
             ROUTE_RULE_DIRECT => RouteRule::Direct,
@@ -176,17 +219,6 @@ impl MsgHeader {
             _ => return Err(MsgHeaderError::InvalidRoute),
         };
 
-        let from_node = if from_bit {
-            if bytes.len() < ptr + 4 {
-                return Err(MsgHeaderError::TooSmall);
-            }
-            let from_node_id = NodeId::from_be_bytes([bytes[ptr], bytes[ptr + 1], bytes[ptr + 2], bytes[ptr + 3]]);
-            ptr += 4;
-            Some(from_node_id)
-        } else {
-            None
-        };
-
         let len =
             8 + if from_node.is_some() {
                 4
@@ -202,7 +234,8 @@ impl MsgHeader {
             Self {
                 version,
                 ttl,
-                service_id,
+                from_service_id,
+                to_service_id,
                 route,
                 meta,
                 stream_id,
@@ -231,11 +264,15 @@ impl MsgHeader {
             RouteRule::ToService(_) => ROUTE_RULE_TO_SERVICE,
             RouteRule::ToKey(_) => ROUTE_RULE_TO_KEY,
         };
-        output.push((self.version << 6) | ((self.from_node.is_some() as u8) << 5) | route_type << 3);
+        assert!(self.meta <= 7, "meta should <= 7");
+        output.push((self.version << 6) | ((self.from_node.is_some() as u8) << 5) | route_type << 3 | self.meta);
         output.push(self.ttl);
-        output.push(self.service_id);
-        output.push(self.meta);
+        output.push(self.from_service_id);
+        output.push(self.to_service_id);
         output.extend_from_slice(&self.stream_id.to_be_bytes());
+        if let Some(from_node) = self.from_node {
+            output.extend_from_slice(&from_node.to_be_bytes());
+        }
         match self.route {
             RouteRule::Direct => {
                 // Dont need append anything
@@ -249,9 +286,6 @@ impl MsgHeader {
             RouteRule::ToKey(key) => {
                 output.extend_from_slice(&key.to_be_bytes());
             }
-        }
-        if let Some(from_node) = self.from_node {
-            output.extend_from_slice(&from_node.to_be_bytes());
         }
         Some(
             8 + if self.from_node.is_some() {
@@ -365,9 +399,13 @@ impl TransportMsg {
     /// # Returns
     ///
     /// A new `TransportMsg` instance.
-    pub fn build(service_id: u8, route: RouteRule, meta: u8, stream_id: u32, payload: &[u8]) -> Self {
-        let mut header = MsgHeader::build(service_id, route);
-        header.set_meta(meta).set_stream_id(stream_id);
+    pub fn build(from_service_id: u8, to_service_id: u8, route: RouteRule, meta: u8, stream_id: u32, payload: &[u8]) -> Self {
+        let header = MsgHeader::new()
+            .set_from_service_id(from_service_id)
+            .set_to_service_id(to_service_id)
+            .set_route(route)
+            .set_meta(meta)
+            .set_stream_id(stream_id);
         let header_size = header.serialize_size();
         let mut buffer = Vec::with_capacity(header_size + payload.len());
         let header_size = header.to_bytes(&mut buffer).expect("Should serialize header");
@@ -480,7 +518,8 @@ mod tests {
         let header = MsgHeader {
             version: 0,
             ttl: 0,
-            service_id: 0,
+            from_service_id: 0,
+            to_service_id: 0,
             route: RouteRule::Direct,
             meta: 0,
             stream_id: 0,
@@ -492,7 +531,8 @@ mod tests {
         assert_eq!(header.serialize_size(), 8);
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 0);
-        assert_eq!(header.service_id, 0);
+        assert_eq!(header.from_service_id, 0);
+        assert_eq!(header.to_service_id, 0);
         assert_eq!(header.route, RouteRule::Direct);
         assert_eq!(header.stream_id, 0);
         assert_eq!(header.from_node, None);
@@ -505,7 +545,8 @@ mod tests {
         let header = MsgHeader {
             version: 0,
             ttl: 10,
-            service_id: 88,
+            from_service_id: 88,
+            to_service_id: 88,
             route: RouteRule::Direct,
             meta: 0,
             stream_id: 1234,
@@ -516,7 +557,8 @@ mod tests {
         let (header, _) = MsgHeader::from_bytes(&buf).unwrap();
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 10);
-        assert_eq!(header.service_id, 88);
+        assert_eq!(header.from_service_id, 88);
+        assert_eq!(header.to_service_id, 88);
         assert_eq!(header.route, RouteRule::Direct);
         assert_eq!(header.stream_id, 1234);
         assert_eq!(header.from_node, None);
@@ -529,7 +571,8 @@ mod tests {
         let header = MsgHeader {
             version: 0,
             ttl: 0,
-            service_id: 0,
+            from_service_id: 0,
+            to_service_id: 0,
             route: RouteRule::ToNode(0),
             meta: 0,
             stream_id: 0,
@@ -540,7 +583,8 @@ mod tests {
         let (header, _) = MsgHeader::from_bytes(&buf).unwrap();
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 0);
-        assert_eq!(header.service_id, 0);
+        assert_eq!(header.from_service_id, 0);
+        assert_eq!(header.to_service_id, 0);
         assert_eq!(header.route, RouteRule::ToNode(0));
         assert_eq!(header.stream_id, 0);
         assert_eq!(header.from_node, None);
@@ -553,20 +597,23 @@ mod tests {
         let header = MsgHeader {
             version: 0,
             ttl: 66,
-            service_id: 33,
+            from_service_id: 33,
+            to_service_id: 34,
             route: RouteRule::ToNode(111),
-            meta: 55,
+            meta: 7,
             stream_id: 222,
             from_node: Some(1000),
         };
         header.to_bytes(&mut buf);
+        println!("{:?}", buf);
         assert_eq!(header.serialize_size(), 16);
         let (header, _) = MsgHeader::from_bytes(&buf).unwrap();
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 66);
-        assert_eq!(header.service_id, 33);
+        assert_eq!(header.from_service_id, 33);
+        assert_eq!(header.to_service_id, 34);
         assert_eq!(header.route, RouteRule::ToNode(111));
-        assert_eq!(header.meta, 55);
+        assert_eq!(header.meta, 7);
         assert_eq!(header.stream_id, 222);
         assert_eq!(header.from_node, Some(1000));
     }
@@ -578,7 +625,8 @@ mod tests {
         let header = MsgHeader {
             version: 0,
             ttl: 10,
-            service_id: 88,
+            from_service_id: 88,
+            to_service_id: 88,
             route: RouteRule::ToNode(1000),
             meta: 0,
             stream_id: 1234,
@@ -589,7 +637,8 @@ mod tests {
         let (header, _) = MsgHeader::from_bytes(&buf).unwrap();
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 10);
-        assert_eq!(header.service_id, 88);
+        assert_eq!(header.from_service_id, 88);
+        assert_eq!(header.to_service_id, 88);
         assert_eq!(header.route, RouteRule::ToNode(1000));
         assert_eq!(header.stream_id, 1234);
         assert_eq!(header.from_node, None);
@@ -602,7 +651,8 @@ mod tests {
         let header = MsgHeader {
             version: 0,
             ttl: 0,
-            service_id: 0,
+            from_service_id: 0,
+            to_service_id: 0,
             route: RouteRule::ToNode(0),
             meta: 0,
             stream_id: 0,
@@ -613,7 +663,8 @@ mod tests {
         let (header, _) = MsgHeader::from_bytes(&buf).unwrap();
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 0);
-        assert_eq!(header.service_id, 0);
+        assert_eq!(header.from_service_id, 0);
+        assert_eq!(header.to_service_id, 0);
         assert_eq!(header.route, RouteRule::ToNode(0));
         assert_eq!(header.stream_id, 0);
         assert_eq!(header.from_node, Some(0));
@@ -626,7 +677,8 @@ mod tests {
         let header = MsgHeader {
             version: 0,
             ttl: 0,
-            service_id: 0,
+            from_service_id: 0,
+            to_service_id: 0,
             route: RouteRule::ToNode(0),
             meta: 0,
             stream_id: 0,
@@ -637,7 +689,8 @@ mod tests {
         let (header, _) = MsgHeader::from_bytes(&buf).unwrap();
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 0);
-        assert_eq!(header.service_id, 0);
+        assert_eq!(header.from_service_id, 0);
+        assert_eq!(header.to_service_id, 0);
         assert_eq!(header.route, RouteRule::ToNode(0));
         assert_eq!(header.stream_id, 0);
         assert_eq!(header.from_node, None);
@@ -650,7 +703,8 @@ mod tests {
         let header = MsgHeader {
             version: 0,
             ttl: 0,
-            service_id: 0,
+            from_service_id: 0,
+            to_service_id: 0,
             route: RouteRule::ToNode(0),
             meta: 0,
             stream_id: 0,
@@ -661,7 +715,8 @@ mod tests {
         let (header, _) = MsgHeader::from_bytes(&buf).unwrap();
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 0);
-        assert_eq!(header.service_id, 0);
+        assert_eq!(header.from_service_id, 0);
+        assert_eq!(header.to_service_id, 0);
         assert_eq!(header.route, RouteRule::ToNode(0));
         assert_eq!(header.stream_id, 0);
         assert_eq!(header.from_node, Some(0));
@@ -674,7 +729,8 @@ mod tests {
         let header = MsgHeader {
             version: 1,
             ttl: 0,
-            service_id: 0,
+            from_service_id: 0,
+            to_service_id: 0,
             route: RouteRule::ToNode(0),
             meta: 0,
             stream_id: 0,

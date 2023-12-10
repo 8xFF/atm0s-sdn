@@ -16,6 +16,7 @@ pub struct RpcRequest<Param: for<'a> TryFrom<&'a [u8]>, Res: Into<Vec<u8>>> {
     pub(crate) _tmp: Option<Res>,
     pub(crate) req: RpcMsg,
     pub(crate) param: Param,
+    pub(crate) timer: Arc<dyn Timer>,
     pub(crate) rpc_queue: Arc<Mutex<RpcQueue<Sender<Result<RpcMsg, RpcError>>>>>,
 }
 
@@ -25,15 +26,15 @@ impl<Param: for<'a> TryFrom<&'a [u8]>, Res: Into<Vec<u8>>> RpcRequest<Param, Res
     }
 
     pub fn answer(&self, res: Result<Res, RpcError>) {
-        self.rpc_queue.lock().answer_for(&self.req, res);
+        self.rpc_queue.lock().answer_for(self.timer.now_ms(), &self.req, res);
     }
 
     pub fn success(&self, res: Res) {
-        self.rpc_queue.lock().answer_for(&self.req, Ok(res));
+        self.rpc_queue.lock().answer_for(self.timer.now_ms(), &self.req, Ok(res));
     }
 
     pub fn error(&self, err: &str) {
-        self.rpc_queue.lock().answer_for::<Res>(&self.req, Err(RpcError::RuntimeError(err.to_string())));
+        self.rpc_queue.lock().answer_for::<Res>(self.timer.now_ms(), &self.req, Err(RpcError::RuntimeError(err.to_string())));
     }
 }
 

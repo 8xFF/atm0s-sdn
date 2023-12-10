@@ -54,7 +54,14 @@ where
                     self.outputs.push_back(NetworkBehaviorAction::ConnectTo(0, node_id, addr));
                 }
                 Action::SendTo(node_id, msg) => {
-                    let msg = TransportMsg::build(DISCOVERY_SERVICE_ID, RouteRule::ToNode(node_id), 0, 0, &bincode::serialize(&msg).expect("Should serialize"));
+                    let msg = TransportMsg::build(
+                        DISCOVERY_SERVICE_ID,
+                        DISCOVERY_SERVICE_ID,
+                        RouteRule::ToNode(node_id),
+                        0,
+                        0,
+                        &bincode::serialize(&msg).expect("Should serialize"),
+                    );
                     self.outputs.push_back(NetworkBehaviorAction::ToNet(msg));
                 }
             }

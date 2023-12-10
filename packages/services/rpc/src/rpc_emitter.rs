@@ -19,7 +19,7 @@ pub struct RpcEmitter {
 
 impl RpcEmitter {
     pub fn emit<E: Into<Vec<u8>>>(&self, to_service: u8, rule: RouteRule, cmd: &str, event: E) {
-        self.rpc_queue.lock().add_event(to_service, rule, cmd, event);
+        self.rpc_queue.lock().add_event(self.timer.now_ms(), to_service, rule, cmd, event);
     }
 
     pub async fn request<Req: Into<Vec<u8>>, Res: for<'a> TryFrom<&'a [u8]>>(&self, to_service: u8, rule: RouteRule, cmd: &str, req: Req, timeout_ms: u64) -> Result<Res, RpcError> {
@@ -37,16 +37,17 @@ impl RpcEmitter {
                 _tmp: Default::default(),
                 param,
                 req,
+                timer: self.timer.clone(),
                 rpc_queue: self.rpc_queue.clone(),
             })
         } else {
-            self.rpc_queue.lock().answer_for::<Res>(&req, Err(RpcError::DeserializeError));
+            self.rpc_queue.lock().answer_for::<Res>(self.timer.now_ms(), &req, Err(RpcError::DeserializeError));
             None
         }
     }
 
     /// Send answer for a request
     pub fn answer_for<Res: Into<Vec<u8>>>(&self, req: RpcMsg, answer: Result<Res, RpcError>) {
-        self.rpc_queue.lock().answer_for::<Res>(&req, answer);
+        self.rpc_queue.lock().answer_for::<Res>(self.timer.now_ms(), &req, answer);
     }
 }
