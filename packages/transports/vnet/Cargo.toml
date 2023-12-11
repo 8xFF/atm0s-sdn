@@ -1,6 +1,6 @@
 [package]
 name = "atm0s-sdn-transport-vnet"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "Vitual Network Transport in atm0s-sdn"
 license = "MIT"
