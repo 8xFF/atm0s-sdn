@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-multiaddr-v0.1.1...atm0s-sdn-multiaddr-v0.1.2) - 2023-12-11
+
+### Fixed
+- *(deps)* update rust crate url to 2.5.0 ([#74](https://github.com/8xFF/atm0s-sdn/pull/74))
+- *(deps)* update rust crate percent-encoding to 2.3.1 ([#73](https://github.com/8xFF/atm0s-sdn/pull/73))
+- *(deps)* update rust crate data-encoding to 2.5 ([#72](https://github.com/8xFF/atm0s-sdn/pull/72))
+
 ## [0.1.1](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-multiaddr-v0.1.0...atm0s-sdn-multiaddr-v0.1.1) - 2023-11-23
 
 ### Fixed

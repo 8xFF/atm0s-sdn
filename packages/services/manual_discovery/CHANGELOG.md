@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-manual-discovery-v0.1.1...atm0s-sdn-manual-discovery-v0.2.0) - 2023-12-11
+
+### Added
+- rpc service and fi ([#87](https://github.com/8xFF/atm0s-sdn/pull/87))
+- manual-discovery with node tags ([#84](https://github.com/8xFF/atm0s-sdn/pull/84))
+
 ## [0.1.1](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-manual-discovery-v0.1.0...atm0s-sdn-manual-discovery-v0.1.1) - 2023-11-17
 
 ### Other

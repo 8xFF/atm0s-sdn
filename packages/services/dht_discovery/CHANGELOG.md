@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-dht-discovery-v0.1.1...atm0s-sdn-dht-discovery-v0.1.2) - 2023-12-11
+
+### Added
+- rpc service and fi ([#87](https://github.com/8xFF/atm0s-sdn/pull/87))
+
 ## [0.1.1](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-dht-discovery-v0.1.0...atm0s-sdn-dht-discovery-v0.1.1) - 2023-11-17
 
 ### Other
