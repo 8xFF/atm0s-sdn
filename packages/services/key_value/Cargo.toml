@@ -8,10 +8,10 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-atm0s-sdn-identity = { workspace = true }
-atm0s-sdn-router = { workspace = true }
-atm0s-sdn-utils = { workspace = true }
-atm0s-sdn-network = { workspace = true }
+atm0s-sdn-identity = { path = "../../core/identity", version = "0.1.1" }
+atm0s-sdn-router = { path = "../../core/router", version = "0.1.1" }
+atm0s-sdn-utils = { path = "../../core/utils", version = "0.1.1" }
+atm0s-sdn-network = { path = "../../network", version = "0.2.0" }
 thiserror = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }
@@ -23,4 +23,4 @@ small-map = { workspace = true }
 [dev-dependencies]
 env_logger = { workspace = true }
 allocation-counter = { workspace = true }
-atm0s-sdn-utils = { workspace = true, features = ["auto-clear"] }
+atm0s-sdn-utils = { path = "../../core/utils", version = "0.1.1", features = ["auto-clear"] }
