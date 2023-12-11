@@ -18,6 +18,7 @@ members = [
     "packages/services/key_value",
     "packages/services/tun_tap",
     "packages/services/pub_sub",
+    "packages/services/rpc",
     "packages/transports/vnet",
     "packages/transports/tcp",
     "packages/transports/udp",
@@ -40,6 +41,7 @@ atm0s-sdn-layers-spread-router-sync = { package = "atm0s-sdn-layers-spread-route
 atm0s-sdn-tun-tap = { package = "atm0s-sdn-tun-tap", path = "packages/services/tun_tap", version = "0.1.0" }
 atm0s-sdn-key-value = { package = "atm0s-sdn-key-value", path = "packages/services/key_value", version = "0.1.0" }
 atm0s-sdn-pub-sub = { package = "atm0s-sdn-pub-sub", path = "packages/services/pub_sub", version = "0.1.0" }
+atm0s-sdn-rpc = { package = "atm0s-sdn-rpc", path = "packages/services/rpc", version = "0.1.0" }
 atm0s-sdn-transport-vnet = { package = "atm0s-sdn-transport-vnet", path = "packages/transports/vnet", version = "0.1.0" }
 atm0s-sdn-transport-tcp = { package = "atm0s-sdn-transport-tcp", path = "packages/transports/tcp", version = "0.1.0" }
 atm0s-sdn-transport-udp = { package = "atm0s-sdn-transport-udp", path = "packages/transports/udp", version = "0.1.0" }

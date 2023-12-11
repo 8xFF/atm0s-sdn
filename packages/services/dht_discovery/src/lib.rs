@@ -82,7 +82,7 @@ mod tests {
     //         Some(MockOutput::SendTo(
     //             neighbour1,
     //             ConnId::from_out(0, 0),
-    //             TransportMsg::build_reliable(DISCOVERY_SERVICE_ID, RouteRule::ToNode(neighbour1), 0, &bincode::serialize(&DiscoveryMsg::FindKey(0, 0)).unwrap())
+    //             TransportMsg::build(DISCOVERY_SERVICE_ID, RouteRule::ToNode(neighbour1), 0, &bincode::serialize(&DiscoveryMsg::FindKey(0, 0)).unwrap())
     //         ))
     //     );
     //     join.cancel().await.print_none("Should cancel join");
@@ -127,7 +127,7 @@ mod tests {
     //         Some(MockOutput::SendTo(
     //             neighbour1,
     //             ConnId::from_in(0, 0),
-    //             TransportMsg::build_reliable(DISCOVERY_SERVICE_ID, RouteRule::ToNode(neighbour1), 0, &bincode::serialize(&DiscoveryMsg::FindKey(0, 0)).unwrap())
+    //             TransportMsg::build(DISCOVERY_SERVICE_ID, RouteRule::ToNode(neighbour1), 0, &bincode::serialize(&DiscoveryMsg::FindKey(0, 0)).unwrap())
     //         ))
     //     );
     //     join.cancel().await.print_none("Should cancel join");

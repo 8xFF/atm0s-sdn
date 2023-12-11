@@ -99,7 +99,7 @@ impl TransportConnector for TcpConnector {
                     let socket_write = AsyncBincodeStream::<_, TcpMsg, TcpMsg, _>::from(socket.clone()).for_async();
                     match outgoing_handshake(remote_node_id, node_id, node_addr, &mut socket_read, conn_id, &internal_tx).await {
                         Ok(_) => {
-                            let (connection_sender, reliable_sender) = TcpConnectionSender::new(node_id, remote_node_id, remote_node_addr.clone(), conn_id, 1000, socket_write, timer.clone());
+                            let (connection_sender, unreliable_sender) = TcpConnectionSender::new(node_id, remote_node_id, remote_node_addr.clone(), conn_id, 1000, socket_write, timer.clone());
                             let connection_receiver = Box::new(TcpConnectionReceiver {
                                 node_id,
                                 remote_node_id,
@@ -107,7 +107,7 @@ impl TransportConnector for TcpConnector {
                                 conn_id,
                                 socket: socket_read,
                                 timer,
-                                reliable_sender,
+                                unreliable_sender,
                             });
                             internal_tx
                                 .send(TransportEvent::Outgoing(Arc::new(connection_sender), connection_receiver, local_uuid))

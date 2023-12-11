@@ -58,8 +58,7 @@ where
     {
         while let Some(action) = self.simple_remote.pop_action() {
             log::debug!("[KeyValueBehavior {}] pop_all_events simple remote: {:?}", self.node_id, action);
-            let mut header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, action.1, 0);
-            header.from_node = Some(self.node_id);
+            let header = MsgHeader::build(KEY_VALUE_SERVICE_ID, KEY_VALUE_SERVICE_ID, action.1).set_from_node(Some(self.node_id));
             self.outputs
                 .push_back(NetworkBehaviorAction::ToNet(TransportMsg::from_payload_bincode(header, &KeyValueMsg::SimpleLocal(action.0))));
         }
@@ -68,8 +67,7 @@ where
             match action {
                 simple_local::LocalStorageAction::SendNet(msg, route) => {
                     log::debug!("[KeyValueBehavior {}] pop_all_events simple local: {:?}", self.node_id, msg);
-                    let mut header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, route, 0);
-                    header.from_node = Some(self.node_id);
+                    let header = MsgHeader::build(KEY_VALUE_SERVICE_ID, KEY_VALUE_SERVICE_ID, route).set_from_node(Some(self.node_id));
                     self.outputs
                         .push_back(NetworkBehaviorAction::ToNet(TransportMsg::from_payload_bincode(header, &KeyValueMsg::SimpleRemote(msg))));
                 }
@@ -99,8 +97,7 @@ where
 
         while let Some(action) = self.hashmap_remote.pop_action() {
             log::debug!("[KeyValueBehavior {}] pop_all_events hashmap remote: {:?}", self.node_id, action);
-            let mut header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, action.1, 0);
-            header.from_node = Some(self.node_id);
+            let header = MsgHeader::build(KEY_VALUE_SERVICE_ID, KEY_VALUE_SERVICE_ID, action.1).set_from_node(Some(self.node_id));
             self.outputs
                 .push_back(NetworkBehaviorAction::ToNet(TransportMsg::from_payload_bincode(header, &KeyValueMsg::HashmapLocal(action.0))));
         }
@@ -109,8 +106,7 @@ where
             match action {
                 hashmap_local::LocalStorageAction::SendNet(msg, route) => {
                     log::debug!("[KeyValueBehavior {}] pop_all_events hashmap local: {:?}", self.node_id, msg);
-                    let mut header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, route, 0);
-                    header.from_node = Some(self.node_id);
+                    let header = MsgHeader::build(KEY_VALUE_SERVICE_ID, KEY_VALUE_SERVICE_ID, route).set_from_node(Some(self.node_id));
                     self.outputs
                         .push_back(NetworkBehaviorAction::ToNet(TransportMsg::from_payload_bincode(header, &KeyValueMsg::HashmapRemote(msg))));
                 }
@@ -355,16 +351,14 @@ mod tests {
         behaviour.on_sdk_msg(&ctx, 0, 0, KeyValueSdkEvent::Set(key, vec![1], None));
 
         // after handle sdk this should send Set to Key(1000)
-        let mut expected_header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, RouteRule::ToKey(key as u32), 0);
-        expected_header.from_node = Some(local_node_id);
+        let expected_header = MsgHeader::build(KEY_VALUE_SERVICE_ID, KEY_VALUE_SERVICE_ID, RouteRule::ToKey(key as u32)).set_from_node(Some(local_node_id));
         let expected_msg = TransportMsg::from_payload_bincode(expected_header, &KeyValueMsg::SimpleRemote(SimpleRemoteEvent::Set(0, key, vec![1], 0, None)));
         assert_eq!(behaviour.pop_action(), Some(NetworkBehaviorAction::ToNet(expected_msg)));
 
         // after tick without ack should resend
         behaviour.on_tick(&ctx, 100, 100);
 
-        let mut expected_header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, RouteRule::ToKey(key as u32), 0);
-        expected_header.from_node = Some(local_node_id);
+        let expected_header = MsgHeader::build(KEY_VALUE_SERVICE_ID, KEY_VALUE_SERVICE_ID, RouteRule::ToKey(key as u32)).set_from_node(Some(local_node_id));
         let expected_msg = TransportMsg::from_payload_bincode(expected_header, &KeyValueMsg::SimpleRemote(SimpleRemoteEvent::Set(1, key, vec![1], 0, None)));
         assert_eq!(behaviour.pop_action(), Some(NetworkBehaviorAction::ToNet(expected_msg)));
 
@@ -384,16 +378,14 @@ mod tests {
         behaviour.on_sdk_msg(&ctx, 0, 0, KeyValueSdkEvent::Del(key));
 
         // after awake this should send Del to Key(1000)
-        let mut expected_header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, RouteRule::ToKey(key as u32), 0);
-        expected_header.from_node = Some(local_node_id);
+        let expected_header = MsgHeader::build(KEY_VALUE_SERVICE_ID, KEY_VALUE_SERVICE_ID, RouteRule::ToKey(key as u32)).set_from_node(Some(local_node_id));
         let expected_msg = TransportMsg::from_payload_bincode(expected_header, &KeyValueMsg::SimpleRemote(SimpleRemoteEvent::Del(2, key, 0)));
         assert_eq!(behaviour.pop_action(), Some(NetworkBehaviorAction::ToNet(expected_msg)));
 
         // after tick without ack should resend
         behaviour.on_tick(&ctx, 300, 100);
 
-        let mut expected_header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, RouteRule::ToKey(key as u32), 0);
-        expected_header.from_node = Some(local_node_id);
+        let expected_header = MsgHeader::build(KEY_VALUE_SERVICE_ID, KEY_VALUE_SERVICE_ID, RouteRule::ToKey(key as u32)).set_from_node(Some(local_node_id));
         let expected_msg = TransportMsg::from_payload_bincode(expected_header, &KeyValueMsg::SimpleRemote(SimpleRemoteEvent::Del(3, key, 0)));
         assert_eq!(behaviour.pop_action(), Some(NetworkBehaviorAction::ToNet(expected_msg)));
 
@@ -432,16 +424,14 @@ mod tests {
         behaviour.on_sdk_msg(&ctx, 0, 0, KeyValueSdkEvent::SetH(key, sub_key, vec![1], None));
 
         // after awake this should send Set to Key(1000)
-        let mut expected_header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, RouteRule::ToKey(key as u32), 0);
-        expected_header.from_node = Some(local_node_id);
+        let expected_header = MsgHeader::build(KEY_VALUE_SERVICE_ID, KEY_VALUE_SERVICE_ID, RouteRule::ToKey(key as u32)).set_from_node(Some(local_node_id));
         let expected_msg = TransportMsg::from_payload_bincode(expected_header, &KeyValueMsg::HashmapRemote(HashmapRemoteEvent::Set(0, key, sub_key, vec![1], 0, None)));
         assert_eq!(behaviour.pop_action(), Some(NetworkBehaviorAction::ToNet(expected_msg)));
 
         // after tick without ack should resend
         behaviour.on_tick(&ctx, 100, 100);
 
-        let mut expected_header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, RouteRule::ToKey(key as u32), 0);
-        expected_header.from_node = Some(local_node_id);
+        let expected_header = MsgHeader::build(KEY_VALUE_SERVICE_ID, KEY_VALUE_SERVICE_ID, RouteRule::ToKey(key as u32)).set_from_node(Some(local_node_id));
         let expected_msg = TransportMsg::from_payload_bincode(expected_header, &KeyValueMsg::HashmapRemote(HashmapRemoteEvent::Set(1, key, sub_key, vec![1], 0, None)));
         assert_eq!(behaviour.pop_action(), Some(NetworkBehaviorAction::ToNet(expected_msg)));
 
@@ -461,16 +451,14 @@ mod tests {
         behaviour.on_sdk_msg(&ctx, 0, 0, KeyValueSdkEvent::DelH(key, sub_key));
 
         // after awake this should send Del to Key(1000)
-        let mut expected_header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, RouteRule::ToKey(key as u32), 0);
-        expected_header.from_node = Some(local_node_id);
+        let expected_header = MsgHeader::build(KEY_VALUE_SERVICE_ID, KEY_VALUE_SERVICE_ID, RouteRule::ToKey(key as u32)).set_from_node(Some(local_node_id));
         let expected_msg = TransportMsg::from_payload_bincode(expected_header, &KeyValueMsg::HashmapRemote(HashmapRemoteEvent::Del(2, key, sub_key, 0)));
         assert_eq!(behaviour.pop_action(), Some(NetworkBehaviorAction::ToNet(expected_msg)));
 
         // after tick without ack should resend
         behaviour.on_tick(&ctx, 200, 100);
 
-        let mut expected_header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, RouteRule::ToKey(key as u32), 0);
-        expected_header.from_node = Some(local_node_id);
+        let expected_header = MsgHeader::build(KEY_VALUE_SERVICE_ID, KEY_VALUE_SERVICE_ID, RouteRule::ToKey(key as u32)).set_from_node(Some(local_node_id));
         let expected_msg = TransportMsg::from_payload_bincode(expected_header, &KeyValueMsg::HashmapRemote(HashmapRemoteEvent::Del(3, key, sub_key, 0)));
         assert_eq!(behaviour.pop_action(), Some(NetworkBehaviorAction::ToNet(expected_msg)));
 
@@ -514,8 +502,7 @@ mod tests {
         );
 
         // should send ack
-        let mut expected_header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, RouteRule::ToNode(remote_node_id), 0);
-        expected_header.from_node = Some(local_node_id);
+        let expected_header = MsgHeader::build(KEY_VALUE_SERVICE_ID, KEY_VALUE_SERVICE_ID, RouteRule::ToNode(remote_node_id)).set_from_node(Some(local_node_id));
         let expected_msg = TransportMsg::from_payload_bincode(expected_header, &KeyValueMsg::SimpleLocal(SimpleLocalEvent::SetAck(0, key, 0, true)));
         assert_eq!(behaviour.pop_action(), Some(NetworkBehaviorAction::ToNet(expected_msg)));
     }
@@ -548,8 +535,7 @@ mod tests {
         );
 
         // should send ack
-        let mut expected_header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, RouteRule::ToNode(remote_node_id), 0);
-        expected_header.from_node = Some(local_node_id);
+        let expected_header = MsgHeader::build(KEY_VALUE_SERVICE_ID, KEY_VALUE_SERVICE_ID, RouteRule::ToNode(remote_node_id)).set_from_node(Some(local_node_id));
         let expected_msg = TransportMsg::from_payload_bincode(expected_header, &KeyValueMsg::HashmapLocal(HashmapLocalEvent::SetAck(0, key, sub_key, 0, true)));
         assert_eq!(behaviour.pop_action(), Some(NetworkBehaviorAction::ToNet(expected_msg)));
     }
@@ -574,8 +560,7 @@ mod tests {
         behaviour.on_sdk_msg(&ctx, 0, 0, KeyValueSdkEvent::Sub(0, key, None));
 
         // after awake this should send Set to Key(1000)
-        let mut expected_header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, RouteRule::ToKey(key as u32), 0);
-        expected_header.from_node = Some(local_node_id);
+        let expected_header = MsgHeader::build(KEY_VALUE_SERVICE_ID, KEY_VALUE_SERVICE_ID, RouteRule::ToKey(key as u32)).set_from_node(Some(local_node_id));
         let expected_msg = TransportMsg::from_payload_bincode(expected_header, &KeyValueMsg::SimpleRemote(SimpleRemoteEvent::Sub(0, key, None)));
         assert_eq!(behaviour.pop_action(), Some(NetworkBehaviorAction::ToNet(expected_msg)));
     }
@@ -600,8 +585,7 @@ mod tests {
 
         behaviour.on_awake(&ctx, 0);
 
-        let mut expected_header = MsgHeader::build_reliable(KEY_VALUE_SERVICE_ID, RouteRule::ToKey(key as u32), 0);
-        expected_header.from_node = Some(local_node_id);
+        let expected_header = MsgHeader::build(KEY_VALUE_SERVICE_ID, KEY_VALUE_SERVICE_ID, RouteRule::ToKey(key as u32)).set_from_node(Some(local_node_id));
 
         assert_eq!(
             behaviour.pop_action(),

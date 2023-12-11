@@ -289,7 +289,7 @@ where
 mod test {
     use std::{str::FromStr, sync::Arc};
 
-    use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
+    use atm0s_sdn_identity::NodeAddr;
     use atm0s_sdn_key_value::{KeyValueSdkEvent, KEY_VALUE_SERVICE_ID};
     use atm0s_sdn_network::{
         behaviour::{BehaviorContext, NetworkBehavior, NetworkBehaviorAction},

@@ -23,6 +23,7 @@ atm0s-sdn-layers-spread-router-sync = { workspace = true, optional = true  }
 atm0s-sdn-manual-discovery = { workspace = true, optional = true  }
 atm0s-sdn-key-value = { workspace = true, optional = true  }
 atm0s-sdn-pub-sub = { workspace = true, optional = true  }
+atm0s-sdn-rpc = { workspace = true, optional = true  }
 
 [features]
 transport-udp = ["atm0s-sdn-transport-udp"]
@@ -31,4 +32,5 @@ key-value = ["atm0s-sdn-key-value"]
 pub-sub = ["atm0s-sdn-pub-sub"]
 spread-router = ["atm0s-sdn-layers-spread-router", "atm0s-sdn-layers-spread-router-sync"]
 manual-discovery = ["atm0s-sdn-manual-discovery"]
-all = ["transport-udp", "transport-tcp", "key-value", "pub-sub", "spread-router", "manual-discovery"]
+rpc = ["atm0s-sdn-rpc"]
+all = ["transport-udp", "transport-tcp", "key-value", "pub-sub", "spread-router", "manual-discovery", "rpc"]

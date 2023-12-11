@@ -83,7 +83,7 @@ impl Transport for TcpTransport {
 
                             match incoming_handshake(node_id, node_addr, &mut socket_read, conn_id, &internal_tx).await {
                                 Ok((remote_node_id, remote_addr)) => {
-                                    let (connection_sender, reliable_sender) = TcpConnectionSender::new(
+                                    let (connection_sender, unreliable_sender) = TcpConnectionSender::new(
                                         node_id,
                                         remote_node_id,
                                         remote_addr.clone(),
@@ -99,7 +99,7 @@ impl Transport for TcpTransport {
                                         conn_id,
                                         socket: socket_read,
                                         timer,
-                                        reliable_sender,
+                                        unreliable_sender,
                                     });
                                     internal_tx.send(TransportEvent::Incoming(
                                         Arc::new(connection_sender),
