@@ -1,6 +1,6 @@
 [package]
 name = "atm0s-sdn-tun-tap"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 description = "Tun/Tap service in atm0s-sdn"
 license = "MIT"
@@ -9,9 +9,9 @@ license = "MIT"
 
 [dependencies]
 atm0s-sdn-identity = { path = "../../core/identity", version = "0.1.2" }
-atm0s-sdn-router = { path = "../../core/router", version = "0.1.2" }
+atm0s-sdn-router = { path = "../../core/router", version = "0.1.3" }
 atm0s-sdn-utils = { path = "../../core/utils", version = "0.1.1" }
-atm0s-sdn-network = { path = "../../network", version = "0.2.1" }
+atm0s-sdn-network = { path = "../../network", version = "0.2.2" }
 log = { workspace = true }
 async-trait = { workspace = true }
 async-std = { workspace = true }
