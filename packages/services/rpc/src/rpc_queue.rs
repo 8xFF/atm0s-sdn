@@ -27,6 +27,8 @@ pub struct RpcQueue<LD> {
     reliable_sender: RpcReliableSender,
     outs: VecDeque<TransportMsg>,
     awaker: Option<Arc<dyn Awaker>>,
+    // we should set should_awake to true if outs is empty, then should_awake is set to false when called awake_if_need
+    should_awake: bool,
 }
 
 impl<LD> RpcQueue<LD> {
@@ -40,6 +42,7 @@ impl<LD> RpcQueue<LD> {
             reliable_sender: RpcReliableSender::new(node_id),
             outs: VecDeque::new(),
             awaker: None,
+            should_awake: true,
         }
     }
 
@@ -141,11 +144,15 @@ impl<LD> RpcQueue<LD> {
     }
 
     pub fn pop_transmit(&mut self) -> Option<TransportMsg> {
+        if self.outs.len() == 1 {
+            self.should_awake = true;
+        }
         self.outs.pop_front()
     }
 
-    fn awake_if_need(&self) {
-        if self.outs.len() == 1 {
+    fn awake_if_need(&mut self) {
+        if self.should_awake && !self.outs.is_empty() {
+            self.should_awake = false;
             if let Some(awaker) = &self.awaker {
                 awaker.notify();
             }
@@ -155,8 +162,11 @@ impl<LD> RpcQueue<LD> {
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
     use atm0s_sdn_network::msg::{MsgHeader, TransportMsg};
     use atm0s_sdn_router::RouteRule;
+    use atm0s_sdn_utils::awaker::{Awaker, MockAwaker};
 
     use crate::{
         rpc_reliable::msg::{build_stream_id, MSG_ACK, MSG_DATA},
@@ -168,9 +178,12 @@ mod test {
         let node_id = 1;
         let service_id = 100;
         let to_service_id = 200;
+        let awaker = Arc::new(MockAwaker::default());
         let mut queue = RpcQueue::<u32>::new(node_id, service_id);
+        queue.set_awaker(awaker.clone());
 
         queue.add_event(0, to_service_id, RouteRule::ToService(0), "cmd1", vec![1, 2, 3]);
+        assert_eq!(awaker.pop_awake_count(), 1);
         let transmit = queue.pop_transmit().unwrap();
         let rpc_msg = RpcMsg::from_header_payload(&transmit.header, transmit.payload()).unwrap();
         assert_eq!(
@@ -182,6 +195,24 @@ mod test {
                 param: RpcMsgParam::Event(vec![1, 2, 3]),
             }
         );
+    }
+
+    #[test]
+    fn create_big_event_should_fire_awake() {
+        let node_id = 1;
+        let service_id = 100;
+        let to_service_id = 200;
+        let awaker = Arc::new(MockAwaker::default());
+        let mut queue = RpcQueue::<u32>::new(node_id, service_id);
+        queue.set_awaker(awaker.clone());
+
+        queue.add_event(0, to_service_id, RouteRule::ToService(0), "cmd1", vec![1; 20000]);
+        assert_eq!(awaker.pop_awake_count(), 1);
+
+        while let Some(_) = queue.pop_transmit() {}
+
+        queue.add_event(0, to_service_id, RouteRule::ToService(0), "cmd2", vec![2; 20000]);
+        assert_eq!(awaker.pop_awake_count(), 1);
     }
 
     #[test]

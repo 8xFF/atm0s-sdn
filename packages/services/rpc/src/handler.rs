@@ -33,7 +33,10 @@ impl<BE, HE> ConnectionHandler<BE, HE> for RpcHandler {
                 if msg.is_answer() {
                     let req_id = msg.req_id().expect("Should has");
                     if let Some(tx) = rpc_queue.take_request(req_id) {
+                        log::info!("[RpcHandler] on answer {}", msg.cmd);
                         tx.try_send(Ok(msg)).print_error("Should send");
+                    } else {
+                        log::warn!("[RpcHandler] on answer {} without tx", msg.cmd);
                     }
                 } else {
                     self.tx.try_send(msg).print_error("Should send");
