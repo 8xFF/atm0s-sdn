@@ -1,6 +1,6 @@
 [package]
 name = "atm0s-sdn-redis-server"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 description = "A simple redis server for atm0s-sdn"
 license = "MIT"
@@ -9,10 +9,10 @@ license = "MIT"
 
 [dependencies]
 atm0s-sdn-identity = { path = "../../core/identity", version = "0.1.2" }
-atm0s-sdn-router = { path = "../../core/router", version = "0.1.2" }
+atm0s-sdn-router = { path = "../../core/router", version = "0.1.3" }
 atm0s-sdn-utils = { path = "../../core/utils", version = "0.1.1" }
-atm0s-sdn-network = { path = "../../network", version = "0.2.1" }
-atm0s-sdn-key-value = { path = "../../services/key_value", version = "0.1.4" }
+atm0s-sdn-network = { path = "../../network", version = "0.2.2" }
+atm0s-sdn-key-value = { path = "../../services/key_value", version = "0.1.5" }
 log = { workspace = true }
 serde = { workspace = true }
 async-std = { workspace = true }

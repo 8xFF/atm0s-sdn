@@ -1,6 +1,6 @@
 [package]
 name = "atm0s-sdn-layers-spread-router"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 description = "Spread router mechanism in atm0s-sdn"
 license = "MIT"
@@ -9,7 +9,7 @@ license = "MIT"
 
 [dependencies]
 atm0s-sdn-identity = { path = "../../core/identity", version = "0.1.2" }
-atm0s-sdn-router = { path = "../../core/router", version = "0.1.2" }
+atm0s-sdn-router = { path = "../../core/router", version = "0.1.3" }
 atm0s-sdn-utils = { path = "../../core/utils", version = "0.1.1" }
 serde = { workspace = true }
 log = { workspace = true }
