@@ -32,7 +32,7 @@ where
 
     fn send_sync(&mut self, ctx: &ConnectionContext) {
         let sync = self.router.create_sync(ctx.remote_node_id);
-        log::info!("[LayersSpreadRouterHander {} {}/{}] send RouterSync", ctx.local_node_id, ctx.remote_node_id, ctx.conn_id);
+        log::debug!("[LayersSpreadRouterHander {} {}/{}] send RouterSync", ctx.local_node_id, ctx.remote_node_id, ctx.conn_id);
         let sync_msg = TransportMsg::build(
             FAST_PATH_ROUTE_SERVICE_ID,
             FAST_PATH_ROUTE_SERVICE_ID,

@@ -5,7 +5,7 @@ use atm0s_sdn_key_value::{KeyValueSdkEvent, KEY_VALUE_SERVICE_ID};
 use atm0s_sdn_network::{
     behaviour::{BehaviorContext, ConnectionHandler, NetworkBehavior, NetworkBehaviorAction},
     msg::{MsgHeader, TransportMsg},
-    transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, TransportOutgoingLocalUuid},
+    transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError},
 };
 use atm0s_sdn_router::RouteRule;
 use atm0s_sdn_utils::Timer;
@@ -136,7 +136,7 @@ where
         Ok(())
     }
 
-    fn check_outgoing_connection(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node: NodeId, _conn_id: ConnId, _local_uuid: TransportOutgoingLocalUuid) -> Result<(), ConnectionRejectReason> {
+    fn check_outgoing_connection(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node: NodeId, _conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
         Ok(())
     }
 
@@ -153,7 +153,6 @@ where
         _ctx: &BehaviorContext,
         _now_ms: u64,
         conn: Arc<dyn ConnectionSender>,
-        _local_uuid: TransportOutgoingLocalUuid,
     ) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
         self.relay.on_connection_opened(conn.conn_id(), conn);
         Some(Box::new(PubsubServiceConnectionHandler {
@@ -175,13 +174,10 @@ where
         _ctx: &BehaviorContext,
         _now_ms: u64,
         _node_id: NodeId,
-        conn_id: Option<ConnId>,
-        _local_uuid: TransportOutgoingLocalUuid,
+        conn_id: ConnId,
         _err: &OutgoingConnectionError,
-    ) {
-        if let Some(conn_id) = conn_id {
-            self.relay.on_connection_closed(conn_id);
-        }
+    ) {        
+        self.relay.on_connection_closed(conn_id);
     }
 
     fn on_handler_event(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node_id: NodeId, _conn_id: ConnId, _event: BE) {}

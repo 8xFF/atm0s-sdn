@@ -1,6 +1,5 @@
 use std::{sync::Arc, time::Duration};
 
-use atm0s_sdn::ErrorUtils;
 use atm0s_sdn::RouteRule;
 use atm0s_sdn::{ConnectionEvent, Transport, TransportEvent, TransportMsg};
 use atm0s_sdn::{NodeAddrBuilder, UdpTransport};
@@ -41,15 +40,13 @@ async fn main() {
     async_std::task::sleep(Duration::from_secs(1)).await;
     log::info!("Connect to {}", node_addr2.addr());
 
-    transport1.connector().connect_to(100, 2, node_addr2.addr()).print_error("Should connect");
+    for conn in transport1.connector().create_pending_outgoing(node_addr2.addr()) {
+        transport1.connector().continue_pending_outgoing(conn);
+    }
 
     loop {
         match transport1.recv().await {
-            Ok(TransportEvent::OutgoingRequest(_, _, acceptor, _)) => {
-                log::info!("[Transport1] OutgoingRequest");
-                acceptor.accept();
-            }
-            Ok(TransportEvent::Outgoing(trans1_sender, mut trans1_receiver, _)) => {
+            Ok(TransportEvent::Outgoing(trans1_sender, mut trans1_receiver)) => {
                 let mut msg_count = 0;
                 trans1_sender.send(TransportMsg::build(0, 0, RouteRule::Direct, 0, 0, &[0; 10]));
                 let mut last_send = std::time::Instant::now();

@@ -1,11 +1,11 @@
 use std::{collections::VecDeque, fmt, sync::Arc};
 
-use atm0s_sdn_identity::NodeId;
+use atm0s_sdn_identity::{NodeId, ConnId};
 use atm0s_sdn_utils::{awaker::Awaker, init_vec::init_vec};
 
 use crate::{
     behaviour::{BehaviorContext, ConnectionHandler, NetworkBehavior, NetworkBehaviorAction},
-    transport::{ConnectionReceiver, ConnectionSender, TransportEvent},
+    transport::{ConnectionReceiver, ConnectionSender, TransportEvent, OutgoingConnectionError},
 };
 
 use super::NetworkPlaneInternalEvent;
@@ -46,6 +46,10 @@ impl<BE, HE> Eq for Connection<BE, HE> {}
 pub enum PlaneInternalAction<BE, HE, SE> {
     /// Spawns a new connection with the given parameters.
     SpawnConnection(Connection<BE, HE>),
+    /// Connect outgoing connection after all behaviors have accepted it.
+    ContinuePendingOutgoingConnection(ConnId),
+    /// Drop the connection with the given connection ID.
+    DropPendingOutgoingConnection(ConnId),
     /// Represents a behavior action in the network plane.
     /// It contains a u8 identifier and a NetworkBehaviorAction with HE and SE type parameters.
     BehaviorAction(u8, NetworkBehaviorAction<HE, SE>),
@@ -177,6 +181,25 @@ impl<BE, HE, SE> PlaneInternal<BE, HE, SE> {
                     Err(PlaneInternalError::InvalidServiceId(service_id))
                 }
             }
+            NetworkPlaneInternalEvent::OutgoingRequest(node, conn_id) => {
+                let mut rejected = None;
+                for (behaviour, context) in self.behaviors.iter_mut().flatten() {
+                    if let Err(err) = behaviour.check_outgoing_connection(&context, now_ms, node, conn_id) {
+                        rejected = Some(err);
+                        break;
+                    }
+                }
+                if let Some(reason) = rejected {
+                    let err = OutgoingConnectionError::BehaviorRejected(reason);
+                    self.action_queue.push_back(PlaneInternalAction::DropPendingOutgoingConnection(conn_id));
+                    for (behaviour, context) in self.behaviors.iter_mut().flatten() {
+                        behaviour.on_outgoing_connection_error(&context, now_ms, node, conn_id, &err);
+                    }
+                } else {
+                    self.action_queue.push_back(PlaneInternalAction::ContinuePendingOutgoingConnection(conn_id));
+                }
+                Ok(())
+            }
         };
 
         self.pop_behaviours_action(now_ms);
@@ -193,25 +216,12 @@ impl<BE, HE, SE> PlaneInternal<BE, HE, SE> {
     /// # Returns
     ///
     /// Returns `Ok(())` if the event was handled successfully, otherwise returns a `PlaneInternalError`.
-    pub fn on_transport_event(&mut self, now_ms: u64, event: TransportEvent) -> Result<(), PlaneInternalError> {
+    pub fn on_transport_event(&mut self, now_ms: u64, event: TransportEvent) {
         match event {
             TransportEvent::IncomingRequest(node, conn_id, acceptor) => {
                 let mut rejected = false;
                 for (behaviour, context) in self.behaviors.iter_mut().flatten() {
                     if let Err(err) = behaviour.check_incoming_connection(&context, now_ms, node, conn_id) {
-                        acceptor.reject(err);
-                        rejected = true;
-                        break;
-                    }
-                }
-                if !rejected {
-                    acceptor.accept();
-                }
-            }
-            TransportEvent::OutgoingRequest(node, conn_id, acceptor, local_uuid) => {
-                let mut rejected = false;
-                for (behaviour, context) in self.behaviors.iter_mut().flatten() {
-                    if let Err(err) = behaviour.check_outgoing_connection(&context, now_ms, node, conn_id, local_uuid) {
                         acceptor.reject(err);
                         rejected = true;
                         break;
@@ -239,7 +249,7 @@ impl<BE, HE, SE> PlaneInternal<BE, HE, SE> {
                     handlers,
                 }));
             }
-            TransportEvent::Outgoing(sender, receiver, local_uuid) => {
+            TransportEvent::Outgoing(sender, receiver) => {
                 log::info!(
                     "[NetworkPlane {}] received TransportEvent::Outgoing({}, {})",
                     self.node_id,
@@ -248,7 +258,7 @@ impl<BE, HE, SE> PlaneInternal<BE, HE, SE> {
                 );
                 let mut handlers: Vec<Option<Box<dyn ConnectionHandler<BE, HE>>>> = init_vec(256, || None);
                 for (behaviour, context) in self.behaviors.iter_mut().flatten() {
-                    handlers[behaviour.service_id() as usize] = behaviour.on_outgoing_connection_connected(context, now_ms, sender.clone(), local_uuid);
+                    handlers[behaviour.service_id() as usize] = behaviour.on_outgoing_connection_connected(context, now_ms, sender.clone());
                 }
                 self.action_queue.push_back(PlaneInternalAction::SpawnConnection(Connection {
                     outgoing: true,
@@ -257,16 +267,15 @@ impl<BE, HE, SE> PlaneInternal<BE, HE, SE> {
                     handlers,
                 }));
             }
-            TransportEvent::OutgoingError { local_uuid, node_id, conn_id, err } => {
+            TransportEvent::OutgoingError { node_id, conn_id, err } => {
                 log::info!("[NetworkPlane {}] received TransportEvent::OutgoingError({}, {:?})", self.node_id, node_id, conn_id);
                 for (behaviour, context) in self.behaviors.iter_mut().flatten() {
-                    behaviour.on_outgoing_connection_error(context, now_ms, node_id, conn_id, local_uuid, &err);
+                    behaviour.on_outgoing_connection_error(context, now_ms, node_id, conn_id, &err);
                 }
             }
         }
 
         self.pop_behaviours_action(now_ms);
-        Ok(())
     }
 
     /// Stops the plane and updates its state.
@@ -580,16 +589,13 @@ mod tests {
         let mut mock_behavior_1 = Box::new(MockNetworkBehavior::<BE, HE, SE>::new());
         mock_behavior_1.expect_service_id().return_const(1);
         mock_behavior_1.expect_pop_action().returning(|| None);
-        mock_behavior_1.expect_check_outgoing_connection().once().returning(|_, _, _, _, _| Ok(()));
+        mock_behavior_1.expect_check_outgoing_connection().once().returning(|_, _, _, _| Ok(()));
         let mock_awaker_1: Arc<dyn Awaker> = Arc::new(MockAwaker::default());
 
         let mut internal = super::PlaneInternal::new(1, vec![(mock_behavior_1, mock_awaker_1.clone())]);
-
-        let mut mock_accepter = Box::new(MockConnectionAcceptor::new());
-        mock_accepter.expect_reject().never();
-        mock_accepter.expect_accept().once().return_const(());
-
-        let _ = internal.on_transport_event(0, super::TransportEvent::OutgoingRequest(NodeId::from(0u32), ConnId::from_in(0, 0), mock_accepter, 0));
+        let conn_id = ConnId::from_in(0, 0);
+        internal.on_internal_event(0, super::NetworkPlaneInternalEvent::OutgoingRequest(NodeId::from(0u32), conn_id)).expect("");
+        assert_eq!(internal.pop_action(), Some(super::PlaneInternalAction::ContinuePendingOutgoingConnection(conn_id)));
     }
 
     #[test]
@@ -600,16 +606,15 @@ mod tests {
         mock_behavior_1
             .expect_check_outgoing_connection()
             .once()
-            .returning(|_, _, _, _, _| Err(ConnectionRejectReason::ValidateError));
+            .returning(|_, _, _, _| Err(ConnectionRejectReason::ValidateError));
+        mock_behavior_1.expect_on_outgoing_connection_error().once().return_const(());
         let mock_awaker_1: Arc<dyn Awaker> = Arc::new(MockAwaker::default());
 
         let mut internal = super::PlaneInternal::new(1, vec![(mock_behavior_1, mock_awaker_1.clone())]);
 
-        let mut mock_accepter = Box::new(MockConnectionAcceptor::new());
-        mock_accepter.expect_reject().once().return_const(());
-        mock_accepter.expect_accept().never();
-
-        let _ = internal.on_transport_event(0, super::TransportEvent::OutgoingRequest(NodeId::from(0u32), ConnId::from_in(0, 0), mock_accepter, 0));
+        let conn_id = ConnId::from_in(0, 0);
+        internal.on_internal_event(0, super::NetworkPlaneInternalEvent::OutgoingRequest(NodeId::from(0u32), conn_id)).expect("");
+        assert_eq!(internal.pop_action(), Some(super::PlaneInternalAction::DropPendingOutgoingConnection(conn_id)));
     }
 
     #[test]
@@ -649,7 +654,7 @@ mod tests {
         let mut mock_behavior_1 = Box::new(MockNetworkBehavior::<BE, HE, SE>::new());
         mock_behavior_1.expect_service_id().return_const(1);
         mock_behavior_1.expect_pop_action().returning(|| None);
-        mock_behavior_1.expect_on_outgoing_connection_connected().once().returning(|_, _, _, _| None);
+        mock_behavior_1.expect_on_outgoing_connection_connected().once().returning(|_, _, _| None);
         let mock_awaker_1: Arc<dyn Awaker> = Arc::new(MockAwaker::default());
 
         let mut internal = super::PlaneInternal::new(1, vec![(mock_behavior_1, mock_awaker_1.clone())]);
@@ -663,7 +668,7 @@ mod tests {
         mock_receiver.expect_conn_id().return_const(ConnId::from_in(0, 0));
         mock_receiver_c.expect_conn_id().return_const(ConnId::from_in(0, 0));
 
-        let _ = internal.on_transport_event(0, super::TransportEvent::Outgoing(Arc::new(mock_sender), mock_receiver, 0));
+        let _ = internal.on_transport_event(0, super::TransportEvent::Outgoing(Arc::new(mock_sender), mock_receiver));
         assert_eq!(internal.action_queue.len(), 1);
         assert_eq!(
             internal.pop_action(),
@@ -688,9 +693,8 @@ mod tests {
         let _ = internal.on_transport_event(
             0,
             super::TransportEvent::OutgoingError {
-                local_uuid: 0,
                 node_id: NodeId::from(0u32),
-                conn_id: Some(ConnId::from_in(0, 0)),
+                conn_id: ConnId::from_in(0, 0),
                 err: OutgoingConnectionError::AuthenticationError,
             },
         );

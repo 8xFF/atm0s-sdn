@@ -6,7 +6,7 @@ use crate::DISCOVERY_SERVICE_ID;
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 use atm0s_sdn_network::behaviour::{BehaviorContext, ConnectionHandler, NetworkBehavior, NetworkBehaviorAction};
 use atm0s_sdn_network::msg::TransportMsg;
-use atm0s_sdn_network::transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, TransportOutgoingLocalUuid};
+use atm0s_sdn_network::transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError};
 use atm0s_sdn_router::RouteRule;
 use atm0s_sdn_utils::Timer;
 use std::collections::VecDeque;
@@ -50,8 +50,8 @@ where
     {
         while let Some(action) = self.logic.poll_action() {
             match action {
-                Action::ConnectTo(node_id, addr) => {
-                    self.outputs.push_back(NetworkBehaviorAction::ConnectTo(0, node_id, addr));
+                Action::ConnectTo(addr) => {
+                    self.outputs.push_back(NetworkBehaviorAction::ConnectTo(addr));
                 }
                 Action::SendTo(node_id, msg) => {
                     let msg = TransportMsg::build(
@@ -73,7 +73,7 @@ where
         BE: Send + Sync + 'static,
     {
         if self.connection_group.add(connection.remote_node_id(), connection.conn_id()) {
-            self.logic.on_input(Input::OnConnected(connection.remote_node_id(), connection.remote_addr()));
+            self.logic.on_input(Input::OnConnected(connection.remote_addr()));
             self.process_logic_actions::<BE>(ctx);
         }
     }
@@ -102,7 +102,7 @@ where
     fn on_tick(&mut self, ctx: &BehaviorContext, ts_ms: u64, _interal_ms: u64) {
         if let Some(bootstrap) = self.opts.bootstrap_addrs.take() {
             for (node, addr) in bootstrap {
-                self.logic.on_input(Input::AddNode(node, addr));
+                self.logic.on_input(Input::AddNode(addr));
             }
             self.logic.on_input(Input::RefreshKey(self.opts.local_node_id));
         }
@@ -116,7 +116,7 @@ where
         Ok(())
     }
 
-    fn check_outgoing_connection(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node: NodeId, _conn_id: ConnId, _local_uuid: TransportOutgoingLocalUuid) -> Result<(), ConnectionRejectReason> {
+    fn check_outgoing_connection(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node: NodeId, _conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
         Ok(())
     }
 
@@ -134,7 +134,6 @@ where
         ctx: &BehaviorContext,
         _now_ms: u64,
         connection: Arc<dyn ConnectionSender>,
-        _local_uuid: TransportOutgoingLocalUuid,
     ) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
         self.add_connection_if_need::<BE>(ctx, connection);
         Some(Box::new(DiscoveryConnectionHandler::new()))
@@ -153,8 +152,7 @@ where
         ctx: &BehaviorContext,
         _now_ms: u64,
         node_id: NodeId,
-        _connection_id: Option<ConnId>,
-        _local_uuid: TransportOutgoingLocalUuid,
+        _connection_id: ConnId,
         _err: &OutgoingConnectionError,
     ) {
         self.logic.on_input(Input::OnConnectError(node_id));

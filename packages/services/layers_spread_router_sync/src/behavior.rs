@@ -4,7 +4,7 @@ use crate::FAST_PATH_ROUTE_SERVICE_ID;
 use atm0s_sdn_identity::{ConnId, NodeId};
 use atm0s_sdn_layers_spread_router::SharedRouter;
 use atm0s_sdn_network::behaviour::{BehaviorContext, ConnectionHandler, NetworkBehavior};
-use atm0s_sdn_network::transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, TransportOutgoingLocalUuid};
+use atm0s_sdn_network::transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError};
 use std::sync::Arc;
 
 pub struct LayersSpreadRouterSyncBehavior {
@@ -26,9 +26,7 @@ where
         FAST_PATH_ROUTE_SERVICE_ID
     }
 
-    fn on_tick(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _interal_ms: u64) {
-        self.router.log_dump();
-    }
+    fn on_tick(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _interal_ms: u64) {}
 
     fn on_awake(&mut self, _ctx: &BehaviorContext, _now_ms: u64) {}
     fn on_sdk_msg(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _from_service: u8, _event: SE) {}
@@ -37,7 +35,7 @@ where
         Ok(())
     }
 
-    fn check_outgoing_connection(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node: NodeId, _conn_id: ConnId, _local_uuid: TransportOutgoingLocalUuid) -> Result<(), ConnectionRejectReason> {
+    fn check_outgoing_connection(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node: NodeId, _conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
         Ok(())
     }
 
@@ -54,7 +52,6 @@ where
         _ctx: &BehaviorContext,
         _now_ms: u64,
         _conn: Arc<dyn ConnectionSender>,
-        _local_uuid: TransportOutgoingLocalUuid,
     ) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
         Some(Box::new(LayersSpreadRouterSyncHandler::new(self.router.clone())))
     }
@@ -68,8 +65,7 @@ where
         _ctx: &BehaviorContext,
         _now_ms: u64,
         _node_id: NodeId,
-        _conn_id: Option<ConnId>,
-        _local_uuid: TransportOutgoingLocalUuid,
+        _conn_id: ConnId,
         _err: &OutgoingConnectionError,
     ) {
     }

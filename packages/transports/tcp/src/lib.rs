@@ -18,9 +18,11 @@ mod tests {
     #[async_std::test]
     async fn simple_network() {
         let node_addr_builder1 = Arc::new(NodeAddrBuilder::default());
+        node_addr_builder1.set_node_id(1);
         let tran1 = TcpTransport::new(1, 10001, node_addr_builder1.clone()).await;
 
         let node_addr_builder2 = Arc::new(NodeAddrBuilder::default());
+        node_addr_builder2.set_node_id(2);
         let tran2 = TcpTransport::new(2, 10002, node_addr_builder2.clone()).await;
 
         atm0s_sdn_network::transport_tests::simple::simple_network(tran1, node_addr_builder1.addr(), tran2, node_addr_builder2.addr()).await;
@@ -30,7 +32,7 @@ mod tests {
     async fn simple_network_connect_addr_not_found() {
         let node_addr_builder1 = Arc::new(NodeAddrBuilder::default());
         let tran1 = TcpTransport::new(1, 20001, node_addr_builder1.clone()).await;
-        atm0s_sdn_network::transport_tests::simple::simple_network_connect_addr_not_found(tran1, NodeAddr::from_iter(vec![Protocol::Ip4(Ipv4Addr::new(127, 0, 0, 1)), Protocol::Tcp(20002)])).await;
+        atm0s_sdn_network::transport_tests::simple::simple_network_connect_addr_not_found(tran1, NodeAddr::from_iter(2, vec![Protocol::Ip4(Ipv4Addr::new(127, 0, 0, 1)), Protocol::Tcp(20002)])).await;
     }
 
     #[async_std::test]

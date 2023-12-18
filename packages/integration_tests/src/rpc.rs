@@ -5,7 +5,7 @@ mod test {
     use async_std::{prelude::FutureExt, task::JoinHandle};
     use atm0s_sdn::{
         convert_enum, KeyValueBehavior, KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueSdkEvent, LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent,
-        LayersSpreadRouterSyncHandlerEvent, ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent, NetworkPlane, NetworkPlaneConfig, NodeAddr, NodeAddrBuilder, NodeId, Protocol,
+        LayersSpreadRouterSyncHandlerEvent, ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent, NetworkPlane, NetworkPlaneConfig, NodeAddr, NodeAddrBuilder, NodeId,
         RouteRule, RpcBox, RpcError, RpcMsg, RpcMsgParam, SharedRouter, SystemTimer,
     };
     use atm0s_sdn_transport_vnet::VnetEarth;
@@ -32,9 +32,8 @@ mod test {
     async fn run_node(vnet: Arc<VnetEarth>, rpc_service_id: u8, node_id: NodeId, seeds: Vec<NodeAddr>) -> (RpcBox, NodeAddr, JoinHandle<()>) {
         log::info!("Run node {} connect to {:?}", node_id, seeds);
         let node_addr = Arc::new(NodeAddrBuilder::default());
-        node_addr.add_protocol(Protocol::P2p(node_id));
-        node_addr.add_protocol(Protocol::Memory(node_id as u64));
-        let transport = Box::new(atm0s_sdn_transport_vnet::VnetTransport::new(vnet, node_id as u64, node_id, node_addr.addr()));
+        node_addr.set_node_id(node_id);
+        let transport = Box::new(atm0s_sdn_transport_vnet::VnetTransport::new(vnet, node_addr.addr()));
         let timer = Arc::new(SystemTimer());
 
         let router = SharedRouter::new(node_id);

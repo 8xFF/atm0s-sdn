@@ -7,43 +7,37 @@ use std::sync::Arc;
 
 pub struct VnetTransport {
     #[allow(unused)]
-    port: u64,
+    port: u32,
     #[allow(unused)]
     earth: Arc<VnetEarth>,
     listener: VnetListener,
-    connector: Arc<VnetConnector>,
+    connector: Box<dyn TransportConnector>,
 }
 
 impl VnetTransport {
-    pub fn new(earth: Arc<VnetEarth>, port: u64, node: NodeId, addr: NodeAddr) -> Self {
+    pub fn new(earth: Arc<VnetEarth>, addr: NodeAddr) -> Self {
         Self {
-            listener: earth.create_listener(port, node, addr),
-            connector: Arc::new(VnetConnector { port, earth: earth.clone() }),
+            port: addr.node_id(),
+            connector: Box::new(VnetConnector::new(addr.node_id(), earth.clone())),
+            listener: earth.create_listener(addr),
             earth,
-            port,
         }
     }
 }
 
 #[async_trait::async_trait]
 impl Transport for VnetTransport {
-    fn connector(&self) -> Arc<dyn TransportConnector> {
-        self.connector.clone()
+    fn connector(&mut self) -> &mut Box<dyn TransportConnector> {
+        &mut self.connector
     }
 
     async fn recv(&mut self) -> Result<TransportEvent, ()> {
         match self.listener.recv().await {
             None => Err(()),
             Some(VnetListenerEvent::IncomingRequest(node, conn, acceptor)) => Ok(TransportEvent::IncomingRequest(node, conn, acceptor)),
-            Some(VnetListenerEvent::OutgoingRequest(node, conn, local_uuid, acceptor)) => Ok(TransportEvent::OutgoingRequest(node, conn, acceptor, local_uuid)),
             Some(VnetListenerEvent::Incoming((sender, recv))) => Ok(TransportEvent::Incoming(sender, recv)),
-            Some(VnetListenerEvent::Outgoing((sender, recv), local_uuid)) => Ok(TransportEvent::Outgoing(sender, recv, local_uuid)),
-            Some(VnetListenerEvent::OutgoingErr(node_id, conn_id, local_uuid, err)) => Ok(TransportEvent::OutgoingError {
-                node_id,
-                conn_id: Some(conn_id),
-                err,
-                local_uuid,
-            }),
+            Some(VnetListenerEvent::Outgoing((sender, recv))) => Ok(TransportEvent::Outgoing(sender, recv)),
+            Some(VnetListenerEvent::OutgoingErr(node_id, conn_id, err)) => Ok(TransportEvent::OutgoingError { node_id, conn_id, err }),
         }
     }
 }

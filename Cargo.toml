@@ -9,7 +9,6 @@ members = [
     "packages/network",
     "packages/core/utils",
     "packages/core/identity",
-    "packages/core/multiaddr",
     "packages/core/router",
     "packages/routers/layers_spread_router",
     "packages/services/dht_discovery",

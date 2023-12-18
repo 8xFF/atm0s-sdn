@@ -10,6 +10,7 @@ use atm0s_sdn_network::transport::{Transport, TransportConnector, TransportEvent
 use atm0s_sdn_utils::error_handle::ErrorUtils;
 use atm0s_sdn_utils::{SystemTimer, Timer};
 use futures_util::FutureExt;
+use std::collections::HashMap;
 use std::net::{Ipv4Addr, Shutdown, SocketAddr};
 use std::sync::Arc;
 
@@ -20,7 +21,7 @@ pub struct TcpTransport {
     internal_tx: Sender<TransportEvent>,
     internal_rx: Receiver<TransportEvent>,
     seed: u64,
-    connector: Arc<TcpConnector>,
+    connector: Box<dyn TransportConnector>,
     timer: Arc<dyn Timer>,
 }
 
@@ -46,8 +47,9 @@ impl TcpTransport {
             internal_tx: internal_tx.clone(),
             internal_rx,
             seed: 0,
-            connector: Arc::new(TcpConnector {
-                seed: Default::default(),
+            connector: Box::new(TcpConnector {
+                conn_id_seed: 0,
+                pending_outgoing: HashMap::new(),
                 node_id,
                 node_addr_builder,
                 internal_tx,
@@ -60,8 +62,8 @@ impl TcpTransport {
 
 #[async_trait::async_trait]
 impl Transport for TcpTransport {
-    fn connector(&self) -> Arc<dyn TransportConnector> {
-        self.connector.clone()
+    fn connector(&mut self) -> &mut Box<dyn TransportConnector> {
+        &mut self.connector
     }
 
     async fn recv(&mut self) -> Result<TransportEvent, ()> {

@@ -7,7 +7,6 @@ use thiserror::Error;
 
 #[cfg(test)]
 use mockall::automock;
-pub type TransportOutgoingLocalUuid = u64;
 
 /// Enum representing events that can occur in the transport layer.
 ///
@@ -19,32 +18,34 @@ pub enum TransportEvent {
     /// `IncomingRequest` represents an incoming request from a node with the given `NodeId` and `ConnId`,
     /// which is accepted by the `ConnectionAcceptor` trait object.
     IncomingRequest(NodeId, ConnId, Box<dyn ConnectionAcceptor>),
-    /// `OutgoingRequest` represents an outgoing request to a node with the given `NodeId` and `ConnId`,
-    /// which is accepted by the `ConnectionAcceptor` trait object, and has a `TransportOutgoingLocalUuid`.
-    OutgoingRequest(NodeId, ConnId, Box<dyn ConnectionAcceptor>, TransportOutgoingLocalUuid),
     /// `Incoming` represents an incoming connection with the given `ConnectionSender` and `ConnectionReceiver`.
     Incoming(Arc<dyn ConnectionSender>, Box<dyn ConnectionReceiver + Send>),
     /// `Outgoing` represents an outgoing connection with the given `ConnectionSender`, `ConnectionReceiver`,
-    /// and `TransportOutgoingLocalUuid`.
-    Outgoing(Arc<dyn ConnectionSender>, Box<dyn ConnectionReceiver + Send>, TransportOutgoingLocalUuid),
+    Outgoing(Arc<dyn ConnectionSender>, Box<dyn ConnectionReceiver + Send>),
     /// `OutgoingError` represents an error that occurred while attempting to establish an outgoing connection,
-    /// with the given `TransportOutgoingLocalUuid`, `NodeId`, `ConnId`, and `OutgoingConnectionError`.
+    /// with the given `NodeId`, `ConnId`, and `OutgoingConnectionError`.
     OutgoingError {
-        local_uuid: TransportOutgoingLocalUuid,
         node_id: NodeId,
-        conn_id: Option<ConnId>,
+        conn_id: ConnId,
         err: OutgoingConnectionError,
     },
 }
 
 #[async_trait::async_trait]
 pub trait Transport: Send {
-    fn connector(&self) -> Arc<dyn TransportConnector>;
+    fn connector(&mut self) -> &mut Box<dyn TransportConnector>;
     async fn recv(&mut self) -> Result<TransportEvent, ()>;
 }
 
+/// Transport connector will connect to the given node with bellow lifecycle:
+/// 1. create_pending_outgoing
+/// 2. wait continue_pending_outgoing or destroy_pending_outgoing
 pub trait TransportConnector: Send + Sync {
-    fn connect_to(&self, local_uuid: TransportOutgoingLocalUuid, node_id: NodeId, dest: NodeAddr) -> Result<(), OutgoingConnectionError>;
+    /// Trying to spawn all posible connections for the given node. Return the local uuids of the connections.
+    /// Note that the connections are not established yet. The connections will be established after called continue_pending_outgoing or destroy with destroy_pending_outgoing.
+    fn create_pending_outgoing(&mut self, dest: NodeAddr) -> Vec<ConnId>;
+    fn continue_pending_outgoing(&mut self, conn_id: ConnId);
+    fn destroy_pending_outgoing(&mut self, conn_id: ConnId);
 }
 
 #[derive(PartialEq, Debug, Clone)]

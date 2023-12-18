@@ -1,7 +1,7 @@
 use atm0s_sdn::convert_enum;
 use atm0s_sdn::SharedRouter;
 use atm0s_sdn::SystemTimer;
-use atm0s_sdn::{KeyValueBehavior, KeyValueSdk, NodeAddr, NodeAddrBuilder, Protocol, UdpTransport};
+use atm0s_sdn::{KeyValueBehavior, KeyValueSdk, NodeAddr, NodeAddrBuilder, UdpTransport};
 use atm0s_sdn::{KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueSdkEvent};
 use atm0s_sdn::{LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent, LayersSpreadRouterSyncHandlerEvent};
 use atm0s_sdn::{ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent};
@@ -67,7 +67,7 @@ async fn main() {
     env_logger::builder().format_timestamp_millis().init();
     let args: Args = Args::parse();
     let node_addr_builder = Arc::new(NodeAddrBuilder::default());
-    node_addr_builder.add_protocol(Protocol::P2p(args.node_id));
+    node_addr_builder.set_node_id(args.node_id);
     let transport = UdpTransport::new(args.node_id, 50000 + args.node_id as u16, node_addr_builder.clone()).await;
     let node_addr = node_addr_builder.addr();
     log::info!("Listen on addr {}", node_addr);

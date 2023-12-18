@@ -1,6 +1,6 @@
 use crate::msg::TransportMsg;
 use crate::plane::bus::HandlerRoute;
-use crate::transport::{ConnectionEvent, ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, TransportOutgoingLocalUuid};
+use crate::transport::{ConnectionEvent, ConnectionRejectReason, ConnectionSender, OutgoingConnectionError};
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 use atm0s_sdn_utils::awaker::Awaker;
 use std::sync::Arc;
@@ -95,7 +95,7 @@ pub trait ConnectionHandler<BE, HE>: Send + Sync {
 pub enum NetworkBehaviorAction<HE, SE> {
     /// Enum representing the different types of connections that can be made.
     /// `ConnectTo` variant is used to connect to a node with a given `NodeId` and `NodeAddr`.
-    ConnectTo(TransportOutgoingLocalUuid, NodeId, NodeAddr),
+    ConnectTo(NodeAddr),
     /// Represents a message sent to the network layer for transport.
     ToNet(TransportMsg),
     /// Represents a message sent to the network layer for transport, specifying the destination connection.
@@ -137,7 +137,7 @@ pub trait NetworkBehavior<BE, HE, SE> {
     fn check_incoming_connection(&mut self, ctx: &BehaviorContext, now_ms: u64, node: NodeId, conn_id: ConnId) -> Result<(), ConnectionRejectReason>;
 
     /// Called when an outgoing connection is initiated.
-    fn check_outgoing_connection(&mut self, ctx: &BehaviorContext, now_ms: u64, node: NodeId, conn_id: ConnId, local_uuid: TransportOutgoingLocalUuid) -> Result<(), ConnectionRejectReason>;
+    fn check_outgoing_connection(&mut self, ctx: &BehaviorContext, now_ms: u64, node: NodeId, conn_id: ConnId) -> Result<(), ConnectionRejectReason>;
 
     /// Called when an incoming connection is established.
     fn on_incoming_connection_connected(&mut self, ctx: &BehaviorContext, now_ms: u64, conn: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>>;
@@ -148,7 +148,6 @@ pub trait NetworkBehavior<BE, HE, SE> {
         ctx: &BehaviorContext,
         now_ms: u64,
         conn: Arc<dyn ConnectionSender>,
-        local_uuid: TransportOutgoingLocalUuid,
     ) -> Option<Box<dyn ConnectionHandler<BE, HE>>>;
 
     /// Called when an incoming connection is disconnected.
@@ -158,7 +157,7 @@ pub trait NetworkBehavior<BE, HE, SE> {
     fn on_outgoing_connection_disconnected(&mut self, ctx: &BehaviorContext, now_ms: u64, node_id: NodeId, conn_id: ConnId);
 
     /// Called when an outgoing connection encounters an error.
-    fn on_outgoing_connection_error(&mut self, ctx: &BehaviorContext, now_ms: u64, node_id: NodeId, conn_id: Option<ConnId>, local_uuid: TransportOutgoingLocalUuid, err: &OutgoingConnectionError);
+    fn on_outgoing_connection_error(&mut self, ctx: &BehaviorContext, now_ms: u64, node_id: NodeId, conn_id: ConnId, err: &OutgoingConnectionError);
 
     /// Called when a handler event is received.
     fn on_handler_event(&mut self, ctx: &BehaviorContext, now_ms: u64, node_id: NodeId, conn_id: ConnId, event: BE);

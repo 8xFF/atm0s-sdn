@@ -172,12 +172,12 @@ impl KBucketTableWrap {
         self.table.get_node(node)
     }
 
-    pub fn add_node_connecting(&mut self, node: NodeId, addr: NodeAddr) -> bool {
-        self.table.add_node_connecting(node ^ self.local_node_id, addr)
+    pub fn add_node_connecting(&mut self, addr: NodeAddr) -> bool {
+        self.table.add_node_connecting(addr.node_id() ^ self.local_node_id, addr)
     }
 
-    pub fn add_node_connected(&mut self, node: NodeId, addr: NodeAddr) -> bool {
-        self.table.add_node_connected(node ^ self.local_node_id, addr)
+    pub fn add_node_connected(&mut self, addr: NodeAddr) -> bool {
+        self.table.add_node_connected(addr.node_id() ^ self.local_node_id, addr)
     }
 
     pub fn remove_connecting_node(&mut self, node: NodeId) -> bool {
@@ -213,40 +213,40 @@ mod tests {
     #[test]
     fn simple_table() {
         let mut table = KBucketTable::new();
-        assert_eq!(table.add_node_connecting(1, NodeAddr::from(Protocol::Udp(1))), true);
-        assert_eq!(table.add_node_connecting(10, NodeAddr::from(Protocol::Udp(10))), true);
-        assert_eq!(table.add_node_connecting(40, NodeAddr::from(Protocol::Udp(40))), true);
-        assert_eq!(table.add_node_connecting(100, NodeAddr::from(Protocol::Udp(100))), true);
-        assert_eq!(table.add_node_connecting(120, NodeAddr::from(Protocol::Udp(120))), true);
-        assert_eq!(table.add_node_connecting(u32::MAX, NodeAddr::from(Protocol::Udp(5000))), true);
+        assert_eq!(table.add_node_connecting(1, NodeAddr::empty(1)), true);
+        assert_eq!(table.add_node_connecting(10, NodeAddr::empty(10)), true);
+        assert_eq!(table.add_node_connecting(40, NodeAddr::empty(40)), true);
+        assert_eq!(table.add_node_connecting(100, NodeAddr::empty(100)), true);
+        assert_eq!(table.add_node_connecting(120, NodeAddr::empty(120)), true);
+        assert_eq!(table.add_node_connecting(u32::MAX, NodeAddr::empty(5000)), true);
 
         assert_eq!(
             table.closest_nodes(100),
             vec![
-                (100, NodeAddr::from(Protocol::Udp(100)), false),
-                (120, NodeAddr::from(Protocol::Udp(120)), false),
-                (40, NodeAddr::from(Protocol::Udp(40)), false),
-                (1, NodeAddr::from(Protocol::Udp(1)), false)
+                (100, NodeAddr::empty(100), false),
+                (120, NodeAddr::empty(120), false),
+                (40, NodeAddr::empty(40), false),
+                (1, NodeAddr::empty(1), false)
             ]
         );
 
         assert_eq!(
             table.closest_nodes(10),
             vec![
-                (10, NodeAddr::from(Protocol::Udp(10)), false),
-                (1, NodeAddr::from(Protocol::Udp(1)), false),
-                (40, NodeAddr::from(Protocol::Udp(40)), false),
-                (100, NodeAddr::from(Protocol::Udp(100)), false),
+                (10, NodeAddr::empty(10), false),
+                (1, NodeAddr::empty(1), false),
+                (40, NodeAddr::empty(40), false),
+                (100, NodeAddr::empty(100), false),
             ]
         );
 
         assert_eq!(
             table.closest_nodes(u32::MAX),
             vec![
-                (u32::MAX, NodeAddr::from(Protocol::Udp(5000)), false),
-                (120, NodeAddr::from(Protocol::Udp(120)), false),
-                (100, NodeAddr::from(Protocol::Udp(100)), false),
-                (40, NodeAddr::from(Protocol::Udp(40)), false),
+                (u32::MAX, NodeAddr::empty(5000), false),
+                (120, NodeAddr::empty(120), false),
+                (100, NodeAddr::empty(100), false),
+                (40, NodeAddr::empty(40), false),
             ]
         );
     }
@@ -257,7 +257,7 @@ mod tests {
             let mut table = KBucketTable::new();
             for _ in 0..table_size {
                 let dis: u32 = rand::random();
-                let addr = NodeAddr::from(Protocol::Udp(dis as u16));
+                let addr = NodeAddr::empty(dis as u32);
                 if table.add_node_connected(dis, addr.clone()) {
                     list.push((dis, addr, true));
                 }
@@ -276,7 +276,7 @@ mod tests {
         let mut list = vec![];
         let mut table = KBucketTable::new();
         for dis in nodes {
-            let addr = NodeAddr::from(Protocol::Udp(dis as u16));
+            let addr = NodeAddr::empty(dis as u32);
             if table.add_node_connected(dis, addr.clone()) {
                 list.push((dis, addr, true));
             }
@@ -319,8 +319,8 @@ mod tests {
             let mut table = KBucketTableWrap::new(local_node_id);
             for _ in 0..table_size {
                 let dis: u32 = rand::random();
-                let addr = NodeAddr::from(Protocol::Udp(dis as u16));
-                if table.add_node_connected(dis, addr.clone()) {
+                let addr = NodeAddr::empty(dis);
+                if table.add_node_connected(addr.clone()) {
                     list.push((dis, addr, true));
                 }
             }

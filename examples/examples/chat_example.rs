@@ -1,7 +1,7 @@
 use atm0s_sdn::SharedRouter;
 use atm0s_sdn::SystemTimer;
 use atm0s_sdn::{convert_enum, NetworkPlane, NetworkPlaneConfig};
-use atm0s_sdn::{KeyValueBehavior, KeyValueSdk, NodeAddr, NodeAddrBuilder, Protocol, PubsubServiceBehaviour, UdpTransport};
+use atm0s_sdn::{KeyValueBehavior, KeyValueSdk, NodeAddr, NodeAddrBuilder, PubsubServiceBehaviour, UdpTransport};
 use atm0s_sdn::{KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueSdkEvent};
 use atm0s_sdn::{LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent, LayersSpreadRouterSyncHandlerEvent};
 use atm0s_sdn::{ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent};
@@ -120,7 +120,7 @@ async fn main() {
     // example in our case: /p2p/0/ip4/127.0.0.1/udp/50000
     // You can find more information about multiaddr here: https://multiformats.io/multiaddr/
     let node_addr_builder = Arc::new(NodeAddrBuilder::default());
-    node_addr_builder.add_protocol(Protocol::P2p(args.node_id));
+    node_addr_builder.set_node_id(args.node_id);
 
     // Create a transport layer, which is used to send and receive messages.
     // In this example, we use the UDP transport layer.

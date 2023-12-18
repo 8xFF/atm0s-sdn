@@ -36,7 +36,6 @@ pub enum OutgoingHandshakeError {
     AuthenticationError,
     Timeout,
     WrongMsg,
-    InternalError,
     Rejected,
 }
 
@@ -93,7 +92,7 @@ pub async fn incoming_handshake(
                             }
 
                             requested = true;
-                            if let Ok(addr) = NodeAddr::from_str(&addr) {
+                            if let Some(addr) = NodeAddr::from_str(&addr) {
                                 log::warn!("[IncomingHandshake] {} {} handshake success", node, addr);
                                 socket.send_to(&build_control_msg(&UdpTransportMsg::ConnectResponse(HandshakeResult::Success)), remote_addr).await.map_err(|_| IncomingHandshakeError::SocketError)?;
                                 result = Some((node, addr));

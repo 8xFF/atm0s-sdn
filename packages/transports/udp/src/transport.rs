@@ -15,7 +15,7 @@ use crate::{connector::UdpConnector, handshake::incoming_handshake, receiver::Ud
 
 pub struct UdpTransport {
     rx: Receiver<TransportEvent>,
-    connector: Arc<dyn TransportConnector>,
+    connector: Box<dyn TransportConnector>,
 }
 
 impl UdpTransport {
@@ -23,7 +23,6 @@ impl UdpTransport {
         let (tx, rx) = async_std::channel::bounded(1024);
         let addr_str = format!("0.0.0.0:{}", port);
         let addr: SocketAddr = addr_str.as_str().parse().expect("Should parse ip address");
-        //TODO increase udp buffer
         let socket = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::DGRAM, None).expect("Should create socket");
         socket.bind(&addr.into()).expect("Should bind address");
         socket.set_recv_buffer_size(1024 * 1024).expect("Should set recv buffer size");
@@ -42,7 +41,7 @@ impl UdpTransport {
         }
 
         let timer = Arc::new(SystemTimer());
-        let connector = Arc::new(UdpConnector::new(node_id, node_addr_builder.clone(), tx.clone(), timer.clone()));
+        let connector = Box::new(UdpConnector::new(node_id, node_addr_builder.clone(), tx.clone(), timer.clone()));
 
         async_std::task::spawn(async move {
             let mut last_clear_timeout_ms = 0;
@@ -126,8 +125,8 @@ impl UdpTransport {
 
 #[async_trait::async_trait]
 impl Transport for UdpTransport {
-    fn connector(&self) -> Arc<dyn TransportConnector> {
-        self.connector.clone()
+    fn connector(&mut self) -> &mut Box<dyn TransportConnector> {
+        &mut self.connector
     }
 
     async fn recv(&mut self) -> Result<TransportEvent, ()> {
