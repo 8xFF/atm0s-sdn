@@ -5,7 +5,7 @@ use crate::TCP_PROTOCOL_ID;
 use async_bincode::futures::AsyncBincodeStream;
 use async_std::channel::Sender;
 use async_std::net::{Shutdown, TcpStream};
-use atm0s_sdn_identity::{ConnId, NodeAddr, NodeAddrBuilder, NodeId, Protocol};
+use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId, Protocol};
 use atm0s_sdn_network::transport::{OutgoingConnectionError, TransportConnector, TransportEvent};
 use atm0s_sdn_utils::error_handle::ErrorUtils;
 use atm0s_sdn_utils::Timer;
@@ -16,7 +16,7 @@ use std::sync::Arc;
 pub struct TcpConnector {
     pub(crate) conn_id_seed: u64,
     pub(crate) node_id: NodeId,
-    pub(crate) node_addr_builder: Arc<NodeAddrBuilder>,
+    pub(crate) node_addr: NodeAddr,
     pub(crate) internal_tx: Sender<TransportEvent>,
     pub(crate) timer: Arc<dyn Timer>,
     pub(crate) pending_outgoing: HashMap<ConnId, (NodeId, NodeAddr, SocketAddr)>,
@@ -57,7 +57,7 @@ impl TransportConnector for TcpConnector {
             log::info!("[TcpConnector] connect to node {}", remote_node_addr);
             let timer = self.timer.clone();
             let node_id = self.node_id;
-            let node_addr = self.node_addr_builder.addr();
+            let node_addr = self.node_addr.clone();
             let conn_id = ConnId::from_out(TCP_PROTOCOL_ID, self.conn_id_seed);
             self.conn_id_seed += 1;
             let internal_tx = self.internal_tx.clone();

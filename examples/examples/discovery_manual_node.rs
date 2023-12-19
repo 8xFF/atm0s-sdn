@@ -49,8 +49,9 @@ struct Args {
 async fn main() {
     env_logger::init();
     let args: Args = Args::parse();
-    let node_addr_builder = Arc::new(NodeAddrBuilder::new(args.node_id));
-    let transport: UdpTransport = UdpTransport::new(0, node_addr_builder.clone()).await;
+    let mut node_addr_builder = NodeAddrBuilder::new(args.node_id);
+    let socket = UdpTransport::prepare(0, &mut node_addr_builder).await;
+    let transport = Box::new(UdpTransport::new(node_addr_builder.addr(), socket));
     let node_addr = node_addr_builder.addr();
     log::info!("Listen on addr {}", node_addr);
 
@@ -70,7 +71,7 @@ async fn main() {
         node_id: args.node_id,
         tick_ms: 1000,
         behaviors: vec![Box::new(spreads_layer_router), Box::new(key_value), Box::new(manual)],
-        transport: Box::new(transport),
+        transport,
         timer: Arc::new(SystemTimer()),
         router: Arc::new(router),
     });

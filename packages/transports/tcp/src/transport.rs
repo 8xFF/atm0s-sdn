@@ -5,7 +5,7 @@ use crate::msg::TcpMsg;
 use async_bincode::futures::AsyncBincodeStream;
 use async_std::channel::{unbounded, Receiver, Sender};
 use async_std::net::TcpListener;
-use atm0s_sdn_identity::{ConnId, NodeAddrBuilder, NodeId, Protocol};
+use atm0s_sdn_identity::{ConnId, NodeAddr, NodeAddrBuilder, NodeId, Protocol};
 use atm0s_sdn_network::transport::{Transport, TransportConnector, TransportEvent};
 use atm0s_sdn_utils::error_handle::ErrorUtils;
 use atm0s_sdn_utils::{SystemTimer, Timer};
@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 pub struct TcpTransport {
     node_id: NodeId,
-    node_addr_builder: Arc<NodeAddrBuilder>,
+    node_addr: NodeAddr,
     listener: TcpListener,
     internal_tx: Sender<TransportEvent>,
     internal_rx: Receiver<TransportEvent>,
@@ -27,9 +27,7 @@ pub struct TcpTransport {
 }
 
 impl TcpTransport {
-    pub async fn new(port: u16, node_addr_builder: Arc<NodeAddrBuilder>) -> Self {
-        let node_id = node_addr_builder.node_id();
-        let (internal_tx, internal_rx) = unbounded();
+    pub async fn prepare(port: u16, node_addr_builder: &mut NodeAddrBuilder) -> TcpListener {
         let listener = TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port)).await.unwrap();
 
         match local_ip() {
@@ -51,18 +49,25 @@ impl TcpTransport {
             node_addr_builder.add_protocol(Protocol::Tcp(addr.port()));
         }
 
+        listener
+    }
+
+    pub fn new(node_addr: NodeAddr, listener: TcpListener) -> Self {
+        let node_id = node_addr.node_id();
+        let (internal_tx, internal_rx) = unbounded();
+
         Self {
             node_id,
-            node_addr_builder: node_addr_builder.clone(),
+            node_addr: node_addr.clone(),
             listener,
             internal_tx: internal_tx.clone(),
             internal_rx,
             seed: 0,
             connector: TcpConnector {
                 conn_id_seed: 0,
+                node_addr,
                 pending_outgoing: HashMap::new(),
                 node_id,
-                node_addr_builder,
                 internal_tx,
                 timer: Arc::new(SystemTimer()),
             },
@@ -86,7 +91,7 @@ impl Transport for TcpTransport {
                         let internal_tx = self.internal_tx.clone();
                         let timer = self.timer.clone();
                         let node_id = self.node_id;
-                        let node_addr = self.node_addr_builder.addr();
+                        let node_addr = self.node_addr.clone();
                         let conn_id = ConnId::from_in(1, self.seed);
                         self.seed += 1;
 

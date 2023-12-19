@@ -6,7 +6,7 @@ use std::{
 };
 
 use async_std::channel::{Receiver, Sender};
-use atm0s_sdn_identity::{ConnId, NodeAddrBuilder, Protocol};
+use atm0s_sdn_identity::{ConnId, NodeAddr, NodeAddrBuilder, Protocol};
 use atm0s_sdn_network::transport::{Transport, TransportConnector, TransportEvent};
 use atm0s_sdn_utils::{error_handle::ErrorUtils, SystemTimer, Timer};
 use local_ip_address::local_ip;
@@ -20,15 +20,12 @@ pub struct UdpTransport {
 }
 
 impl UdpTransport {
-    pub async fn new(port: u16, node_addr_builder: Arc<NodeAddrBuilder>) -> Self {
-        let node_id = node_addr_builder.node_id();
-        let (tx, rx) = async_std::channel::bounded(1024);
+    pub async fn prepare(port: u16, node_addr_builder: &mut NodeAddrBuilder) -> UdpSocket {
         let socket = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::DGRAM, None).expect("Should create socket");
         socket.bind(&SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port).into()).expect("Should bind address");
         socket.set_recv_buffer_size(1024 * 1024).expect("Should set recv buffer size");
         socket.set_send_buffer_size(1024 * 1024).expect("Should set recv buffer size");
         let socket: UdpSocket = socket.into();
-        let socket = Arc::new(socket);
 
         log::info!("[UdpTransport] Listening on port {}", socket.local_addr().unwrap().port());
 
@@ -49,9 +46,16 @@ impl UdpTransport {
         } else if let Ok(addr) = socket.local_addr() {
             node_addr_builder.add_protocol(Protocol::Udp(addr.port()));
         }
+        socket
+    }
+
+    pub fn new(node_addr: NodeAddr, socket: UdpSocket) -> Self {
+        let node_id = node_addr.node_id();
+        let (tx, rx) = async_std::channel::bounded(1024);
+        let socket = Arc::new(socket);
 
         let timer = Arc::new(SystemTimer());
-        let connector = UdpConnector::new(node_id, node_addr_builder.clone(), tx.clone(), timer.clone());
+        let connector = UdpConnector::new(node_id, node_addr, tx.clone(), timer.clone());
 
         async_std::task::spawn(async move {
             let mut last_clear_timeout_ms = 0;

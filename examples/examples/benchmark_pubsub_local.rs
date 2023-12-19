@@ -34,14 +34,15 @@ enum ImplSdkEvent {
 
 async fn run_node(node_id: NodeId, seeds: Vec<NodeAddr>) -> (PubsubSdk, NodeAddr) {
     log::info!("Run node {} connect to {:?}", node_id, seeds);
-    let node_addr = Arc::new(NodeAddrBuilder::new(node_id));
-    let transport = Box::new(UdpTransport::new(0, node_addr.clone()).await);
+    let mut node_addr_builder = NodeAddrBuilder::new(node_id);
+    let socket = UdpTransport::prepare(0, &mut node_addr_builder).await;
+    let transport = Box::new(UdpTransport::new(node_addr_builder.addr(), socket));
     let timer = Arc::new(SystemTimer());
 
     let router = SharedRouter::new(node_id);
     let manual = ManualBehavior::new(ManualBehaviorConf {
         node_id,
-        node_addr: node_addr.addr(),
+        node_addr: node_addr_builder.addr(),
         seeds,
         local_tags: vec![],
         connect_tags: vec![],
@@ -66,7 +67,7 @@ async fn run_node(node_id: NodeId, seeds: Vec<NodeAddr>) -> (PubsubSdk, NodeAddr
         plane.stopped();
     });
 
-    (pubsub_sdk, node_addr.addr())
+    (pubsub_sdk, node_addr_builder.addr())
 }
 
 #[async_std::main]

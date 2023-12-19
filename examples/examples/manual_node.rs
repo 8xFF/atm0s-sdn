@@ -70,9 +70,12 @@ compose_transport!(UdpTcpTransport, udp: UdpTransport, tcp: TcpTransport);
 async fn main() {
     env_logger::builder().format_timestamp_millis().init();
     let args: Args = Args::parse();
-    let node_addr_builder = Arc::new(NodeAddrBuilder::new(args.node_id));
-    let udp = UdpTransport::new(50000 + args.node_id as u16, node_addr_builder.clone()).await;
-    let tcp = TcpTransport::new(50000 + args.node_id as u16, node_addr_builder.clone()).await;
+    let mut node_addr_builder = NodeAddrBuilder::new(args.node_id);
+    let udp_socket = UdpTransport::prepare(50000 + args.node_id as u16, &mut node_addr_builder).await;
+    let tcp_listener = TcpTransport::prepare(50000 + args.node_id as u16, &mut node_addr_builder).await;
+
+    let udp = UdpTransport::new(node_addr_builder.addr(), udp_socket);
+    let tcp = TcpTransport::new(node_addr_builder.addr(), tcp_listener);
 
     let transport = UdpTcpTransport::new(udp, tcp);
 

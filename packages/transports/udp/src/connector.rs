@@ -6,7 +6,7 @@ use std::{
 };
 
 use async_std::channel::Sender;
-use atm0s_sdn_identity::{ConnId, NodeAddr, NodeAddrBuilder, NodeId, Protocol};
+use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId, Protocol};
 use atm0s_sdn_network::transport::{OutgoingConnectionError, TransportConnector, TransportEvent};
 use atm0s_sdn_utils::{error_handle::ErrorUtils, Timer};
 
@@ -19,7 +19,7 @@ use crate::{
 
 pub struct UdpConnector {
     local_node_id: NodeId,
-    local_addr_builder: Arc<NodeAddrBuilder>,
+    local_addr: NodeAddr,
     conn_id_seed: u64,
     tx: Sender<TransportEvent>,
     timer: Arc<dyn Timer>,
@@ -27,10 +27,10 @@ pub struct UdpConnector {
 }
 
 impl UdpConnector {
-    pub fn new(local_node_id: NodeId, local_addr_builder: Arc<NodeAddrBuilder>, tx: Sender<TransportEvent>, timer: Arc<dyn Timer>) -> Self {
+    pub fn new(local_node_id: NodeId, local_addr: NodeAddr, tx: Sender<TransportEvent>, timer: Arc<dyn Timer>) -> Self {
         Self {
             local_node_id,
-            local_addr_builder,
+            local_addr,
             conn_id_seed: 0,
             tx,
             timer,
@@ -68,7 +68,7 @@ impl TransportConnector for UdpConnector {
     fn continue_pending_outgoing(&mut self, conn_id: ConnId) {
         if let Some((node_id, node_addr, remote_addr)) = self.pending_outgoing.remove(&conn_id) {
             let local_node_id = self.local_node_id;
-            let local_node_addr = self.local_addr_builder.addr();
+            let local_node_addr = self.local_addr.clone();
             let tx = self.tx.clone();
             let timer = self.timer.clone();
 

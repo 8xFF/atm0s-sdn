@@ -1,4 +1,3 @@
-use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::{fmt::Display, str::FromStr};
 
@@ -69,14 +68,14 @@ impl Display for NodeAddr {
 /// A builder for creating `NodeAddr` instances.
 pub struct NodeAddrBuilder {
     node_id: NodeId,
-    addr: Mutex<multiaddr::Multiaddr>,
+    addr: multiaddr::Multiaddr,
 }
 
 impl NodeAddrBuilder {
     pub fn new(node_id: NodeId) -> Self {
         Self {
             node_id,
-            addr: Mutex::new(multiaddr::Multiaddr::empty()),
+            addr: multiaddr::Multiaddr::empty(),
         }
     }
 
@@ -85,13 +84,13 @@ impl NodeAddrBuilder {
     }
 
     /// Adds a protocol to the node address.
-    pub fn add_protocol(&self, protocol: Protocol) {
-        self.addr.lock().push(protocol);
+    pub fn add_protocol(&mut self, protocol: Protocol) {
+        self.addr.push(protocol);
     }
 
     /// Get the node address.
     pub fn addr(&self) -> NodeAddr {
-        NodeAddr(self.node_id, self.addr.lock().clone())
+        NodeAddr(self.node_id, self.addr.clone())
     }
 }
 

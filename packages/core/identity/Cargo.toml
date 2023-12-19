@@ -11,5 +11,4 @@ license = "MIT"
 [dependencies]
 multiaddr = "0.18.1"
 rand = "0.8"
-parking_lot = { workspace = true }
 serde = { workspace = true }

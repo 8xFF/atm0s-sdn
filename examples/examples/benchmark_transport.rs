@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use atm0s_sdn::RouteRule;
 use atm0s_sdn::{ConnectionEvent, Transport, TransportEvent, TransportMsg};
@@ -7,11 +7,13 @@ use atm0s_sdn::{NodeAddrBuilder, UdpTransport};
 #[async_std::main]
 async fn main() {
     env_logger::builder().format_timestamp_millis().filter_level(log::LevelFilter::Info).init();
-    let node_addr1 = Arc::new(NodeAddrBuilder::new(1));
-    let mut transport1 = UdpTransport::new(0, node_addr1.clone()).await;
+    let mut node_addr_builder1 = NodeAddrBuilder::new(1);
+    let socket1 = UdpTransport::prepare(0, &mut node_addr_builder1).await;
+    let mut transport1 = Box::new(UdpTransport::new(node_addr_builder1.addr(), socket1));
 
-    let node_addr2 = Arc::new(NodeAddrBuilder::new(2));
-    let mut transport2 = UdpTransport::new(0, node_addr2.clone()).await;
+    let mut node_addr_builder2 = NodeAddrBuilder::new(2);
+    let socket2 = UdpTransport::prepare(0, &mut node_addr_builder2).await;
+    let mut transport2 = Box::new(UdpTransport::new(node_addr_builder2.addr(), socket2));
 
     let task = async_std::task::spawn(async move {
         loop {
@@ -38,9 +40,9 @@ async fn main() {
     });
 
     async_std::task::sleep(Duration::from_secs(1)).await;
-    log::info!("Connect to {}", node_addr2.addr());
+    log::info!("Connect to {}", node_addr_builder2.addr());
 
-    for conn in transport1.connector().create_pending_outgoing(node_addr2.addr()) {
+    for conn in transport1.connector().create_pending_outgoing(node_addr_builder2.addr()) {
         transport1.connector().continue_pending_outgoing(conn);
     }
 
