@@ -119,14 +119,13 @@ async fn main() {
     // The multiaddr is composed of multiple protocols, each of which is identified by a code.
     // example in our case: /p2p/0/ip4/127.0.0.1/udp/50000
     // You can find more information about multiaddr here: https://multiformats.io/multiaddr/
-    let node_addr_builder = Arc::new(NodeAddrBuilder::default());
-    node_addr_builder.set_node_id(args.node_id);
+    let node_addr_builder = Arc::new(NodeAddrBuilder::new(args.node_id));
 
     // Create a transport layer, which is used to send and receive messages.
     // In this example, we use the UDP transport layer.
     // There are also other transport layers, such as TCP and VNET, others are still in progress.
     // The port number is 50000 + node_id.
-    let transport = UdpTransport::new(args.node_id, 50000 + args.node_id as u16, node_addr_builder.clone()).await;
+    let transport = UdpTransport::new(50000 + args.node_id as u16, node_addr_builder.clone()).await;
     let node_addr = node_addr_builder.addr();
     println!("Listening on addr {}", node_addr);
 

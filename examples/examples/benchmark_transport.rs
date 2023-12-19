@@ -7,11 +7,11 @@ use atm0s_sdn::{NodeAddrBuilder, UdpTransport};
 #[async_std::main]
 async fn main() {
     env_logger::builder().format_timestamp_millis().filter_level(log::LevelFilter::Info).init();
-    let node_addr1 = Arc::new(NodeAddrBuilder::default());
-    let mut transport1 = UdpTransport::new(1, 0, node_addr1.clone()).await;
+    let node_addr1 = Arc::new(NodeAddrBuilder::new(1));
+    let mut transport1 = UdpTransport::new(0, node_addr1.clone()).await;
 
-    let node_addr2 = Arc::new(NodeAddrBuilder::default());
-    let mut transport2 = UdpTransport::new(2, 0, node_addr2.clone()).await;
+    let node_addr2 = Arc::new(NodeAddrBuilder::new(2));
+    let mut transport2 = UdpTransport::new(0, node_addr2.clone()).await;
 
     let task = async_std::task::spawn(async move {
         loop {

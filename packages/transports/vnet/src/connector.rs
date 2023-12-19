@@ -1,5 +1,5 @@
 use crate::{earth::VnetEarth, VNET_PROTOCOL_ID};
-use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId, Protocol};
+use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 use atm0s_sdn_network::transport::TransportConnector;
 use std::{
     collections::HashMap,

@@ -266,12 +266,7 @@ where
         Some(Box::new(KeyValueConnectionHandler::new()))
     }
 
-    fn on_outgoing_connection_connected(
-        &mut self,
-        ctx: &BehaviorContext,
-        now_ms: u64,
-        conn: Arc<dyn ConnectionSender>,
-    ) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
+    fn on_outgoing_connection_connected(&mut self, ctx: &BehaviorContext, now_ms: u64, conn: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
         Some(Box::new(KeyValueConnectionHandler::new()))
     }
 

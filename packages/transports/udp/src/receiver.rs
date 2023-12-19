@@ -41,7 +41,7 @@ impl UdpServerConnectionReceiver {
         close_state: Arc<AtomicBool>,
         close_notify: Arc<async_notify::Notify>,
     ) -> Self {
-        log::info!("[UdpServerConnectionReceiver {}] new", remote_node_id);
+        log::info!("[UdpServerConnectionReceiver {}/{}] new", remote_node_id, conn_id);
 
         Self {
             closed: false,
@@ -79,7 +79,7 @@ impl ConnectionReceiver for UdpServerConnectionReceiver {
         loop {
             select! {
                 _ = self.close_notify.notified().fuse() => {
-                    log::info!("[UdpServerConnectionReceiver {}] close notify received", self.remote_node_id);
+                    log::info!("[UdpServerConnectionReceiver {}/{}] close notify received", self.remote_node_id, self.conn_id);
                     self.closed = true;
                     break Err(());
                 }
@@ -87,7 +87,7 @@ impl ConnectionReceiver for UdpServerConnectionReceiver {
                     if self.last_pong_ts + 10000 < self.timer.now_ms() {
                         self.closed = true;
                         self.close_state.store(true, std::sync::atomic::Ordering::SeqCst);
-                        log::info!("[UdpServerConnectionReceiver {}] timeout => close", self.remote_node_id);
+                        log::info!("[UdpServerConnectionReceiver {}/{}] timeout => close", self.remote_node_id, self.conn_id);
                         break Err(());
                     }
 
@@ -99,12 +99,12 @@ impl ConnectionReceiver for UdpServerConnectionReceiver {
                             if data[0] == 255 {
                                 match bincode::deserialize::<UdpTransportMsg>(&data[1..len]) {
                                     Ok(UdpTransportMsg::Ping(ts)) => {
-                                        log::debug!("[UdpServerConnectionReceiver {}] on ping received {}", self.remote_node_id, ts);
+                                        log::debug!("[UdpServerConnectionReceiver {}/{}] on ping received {}", self.remote_node_id, self.conn_id, ts);
                                         self.socket.send_to(&build_control_msg(&UdpTransportMsg::Pong(ts)), self.socket_dest).await.print_error("Should send Pong");
                                     }
                                     Ok(UdpTransportMsg::Pong(ts)) => {
                                         self.last_pong_ts = self.timer.now_ms();
-                                        log::debug!("[UdpServerConnectionReceiver {}] on pong received {} ms", self.remote_node_id, self.last_pong_ts - ts);
+                                        log::debug!("[UdpServerConnectionReceiver {}/{}] on pong received {} ms", self.remote_node_id, self.conn_id, self.last_pong_ts - ts);
                                         //TODO est speed and over_use state
                                         break Ok(ConnectionEvent::Stats(ConnectionStats {
                                             rtt_ms: (self.last_pong_ts - ts) as u16,
@@ -117,7 +117,7 @@ impl ConnectionReceiver for UdpServerConnectionReceiver {
                                     Ok(UdpTransportMsg::Close) => {
                                         self.closed = true;
                                         self.close_state.store(true, std::sync::atomic::Ordering::SeqCst);
-                                        log::info!("[UdpServerConnectionReceiver {}] remove close received", self.remote_node_id);
+                                        log::info!("[UdpServerConnectionReceiver {}/{}] remove close received", self.remote_node_id, self.conn_id);
                                         break Err(());
                                     }
                                     _ => {}
@@ -127,14 +127,14 @@ impl ConnectionReceiver for UdpServerConnectionReceiver {
                                 match TransportMsg::from_vec(data[0..len].to_vec()) {
                                     Ok(msg) => break Ok(ConnectionEvent::Msg(msg)),
                                     Err(e) => {
-                                        log::error!("[UdpServerConnectionReceiver {}] wrong msg format {:?}", self.remote_node_id, e);
+                                        log::error!("[UdpServerConnectionReceiver {}/{}] wrong msg format {:?}", self.remote_node_id, self.conn_id, e);
                                     }
                                 }
                             }
                         }
                     },
                     Err(err) => {
-                        log::warn!("[UdpServerConnectionReceiver {}] internal channel error {:?}", self.remote_node_id, err);
+                        log::warn!("[UdpServerConnectionReceiver {}/{}] internal channel error {:?}", self.remote_node_id, self.conn_id, err);
                         self.closed = true;
                         return Err(());
                     }
@@ -146,7 +146,7 @@ impl ConnectionReceiver for UdpServerConnectionReceiver {
 
 impl Drop for UdpServerConnectionReceiver {
     fn drop(&mut self) {
-        log::info!("[UdpServerConnectionReceiver {}] drop", self.remote_node_id);
+        log::info!("[UdpServerConnectionReceiver {}/{}] drop", self.remote_node_id, self.conn_id);
     }
 }
 

@@ -47,12 +47,7 @@ where
         Some(Box::new(LayersSpreadRouterSyncHandler::new(self.router.clone())))
     }
 
-    fn on_outgoing_connection_connected(
-        &mut self,
-        _ctx: &BehaviorContext,
-        _now_ms: u64,
-        _conn: Arc<dyn ConnectionSender>,
-    ) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
+    fn on_outgoing_connection_connected(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _conn: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
         Some(Box::new(LayersSpreadRouterSyncHandler::new(self.router.clone())))
     }
 
@@ -60,15 +55,7 @@ where
 
     fn on_outgoing_connection_disconnected(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node_id: NodeId, _conn_id: ConnId) {}
 
-    fn on_outgoing_connection_error(
-        &mut self,
-        _ctx: &BehaviorContext,
-        _now_ms: u64,
-        _node_id: NodeId,
-        _conn_id: ConnId,
-        _err: &OutgoingConnectionError,
-    ) {
-    }
+    fn on_outgoing_connection_error(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node_id: NodeId, _conn_id: ConnId, _err: &OutgoingConnectionError) {}
 
     fn on_handler_event(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node_id: NodeId, _conn_id: ConnId, _event: BE) {}
 

@@ -121,7 +121,11 @@ where
                             //need reconnect
                             log::info!("[MananualBehavior] connect to node {} addr: {} after error", node_id, slot.addr);
                             self.queue_action.push_back(NetworkBehaviorAction::ConnectTo(slot.addr.clone()));
-                            slot.outgoing = OutgoingState::Connecting { ts: now_ms, conns: vec![], count: count + 1 };
+                            slot.outgoing = OutgoingState::Connecting {
+                                ts: now_ms,
+                                conns: vec![],
+                                count: count + 1,
+                            };
                         }
                     }
                     _ => {}
@@ -185,7 +189,11 @@ where
         if let Some(neighbour) = self.targets.get_mut(&node) {
             match &mut neighbour.outgoing {
                 OutgoingState::New => {
-                    neighbour.outgoing = OutgoingState::Connecting { ts: now_ms, conns: vec![conn_id], count: 0 };
+                    neighbour.outgoing = OutgoingState::Connecting {
+                        ts: now_ms,
+                        conns: vec![conn_id],
+                        count: 0,
+                    };
                     Ok(())
                 }
                 OutgoingState::Connecting { conns, .. } => {
@@ -217,16 +225,11 @@ where
             entry.incoming.push(conn.conn_id());
             return None;
         }
-        
+
         Some(Box::new(ManualHandler {}))
     }
 
-    fn on_outgoing_connection_connected(
-        &mut self,
-        _context: &BehaviorContext,
-        now_ms: u64,
-        connection: Arc<dyn ConnectionSender>,
-    ) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
+    fn on_outgoing_connection_connected(&mut self, _context: &BehaviorContext, now_ms: u64, connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
         let entry = self.targets.entry(connection.remote_node_id()).or_insert_with(|| NodeSlot {
             addr: connection.remote_addr(),
             tags: HashMap::new(),
@@ -234,7 +237,10 @@ where
             incoming: vec![],
             outgoing: OutgoingState::New,
         });
-        entry.outgoing = OutgoingState::Connected { ts: now_ms, conns: vec![connection.conn_id()] };
+        entry.outgoing = OutgoingState::Connected {
+            ts: now_ms,
+            conns: vec![connection.conn_id()],
+        };
         Some(Box::new(ManualHandler {}))
     }
 
@@ -264,14 +270,7 @@ where
         }
     }
 
-    fn on_outgoing_connection_error(
-        &mut self,
-        _context: &BehaviorContext,
-        now_ms: u64,
-        node_id: NodeId,
-        conn_id: ConnId,
-        _err: &OutgoingConnectionError,
-    ) {
+    fn on_outgoing_connection_error(&mut self, _context: &BehaviorContext, now_ms: u64, node_id: NodeId, conn_id: ConnId, _err: &OutgoingConnectionError) {
         if let Some(slot) = self.targets.get_mut(&node_id) {
             if let OutgoingState::Connecting { conns, count, .. } = &mut slot.outgoing {
                 conns.retain(|c| c != &conn_id);
@@ -305,7 +304,7 @@ where
 mod test {
     use std::{str::FromStr, sync::Arc};
 
-    use atm0s_sdn_identity::{NodeAddr, ConnId};
+    use atm0s_sdn_identity::{ConnId, NodeAddr};
     use atm0s_sdn_key_value::{KeyValueSdkEvent, KEY_VALUE_SERVICE_ID};
     use atm0s_sdn_network::{
         behaviour::{BehaviorContext, NetworkBehavior, NetworkBehaviorAction},

@@ -129,12 +129,7 @@ where
         Some(Box::new(DiscoveryConnectionHandler::new()))
     }
 
-    fn on_outgoing_connection_connected(
-        &mut self,
-        ctx: &BehaviorContext,
-        _now_ms: u64,
-        connection: Arc<dyn ConnectionSender>,
-    ) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
+    fn on_outgoing_connection_connected(&mut self, ctx: &BehaviorContext, _now_ms: u64, connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
         self.add_connection_if_need::<BE>(ctx, connection);
         Some(Box::new(DiscoveryConnectionHandler::new()))
     }
@@ -147,14 +142,7 @@ where
         self.remove_connection_if_need::<BE>(ctx, node_id, conn_id);
     }
 
-    fn on_outgoing_connection_error(
-        &mut self,
-        ctx: &BehaviorContext,
-        _now_ms: u64,
-        node_id: NodeId,
-        _connection_id: ConnId,
-        _err: &OutgoingConnectionError,
-    ) {
+    fn on_outgoing_connection_error(&mut self, ctx: &BehaviorContext, _now_ms: u64, node_id: NodeId, _connection_id: ConnId, _err: &OutgoingConnectionError) {
         self.logic.on_input(Input::OnConnectError(node_id));
         self.process_logic_actions::<BE>(ctx);
     }

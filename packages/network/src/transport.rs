@@ -24,11 +24,7 @@ pub enum TransportEvent {
     Outgoing(Arc<dyn ConnectionSender>, Box<dyn ConnectionReceiver + Send>),
     /// `OutgoingError` represents an error that occurred while attempting to establish an outgoing connection,
     /// with the given `NodeId`, `ConnId`, and `OutgoingConnectionError`.
-    OutgoingError {
-        node_id: NodeId,
-        conn_id: ConnId,
-        err: OutgoingConnectionError,
-    },
+    OutgoingError { node_id: NodeId, conn_id: ConnId, err: OutgoingConnectionError },
 }
 
 #[async_trait::async_trait]

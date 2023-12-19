@@ -19,3 +19,4 @@ serde = { workspace = true }
 log = { workspace = true }
 futures-util = "0.3"
 async-bincode = { version = "0.7.2", features = ["futures"], default-features = false }
+local-ip-address = "0.5.6"

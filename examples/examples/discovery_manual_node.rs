@@ -49,9 +49,8 @@ struct Args {
 async fn main() {
     env_logger::init();
     let args: Args = Args::parse();
-    let node_addr_builder = Arc::new(NodeAddrBuilder::default());
-    node_addr_builder.set_node_id(args.node_id);
-    let transport: UdpTransport = UdpTransport::new(args.node_id, 0, node_addr_builder.clone()).await;
+    let node_addr_builder = Arc::new(NodeAddrBuilder::new(args.node_id));
+    let transport: UdpTransport = UdpTransport::new(0, node_addr_builder.clone()).await;
     let node_addr = node_addr_builder.addr();
     log::info!("Listen on addr {}", node_addr);
 

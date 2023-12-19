@@ -1,7 +1,7 @@
 use crate::connector::VnetConnector;
 use crate::earth::VnetEarth;
 use crate::listener::{VnetListener, VnetListenerEvent};
-use atm0s_sdn_identity::{NodeAddr, NodeId};
+use atm0s_sdn_identity::NodeAddr;
 use atm0s_sdn_network::transport::{Transport, TransportConnector, TransportEvent};
 use std::sync::Arc;
 

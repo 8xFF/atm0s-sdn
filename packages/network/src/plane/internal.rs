@@ -1,11 +1,11 @@
 use std::{collections::VecDeque, fmt, sync::Arc};
 
-use atm0s_sdn_identity::{NodeId, ConnId};
+use atm0s_sdn_identity::{ConnId, NodeId};
 use atm0s_sdn_utils::{awaker::Awaker, init_vec::init_vec};
 
 use crate::{
     behaviour::{BehaviorContext, ConnectionHandler, NetworkBehavior, NetworkBehaviorAction},
-    transport::{ConnectionReceiver, ConnectionSender, TransportEvent, OutgoingConnectionError},
+    transport::{ConnectionReceiver, ConnectionSender, OutgoingConnectionError, TransportEvent},
 };
 
 use super::NetworkPlaneInternalEvent;

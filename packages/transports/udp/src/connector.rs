@@ -1,7 +1,8 @@
 use std::{
+    collections::HashMap,
     net::{SocketAddr, UdpSocket},
     os::fd::{AsRawFd, FromRawFd},
-    sync::Arc, collections::HashMap,
+    sync::Arc,
 };
 
 use async_std::channel::Sender;
@@ -46,7 +47,7 @@ impl TransportConnector for UdpConnector {
             match proto {
                 Protocol::Ip4(ip) => {
                     ip_v4 = Some(ip);
-                },
+                }
                 Protocol::Udp(portnum) => match &ip_v4 {
                     Some(ip) => {
                         let uuid = self.conn_id_seed;
@@ -54,8 +55,8 @@ impl TransportConnector for UdpConnector {
                         let conn_id = ConnId::from_out(UDP_PROTOCOL_ID, uuid);
                         res.push(conn_id);
                         self.pending_outgoing.insert(conn_id, (dest.node_id(), dest.clone(), SocketAddr::new(ip.clone().into(), portnum)));
-                    },
-                    None => {},
+                    }
+                    None => {}
                 },
                 Protocol::Memory(_) => {}
                 _ => {}
@@ -66,53 +67,53 @@ impl TransportConnector for UdpConnector {
 
     fn continue_pending_outgoing(&mut self, conn_id: ConnId) {
         if let Some((node_id, node_addr, remote_addr)) = self.pending_outgoing.remove(&conn_id) {
-        let local_node_id = self.local_node_id;
-        let local_node_addr = self.local_addr_builder.addr();
-        let tx = self.tx.clone();
-        let timer = self.timer.clone();
+            let local_node_id = self.local_node_id;
+            let local_node_addr = self.local_addr_builder.addr();
+            let tx = self.tx.clone();
+            let timer = self.timer.clone();
 
-        async_std::task::spawn(async move {
-            let socket = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::DGRAM, None).expect("Should create socket");
-            let address: SocketAddr = "0.0.0.0:0".parse().expect("Should parse socket_addr");
-            socket.bind(&address.into()).expect("Should bind address");
-            socket.set_recv_buffer_size(1024 * 1024).expect("Should set recv buffer size");
-            socket.set_send_buffer_size(1024 * 1024).expect("Should set recv buffer size");
-            let socket: UdpSocket = socket.into();
-            let socket = Arc::new(socket);
-            socket.connect(remote_addr).print_error("Should connect to remote addr");
+            async_std::task::spawn(async move {
+                let socket = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::DGRAM, None).expect("Should create socket");
+                let address: SocketAddr = "0.0.0.0:0".parse().expect("Should parse socket_addr");
+                socket.bind(&address.into()).expect("Should bind address");
+                socket.set_recv_buffer_size(1024 * 1024).expect("Should set recv buffer size");
+                socket.set_send_buffer_size(1024 * 1024).expect("Should set recv buffer size");
+                let socket: UdpSocket = socket.into();
+                let socket = Arc::new(socket);
+                socket.connect(remote_addr).print_error("Should connect to remote addr");
 
-            let async_socket = unsafe { Arc::new(async_std::net::UdpSocket::from_raw_fd(socket.as_raw_fd())) };
+                let async_socket = unsafe { Arc::new(async_std::net::UdpSocket::from_raw_fd(socket.as_raw_fd())) };
 
-            match outgoing_handshake(&async_socket, local_node_id, local_node_addr, node_id).await {
-                Ok(_) => {
-                    let close_state = Arc::new(std::sync::atomic::AtomicBool::new(false));
-                    let close_notify = Arc::new(async_notify::Notify::new());
-                    let sender = Arc::new(UdpClientConnectionSender::new(node_id, node_addr.clone(), conn_id, socket, close_state.clone(), close_notify.clone()));
-                    let receiver = Box::new(UdpClientConnectionReceiver::new(async_socket, conn_id, node_id, node_addr, timer, close_state, close_notify));
-                    tx.send(TransportEvent::Outgoing(sender, receiver)).await.print_error("Should send incoming event");
+                match outgoing_handshake(&async_socket, local_node_id, local_node_addr, node_id).await {
+                    Ok(_) => {
+                        let close_state = Arc::new(std::sync::atomic::AtomicBool::new(false));
+                        let close_notify = Arc::new(async_notify::Notify::new());
+                        let sender = Arc::new(UdpClientConnectionSender::new(node_id, node_addr.clone(), conn_id, socket, close_state.clone(), close_notify.clone()));
+                        let receiver = Box::new(UdpClientConnectionReceiver::new(async_socket, conn_id, node_id, node_addr, timer, close_state, close_notify));
+                        tx.send(TransportEvent::Outgoing(sender, receiver)).await.print_error("Should send incoming event");
+                    }
+                    Err(e) => {
+                        log::error!("{:?}", e);
+                        tx.send(TransportEvent::OutgoingError {
+                            node_id,
+                            conn_id,
+                            err: match e {
+                                OutgoingHandshakeError::SocketError => OutgoingConnectionError::DestinationNotFound,
+                                OutgoingHandshakeError::Timeout => OutgoingConnectionError::AuthenticationError,
+                                OutgoingHandshakeError::WrongMsg => OutgoingConnectionError::AuthenticationError,
+                                OutgoingHandshakeError::Rejected => OutgoingConnectionError::AuthenticationError,
+                                OutgoingHandshakeError::AuthenticationError => OutgoingConnectionError::AuthenticationError,
+                            },
+                        })
+                        .await
+                        .print_error("Should send outgoing error");
+                    }
                 }
-                Err(e) => {
-                    log::error!("{:?}", e);
-                    tx.send(TransportEvent::OutgoingError {
-                        node_id,
-                        conn_id,
-                        err: match e {
-                            OutgoingHandshakeError::SocketError => OutgoingConnectionError::DestinationNotFound,
-                            OutgoingHandshakeError::Timeout => OutgoingConnectionError::AuthenticationError,
-                            OutgoingHandshakeError::WrongMsg => OutgoingConnectionError::AuthenticationError,
-                            OutgoingHandshakeError::Rejected => OutgoingConnectionError::AuthenticationError,
-                            OutgoingHandshakeError::AuthenticationError => OutgoingConnectionError::AuthenticationError,
-                        },
-                    })
-                    .await
-                    .print_error("Should send outgoing error");
-                }
-            }
-        });
+            });
         }
     }
 
     fn destroy_pending_outgoing(&mut self, conn_id: ConnId) {
-        self.pending_outgoing.remove(&conn_id);    
+        self.pending_outgoing.remove(&conn_id);
     }
 }

@@ -148,12 +148,7 @@ where
         }))
     }
 
-    fn on_outgoing_connection_connected(
-        &mut self,
-        _ctx: &BehaviorContext,
-        _now_ms: u64,
-        conn: Arc<dyn ConnectionSender>,
-    ) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
+    fn on_outgoing_connection_connected(&mut self, _ctx: &BehaviorContext, _now_ms: u64, conn: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
         self.relay.on_connection_opened(conn.conn_id(), conn);
         Some(Box::new(PubsubServiceConnectionHandler {
             node_id: self.node_id,
@@ -169,14 +164,7 @@ where
         self.relay.on_connection_closed(conn_id);
     }
 
-    fn on_outgoing_connection_error(
-        &mut self,
-        _ctx: &BehaviorContext,
-        _now_ms: u64,
-        _node_id: NodeId,
-        conn_id: ConnId,
-        _err: &OutgoingConnectionError,
-    ) {        
+    fn on_outgoing_connection_error(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node_id: NodeId, conn_id: ConnId, _err: &OutgoingConnectionError) {
         self.relay.on_connection_closed(conn_id);
     }
 

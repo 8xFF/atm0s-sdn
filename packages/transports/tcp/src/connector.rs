@@ -22,9 +22,7 @@ pub struct TcpConnector {
     pub(crate) pending_outgoing: HashMap<ConnId, (NodeId, NodeAddr, SocketAddr)>,
 }
 
-impl TcpConnector {
-    
-}
+impl TcpConnector {}
 
 impl TransportConnector for TcpConnector {
     fn create_pending_outgoing(&mut self, dest: NodeAddr) -> Vec<ConnId> {
@@ -34,7 +32,7 @@ impl TransportConnector for TcpConnector {
             match proto {
                 Protocol::Ip4(ip) => {
                     ip_v4 = Some(ip);
-                },
+                }
                 Protocol::Tcp(portnum) => match &ip_v4 {
                     Some(ip) => {
                         let uuid = self.conn_id_seed;
@@ -42,10 +40,10 @@ impl TransportConnector for TcpConnector {
                         let conn_id = ConnId::from_out(TCP_PROTOCOL_ID, uuid);
                         res.push(conn_id);
                         self.pending_outgoing.insert(conn_id, (dest.node_id(), dest.clone(), SocketAddr::new(ip.clone().into(), portnum)));
-                    },
+                    }
                     None => {
                         log::error!("[TcpConnector] No ip4 address found in node addr {}", dest);
-                    },
+                    }
                 },
                 Protocol::Memory(_) => {}
                 _ => {}
@@ -72,7 +70,6 @@ impl TransportConnector for TcpConnector {
                             Ok(_) => {
                                 let (connection_sender, unreliable_sender) = TcpConnectionSender::new(node_id, remote_node_id, remote_node_addr.clone(), conn_id, 1000, socket_write, timer.clone());
                                 let connection_receiver = Box::new(TcpConnectionReceiver {
-                                    node_id,
                                     remote_node_id,
                                     remote_addr: remote_node_addr,
                                     conn_id,

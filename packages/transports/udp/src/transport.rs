@@ -1,14 +1,15 @@
 use std::{
     collections::HashMap,
-    net::{Ipv4Addr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     os::fd::{AsRawFd, FromRawFd},
     sync::Arc,
 };
 
 use async_std::channel::{Receiver, Sender};
-use atm0s_sdn_identity::{ConnId, NodeAddrBuilder, NodeId, Protocol};
+use atm0s_sdn_identity::{ConnId, NodeAddrBuilder, Protocol};
 use atm0s_sdn_network::transport::{Transport, TransportConnector, TransportEvent};
 use atm0s_sdn_utils::{error_handle::ErrorUtils, SystemTimer, Timer};
+use local_ip_address::local_ip;
 use std::net::UdpSocket;
 
 use crate::{connector::UdpConnector, handshake::incoming_handshake, receiver::UdpServerConnectionReceiver, sender::UdpServerConnectionSender, UDP_PROTOCOL_ID};
@@ -19,12 +20,11 @@ pub struct UdpTransport {
 }
 
 impl UdpTransport {
-    pub async fn new(node_id: NodeId, port: u16, node_addr_builder: Arc<NodeAddrBuilder>) -> Self {
+    pub async fn new(port: u16, node_addr_builder: Arc<NodeAddrBuilder>) -> Self {
+        let node_id = node_addr_builder.node_id();
         let (tx, rx) = async_std::channel::bounded(1024);
-        let addr_str = format!("0.0.0.0:{}", port);
-        let addr: SocketAddr = addr_str.as_str().parse().expect("Should parse ip address");
         let socket = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::DGRAM, None).expect("Should create socket");
-        socket.bind(&addr.into()).expect("Should bind address");
+        socket.bind(&SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port).into()).expect("Should bind address");
         socket.set_recv_buffer_size(1024 * 1024).expect("Should set recv buffer size");
         socket.set_send_buffer_size(1024 * 1024).expect("Should set recv buffer size");
         let socket: UdpSocket = socket.into();
@@ -32,8 +32,18 @@ impl UdpTransport {
 
         log::info!("[UdpTransport] Listening on port {}", socket.local_addr().unwrap().port());
 
-        //TODO get dynamic ip address
-        node_addr_builder.add_protocol(Protocol::Ip4(Ipv4Addr::new(127, 0, 0, 1)));
+        match local_ip() {
+            Ok(ip) => {
+                node_addr_builder.add_protocol(match ip {
+                    IpAddr::V4(ip) => Protocol::Ip4(ip),
+                    IpAddr::V6(ip) => Protocol::Ip6(ip),
+                });
+            }
+            Err(e) => {
+                log::error!("[UdpTransport] get local ip address error {:?} => fallback to loopback 127.0.0.1", e);
+                node_addr_builder.add_protocol(Protocol::Ip4(Ipv4Addr::new(127, 0, 0, 1)));
+            }
+        }
         if port != 0 {
             node_addr_builder.add_protocol(Protocol::Udp(port));
         } else if let Ok(addr) = socket.local_addr() {

@@ -272,7 +272,9 @@ where
                         let node_id: u32 = dest.node_id();
                         let pending_conns = self.transport.connector().create_pending_outgoing(dest);
                         for conn in pending_conns {
-                            self.internal.on_internal_event(now_ms, NetworkPlaneInternalEvent::OutgoingRequest(node_id, conn)).print_error("Should send OutgoingRequest");
+                            self.internal
+                                .on_internal_event(now_ms, NetworkPlaneInternalEvent::OutgoingRequest(node_id, conn))
+                                .print_error("Should send OutgoingRequest");
                         }
                     }
                     NetworkBehaviorAction::ToNet(msg) => {

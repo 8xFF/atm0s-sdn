@@ -143,12 +143,7 @@ pub trait NetworkBehavior<BE, HE, SE> {
     fn on_incoming_connection_connected(&mut self, ctx: &BehaviorContext, now_ms: u64, conn: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>>;
 
     /// Called when an outgoing connection is established.
-    fn on_outgoing_connection_connected(
-        &mut self,
-        ctx: &BehaviorContext,
-        now_ms: u64,
-        conn: Arc<dyn ConnectionSender>,
-    ) -> Option<Box<dyn ConnectionHandler<BE, HE>>>;
+    fn on_outgoing_connection_connected(&mut self, ctx: &BehaviorContext, now_ms: u64, conn: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>>;
 
     /// Called when an incoming connection is disconnected.
     fn on_incoming_connection_disconnected(&mut self, ctx: &BehaviorContext, now_ms: u64, node_id: NodeId, conn_id: ConnId);

@@ -1,6 +1,6 @@
-use std::{fmt::Display, str::FromStr};
-use serde::{Deserialize, Serialize};
 use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
+use std::{fmt::Display, str::FromStr};
 
 use crate::node_id::NodeId;
 pub use multiaddr::Protocol;
@@ -68,23 +68,20 @@ impl Display for NodeAddr {
 
 /// A builder for creating `NodeAddr` instances.
 pub struct NodeAddrBuilder {
-    node_id: Mutex<NodeId>,
+    node_id: NodeId,
     addr: Mutex<multiaddr::Multiaddr>,
 }
 
-impl Default for NodeAddrBuilder {
-    fn default() -> Self {
-        Self { 
-            node_id: Mutex::new(0),
-            addr: Mutex::new(multiaddr::Multiaddr::empty())
+impl NodeAddrBuilder {
+    pub fn new(node_id: NodeId) -> Self {
+        Self {
+            node_id,
+            addr: Mutex::new(multiaddr::Multiaddr::empty()),
         }
     }
-}
 
-impl NodeAddrBuilder {
-    /// Set the node ID.
-    pub fn set_node_id(&self, node_id: NodeId) {
-        *self.node_id.lock() = node_id;
+    pub fn node_id(&self) -> NodeId {
+        self.node_id
     }
 
     /// Adds a protocol to the node address.
@@ -94,7 +91,7 @@ impl NodeAddrBuilder {
 
     /// Get the node address.
     pub fn addr(&self) -> NodeAddr {
-        NodeAddr(*self.node_id.lock(), self.addr.lock().clone())
+        NodeAddr(self.node_id, self.addr.lock().clone())
     }
 }
 

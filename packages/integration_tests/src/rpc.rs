@@ -31,8 +31,7 @@ mod test {
 
     async fn run_node(vnet: Arc<VnetEarth>, rpc_service_id: u8, node_id: NodeId, seeds: Vec<NodeAddr>) -> (RpcBox, NodeAddr, JoinHandle<()>) {
         log::info!("Run node {} connect to {:?}", node_id, seeds);
-        let node_addr = Arc::new(NodeAddrBuilder::default());
-        node_addr.set_node_id(node_id);
+        let node_addr = Arc::new(NodeAddrBuilder::new(node_id));
         let transport = Box::new(atm0s_sdn_transport_vnet::VnetTransport::new(vnet, node_addr.addr()));
         let timer = Arc::new(SystemTimer());
 

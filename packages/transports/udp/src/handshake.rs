@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, str::FromStr, time::Duration};
+use std::{net::SocketAddr, time::Duration};
 
 use crate::msg::{build_control_msg, HandshakeResult, UdpTransportMsg};
 use async_std::{
@@ -93,7 +93,7 @@ pub async fn incoming_handshake(
 
                             requested = true;
                             if let Some(addr) = NodeAddr::from_str(&addr) {
-                                log::warn!("[IncomingHandshake] {} {} handshake success", node, addr);
+                                log::info!("[IncomingHandshake] {} {} handshake success", node, addr);
                                 socket.send_to(&build_control_msg(&UdpTransportMsg::ConnectResponse(HandshakeResult::Success)), remote_addr).await.map_err(|_| IncomingHandshakeError::SocketError)?;
                                 result = Some((node, addr));
                             } else {
