@@ -21,6 +21,7 @@ members = [
     "packages/transports/vnet",
     "packages/transports/tcp",
     "packages/transports/udp",
+    "packages/transports/compose",
     "packages/apps/redis",
     "packages/runner",
     "examples",

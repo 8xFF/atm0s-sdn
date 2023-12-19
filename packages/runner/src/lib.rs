@@ -1,4 +1,4 @@
-pub use atm0s_sdn_identity::{NodeAddr, NodeAddrBuilder, NodeId, Protocol};
+pub use atm0s_sdn_identity::{ConnDirection, ConnId, NodeAddr, NodeAddrBuilder, NodeId, Protocol};
 pub use atm0s_sdn_network::msg::*;
 pub use atm0s_sdn_network::plane::{NetworkPlane, NetworkPlaneConfig};
 pub use atm0s_sdn_network::{
@@ -36,3 +36,11 @@ pub use atm0s_sdn_rpc::{RpcBehavior, RpcBox, RpcEmitter, RpcError, RpcHandler, R
 pub use atm0s_sdn_transport_tcp::TcpTransport;
 #[cfg(feature = "transport-udp")]
 pub use atm0s_sdn_transport_udp::UdpTransport;
+
+#[cfg(feature = "transport-compose")]
+pub use atm0s_sdn_transport_compose::compose_transport;
+
+pub mod compose_transport_desp {
+    pub use futures_util::{select, FutureExt};
+    pub use spin::Mutex;
+}

@@ -1,6 +1,8 @@
+use atm0s_sdn::compose_transport;
 use atm0s_sdn::convert_enum;
 use atm0s_sdn::SharedRouter;
 use atm0s_sdn::SystemTimer;
+use atm0s_sdn::TcpTransport;
 use atm0s_sdn::{KeyValueBehavior, KeyValueSdk, NodeAddr, NodeAddrBuilder, UdpTransport};
 use atm0s_sdn::{KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueSdkEvent};
 use atm0s_sdn::{LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent, LayersSpreadRouterSyncHandlerEvent};
@@ -62,12 +64,18 @@ struct Args {
     redis_addr: Option<SocketAddr>,
 }
 
+compose_transport!(UdpTcpTransport, udp, tcp);
+
 #[async_std::main]
 async fn main() {
     env_logger::builder().format_timestamp_millis().init();
     let args: Args = Args::parse();
     let node_addr_builder = Arc::new(NodeAddrBuilder::new(args.node_id));
-    let transport = UdpTransport::new(50000 + args.node_id as u16, node_addr_builder.clone()).await;
+    let udp = UdpTransport::new(50000 + args.node_id as u16, node_addr_builder.clone()).await;
+    let tcp = TcpTransport::new(50000 + args.node_id as u16, node_addr_builder.clone()).await;
+
+    let transport = UdpTcpTransport::new(Box::new(udp), Box::new(tcp));
+
     let node_addr = node_addr_builder.addr();
     log::info!("Listen on addr {}", node_addr);
 
