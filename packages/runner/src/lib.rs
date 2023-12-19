@@ -42,5 +42,5 @@ pub use atm0s_sdn_transport_compose::compose_transport;
 
 pub mod compose_transport_desp {
     pub use futures_util::{select, FutureExt};
-    pub use spin::Mutex;
+    pub use paste::paste;
 }

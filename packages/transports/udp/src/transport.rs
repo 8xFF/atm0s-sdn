@@ -16,7 +16,7 @@ use crate::{connector::UdpConnector, handshake::incoming_handshake, receiver::Ud
 
 pub struct UdpTransport {
     rx: Receiver<TransportEvent>,
-    connector: Box<dyn TransportConnector>,
+    connector: UdpConnector,
 }
 
 impl UdpTransport {
@@ -51,7 +51,7 @@ impl UdpTransport {
         }
 
         let timer = Arc::new(SystemTimer());
-        let connector = Box::new(UdpConnector::new(node_id, node_addr_builder.clone(), tx.clone(), timer.clone()));
+        let connector = UdpConnector::new(node_id, node_addr_builder.clone(), tx.clone(), timer.clone());
 
         async_std::task::spawn(async move {
             let mut last_clear_timeout_ms = 0;
@@ -135,7 +135,7 @@ impl UdpTransport {
 
 #[async_trait::async_trait]
 impl Transport for UdpTransport {
-    fn connector(&mut self) -> &mut Box<dyn TransportConnector> {
+    fn connector(&mut self) -> &mut dyn TransportConnector {
         &mut self.connector
     }
 

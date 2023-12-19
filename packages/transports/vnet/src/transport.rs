@@ -11,14 +11,14 @@ pub struct VnetTransport {
     #[allow(unused)]
     earth: Arc<VnetEarth>,
     listener: VnetListener,
-    connector: Box<dyn TransportConnector>,
+    connector: VnetConnector,
 }
 
 impl VnetTransport {
     pub fn new(earth: Arc<VnetEarth>, addr: NodeAddr) -> Self {
         Self {
             port: addr.node_id(),
-            connector: Box::new(VnetConnector::new(addr.node_id(), earth.clone())),
+            connector: VnetConnector::new(addr.node_id(), earth.clone()),
             listener: earth.create_listener(addr),
             earth,
         }
@@ -27,7 +27,7 @@ impl VnetTransport {
 
 #[async_trait::async_trait]
 impl Transport for VnetTransport {
-    fn connector(&mut self) -> &mut Box<dyn TransportConnector> {
+    fn connector(&mut self) -> &mut dyn TransportConnector {
         &mut self.connector
     }
 

@@ -22,7 +22,7 @@ pub struct TcpTransport {
     internal_tx: Sender<TransportEvent>,
     internal_rx: Receiver<TransportEvent>,
     seed: u64,
-    connector: Box<dyn TransportConnector>,
+    connector: TcpConnector,
     timer: Arc<dyn Timer>,
 }
 
@@ -58,14 +58,14 @@ impl TcpTransport {
             internal_tx: internal_tx.clone(),
             internal_rx,
             seed: 0,
-            connector: Box::new(TcpConnector {
+            connector: TcpConnector {
                 conn_id_seed: 0,
                 pending_outgoing: HashMap::new(),
                 node_id,
                 node_addr_builder,
                 internal_tx,
                 timer: Arc::new(SystemTimer()),
-            }),
+            },
             timer: Arc::new(SystemTimer()),
         }
     }
@@ -73,7 +73,7 @@ impl TcpTransport {
 
 #[async_trait::async_trait]
 impl Transport for TcpTransport {
-    fn connector(&mut self) -> &mut Box<dyn TransportConnector> {
+    fn connector(&mut self) -> &mut dyn TransportConnector {
         &mut self.connector
     }
 

@@ -64,7 +64,7 @@ struct Args {
     redis_addr: Option<SocketAddr>,
 }
 
-compose_transport!(UdpTcpTransport, udp, tcp);
+compose_transport!(UdpTcpTransport, udp: UdpTransport, tcp: TcpTransport);
 
 #[async_std::main]
 async fn main() {
@@ -74,7 +74,7 @@ async fn main() {
     let udp = UdpTransport::new(50000 + args.node_id as u16, node_addr_builder.clone()).await;
     let tcp = TcpTransport::new(50000 + args.node_id as u16, node_addr_builder.clone()).await;
 
-    let transport = UdpTcpTransport::new(Box::new(udp), Box::new(tcp));
+    let transport = UdpTcpTransport::new(udp, tcp);
 
     let node_addr = node_addr_builder.addr();
     log::info!("Listen on addr {}", node_addr);
