@@ -11,7 +11,7 @@ pub use transport::VnetTransport;
 #[cfg(test)]
 mod tests {
     use crate::{VnetEarth, VnetTransport};
-    use atm0s_sdn_identity::{ConnDirection, NodeAddr, NodeId, Protocol};
+    use atm0s_sdn_identity::{ConnDirection, NodeAddr, NodeId};
     use atm0s_sdn_network::{
         msg::TransportMsg,
         transport::{ConnectionEvent, ConnectionStats, OutgoingConnectionError, Transport, TransportEvent},
@@ -34,11 +34,13 @@ mod tests {
     async fn simple_network() {
         let vnet = Arc::new(VnetEarth::default());
 
-        let mut tran1 = VnetTransport::new(vnet.clone(), 1, 1, NodeAddr::from(Protocol::Memory(1)));
-        let mut tran2 = VnetTransport::new(vnet.clone(), 2, 2, NodeAddr::from(Protocol::Memory(2)));
+        let mut tran1 = VnetTransport::new(vnet.clone(), NodeAddr::empty(1));
+        let mut tran2 = VnetTransport::new(vnet.clone(), NodeAddr::empty(2));
 
         let connector1 = tran1.connector();
-        connector1.connect_to(11111, 2, NodeAddr::from(Protocol::Memory(2))).unwrap();
+        for conn in connector1.create_pending_outgoing(NodeAddr::empty(2)) {
+            connector1.continue_pending_outgoing(conn);
+        }
 
         match tran2.recv().await.unwrap() {
             TransportEvent::IncomingRequest(node, conn, acceptor) => {
@@ -51,21 +53,10 @@ mod tests {
             }
         }
 
-        match tran1.recv().await.unwrap() {
-            TransportEvent::OutgoingRequest(node, _conn, acceptor, local_uuid) => {
-                assert_eq!(node, 2);
-                assert_eq!(local_uuid, 11111);
-                acceptor.accept();
-            }
-            _ => {
-                panic!("Need OutgoingRequest")
-            }
-        }
-
         let (tran2_sender, mut tran2_recv) = match tran2.recv().await.unwrap() {
             TransportEvent::Incoming(sender, recv) => {
                 assert_eq!(sender.remote_node_id(), 1);
-                assert_eq!(sender.remote_addr(), NodeAddr::from(Protocol::Memory(1)));
+                assert_eq!(sender.remote_addr(), NodeAddr::empty(1));
                 assert_eq!(sender.conn_id().direction(), ConnDirection::Incoming);
                 (sender, recv)
             }
@@ -75,10 +66,9 @@ mod tests {
         };
 
         let (tran1_sender, mut tran1_recv) = match tran1.recv().await.unwrap() {
-            TransportEvent::Outgoing(sender, recv, local_uuid) => {
+            TransportEvent::Outgoing(sender, recv, ..) => {
                 assert_eq!(sender.remote_node_id(), 2);
-                assert_eq!(sender.remote_addr(), NodeAddr::from(Protocol::Memory(2)));
-                assert_eq!(local_uuid, 11111);
+                assert_eq!(sender.remote_addr(), NodeAddr::empty(2));
                 (sender, recv)
             }
             _ => {
@@ -128,32 +118,16 @@ mod tests {
     async fn simple_network_connect_addr_not_found() {
         let vnet = Arc::new(VnetEarth::default());
 
-        let mut tran1 = VnetTransport::new(vnet.clone(), 1, 1, NodeAddr::from(Protocol::Memory(1)));
+        let mut tran1 = VnetTransport::new(vnet.clone(), NodeAddr::empty(1));
         let connector1 = tran1.connector();
-        connector1.connect_to(11111, 2, NodeAddr::from(Protocol::Memory(2))).unwrap();
+        for conn in connector1.create_pending_outgoing(NodeAddr::empty(2)) {
+            connector1.continue_pending_outgoing(conn);
+        }
+
         match tran1.recv().await.unwrap() {
-            TransportEvent::OutgoingError { err, local_uuid, .. } => {
+            TransportEvent::OutgoingError { err, node_id, .. } => {
                 assert_eq!(err, OutgoingConnectionError::DestinationNotFound);
-                assert_eq!(local_uuid, 11111);
-            }
-            _ => {
-                panic!("Need OutgoingError")
-            }
-        };
-    }
-
-    #[async_std::test]
-    async fn simple_network_connect_wrong_node() {
-        let vnet = Arc::new(VnetEarth::default());
-
-        let mut tran1 = VnetTransport::new(vnet.clone(), 1, 1, NodeAddr::from(Protocol::Memory(1)));
-        let mut _tran2 = VnetTransport::new(vnet.clone(), 2, 2, NodeAddr::from(Protocol::Memory(2)));
-        let connector1 = tran1.connector();
-        connector1.connect_to(11111, 3, NodeAddr::from(Protocol::Memory(2))).unwrap();
-        match tran1.recv().await.unwrap() {
-            TransportEvent::OutgoingError { err, local_uuid, .. } => {
-                assert_eq!(err, OutgoingConnectionError::AuthenticationError);
-                assert_eq!(local_uuid, 11111);
+                assert_eq!(node_id, 2);
             }
             _ => {
                 panic!("Need OutgoingError")

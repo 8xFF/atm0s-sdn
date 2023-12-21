@@ -6,7 +6,7 @@ use atm0s_sdn::{KeyValueBehavior, KeyValueBehaviorEvent, KeyValueHandlerEvent, K
 use atm0s_sdn::{LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent, LayersSpreadRouterSyncHandlerEvent};
 use atm0s_sdn::{ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent};
 use atm0s_sdn::{NetworkPlane, NetworkPlaneConfig};
-use atm0s_sdn::{NodeAddr, NodeAddrBuilder, NodeId, Protocol, UdpTransport};
+use atm0s_sdn::{NodeAddr, NodeAddrBuilder, NodeId, UdpTransport};
 use atm0s_sdn::{PubsubSdk, PubsubServiceBehaviour, PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent};
 use atm0s_sdn::{SystemTimer, Timer};
 use bytes::Bytes;
@@ -34,15 +34,15 @@ enum ImplSdkEvent {
 
 async fn run_node(node_id: NodeId, seeds: Vec<NodeAddr>) -> (PubsubSdk, NodeAddr) {
     log::info!("Run node {} connect to {:?}", node_id, seeds);
-    let node_addr = Arc::new(NodeAddrBuilder::default());
-    node_addr.add_protocol(Protocol::P2p(node_id));
-    let transport = Box::new(UdpTransport::new(node_id, 0, node_addr.clone()).await);
+    let mut node_addr_builder = NodeAddrBuilder::new(node_id);
+    let socket = UdpTransport::prepare(0, &mut node_addr_builder).await;
+    let transport = Box::new(UdpTransport::new(node_addr_builder.addr(), socket));
     let timer = Arc::new(SystemTimer());
 
     let router = SharedRouter::new(node_id);
     let manual = ManualBehavior::new(ManualBehaviorConf {
         node_id,
-        node_addr: node_addr.addr(),
+        node_addr: node_addr_builder.addr(),
         seeds,
         local_tags: vec![],
         connect_tags: vec![],
@@ -67,7 +67,7 @@ async fn run_node(node_id: NodeId, seeds: Vec<NodeAddr>) -> (PubsubSdk, NodeAddr
         plane.stopped();
     });
 
-    (pubsub_sdk, node_addr.addr())
+    (pubsub_sdk, node_addr_builder.addr())
 }
 
 #[async_std::main]

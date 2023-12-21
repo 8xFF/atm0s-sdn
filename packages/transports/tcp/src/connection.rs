@@ -151,7 +151,6 @@ pub async fn recv_tcp_stream(reader: &mut AsyncBincodeStreamU16) -> Result<TcpMs
 }
 
 pub struct TcpConnectionReceiver {
-    pub(crate) node_id: NodeId,
     pub(crate) remote_node_id: NodeId,
     pub(crate) remote_addr: NodeAddr,
     pub(crate) conn_id: ConnId,
@@ -176,23 +175,23 @@ impl ConnectionReceiver for TcpConnectionReceiver {
 
     async fn poll(&mut self) -> Result<ConnectionEvent, ()> {
         loop {
-            log::debug!("[ConnectionReceiver {} => {}] waiting event", self.node_id, self.remote_node_id);
+            log::debug!("[ConnectionReceiver {}/{}] waiting event", self.remote_node_id, self.conn_id);
             match recv_tcp_stream(&mut self.socket).await {
                 Ok(msg) => {
                     match msg {
                         TcpMsg::Msg(buf) => match TransportMsg::from_vec(buf) {
                             Ok(msg) => break Ok(ConnectionEvent::Msg(msg)),
                             Err(e) => {
-                                log::error!("[ConnectionReceiver {} => {}] wrong msg format {:?}", self.node_id, self.remote_node_id, e);
+                                log::error!("[ConnectionReceiver {}/{}] wrong msg format {:?}", self.remote_node_id, self.conn_id, e);
                             }
                         },
                         TcpMsg::Ping(sent_ts) => {
-                            log::debug!("[ConnectionReceiver {} => {}] on Ping => reply Pong", self.node_id, self.remote_node_id);
+                            log::debug!("[ConnectionReceiver {}/{}] on Ping => reply Pong", self.remote_node_id, self.conn_id);
                             self.unreliable_sender.try_send(OutgoingEvent::Msg(TcpMsg::Pong(sent_ts))).print_error("Should send Pong");
                         }
                         TcpMsg::Pong(ping_sent_ts) => {
                             //TODO est speed and over_use state
-                            log::debug!("[ConnectionReceiver {} => {}] on Pong", self.node_id, self.remote_node_id);
+                            log::debug!("[ConnectionReceiver {}/{}] on Pong", self.remote_node_id, self.conn_id);
                             break Ok(ConnectionEvent::Stats(ConnectionStats {
                                 rtt_ms: (self.timer.now_ms() - ping_sent_ts) as u16,
                                 sending_kbps: 0,
@@ -202,12 +201,12 @@ impl ConnectionReceiver for TcpConnectionReceiver {
                             }));
                         }
                         _ => {
-                            log::warn!("[ConnectionReceiver {} => {}] wrong msg type, required TcpMsg::Msg", self.node_id, self.remote_node_id);
+                            log::warn!("[ConnectionReceiver {}/{}] wrong msg type, required TcpMsg::Msg", self.remote_node_id, self.conn_id);
                         }
                     }
                 }
                 Err(_) => {
-                    log::info!("[ConnectionReceiver {} => {}] stream closed", self.node_id, self.remote_node_id);
+                    log::info!("[ConnectionReceiver {}/{}] stream closed", self.remote_node_id, self.conn_id);
                     self.unreliable_sender.try_send(OutgoingEvent::ClosedNotify).print_error("Should send CloseNotify");
                     break Err(());
                 }

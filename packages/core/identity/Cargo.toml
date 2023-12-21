@@ -9,7 +9,6 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-atm0s-sdn-multiaddr = { path = "../multiaddr", version = "0.1.2" }
+multiaddr = "0.18.1"
 rand = "0.8"
-parking_lot = { workspace = true }
 serde = { workspace = true }

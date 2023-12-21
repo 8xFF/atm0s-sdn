@@ -28,7 +28,7 @@ pub struct FindKeyRequest {
     req_id: u32,
     key: NodeId,
     timeout: u64,
-    nodes: Vec<(NodeId, NodeAddr, NodeState)>,
+    nodes: Vec<(NodeAddr, NodeState)>,
 }
 
 impl FindKeyRequest {
@@ -62,7 +62,7 @@ impl FindKeyRequest {
         let mut error_count = 0;
         let mut finished_count = 0;
         let loop_len = K_BUCKET.min(self.nodes.len());
-        for (_, _, state) in &self.nodes[0..loop_len] {
+        for (_, state) in &self.nodes[0..loop_len] {
             match state {
                 NodeState::Waiting { at, .. } => {
                     if *at + self.timeout > ts {
@@ -110,9 +110,9 @@ impl FindKeyRequest {
         }
     }
 
-    pub fn push_node(&mut self, ts: u64, node: NodeId, addr: NodeAddr, connected: bool) {
-        for (in_node, _, _) in &self.nodes {
-            if *in_node == node {
+    pub fn push_node(&mut self, ts: u64, addr: NodeAddr, connected: bool) {
+        for (in_node, _) in &self.nodes {
+            if in_node.node_id() == addr.node_id() {
                 return;
             }
         }
@@ -121,16 +121,16 @@ impl FindKeyRequest {
         } else {
             NodeState::Waiting { at: ts }
         };
-        self.nodes.push((node, addr, state));
+        self.nodes.push((addr, state));
         let key = self.key;
-        self.nodes.sort_by_key(|(node, _, _)| *node ^ key);
+        self.nodes.sort_by_key(|(addr, _)| addr.node_id() ^ key);
     }
 
-    pub fn pop_connect(&mut self, ts: u64) -> Option<(NodeId, NodeAddr)> {
-        for (node, addr, state) in &mut self.nodes {
+    pub fn pop_connect(&mut self, ts: u64) -> Option<NodeAddr> {
+        for (addr, state) in &mut self.nodes {
             if let NodeState::Waiting { .. } = state {
                 *state = NodeState::Connecting { at: ts };
-                return Some((*node, addr.clone()));
+                return Some(addr.clone());
             }
         }
 
@@ -138,10 +138,10 @@ impl FindKeyRequest {
     }
 
     pub fn pop_request(&mut self, ts: u64) -> Option<NodeId> {
-        for (node, _addr, state) in &mut self.nodes {
+        for (addr, state) in &mut self.nodes {
             if let NodeState::Connected { .. } = state {
                 *state = NodeState::Requesting { at: ts };
-                return Some(*node);
+                return Some(addr.node_id());
             }
         }
 
@@ -149,9 +149,9 @@ impl FindKeyRequest {
     }
 
     pub fn on_connected_node(&mut self, ts: u64, from_node: NodeId) -> bool {
-        for (node, _addr, state) in &mut self.nodes {
+        for (addr, state) in &mut self.nodes {
             if let NodeState::Connecting { .. } = state {
-                if *node == from_node {
+                if addr.node_id() == from_node {
                     *state = NodeState::Connected { at: ts };
                     return true;
                 }
@@ -162,9 +162,9 @@ impl FindKeyRequest {
     }
 
     pub fn on_connect_error_node(&mut self, ts: u64, from_node: NodeId) -> bool {
-        for (node, _addr, state) in &mut self.nodes {
+        for (addr, state) in &mut self.nodes {
             if let NodeState::Connecting { .. } = state {
-                if *node == from_node {
+                if addr.node_id() == from_node {
                     *state = NodeState::ConnectError { at: ts };
                     return true;
                 }
@@ -174,13 +174,13 @@ impl FindKeyRequest {
         false
     }
 
-    pub fn on_answered_node(&mut self, ts: u64, from_node: NodeId, res: Vec<(NodeId, NodeAddr, bool)>) -> bool {
-        for (node, _addr, state) in &mut self.nodes {
+    pub fn on_answered_node(&mut self, ts: u64, from_node: NodeId, res: Vec<(NodeAddr, bool)>) -> bool {
+        for (addr, state) in &mut self.nodes {
             if let NodeState::Requesting { .. } = state {
-                if *node == from_node {
+                if addr.node_id() == from_node {
                     *state = NodeState::ReceivedAnswer { at: ts };
-                    for (node, addr, connected) in res {
-                        self.push_node(ts, node, addr, connected);
+                    for (addr, connected) in res {
+                        self.push_node(ts, addr, connected);
                     }
                     return true;
                 }
@@ -194,7 +194,7 @@ impl FindKeyRequest {
 #[cfg(test)]
 mod tests {
     use super::{FindKeyRequest, FindKeyRequestStatus};
-    use atm0s_sdn_identity::{NodeAddr, Protocol};
+    use atm0s_sdn_identity::NodeAddr;
 
     #[derive(PartialEq, Debug)]
     enum Msg {}
@@ -208,13 +208,13 @@ mod tests {
     #[test]
     fn simple_test_connect() {
         let mut list = FindKeyRequest::new(0, 0, 10000);
-        list.push_node(0, 1, NodeAddr::from(Protocol::Udp(1)), false);
-        list.push_node(0, 2, NodeAddr::from(Protocol::Udp(2)), false);
-        list.push_node(0, 3, NodeAddr::from(Protocol::Udp(3)), false);
+        list.push_node(0, NodeAddr::empty(1), false);
+        list.push_node(0, NodeAddr::empty(2), false);
+        list.push_node(0, NodeAddr::empty(3), false);
 
-        assert_eq!(list.pop_connect(0), Some((1, NodeAddr::from(Protocol::Udp(1)))));
-        assert_eq!(list.pop_connect(0), Some((2, NodeAddr::from(Protocol::Udp(2)))));
-        assert_eq!(list.pop_connect(0), Some((3, NodeAddr::from(Protocol::Udp(3)))));
+        assert_eq!(list.pop_connect(0), Some(NodeAddr::empty(1)));
+        assert_eq!(list.pop_connect(0), Some(NodeAddr::empty(2)));
+        assert_eq!(list.pop_connect(0), Some(NodeAddr::empty(3)));
         assert_eq!(list.pop_connect(0), None);
         assert_eq!(list.pop_request(0), None);
     }
@@ -222,13 +222,13 @@ mod tests {
     #[test]
     fn test_unordered_connec() {
         let mut list = FindKeyRequest::new(0, 0, 10000);
-        list.push_node(0, 2, NodeAddr::from(Protocol::Udp(2)), false);
-        list.push_node(0, 1, NodeAddr::from(Protocol::Udp(1)), false);
-        list.push_node(0, 3, NodeAddr::from(Protocol::Udp(3)), false);
+        list.push_node(0, NodeAddr::empty(2), false);
+        list.push_node(0, NodeAddr::empty(1), false);
+        list.push_node(0, NodeAddr::empty(3), false);
 
-        assert_eq!(list.pop_connect(0), Some((1, NodeAddr::from(Protocol::Udp(1)))));
-        assert_eq!(list.pop_connect(0), Some((2, NodeAddr::from(Protocol::Udp(2)))));
-        assert_eq!(list.pop_connect(0), Some((3, NodeAddr::from(Protocol::Udp(3)))));
+        assert_eq!(list.pop_connect(0), Some(NodeAddr::empty(1)));
+        assert_eq!(list.pop_connect(0), Some(NodeAddr::empty(2)));
+        assert_eq!(list.pop_connect(0), Some(NodeAddr::empty(3)));
         assert_eq!(list.pop_connect(0), None);
         assert_eq!(list.pop_request(0), None);
     }
@@ -236,9 +236,9 @@ mod tests {
     #[test]
     fn simple_test_request() {
         let mut list = FindKeyRequest::new(0, 0, 10000);
-        list.push_node(0, 1, NodeAddr::from(Protocol::Udp(1)), true);
-        list.push_node(0, 2, NodeAddr::from(Protocol::Udp(2)), true);
-        list.push_node(0, 3, NodeAddr::from(Protocol::Udp(3)), true);
+        list.push_node(0, NodeAddr::empty(1), true);
+        list.push_node(0, NodeAddr::empty(2), true);
+        list.push_node(0, NodeAddr::empty(3), true);
 
         assert_eq!(list.pop_request(0), Some(1));
         assert_eq!(list.pop_request(0), Some(2));
@@ -250,9 +250,9 @@ mod tests {
     #[test]
     fn test_unordered_request() {
         let mut list = FindKeyRequest::new(0, 0, 10000);
-        list.push_node(0, 2, NodeAddr::from(Protocol::Udp(2)), true);
-        list.push_node(0, 1, NodeAddr::from(Protocol::Udp(1)), true);
-        list.push_node(0, 3, NodeAddr::from(Protocol::Udp(3)), true);
+        list.push_node(0, NodeAddr::empty(2), true);
+        list.push_node(0, NodeAddr::empty(1), true);
+        list.push_node(0, NodeAddr::empty(3), true);
 
         assert_eq!(list.pop_request(0), Some(1));
         assert_eq!(list.pop_request(0), Some(2));
@@ -264,14 +264,14 @@ mod tests {
     #[test]
     fn test_duplicate() {
         let mut list = FindKeyRequest::new(0, 0, 10000);
-        list.push_node(0, 1, NodeAddr::from(Protocol::Udp(1)), false);
-        list.push_node(0, 1, NodeAddr::from(Protocol::Udp(1)), false);
-        list.push_node(0, 2, NodeAddr::from(Protocol::Udp(2)), false);
-        list.push_node(0, 3, NodeAddr::from(Protocol::Udp(3)), false);
+        list.push_node(0, NodeAddr::empty(1), false);
+        list.push_node(0, NodeAddr::empty(1), false);
+        list.push_node(0, NodeAddr::empty(2), false);
+        list.push_node(0, NodeAddr::empty(3), false);
 
-        assert_eq!(list.pop_connect(0), Some((1, NodeAddr::from(Protocol::Udp(1)))));
-        assert_eq!(list.pop_connect(0), Some((2, NodeAddr::from(Protocol::Udp(2)))));
-        assert_eq!(list.pop_connect(0), Some((3, NodeAddr::from(Protocol::Udp(3)))));
+        assert_eq!(list.pop_connect(0), Some(NodeAddr::empty(1)));
+        assert_eq!(list.pop_connect(0), Some(NodeAddr::empty(2)));
+        assert_eq!(list.pop_connect(0), Some(NodeAddr::empty(3)));
         assert_eq!(list.pop_connect(0), None);
         assert_eq!(list.pop_request(0), None);
     }
@@ -280,7 +280,7 @@ mod tests {
     fn test_timeout_not_connect() {
         let mut list = FindKeyRequest::new(0, 0, 10000);
 
-        list.push_node(0, 1, NodeAddr::from(Protocol::Udp(1)), false);
+        list.push_node(0, NodeAddr::empty(1), false);
         assert_eq!(list.status(5000), FindKeyRequestStatus::Requesting);
         assert_eq!(list.status(10001), FindKeyRequestStatus::Timeout);
     }
@@ -289,7 +289,7 @@ mod tests {
     fn test_connect_error() {
         let mut list = FindKeyRequest::new(0, 0, 10000);
 
-        list.push_node(0, 1, NodeAddr::from(Protocol::Udp(1)), false);
+        list.push_node(0, NodeAddr::empty(1), false);
         list.pop_connect(0);
 
         assert_eq!(list.status(5000), FindKeyRequestStatus::Requesting);
@@ -302,7 +302,7 @@ mod tests {
     fn test_request_timeout() {
         let mut list = FindKeyRequest::new(0, 0, 10000);
 
-        list.push_node(0, 1, NodeAddr::from(Protocol::Udp(1)), false);
+        list.push_node(0, NodeAddr::empty(1), false);
         list.pop_connect(0);
         assert_eq!(list.on_connected_node(5000, 2), false);
         assert_eq!(list.on_connected_node(5000, 1), true);
@@ -315,7 +315,7 @@ mod tests {
     fn test_request_success() {
         let mut list = FindKeyRequest::new(0, 0, 10000);
 
-        list.push_node(0, 1, NodeAddr::from(Protocol::Udp(1)), false);
+        list.push_node(0, NodeAddr::empty(1), false);
         list.pop_connect(0);
         assert_eq!(list.status(5000), FindKeyRequestStatus::Requesting);
         assert_eq!(list.on_connected_node(5000, 1), true);
@@ -330,9 +330,9 @@ mod tests {
     fn test_get_better_result() {
         let mut list = FindKeyRequest::new(0, 0, 10000);
 
-        list.push_node(0, 1000, NodeAddr::from(Protocol::Udp(1)), true);
+        list.push_node(0, NodeAddr::empty(1000), true);
         assert_eq!(list.pop_request(0), Some(1000));
-        assert_eq!(list.on_answered_node(1000, 1000, vec![(100, NodeAddr::from(Protocol::Udp(1)), true)]), true);
+        assert_eq!(list.on_answered_node(1000, 1000, vec![(NodeAddr::empty(100), true)]), true);
         assert_eq!(list.status(1000), FindKeyRequestStatus::Requesting);
         assert_eq!(list.pop_request(1000), Some(100));
         assert_eq!(list.status(1000), FindKeyRequestStatus::Requesting);

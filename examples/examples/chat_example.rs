@@ -1,7 +1,7 @@
 use atm0s_sdn::SharedRouter;
 use atm0s_sdn::SystemTimer;
 use atm0s_sdn::{convert_enum, NetworkPlane, NetworkPlaneConfig};
-use atm0s_sdn::{KeyValueBehavior, KeyValueSdk, NodeAddr, NodeAddrBuilder, Protocol, PubsubServiceBehaviour, UdpTransport};
+use atm0s_sdn::{KeyValueBehavior, KeyValueSdk, NodeAddr, NodeAddrBuilder, PubsubServiceBehaviour, UdpTransport};
 use atm0s_sdn::{KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueSdkEvent};
 use atm0s_sdn::{LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent, LayersSpreadRouterSyncHandlerEvent};
 use atm0s_sdn::{ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent};
@@ -119,14 +119,14 @@ async fn main() {
     // The multiaddr is composed of multiple protocols, each of which is identified by a code.
     // example in our case: /p2p/0/ip4/127.0.0.1/udp/50000
     // You can find more information about multiaddr here: https://multiformats.io/multiaddr/
-    let node_addr_builder = Arc::new(NodeAddrBuilder::default());
-    node_addr_builder.add_protocol(Protocol::P2p(args.node_id));
+    let mut node_addr_builder = NodeAddrBuilder::new(args.node_id);
 
     // Create a transport layer, which is used to send and receive messages.
     // In this example, we use the UDP transport layer.
     // There are also other transport layers, such as TCP and VNET, others are still in progress.
     // The port number is 50000 + node_id.
-    let transport = UdpTransport::new(args.node_id, 50000 + args.node_id as u16, node_addr_builder.clone()).await;
+    let socket = UdpTransport::prepare(50000 + args.node_id as u16, &mut node_addr_builder).await;
+    let transport = UdpTransport::new(node_addr_builder.addr(), socket);
     let node_addr = node_addr_builder.addr();
     println!("Listening on addr {}", node_addr);
 

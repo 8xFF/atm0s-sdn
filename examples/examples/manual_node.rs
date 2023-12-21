@@ -1,7 +1,9 @@
+use atm0s_sdn::compose_transport;
 use atm0s_sdn::convert_enum;
 use atm0s_sdn::SharedRouter;
 use atm0s_sdn::SystemTimer;
-use atm0s_sdn::{KeyValueBehavior, KeyValueSdk, NodeAddr, NodeAddrBuilder, Protocol, UdpTransport};
+use atm0s_sdn::TcpTransport;
+use atm0s_sdn::{KeyValueBehavior, KeyValueSdk, NodeAddr, NodeAddrBuilder, UdpTransport};
 use atm0s_sdn::{KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueSdkEvent};
 use atm0s_sdn::{LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent, LayersSpreadRouterSyncHandlerEvent};
 use atm0s_sdn::{ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent};
@@ -62,13 +64,21 @@ struct Args {
     redis_addr: Option<SocketAddr>,
 }
 
+compose_transport!(UdpTcpTransport, udp: UdpTransport, tcp: TcpTransport);
+
 #[async_std::main]
 async fn main() {
     env_logger::builder().format_timestamp_millis().init();
     let args: Args = Args::parse();
-    let node_addr_builder = Arc::new(NodeAddrBuilder::default());
-    node_addr_builder.add_protocol(Protocol::P2p(args.node_id));
-    let transport = UdpTransport::new(args.node_id, 50000 + args.node_id as u16, node_addr_builder.clone()).await;
+    let mut node_addr_builder = NodeAddrBuilder::new(args.node_id);
+    let udp_socket = UdpTransport::prepare(50000 + args.node_id as u16, &mut node_addr_builder).await;
+    let tcp_listener = TcpTransport::prepare(50000 + args.node_id as u16, &mut node_addr_builder).await;
+
+    let udp = UdpTransport::new(node_addr_builder.addr(), udp_socket);
+    let tcp = TcpTransport::new(node_addr_builder.addr(), tcp_listener);
+
+    let transport = UdpTcpTransport::new(udp, tcp);
+
     let node_addr = node_addr_builder.addr();
     log::info!("Listen on addr {}", node_addr);
 

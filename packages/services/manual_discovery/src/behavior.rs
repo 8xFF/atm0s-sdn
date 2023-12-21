@@ -1,13 +1,12 @@
 use crate::handler::ManualHandler;
 use crate::msg::*;
 use crate::MANUAL_DISCOVERY_SERVICE_ID;
-use atm0s_sdn_identity::{ConnId, NodeAddr, NodeAddrType, NodeId};
+use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 use atm0s_sdn_key_value::KeyValueSdkEvent;
 use atm0s_sdn_key_value::KEY_VALUE_SERVICE_ID;
 use atm0s_sdn_network::behaviour::BehaviorContext;
 use atm0s_sdn_network::behaviour::NetworkBehaviorAction;
 use atm0s_sdn_network::behaviour::{ConnectionHandler, NetworkBehavior};
-use atm0s_sdn_network::transport::TransportOutgoingLocalUuid;
 use atm0s_sdn_network::transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError};
 use atm0s_sdn_utils::hash::hash_str;
 use std::collections::HashMap;
@@ -20,18 +19,19 @@ const KV_TIMEOUT: u64 = 30000;
 
 const SUB_UUID: u64 = 0x22;
 
+#[allow(unused)]
 enum OutgoingState {
     New,
-    Connecting(u64, Option<ConnId>, usize),
-    Connected(u64, ConnId),
-    ConnectError(u64, Option<ConnId>, OutgoingConnectionError, usize),
+    Connecting { ts: u64, conns: Vec<ConnId>, count: usize },
+    Connected { ts: u64, conns: Vec<ConnId> },
+    ConnectError { ts: u64, count: usize },
 }
 
 struct NodeSlot {
     addr: NodeAddr,
     seed: bool,
     tags: HashMap<u64, ()>,
-    incoming: Option<ConnId>,
+    incoming: Vec<ConnId>,
     outgoing: OutgoingState,
 }
 
@@ -56,20 +56,16 @@ impl<HE, SE> ManualBehavior<HE, SE> {
     pub fn new(conf: ManualBehaviorConf) -> Self {
         let mut targets = HashMap::new();
         for addr in conf.seeds {
-            if let Some(node_id) = addr.node_id() {
-                targets.insert(
-                    node_id,
-                    NodeSlot {
-                        addr,
-                        seed: true,
-                        tags: HashMap::new(),
-                        incoming: None,
-                        outgoing: OutgoingState::New,
-                    },
-                );
-            } else {
-                log::warn!("[ManualBehavior] Invalid node addr {:?}", addr)
-            }
+            targets.insert(
+                addr.node_id(),
+                NodeSlot {
+                    addr,
+                    seed: true,
+                    tags: HashMap::new(),
+                    incoming: vec![],
+                    outgoing: OutgoingState::New,
+                },
+            );
         }
         Self {
             node_id: conf.node_id,
@@ -113,20 +109,24 @@ where
 
     fn on_tick(&mut self, _context: &BehaviorContext, now_ms: u64, _interal_ms: u64) {
         for (node_id, slot) in &mut self.targets {
-            if slot.incoming.is_none() && (!slot.tags.is_empty() || slot.seed) {
+            if slot.incoming.is_empty() && (!slot.tags.is_empty() || slot.seed) {
                 match &slot.outgoing {
                     OutgoingState::New => {
                         log::info!("[MananualBehavior] connect to node {} addr: {}", node_id, slot.addr);
-                        self.queue_action.push_back(NetworkBehaviorAction::ConnectTo(0, *node_id, slot.addr.clone()));
-                        slot.outgoing = OutgoingState::Connecting(now_ms, None, 0);
+                        self.queue_action.push_back(NetworkBehaviorAction::ConnectTo(slot.addr.clone()));
+                        slot.outgoing = OutgoingState::Connecting { ts: now_ms, conns: vec![], count: 0 };
                     }
-                    OutgoingState::ConnectError(ts, _conn, _err, count) => {
+                    OutgoingState::ConnectError { ts, count } => {
                         let sleep_ms: &u64 = CONNECT_WAIT.get(*count).unwrap_or(&CONNECT_WAIT_MAX);
                         if ts + *sleep_ms <= now_ms {
                             //need reconnect
                             log::info!("[MananualBehavior] connect to node {} addr: {} after error", node_id, slot.addr);
-                            self.queue_action.push_back(NetworkBehaviorAction::ConnectTo(0, *node_id, slot.addr.clone()));
-                            slot.outgoing = OutgoingState::Connecting(now_ms, None, count + 1);
+                            self.queue_action.push_back(NetworkBehaviorAction::ConnectTo(slot.addr.clone()));
+                            slot.outgoing = OutgoingState::Connecting {
+                                ts: now_ms,
+                                conns: vec![],
+                                count: count + 1,
+                            };
                         }
                     }
                     _ => {}
@@ -144,14 +144,14 @@ where
                     if source == self.node_id {
                         return;
                     }
-                    if let Ok(addr) = NodeAddr::try_from(value) {
+                    if let Some(addr) = NodeAddr::from_vec(&value) {
                         let entry = self.targets.entry(source).or_insert_with(|| {
                             log::info!("[MananualBehavior] new node {} addr {:?} in first tag {}", source, addr, tag_key);
                             NodeSlot {
                                 addr,
                                 seed: false,
                                 tags: HashMap::new(),
-                                incoming: None,
+                                incoming: vec![],
                                 outgoing: OutgoingState::New,
                             }
                         });
@@ -186,15 +186,21 @@ where
         Ok(())
     }
 
-    fn check_outgoing_connection(&mut self, _context: &BehaviorContext, now_ms: u64, node: NodeId, conn_id: ConnId, _local_uuid: TransportOutgoingLocalUuid) -> Result<(), ConnectionRejectReason> {
+    fn check_outgoing_connection(&mut self, _context: &BehaviorContext, now_ms: u64, node: NodeId, conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
         if let Some(neighbour) = self.targets.get_mut(&node) {
-            match neighbour.outgoing {
+            match &mut neighbour.outgoing {
                 OutgoingState::New => {
-                    neighbour.outgoing = OutgoingState::Connecting(now_ms, Some(conn_id), 0);
+                    neighbour.outgoing = OutgoingState::Connecting {
+                        ts: now_ms,
+                        conns: vec![conn_id],
+                        count: 0,
+                    };
                     Ok(())
                 }
-                OutgoingState::Connecting(_, _, count) => {
-                    neighbour.outgoing = OutgoingState::Connecting(now_ms, Some(conn_id), count);
+                OutgoingState::Connecting { conns, .. } => {
+                    if !conns.contains(&conn_id) {
+                        conns.push(conn_id);
+                    }
                     Ok(())
                 }
                 _ => Err(ConnectionRejectReason::ConnectionLimited),
@@ -213,55 +219,65 @@ where
             addr: conn.remote_addr(),
             tags: HashMap::new(),
             seed: false,
-            incoming: None,
+            incoming: vec![],
             outgoing: OutgoingState::New,
         });
-        entry.incoming = Some(conn.conn_id());
+        if !entry.incoming.contains(&conn.conn_id()) {
+            entry.incoming.push(conn.conn_id());
+            return None;
+        }
+
         Some(Box::new(ManualHandler {}))
     }
 
-    fn on_outgoing_connection_connected(
-        &mut self,
-        _context: &BehaviorContext,
-        now_ms: u64,
-        connection: Arc<dyn ConnectionSender>,
-        _local_uuid: TransportOutgoingLocalUuid,
-    ) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
+    fn on_outgoing_connection_connected(&mut self, _context: &BehaviorContext, now_ms: u64, connection: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
         let entry = self.targets.entry(connection.remote_node_id()).or_insert_with(|| NodeSlot {
             addr: connection.remote_addr(),
             tags: HashMap::new(),
             seed: false,
-            incoming: None,
+            incoming: vec![],
             outgoing: OutgoingState::New,
         });
-        entry.outgoing = OutgoingState::Connected(now_ms, connection.conn_id());
+        entry.outgoing = OutgoingState::Connected {
+            ts: now_ms,
+            conns: vec![connection.conn_id()],
+        };
         Some(Box::new(ManualHandler {}))
     }
 
-    fn on_incoming_connection_disconnected(&mut self, _context: &BehaviorContext, _now_ms: u64, node: NodeId, _conn_id: ConnId) {
+    fn on_incoming_connection_disconnected(&mut self, _context: &BehaviorContext, _now_ms: u64, node: NodeId, conn_id: ConnId) {
         if let Some(slot) = self.targets.get_mut(&node) {
-            slot.incoming = None;
+            slot.incoming.retain(|c| c != &conn_id)
         }
     }
 
-    fn on_outgoing_connection_disconnected(&mut self, _context: &BehaviorContext, _now_ms: u64, node: NodeId, _conn_id: ConnId) {
+    fn on_outgoing_connection_disconnected(&mut self, _context: &BehaviorContext, _now_ms: u64, node: NodeId, conn_id: ConnId) {
         if let Some(slot) = self.targets.get_mut(&node) {
-            slot.outgoing = OutgoingState::New;
+            match &mut slot.outgoing {
+                OutgoingState::Connecting { conns, .. } => {
+                    conns.retain(|c| c != &conn_id);
+                    if conns.is_empty() {
+                        slot.outgoing = OutgoingState::New;
+                    }
+                }
+                OutgoingState::Connected { conns, .. } => {
+                    conns.retain(|c| c != &conn_id);
+                    if conns.is_empty() {
+                        slot.outgoing = OutgoingState::New;
+                    }
+                }
+                _ => {}
+            }
         }
     }
 
-    fn on_outgoing_connection_error(
-        &mut self,
-        _context: &BehaviorContext,
-        now_ms: u64,
-        node_id: NodeId,
-        conn_id: Option<ConnId>,
-        _local_uuid: TransportOutgoingLocalUuid,
-        err: &OutgoingConnectionError,
-    ) {
+    fn on_outgoing_connection_error(&mut self, _context: &BehaviorContext, now_ms: u64, node_id: NodeId, conn_id: ConnId, _err: &OutgoingConnectionError) {
         if let Some(slot) = self.targets.get_mut(&node_id) {
-            if let OutgoingState::Connecting(_, _, count) = slot.outgoing {
-                slot.outgoing = OutgoingState::ConnectError(now_ms, conn_id, err.clone(), count);
+            if let OutgoingState::Connecting { conns, count, .. } = &mut slot.outgoing {
+                conns.retain(|c| c != &conn_id);
+                if conns.is_empty() {
+                    slot.outgoing = OutgoingState::ConnectError { ts: now_ms, count: *count };
+                }
             }
         }
     }
@@ -289,7 +305,7 @@ where
 mod test {
     use std::{str::FromStr, sync::Arc};
 
-    use atm0s_sdn_identity::NodeAddr;
+    use atm0s_sdn_identity::{ConnId, NodeAddr};
     use atm0s_sdn_key_value::{KeyValueSdkEvent, KEY_VALUE_SERVICE_ID};
     use atm0s_sdn_network::{
         behaviour::{BehaviorContext, NetworkBehavior, NetworkBehaviorAction},
@@ -309,9 +325,9 @@ mod test {
     #[test]
     fn connect_to_seed() {
         let node_id = 1;
-        let node_addr = NodeAddr::from_str("/p2p/1").expect("");
+        let node_addr = NodeAddr::from_str("1@").expect("");
 
-        let seed_addr = NodeAddr::from_str("/p2p/2").expect("");
+        let seed_addr = NodeAddr::from_str("2@").expect("");
 
         let ctx = BehaviorContext {
             node_id,
@@ -332,25 +348,29 @@ mod test {
         behaviour.on_started(&ctx, 0);
         behaviour.on_tick(&ctx, 100, 3000);
 
-        assert_eq!(behaviour.pop_action(), Some(NetworkBehaviorAction::ConnectTo(0, 2, seed_addr.clone())));
+        assert_eq!(behaviour.pop_action(), Some(NetworkBehaviorAction::ConnectTo(seed_addr.clone())));
         assert_eq!(behaviour.pop_action(), None);
 
+        // simulate connect request
+        let conn_id = ConnId::from_out(0, 1);
+        assert_eq!(behaviour.check_outgoing_connection(&ctx, 0, 2, conn_id), Ok(()));
+
         // connect error should reconnect
-        behaviour.on_outgoing_connection_error(&ctx, 10000, 2, None, 0, &OutgoingConnectionError::AuthenticationError);
+        behaviour.on_outgoing_connection_error(&ctx, 10000, 2, conn_id, &OutgoingConnectionError::AuthenticationError);
         behaviour.on_tick(&ctx, 10000, 3000);
 
         assert_eq!(behaviour.pop_action(), None);
 
         //after wait CONNECT_WAIT[0] ms should connect
         behaviour.on_tick(&ctx, 10000 + CONNECT_WAIT[0], 3000);
-        assert_eq!(behaviour.pop_action(), Some(NetworkBehaviorAction::ConnectTo(0, 2, seed_addr.clone())));
+        assert_eq!(behaviour.pop_action(), Some(NetworkBehaviorAction::ConnectTo(seed_addr.clone())));
         assert_eq!(behaviour.pop_action(), None);
     }
 
     #[test]
     fn init_with_local_tags() {
         let node_id = 1;
-        let node_addr = NodeAddr::from_str("/p2p/1").expect("");
+        let node_addr = NodeAddr::from_str("1@").expect("");
 
         let ctx = BehaviorContext {
             node_id,
@@ -392,10 +412,10 @@ mod test {
     #[test]
     fn init_with_remote_tags() {
         let node_id = 1;
-        let node_addr = NodeAddr::from_str("/p2p/1").expect("");
+        let node_addr = NodeAddr::from_str("1@").expect("");
 
         let remote_id = 2;
-        let remote_addr = NodeAddr::from_str("/p2p/2").expect("");
+        let remote_addr = NodeAddr::from_str("2@").expect("");
 
         let ctx = BehaviorContext {
             node_id,
@@ -431,7 +451,7 @@ mod test {
             KeyValueSdkEvent::OnKeyHChanged(SUB_UUID, hash_str("demo"), remote_id as u64, Some(remote_addr.to_vec()), 0, remote_id).into(),
         );
         behaviour.on_tick(&ctx, 100, 3000);
-        assert_eq!(behaviour.pop_action(), Some(NetworkBehaviorAction::ConnectTo(0, remote_id, remote_addr.clone())));
+        assert_eq!(behaviour.pop_action(), Some(NetworkBehaviorAction::ConnectTo(remote_addr.clone())));
         assert_eq!(behaviour.pop_action(), None);
 
         // on kv changed => should disconnect from node

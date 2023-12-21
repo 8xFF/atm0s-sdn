@@ -16,7 +16,7 @@ use atm0s_sdn_identity::{ConnId, NodeId, NodeIdType};
 use atm0s_sdn_network::{
     behaviour::{BehaviorContext, ConnectionHandler, NetworkBehavior, NetworkBehaviorAction},
     msg::TransportMsg,
-    transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, TransportOutgoingLocalUuid},
+    transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError},
 };
 use atm0s_sdn_router::RouteRule;
 use atm0s_sdn_utils::{error_handle::ErrorUtils, option_handle::OptionUtils};
@@ -163,7 +163,7 @@ where
         Ok(())
     }
 
-    fn check_outgoing_connection(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node: NodeId, _conn_id: ConnId, _local_uuid: TransportOutgoingLocalUuid) -> Result<(), ConnectionRejectReason> {
+    fn check_outgoing_connection(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node: NodeId, _conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
         Ok(())
     }
 
@@ -175,13 +175,7 @@ where
         Some(Box::new(TunTapHandler { local_tx: self.local_tx.clone() }))
     }
 
-    fn on_outgoing_connection_connected(
-        &mut self,
-        _ctx: &BehaviorContext,
-        _now_ms: u64,
-        _conn: Arc<dyn ConnectionSender>,
-        _local_uuid: TransportOutgoingLocalUuid,
-    ) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
+    fn on_outgoing_connection_connected(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _conn: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
         Some(Box::new(TunTapHandler { local_tx: self.local_tx.clone() }))
     }
 
@@ -189,16 +183,7 @@ where
 
     fn on_outgoing_connection_disconnected(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node_id: NodeId, _conn_id: ConnId) {}
 
-    fn on_outgoing_connection_error(
-        &mut self,
-        _ctx: &BehaviorContext,
-        _now_ms: u64,
-        _node_id: NodeId,
-        _conn_id: Option<ConnId>,
-        _local_uuid: TransportOutgoingLocalUuid,
-        _err: &OutgoingConnectionError,
-    ) {
-    }
+    fn on_outgoing_connection_error(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node_id: NodeId, _conn_id: ConnId, _err: &OutgoingConnectionError) {}
 
     fn on_handler_event(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node_id: NodeId, _conn_id: ConnId, _event: BE) {}
 

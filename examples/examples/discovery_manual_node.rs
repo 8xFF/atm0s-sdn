@@ -7,7 +7,7 @@ use atm0s_sdn::SharedRouter;
 use atm0s_sdn::SystemTimer;
 use atm0s_sdn::{
     LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent, LayersSpreadRouterSyncHandlerEvent, ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent, NodeAddr,
-    NodeAddrBuilder, Protocol, UdpTransport,
+    NodeAddrBuilder, UdpTransport,
 };
 use atm0s_sdn::{NetworkPlane, NetworkPlaneConfig};
 use clap::Parser;
@@ -49,9 +49,9 @@ struct Args {
 async fn main() {
     env_logger::init();
     let args: Args = Args::parse();
-    let node_addr_builder = Arc::new(NodeAddrBuilder::default());
-    node_addr_builder.add_protocol(Protocol::P2p(args.node_id));
-    let transport = UdpTransport::new(args.node_id, 0, node_addr_builder.clone()).await;
+    let mut node_addr_builder = NodeAddrBuilder::new(args.node_id);
+    let socket = UdpTransport::prepare(0, &mut node_addr_builder).await;
+    let transport = Box::new(UdpTransport::new(node_addr_builder.addr(), socket));
     let node_addr = node_addr_builder.addr();
     log::info!("Listen on addr {}", node_addr);
 
@@ -71,7 +71,7 @@ async fn main() {
         node_id: args.node_id,
         tick_ms: 1000,
         behaviors: vec![Box::new(spreads_layer_router), Box::new(key_value), Box::new(manual)],
-        transport: Box::new(transport),
+        transport,
         timer: Arc::new(SystemTimer()),
         router: Arc::new(router),
     });

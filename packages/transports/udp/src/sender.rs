@@ -28,7 +28,7 @@ impl UdpServerConnectionSender {
         close_state: Arc<AtomicBool>,
         close_notify: Arc<async_notify::Notify>,
     ) -> Self {
-        log::info!("[UdpServerConnectionSender {}] new", remote_node_id);
+        log::info!("[UdpServerConnectionSender {}/{}] new", remote_node_id, conn_id);
         Self {
             remote_node_id,
             remote_node_addr,
@@ -68,7 +68,7 @@ impl ConnectionSender for UdpServerConnectionSender {
         {
             return;
         }
-        log::info!("[UdpServerConnectionSender {}] close", self.remote_node_id);
+        log::info!("[UdpServerConnectionSender {}/{}] close", self.remote_node_id, self.conn_id);
         self.socket.send_to(&build_control_msg(&UdpTransportMsg::Close), self.socket_dest).print_error("Send close error");
         self.close_notify.notify();
     }
@@ -76,7 +76,7 @@ impl ConnectionSender for UdpServerConnectionSender {
 
 impl Drop for UdpServerConnectionSender {
     fn drop(&mut self) {
-        log::info!("[UdpServerConnectionSender {}] drop", self.remote_node_id);
+        log::info!("[UdpServerConnectionSender {}/{}] drop", self.remote_node_id, self.conn_id);
         self.close();
     }
 }
@@ -92,7 +92,7 @@ pub struct UdpClientConnectionSender {
 
 impl UdpClientConnectionSender {
     pub fn new(remote_node_id: NodeId, remote_node_addr: NodeAddr, conn_id: ConnId, socket: Arc<UdpSocket>, close_state: Arc<AtomicBool>, close_notify: Arc<async_notify::Notify>) -> Self {
-        log::info!("[UdpClientConnectionSender {}] new", remote_node_id);
+        log::info!("[UdpClientConnectionSender {}/{}] new", remote_node_id, conn_id);
         Self {
             remote_node_id,
             remote_node_addr,
@@ -131,7 +131,7 @@ impl ConnectionSender for UdpClientConnectionSender {
         {
             return;
         }
-        log::info!("[UdpClientConnectionSender {}] close", self.remote_node_id);
+        log::info!("[UdpClientConnectionSender {}/{}] close", self.remote_node_id, self.conn_id);
         self.socket.send(&build_control_msg(&UdpTransportMsg::Close)).print_error("Send close error");
         self.close_notify.notify();
     }
@@ -139,7 +139,7 @@ impl ConnectionSender for UdpClientConnectionSender {
 
 impl Drop for UdpClientConnectionSender {
     fn drop(&mut self) {
-        log::info!("[UdpClientConnectionSender {}] drop", self.remote_node_id);
+        log::info!("[UdpClientConnectionSender {}/{}] drop", self.remote_node_id, self.conn_id);
         self.close();
     }
 }

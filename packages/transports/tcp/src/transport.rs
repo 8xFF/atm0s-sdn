@@ -5,54 +5,72 @@ use crate::msg::TcpMsg;
 use async_bincode::futures::AsyncBincodeStream;
 use async_std::channel::{unbounded, Receiver, Sender};
 use async_std::net::TcpListener;
-use atm0s_sdn_identity::{ConnId, NodeAddrBuilder, NodeId, Protocol};
+use atm0s_sdn_identity::{ConnId, NodeAddr, NodeAddrBuilder, NodeId, Protocol};
 use atm0s_sdn_network::transport::{Transport, TransportConnector, TransportEvent};
 use atm0s_sdn_utils::error_handle::ErrorUtils;
 use atm0s_sdn_utils::{SystemTimer, Timer};
 use futures_util::FutureExt;
-use std::net::{Ipv4Addr, Shutdown, SocketAddr};
+use local_ip_address::local_ip;
+use std::collections::HashMap;
+use std::net::{IpAddr, Ipv4Addr, Shutdown, SocketAddr};
 use std::sync::Arc;
 
 pub struct TcpTransport {
     node_id: NodeId,
-    node_addr_builder: Arc<NodeAddrBuilder>,
+    node_addr: NodeAddr,
     listener: TcpListener,
     internal_tx: Sender<TransportEvent>,
     internal_rx: Receiver<TransportEvent>,
     seed: u64,
-    connector: Arc<TcpConnector>,
+    connector: TcpConnector,
     timer: Arc<dyn Timer>,
 }
 
 impl TcpTransport {
-    pub async fn new(node_id: NodeId, port: u16, node_addr_builder: Arc<NodeAddrBuilder>) -> Self {
-        let (internal_tx, internal_rx) = unbounded();
-        let addr_str = format!("0.0.0.0:{}", port);
-        let addr: SocketAddr = addr_str.as_str().parse().unwrap();
-        let listener = TcpListener::bind(addr).await.unwrap();
+    pub async fn prepare(port: u16, node_addr_builder: &mut NodeAddrBuilder) -> TcpListener {
+        let listener = TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port)).await.unwrap();
 
-        //TODO get dynamic ip address
-        node_addr_builder.add_protocol(Protocol::Ip4(Ipv4Addr::new(127, 0, 0, 1)));
+        match local_ip() {
+            Ok(ip) => {
+                node_addr_builder.add_protocol(match ip {
+                    IpAddr::V4(ip) => Protocol::Ip4(ip),
+                    IpAddr::V6(ip) => Protocol::Ip6(ip),
+                });
+            }
+            Err(e) => {
+                log::error!("[TcpTransport] get local ip address error {:?} => fallback to loopback 127.0.0.1", e);
+                node_addr_builder.add_protocol(Protocol::Ip4(Ipv4Addr::new(127, 0, 0, 1)));
+            }
+        }
+
         if port != 0 {
             node_addr_builder.add_protocol(Protocol::Tcp(port));
         } else if let Ok(addr) = listener.local_addr() {
             node_addr_builder.add_protocol(Protocol::Tcp(addr.port()));
         }
 
+        listener
+    }
+
+    pub fn new(node_addr: NodeAddr, listener: TcpListener) -> Self {
+        let node_id = node_addr.node_id();
+        let (internal_tx, internal_rx) = unbounded();
+
         Self {
             node_id,
-            node_addr_builder: node_addr_builder.clone(),
+            node_addr: node_addr.clone(),
             listener,
             internal_tx: internal_tx.clone(),
             internal_rx,
             seed: 0,
-            connector: Arc::new(TcpConnector {
-                seed: Default::default(),
+            connector: TcpConnector {
+                conn_id_seed: 0,
+                node_addr,
+                pending_outgoing: HashMap::new(),
                 node_id,
-                node_addr_builder,
                 internal_tx,
                 timer: Arc::new(SystemTimer()),
-            }),
+            },
             timer: Arc::new(SystemTimer()),
         }
     }
@@ -60,8 +78,8 @@ impl TcpTransport {
 
 #[async_trait::async_trait]
 impl Transport for TcpTransport {
-    fn connector(&self) -> Arc<dyn TransportConnector> {
-        self.connector.clone()
+    fn connector(&mut self) -> &mut dyn TransportConnector {
+        &mut self.connector
     }
 
     async fn recv(&mut self) -> Result<TransportEvent, ()> {
@@ -73,7 +91,7 @@ impl Transport for TcpTransport {
                         let internal_tx = self.internal_tx.clone();
                         let timer = self.timer.clone();
                         let node_id = self.node_id;
-                        let node_addr = self.node_addr_builder.addr();
+                        let node_addr = self.node_addr.clone();
                         let conn_id = ConnId::from_in(1, self.seed);
                         self.seed += 1;
 
@@ -93,7 +111,6 @@ impl Transport for TcpTransport {
                                         timer.clone(),
                                     );
                                     let connection_receiver = Box::new(TcpConnectionReceiver {
-                                        node_id,
                                         remote_node_id,
                                         remote_addr,
                                         conn_id,

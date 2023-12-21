@@ -36,7 +36,6 @@ pub enum OutgoingHandshakeError {
     AuthenticationError,
     Timeout,
     WrongMsg,
-    InternalError,
     Rejected,
 }
 
@@ -74,11 +73,11 @@ pub async fn incoming_handshake(
                     match msg {
                         UdpTransportMsg::ConnectRequest(node, addr, to_node) => {
                             if to_node != local_node_id {
-                                log::warn!("[IncomingHandshake] received from {} {} but wrong dest {} vs {}", node, addr, to_node, local_node_id);
+                                log::warn!("[UdpTransport] received from {} {} but wrong dest {} vs {}", node, addr, to_node, local_node_id);
                                 socket.send_to(&build_control_msg(&UdpTransportMsg::ConnectResponse(HandshakeResult::AuthenticationError)), remote_addr).await.map_err(|_| IncomingHandshakeError::SocketError)?;
                                 return Err(IncomingHandshakeError::Rejected);
                             }
-                            log::info!("[IncomingHandshake] received from {} {}", node, addr);
+                            log::info!("[UdpTransport] received from {} {}", node, addr);
                             if !requested {
                                 let (connection_acceptor, recv) = AsyncConnectionAcceptor::new();
                                 internal_tx
@@ -86,7 +85,7 @@ pub async fn incoming_handshake(
                                     .await
                                     .map_err(|_| IncomingHandshakeError::InternalError)?;
                                 if let Err(e) = recv.recv().await.map_err(|_| IncomingHandshakeError::InternalError)? {
-                                    log::warn!("[IncomingHandshake] {} {} handshake rejected {:?}", node, addr, e);
+                                    log::warn!("[UdpTransport] {} {} handshake rejected {:?}", node, addr, e);
                                     socket.send_to(&build_control_msg(&UdpTransportMsg::ConnectResponse(HandshakeResult::Rejected)), remote_addr).await.print_error("Should send handshake response error: Rejected");
                                     return Err(IncomingHandshakeError::Rejected);
                                 }
@@ -94,23 +93,23 @@ pub async fn incoming_handshake(
 
                             requested = true;
                             if let Ok(addr) = NodeAddr::from_str(&addr) {
-                                log::warn!("[IncomingHandshake] {} {} handshake success", node, addr);
+                                log::info!("[UdpTransport] {} {} handshake success", node, addr);
                                 socket.send_to(&build_control_msg(&UdpTransportMsg::ConnectResponse(HandshakeResult::Success)), remote_addr).await.map_err(|_| IncomingHandshakeError::SocketError)?;
                                 result = Some((node, addr));
                             } else {
-                                log::warn!("[IncomingHandshake] {} {} handshake rejected wrong addr", node, addr);
+                                log::warn!("[UdpTransport] {} {} handshake rejected wrong addr", node, addr);
                                 socket.send_to(&build_control_msg(&UdpTransportMsg::ConnectResponse(HandshakeResult::AuthenticationError)), remote_addr).await.map_err(|_| IncomingHandshakeError::SocketError)?;
                                 return Err(IncomingHandshakeError::Rejected);
                             }
                         }
                         UdpTransportMsg::ConnectResponseAck(success) => {
                             if success {
-                                log::info!("[IncomingHandshake] received handshake resonse ack {}", success);
+                                log::info!("[UdpTransport] received handshake resonse ack {}", success);
                                 if let Some(result) = result.take() {
                                     return Ok(result)
                                 }
                             } else {
-                                log::warn!("[IncomingHandshake] received handshake resonse ack {}", success);
+                                log::warn!("[UdpTransport] received handshake resonse ack {}", success);
                                 return Err(IncomingHandshakeError::Rejected);
                             }
                         }
@@ -118,7 +117,7 @@ pub async fn incoming_handshake(
                     };
                 },
                 Err(e) => {
-                    log::warn!("[IncomingHandshake] internal queue error {:?}", e);
+                    log::warn!("[UdpTransport] internal queue error {:?}", e);
                     return Err(IncomingHandshakeError::InternalError);
                 }
             }
@@ -136,7 +135,7 @@ pub async fn outgoing_handshake(socket: &UdpSocket, local_node_id: NodeId, local
         .await
         .map_err(|_| OutgoingHandshakeError::SocketError)?;
 
-    log::info!("[OutgoingHandshake {}] send handshake connect request", to_node_id);
+    log::info!("[UdpTransport] send handshake connect request");
 
     loop {
         select! {
@@ -145,7 +144,7 @@ pub async fn outgoing_handshake(socket: &UdpSocket, local_node_id: NodeId, local
                 if count >= 5 {
                     return Err(OutgoingHandshakeError::Timeout);
                 }
-                log::warn!("[OutgoingHandshake {}] send handshake connect request (retry {})", to_node_id, count);
+                log::warn!("[UdpTransport] send handshake connect request (retry {})", count);
                 socket.send(&build_control_msg(&UdpTransportMsg::ConnectRequest(local_node_id, local_node_addr.to_string(), to_node_id))).await.map_err(|_| OutgoingHandshakeError::SocketError)?;
             }
             e = socket.recv_from(&mut buf).fuse() => match e {
@@ -157,7 +156,7 @@ pub async fn outgoing_handshake(socket: &UdpSocket, local_node_id: NodeId, local
                     let msg = bincode::deserialize::<UdpTransportMsg>(&buf[1..size]).map_err(|_| OutgoingHandshakeError::WrongMsg)?;
                     match msg {
                         UdpTransportMsg::ConnectResponse(res) => {
-                            log::info!("[OutgoingHandshake {}] received handshake response {:?}", to_node_id, res);
+                            log::info!("[UdpTransport] received handshake response {:?}", res);
                             match res {
                                 HandshakeResult::Success => {
                                     socket.send(&build_control_msg(&UdpTransportMsg::ConnectResponseAck(true))).await.map_err(|_| OutgoingHandshakeError::SocketError)?;
@@ -175,7 +174,7 @@ pub async fn outgoing_handshake(socket: &UdpSocket, local_node_id: NodeId, local
                     };
                 }
                 Err(e) => {
-                    log::warn!("[IncomingHandshake] socket error {:?}", e);
+                    log::warn!("[UdpTransport] socket error {:?}", e);
                     return Err(OutgoingHandshakeError::SocketError);
                 }
             }

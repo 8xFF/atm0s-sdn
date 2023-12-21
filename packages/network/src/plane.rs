@@ -73,6 +73,8 @@ pub enum NetworkPlaneInternalEvent<BE> {
     },
     IncomingDisconnected(NodeId, ConnId),
     OutgoingDisconnected(NodeId, ConnId),
+    /// `OutgoingRequest` represents an outgoing request to a node with the given `NodeId` and `ConnId`,
+    OutgoingRequest(NodeId, ConnId),
 }
 
 pub enum NetworkPlaneError {
@@ -160,8 +162,8 @@ where
             },
             e = self.transport.recv().fuse() => match e {
                 Ok(e) => {
-                    self.internal.on_transport_event(self.timer.now_ms(), e)
-                        .map_err(|_e| NetworkPlaneError::RuntimeError)
+                    self.internal.on_transport_event(self.timer.now_ms(), e);
+                    Ok(())
                 },
                 Err(_e) => {
                     Err(NetworkPlaneError::TransportError)
@@ -259,21 +261,20 @@ where
                         log::warn!("[NetworkPlane] add conn ({}, {}) failed", sender.remote_node_id(), sender.conn_id());
                     }
                 }
+                PlaneInternalAction::ContinuePendingOutgoingConnection(local_uuid) => {
+                    self.transport.connector().continue_pending_outgoing(local_uuid);
+                }
+                PlaneInternalAction::DropPendingOutgoingConnection(local_uuid) => {
+                    self.transport.connector().destroy_pending_outgoing(local_uuid);
+                }
                 PlaneInternalAction::BehaviorAction(service, action) => match action {
-                    NetworkBehaviorAction::ConnectTo(local_uuid, node_id, dest) => {
-                        if let Err(err) = self.transport.connector().connect_to(local_uuid, node_id, dest) {
-                            log::warn!("[NetworkPlane] connect to {} failed: {}", node_id, err);
-                            if let Err(e) = self.internal.on_transport_event(
-                                now_ms,
-                                crate::transport::TransportEvent::OutgoingError {
-                                    local_uuid,
-                                    node_id,
-                                    conn_id: None,
-                                    err,
-                                },
-                            ) {
-                                log::error!("[NetworkPlane] on_transport_event error: {:?}", e);
-                            }
+                    NetworkBehaviorAction::ConnectTo(dest) => {
+                        let node_id: u32 = dest.node_id();
+                        let pending_conns = self.transport.connector().create_pending_outgoing(dest);
+                        for conn in pending_conns {
+                            self.internal
+                                .on_internal_event(now_ms, NetworkPlaneInternalEvent::OutgoingRequest(node_id, conn))
+                                .print_error("Should send OutgoingRequest");
                         }
                     }
                     NetworkBehaviorAction::ToNet(msg) => {

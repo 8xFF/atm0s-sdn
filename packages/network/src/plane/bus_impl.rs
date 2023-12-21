@@ -274,7 +274,7 @@ mod tests {
         let (plane_tx, _plane_rx) = unbounded();
         let router = Arc::new(MockRouterTable::new());
         let bus = PlaneBusImpl::<BE, HE>::new(local_node_id, router, plane_tx);
-        let mut sender = create_mock_connection(ConnId::from_in(1, 1), 2u32, NodeAddr::empty());
+        let mut sender = create_mock_connection(ConnId::from_in(1, 1), 2u32, NodeAddr::empty(2));
         sender.expect_close().times(1).return_const(());
         let conn = Arc::new(sender);
         let conn_c = conn.clone();
@@ -308,7 +308,7 @@ mod tests {
         let (plane_tx, _plane_rx) = unbounded();
         let router = Arc::new(MockRouterTable::new());
         let bus = PlaneBusImpl::<BE, HE>::new(local_node_id, router, plane_tx);
-        let mut data = create_mock_connection(ConnId::from_in(1, 1), 2u32, NodeAddr::empty());
+        let mut data = create_mock_connection(ConnId::from_in(1, 1), 2u32, NodeAddr::empty(2));
         data.expect_close().times(1).return_const(());
 
         let conn = Arc::new(data);
@@ -331,7 +331,7 @@ mod tests {
         let (plane_tx, _plane_rx) = unbounded();
         let router = Arc::new(MockRouterTable::new());
         let bus = PlaneBusImpl::<BE, HE>::new(local_node_id, router, plane_tx);
-        let data = create_mock_connection(ConnId::from_in(1, 1), 2u32, NodeAddr::empty());
+        let data = create_mock_connection(ConnId::from_in(1, 1), 2u32, NodeAddr::empty(2));
 
         let conn = Arc::new(data);
         let rx = bus.add_conn(conn.clone()).expect("Should have rx");
@@ -396,7 +396,7 @@ mod tests {
 
         let bus = PlaneBusImpl::<BE, HE>::new(local_node_id, router, plane_tx);
 
-        let sender = create_mock_connection(ConnId::from_in(1, 1), 2u32, NodeAddr::empty());
+        let sender = create_mock_connection(ConnId::from_in(1, 1), 2u32, NodeAddr::empty(2));
 
         let conn = Arc::new(sender);
         let _rx = bus.add_conn(conn).expect("Should have rx");
@@ -438,7 +438,7 @@ mod tests {
 
         let bus = PlaneBusImpl::<BE, HE>::new(local_node_id, router, plane_tx);
 
-        let sender = create_mock_connection(ConnId::from_in(1, 1), 2u32, NodeAddr::empty());
+        let sender = create_mock_connection(ConnId::from_in(1, 1), 2u32, NodeAddr::empty(2));
 
         let conn = Arc::new(sender);
         let _rx = bus.add_conn(conn).expect("Should have rx");
@@ -456,7 +456,7 @@ mod tests {
 
         let bus = PlaneBusImpl::<BE, HE>::new(local_node_id, router, plane_tx);
 
-        let sender = create_mock_connection(ConnId::from_in(1, 1), 2u32, NodeAddr::empty());
+        let sender = create_mock_connection(ConnId::from_in(1, 1), 2u32, NodeAddr::empty(2));
 
         let conn = Arc::new(sender);
         let _rx = bus.add_conn(conn).expect("Should have rx");

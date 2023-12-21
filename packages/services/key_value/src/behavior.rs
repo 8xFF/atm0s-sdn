@@ -4,7 +4,7 @@ use crate::{ExternalControl, KEY_VALUE_SERVICE_ID};
 use atm0s_sdn_identity::{ConnId, NodeId};
 use atm0s_sdn_network::behaviour::{BehaviorContext, ConnectionHandler, NetworkBehavior, NetworkBehaviorAction};
 use atm0s_sdn_network::msg::{MsgHeader, TransportMsg};
-use atm0s_sdn_network::transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError, TransportOutgoingLocalUuid};
+use atm0s_sdn_network::transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError};
 use std::collections::VecDeque;
 use std::sync::Arc;
 
@@ -236,7 +236,7 @@ where
         Ok(())
     }
 
-    fn check_outgoing_connection(&mut self, ctx: &BehaviorContext, now_ms: u64, node: NodeId, conn_id: ConnId, local_uuid: TransportOutgoingLocalUuid) -> Result<(), ConnectionRejectReason> {
+    fn check_outgoing_connection(&mut self, ctx: &BehaviorContext, now_ms: u64, node: NodeId, conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
         Ok(())
     }
 
@@ -266,13 +266,7 @@ where
         Some(Box::new(KeyValueConnectionHandler::new()))
     }
 
-    fn on_outgoing_connection_connected(
-        &mut self,
-        ctx: &BehaviorContext,
-        now_ms: u64,
-        conn: Arc<dyn ConnectionSender>,
-        local_uuid: TransportOutgoingLocalUuid,
-    ) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
+    fn on_outgoing_connection_connected(&mut self, ctx: &BehaviorContext, now_ms: u64, conn: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
         Some(Box::new(KeyValueConnectionHandler::new()))
     }
 
@@ -280,10 +274,9 @@ where
 
     fn on_outgoing_connection_disconnected(&mut self, ctx: &BehaviorContext, now_ms: u64, node: NodeId, conn_id: ConnId) {}
 
-    fn on_outgoing_connection_error(&mut self, ctx: &BehaviorContext, now_ms: u64, node_id: NodeId, conn_id: Option<ConnId>, local_uuid: TransportOutgoingLocalUuid, err: &OutgoingConnectionError) {}
+    fn on_outgoing_connection_error(&mut self, ctx: &BehaviorContext, now_ms: u64, node_id: NodeId, conn_id: ConnId, err: &OutgoingConnectionError) {}
 
     fn on_handler_event(&mut self, ctx: &BehaviorContext, now_ms: u64, node_id: NodeId, conn_id: ConnId, event: BE) {
-        log::info!("received event");
         if let Ok(msg) = event.try_into() {
             match msg {
                 KeyValueBehaviorEvent::FromNode(from, msg) => {

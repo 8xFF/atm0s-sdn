@@ -71,7 +71,6 @@ pub enum OutgoingHandshakeError {
     SocketError,
     Timeout,
     WrongMsg,
-    InternalError,
     Rejected,
 }
 
