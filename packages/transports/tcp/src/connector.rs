@@ -10,7 +10,7 @@ use atm0s_sdn_network::transport::{OutgoingConnectionError, TransportConnector, 
 use atm0s_sdn_utils::error_handle::ErrorUtils;
 use atm0s_sdn_utils::Timer;
 use std::collections::HashMap;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
 pub struct TcpConnector {
@@ -39,7 +39,7 @@ impl TransportConnector for TcpConnector {
                         self.conn_id_seed += 1;
                         let conn_id = ConnId::from_out(TCP_PROTOCOL_ID, uuid);
                         res.push(conn_id);
-                        self.pending_outgoing.insert(conn_id, (dest.node_id(), dest.clone(), SocketAddr::new(ip.clone().into(), portnum)));
+                        self.pending_outgoing.insert(conn_id, (dest.node_id(), dest.clone(), SocketAddr::new(IpAddr::V4(*ip), portnum)));
                     }
                     None => {
                         log::error!("[TcpConnector] No ip4 address found in node addr {}", dest);

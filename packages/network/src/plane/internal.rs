@@ -184,7 +184,7 @@ impl<BE, HE, SE> PlaneInternal<BE, HE, SE> {
             NetworkPlaneInternalEvent::OutgoingRequest(node, conn_id) => {
                 let mut rejected = None;
                 for (behaviour, context) in self.behaviors.iter_mut().flatten() {
-                    if let Err(err) = behaviour.check_outgoing_connection(&context, now_ms, node, conn_id) {
+                    if let Err(err) = behaviour.check_outgoing_connection(context, now_ms, node, conn_id) {
                         rejected = Some(err);
                         break;
                     }
@@ -193,7 +193,7 @@ impl<BE, HE, SE> PlaneInternal<BE, HE, SE> {
                     let err = OutgoingConnectionError::BehaviorRejected(reason);
                     self.action_queue.push_back(PlaneInternalAction::DropPendingOutgoingConnection(conn_id));
                     for (behaviour, context) in self.behaviors.iter_mut().flatten() {
-                        behaviour.on_outgoing_connection_error(&context, now_ms, node, conn_id, &err);
+                        behaviour.on_outgoing_connection_error(context, now_ms, node, conn_id, &err);
                     }
                 } else {
                     self.action_queue.push_back(PlaneInternalAction::ContinuePendingOutgoingConnection(conn_id));
@@ -221,7 +221,7 @@ impl<BE, HE, SE> PlaneInternal<BE, HE, SE> {
             TransportEvent::IncomingRequest(node, conn_id, acceptor) => {
                 let mut rejected = false;
                 for (behaviour, context) in self.behaviors.iter_mut().flatten() {
-                    if let Err(err) = behaviour.check_incoming_connection(&context, now_ms, node, conn_id) {
+                    if let Err(err) = behaviour.check_incoming_connection(context, now_ms, node, conn_id) {
                         acceptor.reject(err);
                         rejected = true;
                         break;
