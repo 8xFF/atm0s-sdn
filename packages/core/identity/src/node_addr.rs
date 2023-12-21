@@ -35,17 +35,6 @@ impl NodeAddr {
         let multiaddr = multiaddr::Multiaddr::try_from(buf[4..].to_vec()).ok()?;
         Some(Self(node_id, multiaddr))
     }
-
-    pub fn to_str(&self) -> String {
-        format!("{}@{}", self.0, self.1)
-    }
-
-    pub fn from_str(s: &str) -> Option<Self> {
-        let mut split = s.split('@');
-        let node_id = split.next()?.parse::<NodeId>().ok()?;
-        let multiaddr = split.next().unwrap_or("").parse::<multiaddr::Multiaddr>().ok()?;
-        Some(Self(node_id, multiaddr))
-    }
 }
 
 impl FromStr for NodeAddr {
@@ -61,7 +50,11 @@ impl FromStr for NodeAddr {
 
 impl Display for NodeAddr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}@{}", self.0, self.1)
+        if self.1.is_empty() {
+            write!(f, "{}", self.0)
+        } else {
+            write!(f, "{}@{}", self.0, self.1)
+        }
     }
 }
 
@@ -96,18 +89,22 @@ impl NodeAddrBuilder {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use multiaddr::Multiaddr;
 
     #[test]
     fn test_to_from_str() {
-        let addr = super::NodeAddr::from_str("1@/ip4/127.0.0.1");
-        assert_eq!(addr, Some(super::NodeAddr(1, "/ip4/127.0.0.1".parse().unwrap())));
+        let addr = super::NodeAddr::from_str("1@/ip4/127.0.0.1").unwrap();
+        assert_eq!(addr, super::NodeAddr(1, "/ip4/127.0.0.1".parse().unwrap()));
+        assert_eq!(addr.to_string(), "1@/ip4/127.0.0.1");
     }
 
     #[test]
     fn test_empty() {
-        let addr = super::NodeAddr::from_str("1");
-        assert_eq!(addr, Some(super::NodeAddr(1, Multiaddr::empty())));
-        assert_eq!(addr, Some(super::NodeAddr::empty(1)));
+        let addr = super::NodeAddr::from_str("1").unwrap();
+        assert_eq!(addr, super::NodeAddr(1, Multiaddr::empty()));
+        assert_eq!(addr, super::NodeAddr::empty(1));
+        assert_eq!(addr.to_string(), "1");
     }
 }

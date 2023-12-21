@@ -19,6 +19,7 @@ const KV_TIMEOUT: u64 = 30000;
 
 const SUB_UUID: u64 = 0x22;
 
+#[allow(unused)]
 enum OutgoingState {
     New,
     Connecting { ts: u64, conns: Vec<ConnId>, count: usize },
