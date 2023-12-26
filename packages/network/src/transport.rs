@@ -9,11 +9,6 @@ use thiserror::Error;
 use mockall::automock;
 
 /// Enum representing events that can occur in the transport layer.
-///
-///
-//
-///
-///
 pub enum TransportEvent {
     /// `IncomingRequest` represents an incoming request from a node with the given `NodeId` and `ConnId`,
     /// which is accepted by the `ConnectionAcceptor` trait object.

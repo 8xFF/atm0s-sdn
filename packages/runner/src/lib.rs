@@ -4,6 +4,7 @@ pub use atm0s_sdn_network::plane::{NetworkPlane, NetworkPlaneConfig};
 pub use atm0s_sdn_network::{
     behaviour::{BehaviorContext, ConnectionContext, NetworkBehavior},
     convert_enum,
+    secure::*,
     transport::*,
 };
 pub use atm0s_sdn_router::{RouteAction, RouteRule, RouterTable};

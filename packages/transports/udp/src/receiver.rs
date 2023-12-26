@@ -228,7 +228,7 @@ impl ConnectionReceiver for UdpClientConnectionReceiver {
                         if len > 0 {
                             if data[0] == 255 {
                                 match bincode::deserialize::<UdpTransportMsg>(&data[1..len]) {
-                                    Ok(UdpTransportMsg::ConnectResponse(_)) => {
+                                    Ok(UdpTransportMsg::ConnectResponse(_, _)) => {
                                         self.socket
                                             .send(&build_control_msg(&UdpTransportMsg::ConnectResponseAck(true)))
                                             .await

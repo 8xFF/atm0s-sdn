@@ -6,6 +6,7 @@ use async_bincode::futures::AsyncBincodeStream;
 use async_std::channel::Sender;
 use async_std::net::{Shutdown, TcpStream};
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId, Protocol};
+use atm0s_sdn_network::secure::DataSecure;
 use atm0s_sdn_network::transport::{OutgoingConnectionError, TransportConnector, TransportEvent};
 use atm0s_sdn_utils::error_handle::ErrorUtils;
 use atm0s_sdn_utils::Timer;
@@ -14,6 +15,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
 pub struct TcpConnector {
+    pub(crate) secure: Arc<dyn DataSecure>,
     pub(crate) conn_id_seed: u64,
     pub(crate) node_id: NodeId,
     pub(crate) node_addr: NodeAddr,
@@ -61,12 +63,14 @@ impl TransportConnector for TcpConnector {
             let conn_id = ConnId::from_out(TCP_PROTOCOL_ID, self.conn_id_seed);
             self.conn_id_seed += 1;
             let internal_tx = self.internal_tx.clone();
+            let secure = self.secure.clone();
+
             async_std::task::spawn(async move {
                 match TcpStream::connect(remote_addr).await {
                     Ok(socket) => {
                         let mut socket_read = AsyncBincodeStream::<_, TcpMsg, TcpMsg, _>::from(socket.clone()).for_async();
                         let socket_write = AsyncBincodeStream::<_, TcpMsg, TcpMsg, _>::from(socket.clone()).for_async();
-                        match outgoing_handshake(remote_node_id, node_id, node_addr, &mut socket_read, conn_id, &internal_tx).await {
+                        match outgoing_handshake(secure, remote_node_id, node_id, node_addr, &mut socket_read, conn_id, &internal_tx).await {
                             Ok(_) => {
                                 let (connection_sender, unreliable_sender) = TcpConnectionSender::new(node_id, remote_node_id, remote_node_addr.clone(), conn_id, 1000, socket_write, timer.clone());
                                 let connection_receiver = Box::new(TcpConnectionReceiver {

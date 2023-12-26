@@ -1,13 +1,16 @@
-use std::{net::SocketAddr, str::FromStr, time::Duration};
+use std::{net::SocketAddr, ops::Deref, sync::Arc, time::Duration};
 
-use crate::msg::{build_control_msg, HandshakeResult, UdpTransportMsg};
+use crate::msg::{build_control_msg, HandshakeRequest, HandshakeResult, UdpTransportMsg};
 use async_std::{
     channel::{Receiver, Sender},
     net::UdpSocket,
     stream::StreamExt,
 };
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
-use atm0s_sdn_network::transport::{AsyncConnectionAcceptor, TransportEvent};
+use atm0s_sdn_network::{
+    secure::{DataSecure, ObjectSecure},
+    transport::{AsyncConnectionAcceptor, TransportEvent},
+};
 use atm0s_sdn_utils::error_handle::ErrorUtils;
 use futures_util::{select, FutureExt};
 
@@ -40,6 +43,7 @@ pub enum OutgoingHandshakeError {
 }
 
 pub async fn incoming_handshake(
+    secure: Arc<dyn DataSecure>,
     local_node_id: NodeId,
     internal_tx: &Sender<TransportEvent>,
     rx: &Receiver<([u8; 1500], usize)>,
@@ -59,8 +63,9 @@ pub async fn incoming_handshake(
                     return Err(IncomingHandshakeError::Timeout);
                 }
 
-                if result.is_some() {
-                    socket.send_to(&build_control_msg(&UdpTransportMsg::ConnectResponse(HandshakeResult::Success)), remote_addr).await.map_err(|_| IncomingHandshakeError::SocketError)?;
+                if let Some((remote_node_id, _)) = &result {
+                    let signature = ObjectSecure::sign_obj(secure.deref(), *remote_node_id, &HandshakeResult::Success);
+                    socket.send_to(&build_control_msg(&UdpTransportMsg::ConnectResponse(HandshakeResult::Success, signature)), remote_addr).await.map_err(|_| IncomingHandshakeError::SocketError)?;
                 }
             }
             e = rx.recv().fuse() =>  match e {
@@ -71,36 +76,39 @@ pub async fn incoming_handshake(
 
                     let msg = bincode::deserialize::<UdpTransportMsg>(&msg[1..]).map_err(|_| IncomingHandshakeError::WrongMsg)?;
                     match msg {
-                        UdpTransportMsg::ConnectRequest(node, addr, to_node) => {
-                            if to_node != local_node_id {
-                                log::warn!("[UdpTransport] received from {} {} but wrong dest {} vs {}", node, addr, to_node, local_node_id);
-                                socket.send_to(&build_control_msg(&UdpTransportMsg::ConnectResponse(HandshakeResult::AuthenticationError)), remote_addr).await.map_err(|_| IncomingHandshakeError::SocketError)?;
+                        UdpTransportMsg::ConnectRequest(req, sig) => {
+                            if !ObjectSecure::verify_obj(secure.deref(), req.remote_node_id, &req, &sig) {
+                                log::warn!("[UdpTransport] received handshake request wrong signature");
+                                let signature = ObjectSecure::sign_obj(secure.deref(), req.node_id, &HandshakeResult::AuthenticationError);
+                                socket.send_to(&build_control_msg(&UdpTransportMsg::ConnectResponse(HandshakeResult::AuthenticationError, signature)), remote_addr).await.map_err(|_| IncomingHandshakeError::SocketError)?;
                                 return Err(IncomingHandshakeError::Rejected);
                             }
-                            log::info!("[UdpTransport] received from {} {}", node, addr);
+                            if req.remote_node_id != local_node_id {
+                                log::warn!("[UdpTransport] received from {} {} but wrong dest {} vs {}", req.node_id, req.node_addr, req.remote_node_id, local_node_id);
+                                let signature = ObjectSecure::sign_obj(secure.deref(), req.node_id, &HandshakeResult::AuthenticationError);
+                                socket.send_to(&build_control_msg(&UdpTransportMsg::ConnectResponse(HandshakeResult::AuthenticationError, signature)), remote_addr).await.map_err(|_| IncomingHandshakeError::SocketError)?;
+                                return Err(IncomingHandshakeError::Rejected);
+                            }
+                            log::info!("[UdpTransport] received from {} {}", req.node_id, req.node_addr);
                             if !requested {
                                 let (connection_acceptor, recv) = AsyncConnectionAcceptor::new();
                                 internal_tx
-                                    .send(TransportEvent::IncomingRequest(node, conn_id, connection_acceptor))
+                                    .send(TransportEvent::IncomingRequest(req.node_id, conn_id, connection_acceptor))
                                     .await
                                     .map_err(|_| IncomingHandshakeError::InternalError)?;
                                 if let Err(e) = recv.recv().await.map_err(|_| IncomingHandshakeError::InternalError)? {
-                                    log::warn!("[UdpTransport] {} {} handshake rejected {:?}", node, addr, e);
-                                    socket.send_to(&build_control_msg(&UdpTransportMsg::ConnectResponse(HandshakeResult::Rejected)), remote_addr).await.print_error("Should send handshake response error: Rejected");
+                                    log::warn!("[UdpTransport] {} {} handshake rejected {:?}", req.node_id, req.node_addr, e);
+                                    let signature = ObjectSecure::sign_obj(secure.deref(), req.node_id, &HandshakeResult::Rejected);
+                                    socket.send_to(&build_control_msg(&UdpTransportMsg::ConnectResponse(HandshakeResult::Rejected, signature)), remote_addr).await.print_error("Should send handshake response error: Rejected");
                                     return Err(IncomingHandshakeError::Rejected);
                                 }
                             }
 
                             requested = true;
-                            if let Ok(addr) = NodeAddr::from_str(&addr) {
-                                log::info!("[UdpTransport] {} {} handshake success", node, addr);
-                                socket.send_to(&build_control_msg(&UdpTransportMsg::ConnectResponse(HandshakeResult::Success)), remote_addr).await.map_err(|_| IncomingHandshakeError::SocketError)?;
-                                result = Some((node, addr));
-                            } else {
-                                log::warn!("[UdpTransport] {} {} handshake rejected wrong addr", node, addr);
-                                socket.send_to(&build_control_msg(&UdpTransportMsg::ConnectResponse(HandshakeResult::AuthenticationError)), remote_addr).await.map_err(|_| IncomingHandshakeError::SocketError)?;
-                                return Err(IncomingHandshakeError::Rejected);
-                            }
+                            log::info!("[UdpTransport] {} {} handshake success", req.node_id, req.node_addr);
+                            let signature = ObjectSecure::sign_obj(secure.deref(), req.node_id, &HandshakeResult::Success);
+                            socket.send_to(&build_control_msg(&UdpTransportMsg::ConnectResponse(HandshakeResult::Success, signature)), remote_addr).await.map_err(|_| IncomingHandshakeError::SocketError)?;
+                            result = Some((req.node_id, req.node_addr));
                         }
                         UdpTransportMsg::ConnectResponseAck(success) => {
                             if success {
@@ -125,13 +133,20 @@ pub async fn incoming_handshake(
     }
 }
 
-pub async fn outgoing_handshake(socket: &UdpSocket, local_node_id: NodeId, local_node_addr: NodeAddr, to_node_id: NodeId) -> Result<(), OutgoingHandshakeError> {
+pub async fn outgoing_handshake(secure: Arc<dyn DataSecure>, socket: &UdpSocket, local_node_id: NodeId, local_node_addr: NodeAddr, to_node_id: NodeId) -> Result<(), OutgoingHandshakeError> {
     let mut timer = async_std::stream::interval(Duration::from_secs(1));
     let mut buf = [0; 1500];
     let mut count = 0;
 
+    let req = HandshakeRequest {
+        node_id: local_node_id,
+        node_addr: local_node_addr.clone(),
+        remote_node_id: to_node_id,
+    };
+    let signature = ObjectSecure::sign_obj(secure.deref(), to_node_id, &req);
+
     socket
-        .send(&build_control_msg(&UdpTransportMsg::ConnectRequest(local_node_id, local_node_addr.to_string(), to_node_id)))
+        .send(&build_control_msg(&UdpTransportMsg::ConnectRequest(req.clone(), signature.clone())))
         .await
         .map_err(|_| OutgoingHandshakeError::SocketError)?;
 
@@ -145,7 +160,7 @@ pub async fn outgoing_handshake(socket: &UdpSocket, local_node_id: NodeId, local
                     return Err(OutgoingHandshakeError::Timeout);
                 }
                 log::warn!("[UdpTransport] send handshake connect request (retry {})", count);
-                socket.send(&build_control_msg(&UdpTransportMsg::ConnectRequest(local_node_id, local_node_addr.to_string(), to_node_id))).await.map_err(|_| OutgoingHandshakeError::SocketError)?;
+                socket.send(&build_control_msg(&UdpTransportMsg::ConnectRequest(req.clone(), signature.clone()))).await.map_err(|_| OutgoingHandshakeError::SocketError)?;
             }
             e = socket.recv_from(&mut buf).fuse() => match e {
                 Ok((size, _remote_addr)) => {
@@ -155,7 +170,11 @@ pub async fn outgoing_handshake(socket: &UdpSocket, local_node_id: NodeId, local
 
                     let msg = bincode::deserialize::<UdpTransportMsg>(&buf[1..size]).map_err(|_| OutgoingHandshakeError::WrongMsg)?;
                     match msg {
-                        UdpTransportMsg::ConnectResponse(res) => {
+                        UdpTransportMsg::ConnectResponse(res, signature) => {
+                            if !ObjectSecure::verify_obj(secure.deref(), local_node_id, &res, &signature) {
+                                log::warn!("[UdpTransport] received handshake response wrong signature");
+                                return Err(OutgoingHandshakeError::AuthenticationError);
+                            }
                             log::info!("[UdpTransport] received handshake response {:?}", res);
                             match res {
                                 HandshakeResult::Success => {
