@@ -24,7 +24,7 @@ pub enum MsgHeaderError {
 ///     0                   1                   2                   3
 ///     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-///    |V=0|F| R | Meta|      TTL      |  FromService   |  ToService   |
+///    |V=0|F| R |S| M |      TTL      |  FromService   |  ToService   |
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ///    |                         StreamID                              |
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -44,12 +44,13 @@ pub enum MsgHeaderError {
 ///     - 1: ToNode : which node received this msg will route it to node_id
 ///     - 2: ToService : which node received this msg will route it to service meta
 ///     - 3: ToKey : which node received this msg will route it to key
-///  - Meta: 3 bits
+///  - Secure: 1 bits, If this bit is set, this msg should be encrypted
+///  - Meta (M): 2 bits
 ///
 /// - Ttl (TTL): 8 bits
-/// - Service id (Service): 8 bits
-/// - Meta (M): 8 bits (can use freely)
-/// - Route destination (Route Destination): 32 bits (if S is not Direct)
+/// - From Service Id: 8 bits
+/// - To Service Id: 8 bits
+/// - Route destination (Route Destination): 32 bits (if R is not Direct)
 ///
 ///     - If route type is ToNode, this field is 32bit node_id
 ///     - If route type is ToService, this field is service meta
@@ -68,6 +69,7 @@ pub struct MsgHeader {
     pub from_service_id: u8,
     pub to_service_id: u8,
     pub route: RouteRule,
+    pub secure: bool,
     pub meta: u8,
     pub stream_id: u32,
     /// Which can be anonymous or specific node
@@ -83,6 +85,7 @@ impl MsgHeader {
             from_service_id: 0,
             to_service_id: 0,
             route: RouteRule::Direct,
+            secure: true,
             meta: 0,
             stream_id: 0,
             from_node: None,
@@ -96,6 +99,7 @@ impl MsgHeader {
             from_service_id,
             to_service_id,
             route,
+            secure: true,
             meta: 0,
             stream_id: 0,
             from_node: None,
@@ -108,9 +112,15 @@ impl MsgHeader {
         self
     }
 
+    /// Set secure
+    pub fn set_secure(mut self, secure: bool) -> Self {
+        self.secure = secure;
+        self
+    }
+
     /// Set meta
     pub fn set_meta(mut self, meta: u8) -> Self {
-        assert!(meta <= 7);
+        assert!(meta <= 3);
         self.meta = meta;
         self
     }
@@ -166,7 +176,8 @@ impl MsgHeader {
         let version = bytes[0] >> 6; //2 bits
         let from_bit = (bytes[0] >> 5) & 1 == 1; //1 bit
         let route_type = (bytes[0] >> 3) & 3; //2 bits
-        let meta = bytes[0] & 7; //3 bits
+        let secure = (bytes[0] >> 2) & 1 == 1; //1 bit
+        let meta = bytes[0] & 3; //2 bits
 
         if version != 0 {
             return Err(MsgHeaderError::InvalidVersion);
@@ -237,6 +248,7 @@ impl MsgHeader {
                 from_service_id,
                 to_service_id,
                 route,
+                secure,
                 meta,
                 stream_id,
                 from_node,
@@ -254,7 +266,8 @@ impl MsgHeader {
     /// # Returns
     ///
     /// An `Option` containing the number of bytes written if the output vector was large enough, or `None` if the output vector was too small.
-    pub fn to_bytes(&self, output: &mut Vec<u8>) -> Option<usize> {
+    #[allow(unused_assignments)]
+    pub fn to_bytes(&self, output: &mut [u8]) -> Option<usize> {
         if output.remaining_mut() < self.serialize_size() {
             return None;
         }
@@ -264,27 +277,37 @@ impl MsgHeader {
             RouteRule::ToService(_) => ROUTE_RULE_TO_SERVICE,
             RouteRule::ToKey(_) => ROUTE_RULE_TO_KEY,
         };
-        assert!(self.meta <= 7, "meta should <= 7");
-        output.push((self.version << 6) | ((self.from_node.is_some() as u8) << 5) | route_type << 3 | self.meta);
-        output.push(self.ttl);
-        output.push(self.from_service_id);
-        output.push(self.to_service_id);
-        output.extend_from_slice(&self.stream_id.to_be_bytes());
+        assert!(self.meta <= 3, "meta should <= 3");
+        let secure_byte = if self.secure {
+            1 << 2
+        } else {
+            0
+        };
+        output[0] = (self.version << 6) | ((self.from_node.is_some() as u8) << 5) | route_type << 3 | secure_byte | self.meta;
+        output[1] = self.ttl;
+        output[2] = self.from_service_id;
+        output[3] = self.to_service_id;
+        output[4..8].copy_from_slice(&self.stream_id.to_be_bytes());
+        let mut ptr = 8;
         if let Some(from_node) = self.from_node {
-            output.extend_from_slice(&from_node.to_be_bytes());
+            output[ptr..ptr + 4].copy_from_slice(&from_node.to_be_bytes());
+            ptr += 4;
         }
         match self.route {
             RouteRule::Direct => {
                 // Dont need append anything
             }
             RouteRule::ToNode(node_id) => {
-                output.extend_from_slice(&node_id.to_be_bytes());
+                output[ptr..ptr + 4].copy_from_slice(&node_id.to_be_bytes());
+                ptr += 4;
             }
             RouteRule::ToService(service_meta) => {
-                output.extend_from_slice(&service_meta.to_be_bytes());
+                output[ptr..ptr + 4].copy_from_slice(&service_meta.to_be_bytes());
+                ptr += 4;
             }
             RouteRule::ToKey(key) => {
-                output.extend_from_slice(&key.to_be_bytes());
+                output[ptr..ptr + 4].copy_from_slice(&key.to_be_bytes());
+                ptr += 4;
             }
         }
         Some(
@@ -376,10 +399,10 @@ impl TransportMsg {
     /// A new `TransportMsg` instance.
     pub fn build_raw(header: MsgHeader, payload: &[u8]) -> Self {
         let header_size = header.serialize_size();
-        let mut buffer = Vec::with_capacity(header_size + payload.len());
-        let header_size = header.to_bytes(&mut buffer).expect("Should serialize header");
+        let mut buffer = vec![0; header_size + payload.len()];
+        let header_size = header.to_bytes(&mut buffer[0..header_size]).expect("Should serialize header");
 
-        buffer.extend_from_slice(payload);
+        buffer[header_size..].copy_from_slice(payload);
         Self {
             buffer,
             header,
@@ -407,10 +430,10 @@ impl TransportMsg {
             .set_meta(meta)
             .set_stream_id(stream_id);
         let header_size = header.serialize_size();
-        let mut buffer = Vec::with_capacity(header_size + payload.len());
-        let header_size = header.to_bytes(&mut buffer).expect("Should serialize header");
+        let mut buffer = vec![0; header_size + payload.len()];
+        let header_size = header.to_bytes(&mut buffer[0..header_size]).expect("Should serialize header");
 
-        buffer.extend_from_slice(payload);
+        buffer[header_size..].copy_from_slice(payload);
         Self {
             buffer,
             header,
@@ -496,9 +519,9 @@ impl TransportMsg {
     pub fn from_payload_bincode<M: Serialize>(header: MsgHeader, msg: &M) -> Self {
         let header_size = header.serialize_size();
         let payload_size = bincode::serialized_size(msg).expect("Should serialize payload");
-        let mut buffer = Vec::with_capacity(header_size + payload_size as usize);
-        header.to_bytes(&mut buffer);
-        bincode::serialize_into(&mut buffer, msg).expect("Should serialize payload");
+        let mut buffer = vec![0; header_size + payload_size as usize];
+        header.to_bytes(&mut buffer[0..header_size]);
+        bincode::serialize_into(&mut buffer[header_size..], msg).expect("Should serialize payload");
         Self {
             buffer,
             header,
@@ -521,19 +544,21 @@ mod tests {
             from_service_id: 0,
             to_service_id: 0,
             route: RouteRule::Direct,
+            secure: true,
             meta: 0,
             stream_id: 0,
             from_node: None,
         };
-        header.to_bytes(&mut buf);
+        let size = header.to_bytes(&mut buf).expect("should serialize");
         assert_eq!(header.serialize_size(), 8);
-        let (header, _) = MsgHeader::from_bytes(&buf).unwrap();
+        let (header, _) = MsgHeader::from_bytes(&buf[0..size]).unwrap();
         assert_eq!(header.serialize_size(), 8);
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 0);
         assert_eq!(header.from_service_id, 0);
         assert_eq!(header.to_service_id, 0);
         assert_eq!(header.route, RouteRule::Direct);
+        assert_eq!(header.secure, true);
         assert_eq!(header.stream_id, 0);
         assert_eq!(header.from_node, None);
     }
@@ -541,25 +566,27 @@ mod tests {
     /// test header without option2
     #[test]
     fn test_header_without_option2() {
-        let mut buf = Vec::with_capacity(16);
+        let mut buf = [0; 16];
         let header = MsgHeader {
             version: 0,
             ttl: 10,
             from_service_id: 88,
             to_service_id: 88,
             route: RouteRule::Direct,
+            secure: true,
             meta: 0,
             stream_id: 1234,
             from_node: None,
         };
-        header.to_bytes(&mut buf);
+        let size = header.to_bytes(&mut buf).expect("should serialize");
         assert_eq!(header.serialize_size(), 8);
-        let (header, _) = MsgHeader::from_bytes(&buf).unwrap();
+        let (header, _) = MsgHeader::from_bytes(&buf[0..size]).unwrap();
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 10);
         assert_eq!(header.from_service_id, 88);
         assert_eq!(header.to_service_id, 88);
         assert_eq!(header.route, RouteRule::Direct);
+        assert_eq!(header.secure, true);
         assert_eq!(header.stream_id, 1234);
         assert_eq!(header.from_node, None);
     }
@@ -567,20 +594,21 @@ mod tests {
     /// test header without option
     #[test]
     fn test_header_with_dest2() {
-        let mut buf = Vec::with_capacity(16);
+        let mut buf = [0; 16];
         let header = MsgHeader {
             version: 0,
             ttl: 0,
             from_service_id: 0,
             to_service_id: 0,
             route: RouteRule::ToNode(0),
+            secure: true,
             meta: 0,
             stream_id: 0,
             from_node: None,
         };
-        header.to_bytes(&mut buf);
+        let size = header.to_bytes(&mut buf).expect("should serialize");
         assert_eq!(header.serialize_size(), 12);
-        let (header, _) = MsgHeader::from_bytes(&buf).unwrap();
+        let (header, _) = MsgHeader::from_bytes(&buf[0..size]).unwrap();
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 0);
         assert_eq!(header.from_service_id, 0);
@@ -593,27 +621,29 @@ mod tests {
     /// test header without option
     #[test]
     fn test_header_with_all_options() {
-        let mut buf = Vec::with_capacity(16);
+        let mut buf = [0; 16];
         let header = MsgHeader {
             version: 0,
             ttl: 66,
             from_service_id: 33,
             to_service_id: 34,
             route: RouteRule::ToNode(111),
-            meta: 7,
+            secure: true,
+            meta: 3,
             stream_id: 222,
             from_node: Some(1000),
         };
-        header.to_bytes(&mut buf);
+        let size = header.to_bytes(&mut buf).expect("should serialize");
         println!("{:?}", buf);
         assert_eq!(header.serialize_size(), 16);
-        let (header, _) = MsgHeader::from_bytes(&buf).unwrap();
+        let (header, _) = MsgHeader::from_bytes(&buf[0..size]).unwrap();
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 66);
         assert_eq!(header.from_service_id, 33);
         assert_eq!(header.to_service_id, 34);
         assert_eq!(header.route, RouteRule::ToNode(111));
-        assert_eq!(header.meta, 7);
+        assert_eq!(header.secure, true);
+        assert_eq!(header.meta, 3);
         assert_eq!(header.stream_id, 222);
         assert_eq!(header.from_node, Some(1000));
     }
@@ -621,25 +651,27 @@ mod tests {
     /// test header with router dest
     #[test]
     fn test_header_with_dest() {
-        let mut buf = Vec::with_capacity(16);
+        let mut buf = [0; 16];
         let header = MsgHeader {
             version: 0,
             ttl: 10,
             from_service_id: 88,
             to_service_id: 88,
             route: RouteRule::ToNode(1000),
+            secure: true,
             meta: 0,
             stream_id: 1234,
             from_node: None,
         };
-        header.to_bytes(&mut buf);
+        let size = header.to_bytes(&mut buf).expect("should serialize");
         assert_eq!(header.serialize_size(), 12);
-        let (header, _) = MsgHeader::from_bytes(&buf).unwrap();
+        let (header, _) = MsgHeader::from_bytes(&buf[0..size]).unwrap();
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 10);
         assert_eq!(header.from_service_id, 88);
         assert_eq!(header.to_service_id, 88);
         assert_eq!(header.route, RouteRule::ToNode(1000));
+        assert_eq!(header.secure, true);
         assert_eq!(header.stream_id, 1234);
         assert_eq!(header.from_node, None);
     }
@@ -647,25 +679,27 @@ mod tests {
     /// test header with option: from_node
     #[test]
     fn test_header_with_option_from_node() {
-        let mut buf = Vec::with_capacity(16);
+        let mut buf = [0; 16];
         let header = MsgHeader {
             version: 0,
             ttl: 0,
             from_service_id: 0,
             to_service_id: 0,
             route: RouteRule::ToNode(0),
+            secure: true,
             meta: 0,
             stream_id: 0,
             from_node: Some(0),
         };
-        header.to_bytes(&mut buf);
+        let size = header.to_bytes(&mut buf).expect("should serialize");
         assert_eq!(header.serialize_size(), 16);
-        let (header, _) = MsgHeader::from_bytes(&buf).unwrap();
+        let (header, _) = MsgHeader::from_bytes(&buf[0..size]).unwrap();
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 0);
         assert_eq!(header.from_service_id, 0);
         assert_eq!(header.to_service_id, 0);
         assert_eq!(header.route, RouteRule::ToNode(0));
+        assert_eq!(header.secure, true);
         assert_eq!(header.stream_id, 0);
         assert_eq!(header.from_node, Some(0));
     }
@@ -673,25 +707,27 @@ mod tests {
     /// test header with option: validate_code
     #[test]
     fn test_header_with_option_validate_code() {
-        let mut buf = Vec::with_capacity(16);
+        let mut buf = [0; 16];
         let header = MsgHeader {
             version: 0,
             ttl: 0,
             from_service_id: 0,
             to_service_id: 0,
             route: RouteRule::ToNode(0),
+            secure: true,
             meta: 0,
             stream_id: 0,
             from_node: None,
         };
-        header.to_bytes(&mut buf);
+        let size = header.to_bytes(&mut buf).expect("should serialize");
         assert_eq!(header.serialize_size(), 12);
-        let (header, _) = MsgHeader::from_bytes(&buf).unwrap();
+        let (header, _) = MsgHeader::from_bytes(&buf[0..size]).unwrap();
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 0);
         assert_eq!(header.from_service_id, 0);
         assert_eq!(header.to_service_id, 0);
         assert_eq!(header.route, RouteRule::ToNode(0));
+        assert_eq!(header.secure, true);
         assert_eq!(header.stream_id, 0);
         assert_eq!(header.from_node, None);
     }
@@ -699,25 +735,27 @@ mod tests {
     /// test header with option: from_node and validate_code
     #[test]
     fn test_header_with_option_from_node_and_validate_code() {
-        let mut buf = Vec::with_capacity(20);
+        let mut buf = [0; 20];
         let header = MsgHeader {
             version: 0,
             ttl: 0,
             from_service_id: 0,
             to_service_id: 0,
             route: RouteRule::ToNode(0),
+            secure: true,
             meta: 0,
             stream_id: 0,
             from_node: Some(0),
         };
-        header.to_bytes(&mut buf);
+        let size = header.to_bytes(&mut buf).expect("should serialize");
         assert_eq!(header.serialize_size(), 16);
-        let (header, _) = MsgHeader::from_bytes(&buf).unwrap();
+        let (header, _) = MsgHeader::from_bytes(&buf[0..size]).unwrap();
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 0);
         assert_eq!(header.from_service_id, 0);
         assert_eq!(header.to_service_id, 0);
         assert_eq!(header.route, RouteRule::ToNode(0));
+        assert_eq!(header.secure, true);
         assert_eq!(header.stream_id, 0);
         assert_eq!(header.from_node, Some(0));
     }
@@ -725,19 +763,38 @@ mod tests {
     /// test with invalid version
     #[test]
     fn test_with_invalid_version() {
-        let mut buf = Vec::with_capacity(16);
+        let mut buf = [0; 16];
         let header = MsgHeader {
             version: 1,
             ttl: 0,
             from_service_id: 0,
             to_service_id: 0,
             route: RouteRule::ToNode(0),
+            secure: true,
             meta: 0,
             stream_id: 0,
             from_node: None,
         };
-        header.to_bytes(&mut buf);
-        let err = MsgHeader::from_bytes(&buf).unwrap_err();
+        let size = header.to_bytes(&mut buf).expect("should serialize");
+        let err = MsgHeader::from_bytes(&buf[0..size]).unwrap_err();
         assert_eq!(err, MsgHeaderError::InvalidVersion);
+    }
+
+    #[test]
+    fn msg_simple() {
+        let msg = TransportMsg::build(0, 0, RouteRule::Direct, 0, 0, &[1, 2, 3, 4]);
+        let buf = msg.get_buf().to_vec();
+        let msg2 = TransportMsg::from_vec(buf).unwrap();
+        assert_eq!(msg, msg2);
+        assert_eq!(msg.payload(), &[1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn msg_build_raw() {
+        let msg = TransportMsg::build_raw(MsgHeader::new(), &[1, 2, 3, 4]);
+        let buf = msg.get_buf().to_vec();
+        let msg2 = TransportMsg::from_vec(buf).unwrap();
+        assert_eq!(msg, msg2);
+        assert_eq!(msg.payload(), &[1, 2, 3, 4]);
     }
 }
