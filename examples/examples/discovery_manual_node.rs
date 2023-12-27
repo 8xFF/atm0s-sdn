@@ -51,7 +51,8 @@ async fn main() {
     let args: Args = Args::parse();
     let mut node_addr_builder = NodeAddrBuilder::new(args.node_id);
     let socket = UdpTransport::prepare(0, &mut node_addr_builder).await;
-    let transport = Box::new(UdpTransport::new(node_addr_builder.addr(), socket));
+    let secure = Arc::new(atm0s_sdn::StaticKeySecure::new("secure-token"));
+    let transport = Box::new(UdpTransport::new(node_addr_builder.addr(), socket, secure));
     let node_addr = node_addr_builder.addr();
     log::info!("Listen on addr {}", node_addr);
 

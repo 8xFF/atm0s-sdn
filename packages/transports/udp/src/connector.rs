@@ -7,8 +7,12 @@ use std::{
 
 use async_std::channel::Sender;
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId, Protocol};
-use atm0s_sdn_network::transport::{OutgoingConnectionError, TransportConnector, TransportEvent};
+use atm0s_sdn_network::{
+    secure::DataSecure,
+    transport::{OutgoingConnectionError, TransportConnector, TransportEvent},
+};
 use atm0s_sdn_utils::{error_handle::ErrorUtils, Timer};
+use parking_lot::Mutex;
 
 use crate::{
     handshake::{outgoing_handshake, OutgoingHandshakeError},
@@ -20,6 +24,7 @@ use crate::{
 pub struct UdpConnector {
     local_node_id: NodeId,
     local_addr: NodeAddr,
+    secure: Arc<dyn DataSecure>,
     conn_id_seed: u64,
     tx: Sender<TransportEvent>,
     timer: Arc<dyn Timer>,
@@ -27,10 +32,11 @@ pub struct UdpConnector {
 }
 
 impl UdpConnector {
-    pub fn new(local_node_id: NodeId, local_addr: NodeAddr, tx: Sender<TransportEvent>, timer: Arc<dyn Timer>) -> Self {
+    pub fn new(local_node_id: NodeId, local_addr: NodeAddr, secure: Arc<dyn DataSecure>, tx: Sender<TransportEvent>, timer: Arc<dyn Timer>) -> Self {
         Self {
             local_node_id,
             local_addr,
+            secure,
             conn_id_seed: 0,
             tx,
             timer,
@@ -71,6 +77,7 @@ impl TransportConnector for UdpConnector {
             let local_node_addr = self.local_addr.clone();
             let tx = self.tx.clone();
             let timer = self.timer.clone();
+            let secure = self.secure.clone();
 
             async_std::task::spawn(async move {
                 let socket = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::DGRAM, None).expect("Should create socket");
@@ -84,12 +91,30 @@ impl TransportConnector for UdpConnector {
 
                 let async_socket = unsafe { Arc::new(async_std::net::UdpSocket::from_raw_fd(socket.as_raw_fd())) };
 
-                match outgoing_handshake(&async_socket, local_node_id, local_node_addr, node_id).await {
-                    Ok(_) => {
+                match outgoing_handshake(secure.clone(), &async_socket, local_node_id, local_node_addr, node_id).await {
+                    Ok(snow_state) => {
                         let close_state = Arc::new(std::sync::atomic::AtomicBool::new(false));
                         let close_notify = Arc::new(async_notify::Notify::new());
-                        let sender = Arc::new(UdpClientConnectionSender::new(node_id, node_addr.clone(), conn_id, socket, close_state.clone(), close_notify.clone()));
-                        let receiver = Box::new(UdpClientConnectionReceiver::new(async_socket, conn_id, node_id, node_addr, timer, close_state, close_notify));
+                        let snow_state = Arc::new(Mutex::new(snow_state));
+                        let sender = Arc::new(UdpClientConnectionSender::new(
+                            node_id,
+                            node_addr.clone(),
+                            conn_id,
+                            socket,
+                            close_state.clone(),
+                            close_notify.clone(),
+                            snow_state.clone(),
+                        ));
+                        let receiver = Box::new(UdpClientConnectionReceiver::new(
+                            async_socket,
+                            conn_id,
+                            node_id,
+                            node_addr,
+                            timer,
+                            close_state,
+                            close_notify,
+                            snow_state.clone(),
+                        ));
                         tx.send(TransportEvent::Outgoing(sender, receiver)).await.print_error("Should send incoming event");
                     }
                     Err(e) => {

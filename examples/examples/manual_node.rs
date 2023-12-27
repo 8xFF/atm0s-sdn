@@ -74,8 +74,9 @@ async fn main() {
     let udp_socket = UdpTransport::prepare(50000 + args.node_id as u16, &mut node_addr_builder).await;
     let tcp_listener = TcpTransport::prepare(50000 + args.node_id as u16, &mut node_addr_builder).await;
 
-    let udp = UdpTransport::new(node_addr_builder.addr(), udp_socket);
-    let tcp = TcpTransport::new(node_addr_builder.addr(), tcp_listener);
+    let secure = Arc::new(atm0s_sdn::StaticKeySecure::new("secure-token"));
+    let udp = UdpTransport::new(node_addr_builder.addr(), udp_socket, secure.clone());
+    let tcp = TcpTransport::new(node_addr_builder.addr(), tcp_listener, secure);
 
     let transport = UdpTcpTransport::new(udp, tcp);
 

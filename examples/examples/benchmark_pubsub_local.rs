@@ -34,9 +34,10 @@ enum ImplSdkEvent {
 
 async fn run_node(node_id: NodeId, seeds: Vec<NodeAddr>) -> (PubsubSdk, NodeAddr) {
     log::info!("Run node {} connect to {:?}", node_id, seeds);
+    let secure = Arc::new(atm0s_sdn::StaticKeySecure::new("secure-token"));
     let mut node_addr_builder = NodeAddrBuilder::new(node_id);
     let socket = UdpTransport::prepare(0, &mut node_addr_builder).await;
-    let transport = Box::new(UdpTransport::new(node_addr_builder.addr(), socket));
+    let transport = Box::new(UdpTransport::new(node_addr_builder.addr(), socket, secure));
     let timer = Arc::new(SystemTimer());
 
     let router = SharedRouter::new(node_id);

@@ -11,6 +11,8 @@ use atm0s_sdn_utils::error_handle::ErrorUtils;
 use atm0s_sdn_utils::option_handle::OptionUtils;
 use atm0s_sdn_utils::Timer;
 use futures_util::{select, FutureExt, SinkExt, StreamExt};
+use parking_lot::Mutex;
+use snow::TransportState;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -38,6 +40,8 @@ pub struct TcpConnectionSender {
     conn_id: ConnId,
     unreliable_sender: Sender<OutgoingEvent>,
     task: Option<JoinHandle<()>>,
+    snow_state: Arc<Mutex<TransportState>>,
+    tmp_buf: Arc<Mutex<[u8; 1500]>>,
 }
 
 impl TcpConnectionSender {
@@ -49,6 +53,7 @@ impl TcpConnectionSender {
         unreliable_queue_size: usize,
         mut socket: AsyncBincodeStreamU16,
         timer: Arc<dyn Timer>,
+        snow_state: Arc<Mutex<TransportState>>,
     ) -> (Self, Sender<OutgoingEvent>) {
         let (unreliable_sender, unr_rx) = bounded(unreliable_queue_size);
 
@@ -96,6 +101,8 @@ impl TcpConnectionSender {
                 conn_id,
                 unreliable_sender: unreliable_sender.clone(),
                 task: Some(task),
+                snow_state,
+                tmp_buf: Arc::new(Mutex::new([0; 1500])),
             },
             unreliable_sender,
         )
@@ -116,7 +123,16 @@ impl ConnectionSender for TcpConnectionSender {
     }
 
     fn send(&self, msg: TransportMsg) {
-        if let Err(e) = self.unreliable_sender.try_send(OutgoingEvent::Msg(TcpMsg::Msg(msg.take()))) {
+        let buf = if msg.header.secure {
+            let mut tmp_buf = self.tmp_buf.lock();
+            tmp_buf[0] = msg.get_buf()[0];
+            let snow_len = self.snow_state.lock().write_message(msg.get_buf(), &mut tmp_buf[1..]).expect("Snow write error");
+            tmp_buf[..(1 + snow_len)].to_vec()
+        } else {
+            msg.take()
+        };
+
+        if let Err(e) = self.unreliable_sender.try_send(OutgoingEvent::Msg(TcpMsg::Msg(buf))) {
             log::error!("[ConnectionSender] send unreliable msg error {:?}", e);
         } else {
             log::debug!("[ConnectionSender] send unreliable msg");
@@ -157,6 +173,8 @@ pub struct TcpConnectionReceiver {
     pub(crate) socket: AsyncBincodeStreamU16,
     pub(crate) timer: Arc<dyn Timer>,
     pub(crate) unreliable_sender: Sender<OutgoingEvent>,
+    pub(crate) snow_state: Arc<Mutex<TransportState>>,
+    pub(crate) snow_buf: [u8; 1500],
 }
 
 #[async_trait::async_trait]
@@ -179,12 +197,28 @@ impl ConnectionReceiver for TcpConnectionReceiver {
             match recv_tcp_stream(&mut self.socket).await {
                 Ok(msg) => {
                     match msg {
-                        TcpMsg::Msg(buf) => match TransportMsg::from_vec(buf) {
-                            Ok(msg) => break Ok(ConnectionEvent::Msg(msg)),
-                            Err(e) => {
-                                log::error!("[ConnectionReceiver {}/{}] wrong msg format {:?}", self.remote_node_id, self.conn_id, e);
+                        TcpMsg::Msg(data) => {
+                            if TransportMsg::is_secure_header(data[0]) {
+                                let mut snow_state = self.snow_state.lock();
+                                if let Ok(len) = snow_state.read_message(&data[1..], &mut self.snow_buf) {
+                                    //TODO reduce to_vec memory copy
+                                    match TransportMsg::from_vec(self.snow_buf[0..len].to_vec()) {
+                                        Ok(msg) => break Ok(ConnectionEvent::Msg(msg)),
+                                        Err(e) => {
+                                            log::error!("[UdpServerConnectionReceiver {}/{}] wrong msg format {:?}", self.remote_node_id, self.conn_id, e);
+                                        }
+                                    }
+                                }
+                            } else {
+                                //TODO reduce to_vec memory copy
+                                match TransportMsg::from_vec(data) {
+                                    Ok(msg) => break Ok(ConnectionEvent::Msg(msg)),
+                                    Err(e) => {
+                                        log::error!("[UdpServerConnectionReceiver {}/{}] wrong msg format {:?}", self.remote_node_id, self.conn_id, e);
+                                    }
+                                }
                             }
-                        },
+                        }
                         TcpMsg::Ping(sent_ts) => {
                             log::debug!("[ConnectionReceiver {}/{}] on Ping => reply Pong", self.remote_node_id, self.conn_id);
                             self.unreliable_sender.try_send(OutgoingEvent::Msg(TcpMsg::Pong(sent_ts))).print_error("Should send Pong");

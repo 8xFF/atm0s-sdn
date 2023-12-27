@@ -7,9 +7,13 @@ use std::{
 
 use async_std::channel::{Receiver, Sender};
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeAddrBuilder, Protocol};
-use atm0s_sdn_network::transport::{Transport, TransportConnector, TransportEvent};
+use atm0s_sdn_network::{
+    secure::DataSecure,
+    transport::{Transport, TransportConnector, TransportEvent},
+};
 use atm0s_sdn_utils::{error_handle::ErrorUtils, SystemTimer, Timer};
 use local_ip_address::local_ip;
+use parking_lot::Mutex;
 use std::net::UdpSocket;
 
 use crate::{connector::UdpConnector, handshake::incoming_handshake, receiver::UdpServerConnectionReceiver, sender::UdpServerConnectionSender, UDP_PROTOCOL_ID};
@@ -49,13 +53,13 @@ impl UdpTransport {
         socket
     }
 
-    pub fn new(node_addr: NodeAddr, socket: UdpSocket) -> Self {
+    pub fn new(node_addr: NodeAddr, socket: UdpSocket, secure: Arc<dyn DataSecure>) -> Self {
         let node_id = node_addr.node_id();
         let (tx, rx) = async_std::channel::bounded(1024);
         let socket = Arc::new(socket);
 
         let timer = Arc::new(SystemTimer());
-        let connector = UdpConnector::new(node_id, node_addr, tx.clone(), timer.clone());
+        let connector = UdpConnector::new(node_id, node_addr, secure.clone(), tx.clone(), timer.clone());
 
         async_std::task::spawn(async move {
             let mut last_clear_timeout_ms = 0;
@@ -80,11 +84,13 @@ impl UdpTransport {
                         let async_socket = async_socket.clone();
                         let tx = tx.clone();
                         let timer = timer.clone();
+                        let secure_c = secure.clone();
                         async_std::task::spawn(async move {
-                            match incoming_handshake(node_id, &tx, &msg_rx, conn_id, addr, &async_socket).await {
-                                Ok((remote_node_id, remote_node_addr)) => {
+                            match incoming_handshake(secure_c.clone(), node_id, &tx, &msg_rx, conn_id, addr, &async_socket).await {
+                                Ok((remote_node_id, remote_node_addr, snow_state)) => {
                                     let close_state = Arc::new(std::sync::atomic::AtomicBool::new(false));
                                     let close_notify = Arc::new(async_notify::Notify::new());
+                                    let snow_state = Arc::new(Mutex::new(snow_state));
                                     let sender = Arc::new(UdpServerConnectionSender::new(
                                         remote_node_id,
                                         remote_node_addr.clone(),
@@ -93,6 +99,7 @@ impl UdpTransport {
                                         addr,
                                         close_state.clone(),
                                         close_notify.clone(),
+                                        snow_state.clone(),
                                     ));
                                     let receiver = Box::new(UdpServerConnectionReceiver::new(
                                         async_socket.clone(),
@@ -104,6 +111,7 @@ impl UdpTransport {
                                         timer.clone(),
                                         close_state,
                                         close_notify,
+                                        snow_state,
                                     ));
                                     log::info!("[UdpTransport] on connection success handshake from {}", addr);
                                     tx.send(TransportEvent::Incoming(sender, receiver)).await.print_error("Should send incoming event");

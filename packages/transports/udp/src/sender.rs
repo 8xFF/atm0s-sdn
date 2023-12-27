@@ -3,6 +3,8 @@ use std::{net::SocketAddr, sync::atomic::AtomicBool};
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 use atm0s_sdn_network::{msg::TransportMsg, transport::ConnectionSender};
 use atm0s_sdn_utils::error_handle::ErrorUtils;
+use parking_lot::Mutex;
+use snow::TransportState;
 use std::net::UdpSocket;
 use std::sync::Arc;
 
@@ -16,6 +18,8 @@ pub struct UdpServerConnectionSender {
     socket_dest: SocketAddr,
     close_state: Arc<AtomicBool>,
     close_notify: Arc<async_notify::Notify>,
+    snow_state: Arc<Mutex<TransportState>>,
+    tmp_buf: Arc<Mutex<[u8; 1500]>>,
 }
 
 impl UdpServerConnectionSender {
@@ -27,6 +31,7 @@ impl UdpServerConnectionSender {
         socket_dest: SocketAddr,
         close_state: Arc<AtomicBool>,
         close_notify: Arc<async_notify::Notify>,
+        snow_state: Arc<Mutex<TransportState>>,
     ) -> Self {
         log::info!("[UdpServerConnectionSender {}/{}] new", remote_node_id, conn_id);
         Self {
@@ -37,6 +42,8 @@ impl UdpServerConnectionSender {
             socket_dest,
             close_state,
             close_notify,
+            snow_state,
+            tmp_buf: Arc::new(Mutex::new([0u8; 1500])),
         }
     }
 }
@@ -55,8 +62,15 @@ impl ConnectionSender for UdpServerConnectionSender {
     }
 
     fn send(&self, msg: TransportMsg) {
-        let buf = msg.take();
-        self.socket.send_to(&buf, self.socket_dest).print_error("Send error");
+        if msg.header.secure {
+            let mut tmp_buf = self.tmp_buf.lock();
+            tmp_buf[0] = msg.get_buf()[0];
+            let snow_len = self.snow_state.lock().write_message(msg.get_buf(), &mut tmp_buf[1..]).expect("Snow write error");
+            self.socket.send_to(&tmp_buf[..(1 + snow_len)], self.socket_dest).print_error("Send error");
+        } else {
+            let buf = msg.take();
+            self.socket.send_to(&buf, self.socket_dest).print_error("Send error");
+        }
     }
 
     fn close(&self) {
@@ -88,10 +102,20 @@ pub struct UdpClientConnectionSender {
     socket: Arc<UdpSocket>,
     close_state: Arc<AtomicBool>,
     close_notify: Arc<async_notify::Notify>,
+    snow_state: Arc<Mutex<TransportState>>,
+    tmp_buf: Arc<Mutex<[u8; 1500]>>,
 }
 
 impl UdpClientConnectionSender {
-    pub fn new(remote_node_id: NodeId, remote_node_addr: NodeAddr, conn_id: ConnId, socket: Arc<UdpSocket>, close_state: Arc<AtomicBool>, close_notify: Arc<async_notify::Notify>) -> Self {
+    pub fn new(
+        remote_node_id: NodeId,
+        remote_node_addr: NodeAddr,
+        conn_id: ConnId,
+        socket: Arc<UdpSocket>,
+        close_state: Arc<AtomicBool>,
+        close_notify: Arc<async_notify::Notify>,
+        snow_state: Arc<Mutex<TransportState>>,
+    ) -> Self {
         log::info!("[UdpClientConnectionSender {}/{}] new", remote_node_id, conn_id);
         Self {
             remote_node_id,
@@ -100,6 +124,8 @@ impl UdpClientConnectionSender {
             socket,
             close_state,
             close_notify,
+            snow_state,
+            tmp_buf: Arc::new(Mutex::new([0u8; 1500])),
         }
     }
 }
@@ -118,8 +144,15 @@ impl ConnectionSender for UdpClientConnectionSender {
     }
 
     fn send(&self, msg: TransportMsg) {
-        let buf = msg.take();
-        self.socket.send(&buf).print_error("Send error");
+        if msg.header.secure {
+            let mut tmp_buf = self.tmp_buf.lock();
+            tmp_buf[0] = msg.get_buf()[0];
+            let snow_len = self.snow_state.lock().write_message(msg.get_buf(), &mut tmp_buf[1..]).expect("Snow write error");
+            self.socket.send(&tmp_buf[..(1 + snow_len)]).print_error("Send error");
+        } else {
+            let buf = msg.take();
+            self.socket.send(&buf).print_error("Send error");
+        }
     }
 
     fn close(&self) {

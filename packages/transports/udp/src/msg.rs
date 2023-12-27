@@ -1,17 +1,25 @@
-use atm0s_sdn_identity::NodeId;
+use atm0s_sdn_identity::{NodeAddr, NodeId};
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HandshakeRequest {
+    pub node_id: NodeId,
+    pub node_addr: NodeAddr,
+    pub remote_node_id: NodeId,
+    pub snow_handshake: Vec<u8>,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum HandshakeResult {
-    Success,
+    Success(Vec<u8>),
     AuthenticationError,
     Rejected,
 }
 
 #[derive(Serialize, Deserialize)]
 pub enum UdpTransportMsg {
-    ConnectRequest(NodeId, String, NodeId),
-    ConnectResponse(HandshakeResult),
+    ConnectRequest(HandshakeRequest, Vec<u8>),
+    ConnectResponse(HandshakeResult, Vec<u8>),
     ConnectResponseAck(bool),
     Ping(u64),
     Pong(u64),

@@ -125,8 +125,9 @@ async fn main() {
     // In this example, we use the UDP transport layer.
     // There are also other transport layers, such as TCP and VNET, others are still in progress.
     // The port number is 50000 + node_id.
+    let secure = Arc::new(atm0s_sdn::StaticKeySecure::new("secure-token"));
     let socket = UdpTransport::prepare(50000 + args.node_id as u16, &mut node_addr_builder).await;
-    let transport = UdpTransport::new(node_addr_builder.addr(), socket);
+    let transport = UdpTransport::new(node_addr_builder.addr(), socket, secure);
     let node_addr = node_addr_builder.addr();
     println!("Listening on addr {}", node_addr);
 
