@@ -15,7 +15,7 @@ use atm0s_sdn_utils::error_handle::ErrorUtils;
 use futures_util::{select, FutureExt};
 use snow::TransportState;
 
-static SNOW_PATTERN: &'static str = "Noise_NN_25519_ChaChaPoly_BLAKE2s";
+static SNOW_PATTERN: &str = "Noise_NN_25519_ChaChaPoly_BLAKE2s";
 
 /// Connection handshake flow
 /// Client -> Server: ConnectRequest

@@ -10,7 +10,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
-static SNOW_PATTERN: &'static str = "Noise_NN_25519_ChaChaPoly_BLAKE2s";
+static SNOW_PATTERN: &str = "Noise_NN_25519_ChaChaPoly_BLAKE2s";
 
 pub enum IncomingHandshakeError {
     SocketError,
