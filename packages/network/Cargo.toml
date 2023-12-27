@@ -1,6 +1,6 @@
 [package]
 name = "atm0s-sdn-network"
-version = "0.2.2"
+version = "0.3.0"
 edition = "2021"
 description = "Main network-plane of atm0s-sdn"
 license = "MIT"
@@ -9,8 +9,8 @@ license = "MIT"
 
 [dependencies]
 atm0s-sdn-utils = { path = "../core/utils", version = "0.1.1" }
-atm0s-sdn-identity = { path = "../core/identity", version = "0.1.2" }
-atm0s-sdn-router = { path = "../core/router", version = "0.1.3" }
+atm0s-sdn-identity = { path = "../core/identity", version = "0.2.0" }
+atm0s-sdn-router = { path = "../core/router", version = "0.1.4" }
 async-std = { workspace = true }
 futures = "0.3"
 convert-enum = "0.1.0"
@@ -26,4 +26,4 @@ sha1 = "0.10.6"
 [dev-dependencies]
 env_logger = { workspace = true }
 mockall = { workspace = true }
-atm0s-sdn-router = { path = "../core/router", version = "0.1.3", features = ["mock"]}
+atm0s-sdn-router = { path = "../core/router", version = "0.1.4", features = ["mock"]}
