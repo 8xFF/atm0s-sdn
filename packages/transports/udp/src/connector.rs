@@ -12,6 +12,7 @@ use atm0s_sdn_network::{
     transport::{OutgoingConnectionError, TransportConnector, TransportEvent},
 };
 use atm0s_sdn_utils::{error_handle::ErrorUtils, Timer};
+use parking_lot::Mutex;
 
 use crate::{
     handshake::{outgoing_handshake, OutgoingHandshakeError},
@@ -91,11 +92,29 @@ impl TransportConnector for UdpConnector {
                 let async_socket = unsafe { Arc::new(async_std::net::UdpSocket::from_raw_fd(socket.as_raw_fd())) };
 
                 match outgoing_handshake(secure.clone(), &async_socket, local_node_id, local_node_addr, node_id).await {
-                    Ok(_) => {
+                    Ok(snow_state) => {
                         let close_state = Arc::new(std::sync::atomic::AtomicBool::new(false));
                         let close_notify = Arc::new(async_notify::Notify::new());
-                        let sender = Arc::new(UdpClientConnectionSender::new(node_id, node_addr.clone(), conn_id, socket, close_state.clone(), close_notify.clone()));
-                        let receiver = Box::new(UdpClientConnectionReceiver::new(async_socket, conn_id, node_id, node_addr, timer, close_state, close_notify));
+                        let snow_state = Arc::new(Mutex::new(snow_state));
+                        let sender = Arc::new(UdpClientConnectionSender::new(
+                            node_id,
+                            node_addr.clone(),
+                            conn_id,
+                            socket,
+                            close_state.clone(),
+                            close_notify.clone(),
+                            snow_state.clone(),
+                        ));
+                        let receiver = Box::new(UdpClientConnectionReceiver::new(
+                            async_socket,
+                            conn_id,
+                            node_id,
+                            node_addr,
+                            timer,
+                            close_state,
+                            close_notify,
+                            snow_state.clone(),
+                        ));
                         tx.send(TransportEvent::Outgoing(sender, receiver)).await.print_error("Should send incoming event");
                     }
                     Err(e) => {

@@ -13,6 +13,7 @@ use atm0s_sdn_network::{
 };
 use atm0s_sdn_utils::{error_handle::ErrorUtils, SystemTimer, Timer};
 use local_ip_address::local_ip;
+use parking_lot::Mutex;
 use std::net::UdpSocket;
 
 use crate::{connector::UdpConnector, handshake::incoming_handshake, receiver::UdpServerConnectionReceiver, sender::UdpServerConnectionSender, UDP_PROTOCOL_ID};
@@ -86,9 +87,10 @@ impl UdpTransport {
                         let secure_c = secure.clone();
                         async_std::task::spawn(async move {
                             match incoming_handshake(secure_c.clone(), node_id, &tx, &msg_rx, conn_id, addr, &async_socket).await {
-                                Ok((remote_node_id, remote_node_addr)) => {
+                                Ok((remote_node_id, remote_node_addr, snow_state)) => {
                                     let close_state = Arc::new(std::sync::atomic::AtomicBool::new(false));
                                     let close_notify = Arc::new(async_notify::Notify::new());
+                                    let snow_state = Arc::new(Mutex::new(snow_state));
                                     let sender = Arc::new(UdpServerConnectionSender::new(
                                         remote_node_id,
                                         remote_node_addr.clone(),
@@ -97,6 +99,7 @@ impl UdpTransport {
                                         addr,
                                         close_state.clone(),
                                         close_notify.clone(),
+                                        snow_state.clone(),
                                     ));
                                     let receiver = Box::new(UdpServerConnectionReceiver::new(
                                         async_socket.clone(),
@@ -108,6 +111,7 @@ impl UdpTransport {
                                         timer.clone(),
                                         close_state,
                                         close_notify,
+                                        snow_state,
                                     ));
                                     log::info!("[UdpTransport] on connection success handshake from {}", addr);
                                     tx.send(TransportEvent::Incoming(sender, receiver)).await.print_error("Should send incoming event");

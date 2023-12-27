@@ -387,6 +387,11 @@ pub struct TransportMsg {
 /// TransportMsg represents a message that can be sent over the network.
 /// It contains methods for building, modifying, and extracting data from the message.
 impl TransportMsg {
+    /// Check if the message is secure
+    pub fn is_secure_header(first_byte: u8) -> bool {
+        (first_byte >> 2) & 1 == 1
+    }
+
     /// Builds a raw message from a message header and payload.
     ///
     /// # Arguments

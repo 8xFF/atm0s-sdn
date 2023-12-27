@@ -13,6 +13,9 @@ use atm0s_sdn_network::{
 };
 use atm0s_sdn_utils::error_handle::ErrorUtils;
 use futures_util::{select, FutureExt};
+use snow::TransportState;
+
+static SNOW_PATTERN: &'static str = "Noise_NN_25519_ChaChaPoly_BLAKE2s";
 
 /// Connection handshake flow
 /// Client -> Server: ConnectRequest
@@ -50,11 +53,14 @@ pub async fn incoming_handshake(
     conn_id: ConnId,
     remote_addr: SocketAddr,
     socket: &UdpSocket,
-) -> Result<(NodeId, NodeAddr), IncomingHandshakeError> {
+) -> Result<(NodeId, NodeAddr, TransportState), IncomingHandshakeError> {
     let mut count = 0;
-    let mut result = None;
+    let mut result: Option<(u32, NodeAddr, Vec<u8>)> = None;
     let mut timer = async_std::stream::interval(Duration::from_secs(1));
     let mut requested = false;
+    let mut snow_buf = [0; 1500];
+    let mut snow_responder = snow::Builder::new(SNOW_PATTERN.parse().expect("")).build_responder().expect("");
+
     loop {
         select! {
             _ = timer.next().fuse() => {
@@ -63,9 +69,10 @@ pub async fn incoming_handshake(
                     return Err(IncomingHandshakeError::Timeout);
                 }
 
-                if let Some((remote_node_id, _)) = &result {
-                    let signature = ObjectSecure::sign_obj(secure.deref(), *remote_node_id, &HandshakeResult::Success);
-                    socket.send_to(&build_control_msg(&UdpTransportMsg::ConnectResponse(HandshakeResult::Success, signature)), remote_addr).await.map_err(|_| IncomingHandshakeError::SocketError)?;
+                if let Some((remote_node_id, _, snow_res)) = &result {
+                    let handshake_res = HandshakeResult::Success(snow_res.clone());
+                    let signature = ObjectSecure::sign_obj(secure.deref(), *remote_node_id, &handshake_res);
+                    socket.send_to(&build_control_msg(&UdpTransportMsg::ConnectResponse(handshake_res, signature)), remote_addr).await.map_err(|_| IncomingHandshakeError::SocketError)?;
                 }
             }
             e = rx.recv().fuse() =>  match e {
@@ -105,16 +112,33 @@ pub async fn incoming_handshake(
                             }
 
                             requested = true;
-                            log::info!("[UdpTransport] {} {} handshake success", req.node_id, req.node_addr);
-                            let signature = ObjectSecure::sign_obj(secure.deref(), req.node_id, &HandshakeResult::Success);
-                            socket.send_to(&build_control_msg(&UdpTransportMsg::ConnectResponse(HandshakeResult::Success, signature)), remote_addr).await.map_err(|_| IncomingHandshakeError::SocketError)?;
-                            result = Some((req.node_id, req.node_addr));
+                            match snow_responder.read_message(&req.snow_handshake, &mut snow_buf) {
+                                Ok(_) => {
+                                    match snow_responder.write_message(&[], &mut snow_buf) {
+                                        Ok(len) => {
+                                            let handshake_res = HandshakeResult::Success(snow_buf[..len].to_vec());
+                                            log::info!("[UdpTransport] {} {} handshake success", req.node_id, req.node_addr);
+                                            let signature = ObjectSecure::sign_obj(secure.deref(), req.node_id, &handshake_res);
+                                            socket.send_to(&build_control_msg(&UdpTransportMsg::ConnectResponse(handshake_res, signature)), remote_addr).await.map_err(|_| IncomingHandshakeError::SocketError)?;
+                                            result = Some((req.node_id, req.node_addr, snow_buf[..len].to_vec(),));
+                                        },
+                                        Err(e) => {
+                                            log::error!("[UdpTransport] received hanshake snow write message error {:?}", e);
+                                            return Err(IncomingHandshakeError::InternalError);
+                                        }
+                                    }
+                                },
+                                Err(e) => {
+                                    log::error!("[UdpTransport] received hanshake snow read message error {:?}", e);
+                                    return Err(IncomingHandshakeError::WrongMsg);
+                                }
+                            }
                         }
                         UdpTransportMsg::ConnectResponseAck(success) => {
                             if success {
                                 log::info!("[UdpTransport] received handshake resonse ack {}", success);
-                                if let Some(result) = result.take() {
-                                    return Ok(result)
+                                if let Some((node, addr, _)) = result.take() {
+                                    return Ok((node, addr, snow_responder.into_transport_mode().expect("Should be transport mode")));
                                 }
                             } else {
                                 log::warn!("[UdpTransport] received handshake resonse ack {}", success);
@@ -133,15 +157,25 @@ pub async fn incoming_handshake(
     }
 }
 
-pub async fn outgoing_handshake(secure: Arc<dyn DataSecure>, socket: &UdpSocket, local_node_id: NodeId, local_node_addr: NodeAddr, to_node_id: NodeId) -> Result<(), OutgoingHandshakeError> {
+pub async fn outgoing_handshake(
+    secure: Arc<dyn DataSecure>,
+    socket: &UdpSocket,
+    local_node_id: NodeId,
+    local_node_addr: NodeAddr,
+    to_node_id: NodeId,
+) -> Result<TransportState, OutgoingHandshakeError> {
     let mut timer = async_std::stream::interval(Duration::from_secs(1));
     let mut buf = [0; 1500];
     let mut count = 0;
+
+    let mut snow_initiator = snow::Builder::new(SNOW_PATTERN.parse().expect("")).build_initiator().expect("");
+    let snow_hanshake_len = snow_initiator.write_message(&[], &mut buf).expect("");
 
     let req = HandshakeRequest {
         node_id: local_node_id,
         node_addr: local_node_addr.clone(),
         remote_node_id: to_node_id,
+        snow_handshake: buf[..snow_hanshake_len].to_vec(),
     };
     let signature = ObjectSecure::sign_obj(secure.deref(), to_node_id, &req);
 
@@ -177,9 +211,25 @@ pub async fn outgoing_handshake(secure: Arc<dyn DataSecure>, socket: &UdpSocket,
                             }
                             log::info!("[UdpTransport] received handshake response {:?}", res);
                             match res {
-                                HandshakeResult::Success => {
-                                    socket.send(&build_control_msg(&UdpTransportMsg::ConnectResponseAck(true))).await.map_err(|_| OutgoingHandshakeError::SocketError)?;
-                                    return Ok(());
+                                HandshakeResult::Success(snow_response) => {
+                                    match snow_initiator.read_message(&snow_response, &mut buf) {
+                                        Ok(_) => {
+                                            match snow_initiator.into_transport_mode() {
+                                                Ok(state) => {
+                                                    socket.send(&build_control_msg(&UdpTransportMsg::ConnectResponseAck(true))).await.map_err(|_| OutgoingHandshakeError::SocketError)?;
+                                                    return Ok(state)
+                                                },
+                                                Err(e) => {
+                                                    log::error!("[UdpTransport] received hanshake snow into_transport_mode error {:?}", e);
+                                                    return Err(OutgoingHandshakeError::AuthenticationError);
+                                                }
+                                            }
+                                        },
+                                        Err(e) => {
+                                            log::error!("[UdpTransport] received hanshake snow read message error {:?}", e);
+                                            return Err(OutgoingHandshakeError::AuthenticationError);
+                                        }
+                                    }
                                 }
                                 HandshakeResult::AuthenticationError => {
                                     return Err(OutgoingHandshakeError::AuthenticationError);

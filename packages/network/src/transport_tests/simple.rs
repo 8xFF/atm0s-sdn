@@ -2,11 +2,12 @@ use async_std::prelude::FutureExt;
 use atm0s_sdn_identity::NodeAddr;
 use atm0s_sdn_router::RouteRule;
 use atm0s_sdn_utils::option_handle::OptionUtils;
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use crate::{
-    msg::TransportMsg,
+    msg::{MsgHeader, TransportMsg},
     transport::{ConnectionEvent, OutgoingConnectionError, Transport, TransportEvent},
 };
 
@@ -16,8 +17,9 @@ enum Msg {
     Pong,
 }
 
-fn create_msg(msg: Msg) -> TransportMsg {
-    TransportMsg::build(0, 0, RouteRule::Direct, 0, 0, &bincode::serialize(&msg).unwrap())
+fn create_msg(msg: Msg, secure: bool) -> TransportMsg {
+    let header = MsgHeader::build(0, 0, RouteRule::Direct).set_secure(secure).set_meta(0).set_stream_id(0);
+    TransportMsg::build_raw(header, &bincode::serialize(&msg).unwrap())
 }
 
 pub async fn simple_network<T: Transport>(mut tran1: T, node1_addr: NodeAddr, mut tran2: T, node2_addr: NodeAddr) {
@@ -59,14 +61,19 @@ pub async fn simple_network<T: Transport>(mut tran1: T, node1_addr: NodeAddr, mu
         }
     };
 
+    let recv2_received = Arc::new(Mutex::new(vec![]));
+    let recv2_received_clone = recv2_received.clone();
     async_std::task::spawn(async move {
         match tran2_recv.poll().timeout(Duration::from_secs(2)).await.unwrap().unwrap() {
             ConnectionEvent::Stats(_stats) => {}
             e => panic!("Should received stats {:?}", e),
         }
-        tran2_sender.send(create_msg(Msg::Ping));
+        tran2_sender.send(create_msg(Msg::Ping, true));
+        tran2_sender.send(create_msg(Msg::Ping, false));
         let received_event = tran2_recv.poll().timeout(Duration::from_secs(2)).await.unwrap().unwrap();
-        assert_eq!(received_event, ConnectionEvent::Msg(create_msg(Msg::Ping)));
+        recv2_received_clone.lock().push(received_event);
+        let received_event = tran2_recv.poll().timeout(Duration::from_secs(2)).await.unwrap().unwrap();
+        recv2_received_clone.lock().push(received_event);
         assert_eq!(tran2_recv.poll().timeout(Duration::from_secs(2)).await.unwrap(), Err(()));
     });
 
@@ -76,10 +83,17 @@ pub async fn simple_network<T: Transport>(mut tran1: T, node1_addr: NodeAddr, mu
     }
 
     let received_event = tran1_recv.poll().timeout(Duration::from_secs(2)).await.unwrap().unwrap();
-    assert_eq!(received_event, ConnectionEvent::Msg(create_msg(Msg::Ping)));
+    assert_eq!(received_event, ConnectionEvent::Msg(create_msg(Msg::Ping, true)));
+    let received_event = tran1_recv.poll().timeout(Duration::from_secs(2)).await.unwrap().unwrap();
+    assert_eq!(received_event, ConnectionEvent::Msg(create_msg(Msg::Ping, false)));
 
-    tran1_sender.send(create_msg(Msg::Ping));
+    tran1_sender.send(create_msg(Msg::Ping, true));
+    tran1_sender.send(create_msg(Msg::Ping, false));
     async_std::task::sleep(Duration::from_millis(100)).await;
+
+    assert_eq!(recv2_received.lock().len(), 2);
+    assert_eq!(recv2_received.lock()[0], ConnectionEvent::Msg(create_msg(Msg::Ping, true)));
+    assert_eq!(recv2_received.lock()[1], ConnectionEvent::Msg(create_msg(Msg::Ping, false)));
 
     tran1_sender.close();
     assert_eq!(tran1_recv.poll().timeout(Duration::from_secs(2)).await.unwrap(), Err(()));

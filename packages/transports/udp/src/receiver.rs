@@ -11,6 +11,8 @@ use atm0s_sdn_network::{
 };
 use atm0s_sdn_utils::{error_handle::ErrorUtils, Timer};
 use futures_util::{select, FutureExt};
+use parking_lot::Mutex;
+use snow::TransportState;
 
 use crate::msg::{build_control_msg, UdpTransportMsg};
 
@@ -27,6 +29,8 @@ pub struct UdpServerConnectionReceiver {
     close_state: Arc<AtomicBool>,
     close_notify: Arc<async_notify::Notify>,
     last_pong_ts: u64,
+    snow_state: Arc<Mutex<TransportState>>,
+    snow_buf: [u8; 1500],
 }
 
 impl UdpServerConnectionReceiver {
@@ -40,6 +44,7 @@ impl UdpServerConnectionReceiver {
         timer: Arc<dyn Timer>,
         close_state: Arc<AtomicBool>,
         close_notify: Arc<async_notify::Notify>,
+        snow_state: Arc<Mutex<TransportState>>,
     ) -> Self {
         log::info!("[UdpServerConnectionReceiver {}/{}] new", remote_node_id, conn_id);
 
@@ -56,6 +61,8 @@ impl UdpServerConnectionReceiver {
             tick: async_std::stream::interval(std::time::Duration::from_secs(1)),
             close_state,
             close_notify,
+            snow_state,
+            snow_buf: [0u8; 1500],
         }
     }
 }
@@ -123,11 +130,25 @@ impl ConnectionReceiver for UdpServerConnectionReceiver {
                                     _ => {}
                                 }
                             } else {
-                                //TODO reduce to_vec memory copy
-                                match TransportMsg::from_vec(data[0..len].to_vec()) {
-                                    Ok(msg) => break Ok(ConnectionEvent::Msg(msg)),
-                                    Err(e) => {
-                                        log::error!("[UdpServerConnectionReceiver {}/{}] wrong msg format {:?}", self.remote_node_id, self.conn_id, e);
+                                log::info!("[UdpServerConnectionReceiver {}] on msg received {:?}", self.remote_node_id, &data[..len]);
+                                if TransportMsg::is_secure_header(data[0]) {
+                                    let mut snow_state = self.snow_state.lock();
+                                    if let Ok(len) = snow_state.read_message(&data[1..len], &mut self.snow_buf) {
+                                        //TODO reduce to_vec memory copy
+                                        match TransportMsg::from_vec(self.snow_buf[0..len].to_vec()) {
+                                            Ok(msg) => break Ok(ConnectionEvent::Msg(msg)),
+                                            Err(e) => {
+                                                log::error!("[UdpServerConnectionReceiver {}/{}] wrong msg format {:?}", self.remote_node_id, self.conn_id, e);
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    //TODO reduce to_vec memory copy
+                                    match TransportMsg::from_vec(data[0..len].to_vec()) {
+                                        Ok(msg) => break Ok(ConnectionEvent::Msg(msg)),
+                                        Err(e) => {
+                                            log::error!("[UdpServerConnectionReceiver {}/{}] wrong msg format {:?}", self.remote_node_id, self.conn_id, e);
+                                        }
                                     }
                                 }
                             }
@@ -161,6 +182,8 @@ pub struct UdpClientConnectionReceiver {
     close_state: Arc<AtomicBool>,
     close_notify: Arc<async_notify::Notify>,
     last_pong_ts: u64,
+    snow_state: Arc<Mutex<TransportState>>,
+    snow_buf: [u8; 1500],
 }
 
 impl UdpClientConnectionReceiver {
@@ -172,6 +195,7 @@ impl UdpClientConnectionReceiver {
         timer: Arc<dyn Timer>,
         close_state: Arc<AtomicBool>,
         close_notify: Arc<async_notify::Notify>,
+        snow_state: Arc<Mutex<TransportState>>,
     ) -> Self {
         log::info!("[UdpClientConnectionReceiver {}] new", remote_node_id);
 
@@ -186,6 +210,8 @@ impl UdpClientConnectionReceiver {
             tick: async_std::stream::interval(std::time::Duration::from_secs(1)),
             close_state,
             close_notify,
+            snow_state,
+            snow_buf: [0u8; 1500],
         }
     }
 }
@@ -259,11 +285,25 @@ impl ConnectionReceiver for UdpClientConnectionReceiver {
                                     _ => {}
                                 }
                             } else {
-                                //TODO reduce to_vec memory copy
-                                match TransportMsg::from_vec(data[0..len].to_vec()) {
-                                    Ok(msg) => break Ok(ConnectionEvent::Msg(msg)),
-                                    Err(e) => {
-                                        log::error!("[UdpClientConnectionReceiver {}] wrong msg format {:?}", self.remote_node_id, e);
+                                log::info!("[UdpClientConnectionReceiver {}] on msg received {:?}", self.remote_node_id, &data[..len]);
+                                if TransportMsg::is_secure_header(data[0]) {
+                                    let mut snow_state = self.snow_state.lock();
+                                    if let Ok(len) = snow_state.read_message(&data[1..len], &mut self.snow_buf) {
+                                        //TODO reduce to_vec memory copy
+                                        match TransportMsg::from_vec(self.snow_buf[0..len].to_vec()) {
+                                            Ok(msg) => break Ok(ConnectionEvent::Msg(msg)),
+                                            Err(e) => {
+                                                log::error!("[UdpClientConnectionReceiver {}] wrong msg format {:?}", self.remote_node_id, e);
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    //TODO reduce to_vec memory copy
+                                    match TransportMsg::from_vec(data[0..len].to_vec()) {
+                                        Ok(msg) => break Ok(ConnectionEvent::Msg(msg)),
+                                        Err(e) => {
+                                            log::error!("[UdpClientConnectionReceiver {}] wrong msg format {:?}", self.remote_node_id, e);
+                                        }
                                     }
                                 }
                             }
