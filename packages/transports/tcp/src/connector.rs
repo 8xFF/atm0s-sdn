@@ -10,6 +10,7 @@ use atm0s_sdn_network::secure::DataSecure;
 use atm0s_sdn_network::transport::{OutgoingConnectionError, TransportConnector, TransportEvent};
 use atm0s_sdn_utils::error_handle::ErrorUtils;
 use atm0s_sdn_utils::Timer;
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
@@ -71,8 +72,10 @@ impl TransportConnector for TcpConnector {
                         let mut socket_read = AsyncBincodeStream::<_, TcpMsg, TcpMsg, _>::from(socket.clone()).for_async();
                         let socket_write = AsyncBincodeStream::<_, TcpMsg, TcpMsg, _>::from(socket.clone()).for_async();
                         match outgoing_handshake(secure, remote_node_id, node_id, node_addr, &mut socket_read, conn_id, &internal_tx).await {
-                            Ok(_) => {
-                                let (connection_sender, unreliable_sender) = TcpConnectionSender::new(node_id, remote_node_id, remote_node_addr.clone(), conn_id, 1000, socket_write, timer.clone());
+                            Ok(snow_state) => {
+                                let snow_state = Arc::new(Mutex::new(snow_state));
+                                let (connection_sender, unreliable_sender) =
+                                    TcpConnectionSender::new(node_id, remote_node_id, remote_node_addr.clone(), conn_id, 1000, socket_write, timer.clone(), snow_state.clone());
                                 let connection_receiver = Box::new(TcpConnectionReceiver {
                                     remote_node_id,
                                     remote_addr: remote_node_addr,
@@ -80,6 +83,8 @@ impl TransportConnector for TcpConnector {
                                     socket: socket_read,
                                     timer,
                                     unreliable_sender,
+                                    snow_state,
+                                    snow_buf: [0u8; 1500],
                                 });
                                 internal_tx
                                     .send(TransportEvent::Outgoing(Arc::new(connection_sender), connection_receiver))
@@ -97,6 +102,7 @@ impl TransportConnector for TcpConnector {
                                             OutgoingHandshakeError::Timeout => OutgoingConnectionError::AuthenticationError,
                                             OutgoingHandshakeError::WrongMsg => OutgoingConnectionError::AuthenticationError,
                                             OutgoingHandshakeError::Rejected => OutgoingConnectionError::AuthenticationError,
+                                            OutgoingHandshakeError::AuthenticationError => OutgoingConnectionError::AuthenticationError,
                                         },
                                     })
                                     .await

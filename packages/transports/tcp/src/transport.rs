@@ -12,6 +12,7 @@ use atm0s_sdn_utils::error_handle::ErrorUtils;
 use atm0s_sdn_utils::{SystemTimer, Timer};
 use futures_util::FutureExt;
 use local_ip_address::local_ip;
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Shutdown, SocketAddr};
 use std::sync::Arc;
@@ -102,7 +103,8 @@ impl Transport for TcpTransport {
                             let socket_write = AsyncBincodeStream::<_, TcpMsg, TcpMsg, _>::from(socket.clone()).for_async();
 
                             match incoming_handshake(secure, node_id, &mut socket_read, conn_id, &internal_tx).await {
-                                Ok((remote_node_id, remote_addr)) => {
+                                Ok((remote_node_id, remote_addr, snow_state)) => {
+                                    let snow_state = Arc::new(Mutex::new(snow_state));
                                     let (connection_sender, unreliable_sender) = TcpConnectionSender::new(
                                         node_id,
                                         remote_node_id,
@@ -111,6 +113,7 @@ impl Transport for TcpTransport {
                                         1000,
                                         socket_write,
                                         timer.clone(),
+                                        snow_state.clone(),
                                     );
                                     let connection_receiver = Box::new(TcpConnectionReceiver {
                                         remote_node_id,
@@ -119,6 +122,8 @@ impl Transport for TcpTransport {
                                         socket: socket_read,
                                         timer,
                                         unreliable_sender,
+                                        snow_state,
+                                        snow_buf: [0u8; 1500],
                                     });
                                     internal_tx.send(TransportEvent::Incoming(
                                         Arc::new(connection_sender),

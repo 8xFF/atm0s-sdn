@@ -6,11 +6,12 @@ pub struct HandshakeRequest {
     pub node_id: NodeId,
     pub node_addr: NodeAddr,
     pub remote_node_id: NodeId,
+    pub snow_handshake: Vec<u8>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub enum HandshakeResult {
-    Success,
+    Success(Vec<u8>),
     AuthenticationError,
     Rejected,
 }
