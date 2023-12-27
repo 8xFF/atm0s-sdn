@@ -130,7 +130,6 @@ impl ConnectionReceiver for UdpServerConnectionReceiver {
                                     _ => {}
                                 }
                             } else {
-                                log::info!("[UdpServerConnectionReceiver {}] on msg received {:?}", self.remote_node_id, &data[..len]);
                                 if TransportMsg::is_secure_header(data[0]) {
                                     let mut snow_state = self.snow_state.lock();
                                     if let Ok(len) = snow_state.read_message(&data[1..len], &mut self.snow_buf) {
@@ -285,7 +284,6 @@ impl ConnectionReceiver for UdpClientConnectionReceiver {
                                     _ => {}
                                 }
                             } else {
-                                log::info!("[UdpClientConnectionReceiver {}] on msg received {:?}", self.remote_node_id, &data[..len]);
                                 if TransportMsg::is_secure_header(data[0]) {
                                     let mut snow_state = self.snow_state.lock();
                                     if let Ok(len) = snow_state.read_message(&data[1..len], &mut self.snow_buf) {
