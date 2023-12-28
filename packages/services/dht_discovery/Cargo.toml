@@ -1,6 +1,6 @@
 [package]
 name = "atm0s-sdn-dht-discovery"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 description = "DHT discovery for atm0s-sdn"
 license = "MIT"
@@ -8,10 +8,10 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-atm0s-sdn-identity = { path = "../../core/identity", version = "0.1.2" }
-atm0s-sdn-router = { path = "../../core/router", version = "0.1.3" }
+atm0s-sdn-identity = { path = "../../core/identity", version = "0.2.0" }
+atm0s-sdn-router = { path = "../../core/router", version = "0.1.4" }
 atm0s-sdn-utils = { path = "../../core/utils", version = "0.1.1" }
-atm0s-sdn-network = { path = "../../network", version = "0.2.2" }
+atm0s-sdn-network = { path = "../../network", version = "0.3.0" }
 async-trait = { workspace = true }
 bincode = { workspace = true }
 thiserror = { workspace = true }
@@ -23,4 +23,4 @@ serde = { workspace = true }
 rand = "0.8"
 async-std = { workspace = true }
 env_logger = { workspace = true }
-atm0s-sdn-transport-vnet = { path = "../../transports/vnet", version = "0.1.4" }
+atm0s-sdn-transport-vnet = { path = "../../transports/vnet", version = "0.2.0" }

@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-layers-spread-router-v0.1.4...atm0s-sdn-layers-spread-router-v0.1.5) - 2023-12-27
+
+### Other
+- updated the following local packages: atm0s-sdn-identity, atm0s-sdn-router
+
 ## [0.1.4](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-layers-spread-router-v0.1.3...atm0s-sdn-layers-spread-router-v0.1.4) - 2023-12-12
 
 ### Other

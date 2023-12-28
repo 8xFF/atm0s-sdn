@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-transport-tcp-v0.1.4...atm0s-sdn-transport-tcp-v0.1.5) - 2023-12-27
+
+### Added
+- secure with static key and noise protocol ([#101](https://github.com/8xFF/atm0s-sdn/pull/101))
+- node multi addrs ([#98](https://github.com/8xFF/atm0s-sdn/pull/98))
+
 ## [0.1.4](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-transport-tcp-v0.1.3...atm0s-sdn-transport-tcp-v0.1.4) - 2023-12-12
 
 ### Other

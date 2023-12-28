@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-network-v0.2.2...atm0s-sdn-network-v0.3.0) - 2023-12-27
+
+### Added
+- secure with static key and noise protocol ([#101](https://github.com/8xFF/atm0s-sdn/pull/101))
+- node multi addrs ([#98](https://github.com/8xFF/atm0s-sdn/pull/98))
+
 ## [0.2.2](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-network-v0.2.1...atm0s-sdn-network-v0.2.2) - 2023-12-12
 
 ### Other
