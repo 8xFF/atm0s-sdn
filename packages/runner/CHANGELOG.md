@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-v0.1.5...atm0s-sdn-v0.1.6) - 2023-12-28
+
+### Fixed
+- fix key-value fired duplicated events in case of multi subscribers ([#104](https://github.com/8xFF/atm0s-sdn/pull/104))
+
 ## [0.1.5](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-v0.1.4...atm0s-sdn-v0.1.5) - 2023-12-27
 
 ### Added
