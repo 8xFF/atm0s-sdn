@@ -1,18 +1,15 @@
 <p align="center">
- <a href="https://github.com/8xFF/decentralized-sdn/actions">
-  <img src="https://github.com/8xFF/decentralized-sdn/actions/workflows/rust.yml/badge.svg?branch=master">
+ <a href="https://github.com/8xFF/atm0s-sdn/actions">
+  <img src="https://github.com/8xFF/atm0s-sdn/actions/workflows/rust.yml/badge.svg?branch=master">
  </a>
- <a href="https://codecov.io/gh/8xff/decentralized-sdn">
-  <img src="https://codecov.io/gh/8xff/decentralized-sdn/branch/master/graph/badge.svg">
- </a>
- <a href="https://codecov.io/gh/8xff/decentralized-sdn">
-  <img src="https://codecov.io/gh/8xff/decentralized-sdn/branch/master/graph/badge.svg">
+ <a href="https://codecov.io/gh/8xff/atm0s-sdn">
+  <img src="https://codecov.io/gh/8xff/atm0s-sdn/branch/master/graph/badge.svg">
  </a>
  <a href="https://app.codacy.com/gh/8xFF/atm0s-sdn/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade">
   <img src="https://app.codacy.com/project/badge/Grade/c8d34f07fe5f417084aac8d8a1ef3857"/>
  </a>
- <a href="https://deps.rs/repo/github/8xff/decentralized-sdn">
-  <img src="https://deps.rs/repo/github/8xff/decentralized-sdn/status.svg">
+ <a href="https://deps.rs/repo/github/8xff/atm0s-sdn">
+  <img src="https://deps.rs/repo/github/8xff/atm0s-sdn/status.svg">
  </a>
 <!--  <a href="https://crates.io/crates/8xff-sdn">
   <img src="https://img.shields.io/crates/v/8xff-sdn.svg">
@@ -20,7 +17,7 @@
 <!--  <a href="https://docs.rs/8xff-sdn">
   <img src="https://docs.rs/8xff-sdn/badge.svg">
  </a> -->
- <a href="https://github.com/8xFF/decentralized-sdn/blob/master/LICENSE">
+ <a href="https://github.com/8xFF/atm0s-sdn/blob/master/LICENSE">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT">
  </a>
  <a href="https://discord.gg/tJ6dxBRk">
@@ -133,8 +130,8 @@ cargo run --example chat_example --node-id 1 --neighbours /p2p/0/ip4/[IP_HERE]/u
 ## Showcases
 
   - Media Server: [Repo](https://github.com/8xFF/decentralized-media-server)
-  - VPN: [Repo](https://github.com/8xFF/decentralized-sdn/tree/master/packages/services/tun_tap)
-  - MiniRedis: [Repo](https://github.com/8xFF/decentralized-sdn/tree/master/packages/apps/redis)
+  - VPN: [Repo](https://github.com/8xFF/atm0s-sdn/tree/master/packages/services/tun_tap)
+  - MiniRedis: [Repo](https://github.com/8xFF/atm0s-sdn/tree/master/packages/apps/redis)
 
 ## Contributing
 The project is continuously being improved and updated. We are always looking for ways to make it better, whether that's through optimizing performance, adding new features, or fixing bugs. We welcome contributions from the community and are always looking for new ideas and suggestions.
