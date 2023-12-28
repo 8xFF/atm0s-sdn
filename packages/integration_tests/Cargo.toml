@@ -9,7 +9,7 @@ publish = false
 [dependencies]
 
 [dev-dependencies]
-atm0s-sdn = { path = "../runner", version = "0.1.5", features = ["all"] }
+atm0s-sdn = { path = "../runner", version = "0.1.6", features = ["all"] }
 atm0s-sdn-transport-vnet = { path = "../transports/vnet", version = "0.2.0" }
 bytes = "1.5.0"
 log = "0.4.20"

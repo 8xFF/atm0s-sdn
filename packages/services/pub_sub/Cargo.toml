@@ -1,6 +1,6 @@
 [package]
 name = "atm0s-sdn-pub-sub"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 description = "Pub/Sub service in atm0s-sdn"
 license = "MIT"
@@ -12,7 +12,7 @@ atm0s-sdn-identity = { path = "../../core/identity", version = "0.2.0" }
 atm0s-sdn-router = { path = "../../core/router", version = "0.1.4" }
 atm0s-sdn-utils = { path = "../../core/utils", version = "0.1.1" }
 atm0s-sdn-network = { path = "../../network", version = "0.3.0" }
-atm0s-sdn-key-value = { path = "../../services/key_value", version = "0.1.6" }
+atm0s-sdn-key-value = { path = "../../services/key_value", version = "0.1.7" }
 log = { workspace = true }
 async-trait = { workspace = true }
 async-std = { workspace = true }
