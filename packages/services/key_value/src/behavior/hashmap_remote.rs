@@ -38,7 +38,7 @@ impl HashmapRemoteStorage {
 
     pub fn tick(&mut self, now_ms: u64) {
         self.storage.tick(now_ms);
-        self.event_acks.tick();
+        self.event_acks.tick(now_ms);
     }
 
     pub fn on_event(&mut self, now_ms: u64, from: NodeId, event: HashmapRemoteEvent) {
@@ -107,7 +107,7 @@ impl HashmapRemoteStorage {
         }
     }
 
-    pub fn pop_action(&mut self) -> Option<RemoteStorageAction> {
+    pub fn pop_action(&mut self, now_ms: u64) -> Option<RemoteStorageAction> {
         //first pop from output_events, if not exits then pop from event_acks
         if let Some(e) = self.output_events.pop_front() {
             log::debug!("[HashmapRemote {}] pop action from output_events: {:?}", self.node_id, e);
@@ -125,7 +125,7 @@ impl HashmapRemoteStorage {
                     }
                 };
                 log::debug!("[HashmapRemote {}] pop action from event_acks: {:?}, req_id {}", self.node_id, event, req_id);
-                self.event_acks.add_event(req_id, event, RETRY_COUNT);
+                self.event_acks.add_event(now_ms, req_id, event, RETRY_COUNT);
             }
             self.event_acks.pop_action()
         }
@@ -135,7 +135,10 @@ impl HashmapRemoteStorage {
 #[cfg(test)]
 mod tests {
     use super::RemoteStorageAction;
-    use crate::msg::{HashmapLocalEvent, HashmapRemoteEvent};
+    use crate::{
+        behavior::event_acks::RESEND_AFTER_MS,
+        msg::{HashmapLocalEvent, HashmapRemoteEvent},
+    };
     use atm0s_sdn_router::RouteRule;
 
     #[test]
@@ -144,10 +147,10 @@ mod tests {
 
         remote_storage.on_event(0, 1000, HashmapRemoteEvent::Set(1, 2, 3, vec![1], 0, None));
         assert_eq!(
-            remote_storage.pop_action(),
+            remote_storage.pop_action(0),
             Some(RemoteStorageAction(HashmapLocalEvent::SetAck(1, 2, 3, 0, true), RouteRule::ToNode(1000)))
         );
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(remote_storage.pop_action(0), None);
     }
 
     #[test]
@@ -157,14 +160,14 @@ mod tests {
         remote_storage.on_event(0, 1000, HashmapRemoteEvent::Set(1, 2, 3, vec![1], 0, Some(1000)));
         remote_storage.on_event(0, 1000, HashmapRemoteEvent::Set(2, 2, 4, vec![1], 0, Some(2000)));
         assert_eq!(
-            remote_storage.pop_action(),
+            remote_storage.pop_action(0),
             Some(RemoteStorageAction(HashmapLocalEvent::SetAck(1, 2, 3, 0, true), RouteRule::ToNode(1000)))
         );
         assert_eq!(
-            remote_storage.pop_action(),
+            remote_storage.pop_action(0),
             Some(RemoteStorageAction(HashmapLocalEvent::SetAck(2, 2, 4, 0, true), RouteRule::ToNode(1000)))
         );
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(remote_storage.pop_action(0), None);
 
         assert_eq!(remote_storage.storage.len(), 1);
         remote_storage.tick(500);
@@ -183,18 +186,18 @@ mod tests {
 
         remote_storage.on_event(0, 1000, HashmapRemoteEvent::Set(1, 2, 3, vec![1], 10, None));
         assert_eq!(
-            remote_storage.pop_action(),
+            remote_storage.pop_action(0),
             Some(RemoteStorageAction(HashmapLocalEvent::SetAck(1, 2, 3, 10, true), RouteRule::ToNode(1000)))
         );
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(remote_storage.pop_action(0), None);
 
         // receive a older version will be rejected
         remote_storage.on_event(0, 1000, HashmapRemoteEvent::Set(1, 2, 3, vec![1], 5, None));
         assert_eq!(
-            remote_storage.pop_action(),
+            remote_storage.pop_action(0),
             Some(RemoteStorageAction(HashmapLocalEvent::SetAck(1, 2, 3, 5, false), RouteRule::ToNode(1000)))
         );
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(remote_storage.pop_action(0), None);
     }
 
     #[test]
@@ -203,17 +206,17 @@ mod tests {
 
         remote_storage.on_event(0, 1000, HashmapRemoteEvent::Set(1, 2, 3, vec![1], 0, None));
         assert_eq!(
-            remote_storage.pop_action(),
+            remote_storage.pop_action(0),
             Some(RemoteStorageAction(HashmapLocalEvent::SetAck(1, 2, 3, 0, true), RouteRule::ToNode(1000)))
         );
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(remote_storage.pop_action(0), None);
 
         remote_storage.on_event(0, 1000, HashmapRemoteEvent::Del(2, 2, 3, 0));
         assert_eq!(
-            remote_storage.pop_action(),
+            remote_storage.pop_action(0),
             Some(RemoteStorageAction(HashmapLocalEvent::DelAck(2, 2, 3, Some(0)), RouteRule::ToNode(1000)))
         );
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(remote_storage.pop_action(0), None);
     }
 
     #[test]
@@ -222,17 +225,17 @@ mod tests {
 
         remote_storage.on_event(0, 1000, HashmapRemoteEvent::Set(1, 2, 3, vec![1], 10, None));
         assert_eq!(
-            remote_storage.pop_action(),
+            remote_storage.pop_action(0),
             Some(RemoteStorageAction(HashmapLocalEvent::SetAck(1, 2, 3, 10, true), RouteRule::ToNode(1000)))
         );
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(remote_storage.pop_action(0), None);
 
         remote_storage.on_event(0, 1000, HashmapRemoteEvent::Del(2, 2, 3, 5));
         assert_eq!(
-            remote_storage.pop_action(),
+            remote_storage.pop_action(0),
             Some(RemoteStorageAction(HashmapLocalEvent::DelAck(2, 2, 3, None), RouteRule::ToNode(1000)))
         );
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(remote_storage.pop_action(0), None);
     }
 
     #[test]
@@ -241,17 +244,17 @@ mod tests {
 
         remote_storage.on_event(0, 1000, HashmapRemoteEvent::Set(1, 2, 3, vec![1], 0, None));
         assert_eq!(
-            remote_storage.pop_action(),
+            remote_storage.pop_action(0),
             Some(RemoteStorageAction(HashmapLocalEvent::SetAck(1, 2, 3, 0, true), RouteRule::ToNode(1000)))
         );
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(remote_storage.pop_action(0), None);
 
         remote_storage.on_event(0, 1000, HashmapRemoteEvent::Del(2, 2, 3, 100));
         assert_eq!(
-            remote_storage.pop_action(),
+            remote_storage.pop_action(0),
             Some(RemoteStorageAction(HashmapLocalEvent::DelAck(2, 2, 3, Some(0)), RouteRule::ToNode(1000)))
         );
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(remote_storage.pop_action(0), None);
     }
 
     #[test]
@@ -260,21 +263,21 @@ mod tests {
 
         remote_storage.on_event(0, 1000, HashmapRemoteEvent::Set(1, 2, 3, vec![1], 10, None));
         assert_eq!(
-            remote_storage.pop_action(),
+            remote_storage.pop_action(0),
             Some(RemoteStorageAction(HashmapLocalEvent::SetAck(1, 2, 3, 10, true), RouteRule::ToNode(1000)))
         );
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(remote_storage.pop_action(0), None);
 
         remote_storage.on_event(0, 1001, HashmapRemoteEvent::Get(2, 2));
         assert_eq!(
-            remote_storage.pop_action(),
+            remote_storage.pop_action(0),
             Some(RemoteStorageAction(HashmapLocalEvent::GetAck(2, 2, Some(vec![(3, vec![1], 10, 1000)])), RouteRule::ToNode(1001)))
         );
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(remote_storage.pop_action(0), None);
 
         remote_storage.on_event(0, 1001, HashmapRemoteEvent::Get(3, 5));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(HashmapLocalEvent::GetAck(3, 5, None), RouteRule::ToNode(1001))));
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(remote_storage.pop_action(0), Some(RemoteStorageAction(HashmapLocalEvent::GetAck(3, 5, None), RouteRule::ToNode(1001))));
+        assert_eq!(remote_storage.pop_action(0), None);
     }
 
     #[test]
@@ -282,19 +285,19 @@ mod tests {
         let mut remote_storage = super::HashmapRemoteStorage::new(0);
 
         remote_storage.on_event(0, 1000, HashmapRemoteEvent::Sub(1, 2, None));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(HashmapLocalEvent::SubAck(1, 2), RouteRule::ToNode(1000))));
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(remote_storage.pop_action(0), Some(RemoteStorageAction(HashmapLocalEvent::SubAck(1, 2), RouteRule::ToNode(1000))));
+        assert_eq!(remote_storage.pop_action(0), None);
 
         remote_storage.on_event(0, 1001, HashmapRemoteEvent::Set(2, 2, 3, vec![1], 100, None));
         assert_eq!(
-            remote_storage.pop_action(),
+            remote_storage.pop_action(0),
             Some(RemoteStorageAction(HashmapLocalEvent::SetAck(2, 2, 3, 100, true), RouteRule::ToNode(1001)))
         );
         assert_eq!(
-            remote_storage.pop_action(),
+            remote_storage.pop_action(0),
             Some(RemoteStorageAction(HashmapLocalEvent::OnKeySet(0, 2, 3, vec![1], 100, 1001), RouteRule::ToNode(1000)))
         );
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(remote_storage.pop_action(0), None);
     }
 
     #[test]
@@ -303,18 +306,18 @@ mod tests {
 
         remote_storage.on_event(0, 1001, HashmapRemoteEvent::Set(2, 2, 3, vec![1], 100, None));
         assert_eq!(
-            remote_storage.pop_action(),
+            remote_storage.pop_action(0),
             Some(RemoteStorageAction(HashmapLocalEvent::SetAck(2, 2, 3, 100, true), RouteRule::ToNode(1001)))
         );
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(remote_storage.pop_action(0), None);
 
         remote_storage.on_event(0, 1000, HashmapRemoteEvent::Sub(1, 2, None));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(HashmapLocalEvent::SubAck(1, 2), RouteRule::ToNode(1000))));
+        assert_eq!(remote_storage.pop_action(0), Some(RemoteStorageAction(HashmapLocalEvent::SubAck(1, 2), RouteRule::ToNode(1000))));
         assert_eq!(
-            remote_storage.pop_action(),
+            remote_storage.pop_action(0),
             Some(RemoteStorageAction(HashmapLocalEvent::OnKeySet(0, 2, 3, vec![1], 100, 1001), RouteRule::ToNode(1000)))
         );
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(remote_storage.pop_action(0), None);
     }
 
     #[test]
@@ -322,19 +325,22 @@ mod tests {
         let mut remote_storage = super::HashmapRemoteStorage::new(0);
 
         remote_storage.on_event(0, 1000, HashmapRemoteEvent::Sub(1, 2, None));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(HashmapLocalEvent::SubAck(1, 2), RouteRule::ToNode(1000))));
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(remote_storage.pop_action(0), Some(RemoteStorageAction(HashmapLocalEvent::SubAck(1, 2), RouteRule::ToNode(1000))));
+        assert_eq!(remote_storage.pop_action(0), None);
 
         remote_storage.on_event(0, 1000, HashmapRemoteEvent::Unsub(2, 2));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(HashmapLocalEvent::UnsubAck(2, 2, true), RouteRule::ToNode(1000))));
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(
+            remote_storage.pop_action(0),
+            Some(RemoteStorageAction(HashmapLocalEvent::UnsubAck(2, 2, true), RouteRule::ToNode(1000)))
+        );
+        assert_eq!(remote_storage.pop_action(0), None);
 
         remote_storage.on_event(0, 1001, HashmapRemoteEvent::Set(3, 2, 3, vec![1], 100, None));
         assert_eq!(
-            remote_storage.pop_action(),
+            remote_storage.pop_action(0),
             Some(RemoteStorageAction(HashmapLocalEvent::SetAck(3, 2, 3, 100, true), RouteRule::ToNode(1001)))
         );
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(remote_storage.pop_action(0), None);
     }
 
     #[test]
@@ -343,10 +349,10 @@ mod tests {
 
         remote_storage.on_event(0, 1000, HashmapRemoteEvent::Unsub(2, 1));
         assert_eq!(
-            remote_storage.pop_action(),
+            remote_storage.pop_action(0),
             Some(RemoteStorageAction(HashmapLocalEvent::UnsubAck(2, 1, false), RouteRule::ToNode(1000)))
         );
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(remote_storage.pop_action(0), None);
     }
 
     #[test]
@@ -354,23 +360,23 @@ mod tests {
         let mut remote_storage = super::HashmapRemoteStorage::new(0);
 
         remote_storage.on_event(0, 1000, HashmapRemoteEvent::Sub(1, 2, None));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(HashmapLocalEvent::SubAck(1, 2), RouteRule::ToNode(1000))));
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(remote_storage.pop_action(0), Some(RemoteStorageAction(HashmapLocalEvent::SubAck(1, 2), RouteRule::ToNode(1000))));
+        assert_eq!(remote_storage.pop_action(0), None);
 
         remote_storage.on_event(0, 1001, HashmapRemoteEvent::Set(2, 2, 3, vec![1], 100, None));
         assert_eq!(
-            remote_storage.pop_action(),
+            remote_storage.pop_action(0),
             Some(RemoteStorageAction(HashmapLocalEvent::SetAck(2, 2, 3, 100, true), RouteRule::ToNode(1001)))
         );
         assert_eq!(
-            remote_storage.pop_action(),
+            remote_storage.pop_action(0),
             Some(RemoteStorageAction(HashmapLocalEvent::OnKeySet(0, 2, 3, vec![1], 100, 1001), RouteRule::ToNode(1000)))
         );
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(remote_storage.pop_action(0), None);
 
         remote_storage.on_event(0, 1000, HashmapRemoteEvent::OnKeySetAck(0));
         remote_storage.tick(0);
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(remote_storage.pop_action(0), None);
     }
 
     #[test]
@@ -378,26 +384,26 @@ mod tests {
         let mut remote_storage = super::HashmapRemoteStorage::new(0);
 
         remote_storage.on_event(0, 1000, HashmapRemoteEvent::Sub(1, 2, None));
-        assert_eq!(remote_storage.pop_action(), Some(RemoteStorageAction(HashmapLocalEvent::SubAck(1, 2), RouteRule::ToNode(1000))));
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(remote_storage.pop_action(0), Some(RemoteStorageAction(HashmapLocalEvent::SubAck(1, 2), RouteRule::ToNode(1000))));
+        assert_eq!(remote_storage.pop_action(0), None);
 
         remote_storage.on_event(0, 1001, HashmapRemoteEvent::Set(2, 2, 3, vec![1], 100, None));
         assert_eq!(
-            remote_storage.pop_action(),
+            remote_storage.pop_action(0),
             Some(RemoteStorageAction(HashmapLocalEvent::SetAck(2, 2, 3, 100, true), RouteRule::ToNode(1001)))
         );
         assert_eq!(
-            remote_storage.pop_action(),
+            remote_storage.pop_action(0),
             Some(RemoteStorageAction(HashmapLocalEvent::OnKeySet(0, 2, 3, vec![1], 100, 1001), RouteRule::ToNode(1000)))
         );
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(remote_storage.pop_action(0), None);
 
-        remote_storage.tick(0);
-        // need resend each tick
+        remote_storage.tick(RESEND_AFTER_MS);
+        // need resend each tick aftert RESEND_AFTER_MS
         assert_eq!(
-            remote_storage.pop_action(),
+            remote_storage.pop_action(RESEND_AFTER_MS),
             Some(RemoteStorageAction(HashmapLocalEvent::OnKeySet(0, 2, 3, vec![1], 100, 1001), RouteRule::ToNode(1000)))
         );
-        assert_eq!(remote_storage.pop_action(), None);
+        assert_eq!(remote_storage.pop_action(RESEND_AFTER_MS), None);
     }
 }

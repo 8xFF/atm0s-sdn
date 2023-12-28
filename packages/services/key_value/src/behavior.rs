@@ -52,11 +52,11 @@ where
         }
     }
 
-    fn pop_all_events<BE>(&mut self, _ctx: &BehaviorContext)
+    fn pop_all_events<BE>(&mut self, _ctx: &BehaviorContext, now_ms: u64)
     where
         BE: Send + Sync + 'static,
     {
-        while let Some(action) = self.simple_remote.pop_action() {
+        while let Some(action) = self.simple_remote.pop_action(now_ms) {
             log::debug!("[KeyValueBehavior {}] pop_all_events simple remote: {:?}", self.node_id, action);
             let header = MsgHeader::build(KEY_VALUE_SERVICE_ID, KEY_VALUE_SERVICE_ID, action.1).set_from_node(Some(self.node_id));
             self.outputs
@@ -95,7 +95,7 @@ where
             }
         }
 
-        while let Some(action) = self.hashmap_remote.pop_action() {
+        while let Some(action) = self.hashmap_remote.pop_action(now_ms) {
             log::debug!("[KeyValueBehavior {}] pop_all_events hashmap remote: {:?}", self.node_id, action);
             let header = MsgHeader::build(KEY_VALUE_SERVICE_ID, KEY_VALUE_SERVICE_ID, action.1).set_from_node(Some(self.node_id));
             self.outputs
@@ -143,22 +143,22 @@ where
             KeyValueMsg::SimpleRemote(msg) => {
                 log::debug!("[KeyValueBehavior {}] process_key_value_msg simple remote: {:?} from {}", self.node_id, msg, from);
                 self.simple_remote.on_event(now_ms, from, msg);
-                self.pop_all_events::<BE>(ctx);
+                self.pop_all_events::<BE>(ctx, now_ms);
             }
             KeyValueMsg::SimpleLocal(msg) => {
                 log::debug!("[KeyValueBehavior {}] process_key_value_msg simple local: {:?} from {}", self.node_id, msg, from);
                 self.simple_local.on_event(from, msg);
-                self.pop_all_events::<BE>(ctx);
+                self.pop_all_events::<BE>(ctx, now_ms);
             }
             KeyValueMsg::HashmapRemote(msg) => {
                 log::debug!("[KeyValueBehavior {}] process_key_value_msg hashmap remote: {:?} from {}", self.node_id, msg, from);
                 self.hashmap_remote.on_event(now_ms, from, msg);
-                self.pop_all_events::<BE>(ctx);
+                self.pop_all_events::<BE>(ctx, now_ms);
             }
             KeyValueMsg::HashmapLocal(msg) => {
                 log::debug!("[KeyValueBehavior {}] process_key_value_msg hashmap local: {:?} from {}", self.node_id, msg, from);
                 self.hashmap_local.on_event(from, msg);
-                self.pop_all_events::<BE>(ctx);
+                self.pop_all_events::<BE>(ctx, now_ms);
             }
         }
     }
@@ -217,7 +217,7 @@ where
         self.simple_local.tick(now_ms);
         self.hashmap_remote.tick(now_ms);
         self.hashmap_local.tick(now_ms);
-        self.pop_all_events::<BE>(ctx);
+        self.pop_all_events::<BE>(ctx, now_ms);
     }
 
     fn on_awake(&mut self, ctx: &BehaviorContext, now_ms: u64) {
@@ -229,7 +229,7 @@ where
                 break;
             }
         }
-        self.pop_all_events::<BE>(ctx);
+        self.pop_all_events::<BE>(ctx, now_ms);
     }
 
     fn check_incoming_connection(&mut self, ctx: &BehaviorContext, now_ms: u64, node: NodeId, conn_id: ConnId) -> Result<(), ConnectionRejectReason> {
@@ -256,7 +256,7 @@ where
     fn on_sdk_msg(&mut self, ctx: &BehaviorContext, now_ms: u64, from_service: u8, event: SE) {
         if let Ok(event) = event.try_into() {
             self.process_sdk_event(ctx, now_ms, from_service, event);
-            self.pop_all_events::<BE>(ctx);
+            self.pop_all_events::<BE>(ctx, now_ms);
         } else {
             debug_assert!(false, "Invalid event")
         }
