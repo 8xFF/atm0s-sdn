@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    fmt::Debug,
     hash::Hash,
     sync::{atomic::AtomicU64, Arc},
 };
@@ -17,7 +18,7 @@ pub struct PublisherManager<K, T> {
     subscribers: Arc<RwLock<HashMap<K, SubscribeContainer<T>>>>,
 }
 
-impl<K: Hash + Eq + Copy, T: Clone> PublisherManager<K, T> {
+impl<K: Debug + Hash + Eq + Copy, T: Clone> PublisherManager<K, T> {
     pub fn new() -> Self {
         Self {
             uuid: AtomicU64::new(0),
@@ -79,11 +80,19 @@ impl<K: Hash + Eq + Copy, T: Clone> PublisherManager<K, T> {
         }
     }
 
-    pub fn publish(&self, key: K, data: T) {
+    /// publish event to specific subscriber if uuid is Some, if None publish to all subscribers of key
+    pub fn publish(&self, uuid: Option<u64>, key: K, data: T) {
+        log::info!("publish event {:?} {:?}", uuid, key);
         let subscribers = self.subscribers.read();
         if let Some(container) = subscribers.get(&key) {
-            for (_, (tx, _)) in container.subscribers.iter() {
-                tx.send_blocking(data.clone()).print_error("Should send event");
+            if let Some(uuid) = uuid {
+                if let Some((tx, _)) = container.subscribers.get(&uuid) {
+                    tx.send_blocking(data.clone()).print_error("Should send event");
+                }
+            } else {
+                for (_, (tx, _)) in container.subscribers.iter() {
+                    tx.send_blocking(data.clone()).print_error("Should send event");
+                }
             }
         }
     }
@@ -142,8 +151,8 @@ mod tests {
                 }),
             );
 
-            pub_manager.publish(1, 1);
-            pub_manager.publish(2, 2);
+            pub_manager.publish(None, 1, 1);
+            pub_manager.publish(None, 2, 2);
 
             // sub1 should receive 1 with timeout 1s
             assert_eq!(async_std::task::block_on(sub1.recv()), Some(1));

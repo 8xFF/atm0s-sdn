@@ -136,11 +136,11 @@ impl ExternalControl for KeyValueSdk {
 
     fn on_event(&self, event: KeyValueSdkEvent) {
         match event {
-            KeyValueSdkEvent::OnKeyChanged(_uuid, key, value, version, source) => {
-                self.simple_publisher.publish(key, (key, value, version, source));
+            KeyValueSdkEvent::OnKeyChanged(uuid, key, value, version, source) => {
+                self.simple_publisher.publish(Some(uuid), key, (key, value, version, source));
             }
-            KeyValueSdkEvent::OnKeyHChanged(_uuid, key, sub_key, value, version, source) => {
-                self.hashmap_publisher.publish(key, (key, sub_key, value, version, source));
+            KeyValueSdkEvent::OnKeyHChanged(uuid, key, sub_key, value, version, source) => {
+                self.hashmap_publisher.publish(Some(uuid), key, (key, sub_key, value, version, source));
             }
             KeyValueSdkEvent::OnGet(req_id, key, res) => {
                 if let Some(tx) = self.simple_get_queue.lock().remove(&req_id) {
