@@ -1,0 +1,20 @@
+[package]
+name = "atm0s-sdn-virtual-socket"
+version = "0.1.0"
+edition = "2021"
+description = "Virtual Socket service in atm0s-sdn"
+license = "MIT"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+atm0s-sdn-identity = { path = "../../core/identity", version = "0.2.0" }
+atm0s-sdn-router = { path = "../../core/router", version = "0.1.4" }
+atm0s-sdn-utils = { path = "../../core/utils", version = "0.1.1" }
+atm0s-sdn-network = { path = "../../network", version = "0.3.0" }
+log = { workspace = true }
+futures = "0.3"
+async-trait = { workspace = true }
+async-std = { workspace = true }
+parking_lot = { workspace = true }
+serde = { workspace = true }
