@@ -18,3 +18,4 @@ async-trait = { workspace = true }
 async-std = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true }
+kcp = "0.5.3"

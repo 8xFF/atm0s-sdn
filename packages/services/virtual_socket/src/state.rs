@@ -13,6 +13,7 @@ use self::socket::{VirtualSocketBuilder, VirtualSocketEvent, CONTROL_CLIENT_META
 pub mod connector;
 pub mod listener;
 pub mod socket;
+pub mod stream;
 
 const CONNECT_TIMEOUT_MS: u64 = 10000;
 const PING_INTERVAL_MS: u64 = 1000;
@@ -313,3 +314,6 @@ pub fn process_incoming_data(now_ms: u64, state: &RwLock<State>, event: Connecti
         }
     }
 }
+
+#[cfg(test)]
+mod tests {}

@@ -8,4 +8,4 @@ pub(crate) mod state;
 
 pub use behavior::VirtualSocketBehavior;
 pub use sdk::VirtualSocketSdk;
-pub use state::{socket::VirtualSocket, VirtualSocketConnectResult};
+pub use state::{socket::VirtualSocket, stream::VirtualStream, VirtualSocketConnectResult};
