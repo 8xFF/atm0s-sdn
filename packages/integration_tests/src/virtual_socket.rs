@@ -106,7 +106,7 @@ mod test {
                 .await
                 .expect("Should connect");
             let mut stream = VirtualStream::new(socket);
-            assert_eq!(stream.write(&vec![1, 2, 3]).await.expect("Should send"), 3);
+            assert_eq!(stream.write_all(&vec![1, 2, 3]).await.expect("Should send"), ());
             async_std::task::sleep(Duration::from_secs(1)).await;
         });
 
@@ -170,7 +170,7 @@ mod test {
                 .await
                 .expect("Should connect");
             let mut stream = VirtualStream::new(socket);
-            assert_eq!(stream.write(&vec![1, 2, 3]).await.expect("Should send"), 3);
+            assert_eq!(stream.write_all(&vec![1, 2, 3]).await.expect("Should send"), ());
             async_std::task::sleep(Duration::from_secs(1)).await;
         });
 

@@ -26,7 +26,10 @@ impl VirtualStream {
     pub fn new(socket: VirtualSocket) -> Self {
         let (mut reader, writer) = socket.split();
         let meta = reader.meta().clone();
-        let kcp = Arc::new(RwLock::new(Kcp::new_stream(writer.remote().client_id(), writer)));
+        let mut kcp = Kcp::new_stream(writer.remote().client_id(), writer);
+        kcp.set_nodelay(true, 20, 2, true);
+
+        let kcp = Arc::new(RwLock::new(kcp));
         let (write_awake_tx, write_awake_rx) = async_std::channel::bounded(1);
         let (read_awake_tx, read_awake_rx) = async_std::channel::bounded(1);
         let kcp_c = kcp.clone();
@@ -86,11 +89,12 @@ impl VirtualStream {
         &self.meta
     }
 
-    pub async fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+    pub async fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
         loop {
             let kcp_wait_snd = self.kcp.read().wait_snd();
             if kcp_wait_snd < MAX_KCP_SEND_QUEUE {
-                return self.kcp.write().send(buf).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
+                self.kcp.write().send(buf).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                return Ok(());
             } else {
                 self.write_awake_rx.recv().await.map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "ConnectionInterrupted"))?;
             }
