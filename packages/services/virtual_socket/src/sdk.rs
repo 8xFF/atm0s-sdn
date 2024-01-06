@@ -4,6 +4,7 @@ use parking_lot::RwLock;
 
 use crate::state::{connector::VirtualSocketConnector, listener::VirtualSocketListener, State};
 
+#[derive(Clone)]
 pub struct VirtualSocketSdk {
     state: Arc<RwLock<State>>,
 }

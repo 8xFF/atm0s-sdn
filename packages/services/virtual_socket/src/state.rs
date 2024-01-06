@@ -20,8 +20,16 @@ const PING_INTERVAL_MS: u64 = 1000;
 const PING_TIMEOUT_MS: u64 = 10000;
 
 enum OutgoingState {
-    Connecting { started_at: u64, res_tx: Sender<VirtualSocketConnectResult> },
-    Connected { last_ping: u64, pong_time: u64, tx: Sender<Vec<u8>> },
+    Connecting {
+        started_at: u64,
+        secure: bool,
+        res_tx: Sender<VirtualSocketConnectResult>,
+    },
+    Connected {
+        last_ping: u64,
+        pong_time: u64,
+        tx: Sender<Vec<u8>>,
+    },
 }
 
 struct IncommingState {
@@ -71,7 +79,7 @@ impl State {
         rx
     }
 
-    pub fn new_outgoing(&mut self, dest_node_id: NodeId, dest_listener_id: &str, meta: HashMap<String, String>) -> Option<Receiver<VirtualSocketConnectResult>> {
+    pub fn new_outgoing(&mut self, secure: bool, dest_node_id: NodeId, dest_listener_id: &str, meta: HashMap<String, String>) -> Option<Receiver<VirtualSocketConnectResult>> {
         let client_idx = self.client_idx;
         self.client_idx += 1;
         log::info!("[VirtualSocketState] new outgoing: {}/{} with meta {:?} => idx {}", dest_node_id, dest_listener_id, meta, client_idx);
@@ -81,13 +89,14 @@ impl State {
         self.outgoings.insert(
             socket_id.clone(),
             OutgoingState::Connecting {
+                secure,
                 started_at: self.last_tick_ms,
                 res_tx: tx,
             },
         );
         self.outgoing_queue.push_back((
             socket_id,
-            VirtualSocketEvent::ClientControl(VirtualSocketControlMsg::ConnectRequest(dest_listener_id.to_string(), meta)),
+            VirtualSocketEvent::ClientControl(VirtualSocketControlMsg::ConnectRequest(dest_listener_id.to_string(), secure, meta)),
         ));
         Some(rx)
     }
@@ -98,7 +107,7 @@ impl State {
         // Remove timed out outgoing connections
         let mut to_remove = Vec::new();
         for (socket_id, state) in self.outgoings.iter() {
-            if let OutgoingState::Connecting { started_at, res_tx: tx } = state {
+            if let OutgoingState::Connecting { started_at, res_tx: tx, .. } = state {
                 if now_ms - started_at > CONNECT_TIMEOUT_MS {
                     log::info!("[VirtualSocketState] outgoing timeout: node {} idx: {}", socket_id.node_id(), socket_id.client_id());
                     to_remove.push(socket_id.clone());
@@ -177,11 +186,11 @@ impl State {
         match control {
             VirtualSocketControlMsg::ConnectReponse(success) => {
                 if let Some(state) = self.outgoings.get_mut(&socket_id) {
-                    if let OutgoingState::Connecting { res_tx, .. } = state {
+                    if let OutgoingState::Connecting { res_tx, secure, .. } = state {
                         if success {
                             let (socket_tx, socket_rx) = async_std::channel::bounded(10);
                             res_tx
-                                .try_send(VirtualSocketConnectResult::Success(VirtualSocketBuilder::new(true, socket_id, HashMap::new(), socket_rx)))
+                                .try_send(VirtualSocketConnectResult::Success(VirtualSocketBuilder::new(true, *secure, socket_id, HashMap::new(), socket_rx)))
                                 .print_error("Should send connect response to waiting connector");
                             *state = OutgoingState::Connected {
                                 last_ping: now_ms,
@@ -223,7 +232,7 @@ impl State {
     pub fn on_recv_client_control(&mut self, now_ms: u64, socket_id: SocketId, control: VirtualSocketControlMsg) {
         log::debug!("[VirtualSocketState] on_recv_client_control from : {:?} {:?}", socket_id, control);
         match control {
-            VirtualSocketControlMsg::ConnectRequest(listener_id, meta) => {
+            VirtualSocketControlMsg::ConnectRequest(listener_id, secure, meta) => {
                 if self.incomings.contains_key(&socket_id) {
                     log::warn!("[VirtualSocketState] on_recv_client_control socket already connected: {:?}", socket_id);
                     return;
@@ -231,7 +240,7 @@ impl State {
                 if let Some(tx) = self.listeners.get(&listener_id) {
                     let (socket_tx, socket_rx) = async_std::channel::bounded(10);
                     self.incomings.insert(socket_id.clone(), IncommingState { ping_time: now_ms, tx: socket_tx });
-                    tx.try_send(VirtualSocketBuilder::new(false, socket_id.clone(), meta, socket_rx))
+                    tx.try_send(VirtualSocketBuilder::new(false, secure, socket_id.clone(), meta, socket_rx))
                         .print_error("Should send new virtual socket to listener");
                     self.outgoing_queue
                         .push_back((socket_id, VirtualSocketEvent::ServerControl(VirtualSocketControlMsg::ConnectReponse(true))));

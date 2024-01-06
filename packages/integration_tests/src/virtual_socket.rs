@@ -76,7 +76,7 @@ mod test {
         let connector = sdk.connector();
         async_std::task::spawn(async move {
             let mut socket = connector
-                .connect_to(node_id, "DEMO", HashMap::from([("k1".to_string(), "k2".to_string())]))
+                .connect_to(true, node_id, "DEMO", HashMap::from([("k1".to_string(), "k2".to_string())]))
                 .await
                 .expect("Should connect");
             socket.write(&vec![1, 2, 3]).expect("Should write");
@@ -102,7 +102,7 @@ mod test {
         let connector = sdk.connector();
         async_std::task::spawn(async move {
             let socket = connector
-                .connect_to(node_id, "DEMO", HashMap::from([("k1".to_string(), "k2".to_string())]))
+                .connect_to(true, node_id, "DEMO", HashMap::from([("k1".to_string(), "k2".to_string())]))
                 .await
                 .expect("Should connect");
             let mut stream = VirtualStream::new(socket);
@@ -136,7 +136,7 @@ mod test {
         let connector2 = sdk2.connector();
         async_std::task::spawn(async move {
             let mut socket = connector2
-                .connect_to(node_id1, "DEMO", HashMap::from([("k1".to_string(), "k2".to_string())]))
+                .connect_to(true, node_id1, "DEMO", HashMap::from([("k1".to_string(), "k2".to_string())]))
                 .await
                 .expect("Should connect");
             socket.write(&vec![1, 2, 3]).expect("Should write");
@@ -166,7 +166,7 @@ mod test {
         let connector2 = sdk2.connector();
         async_std::task::spawn(async move {
             let socket = connector2
-                .connect_to(node_id1, "DEMO", HashMap::from([("k1".to_string(), "k2".to_string())]))
+                .connect_to(true, node_id1, "DEMO", HashMap::from([("k1".to_string(), "k2".to_string())]))
                 .await
                 .expect("Should connect");
             let mut stream = VirtualStream::new(socket);

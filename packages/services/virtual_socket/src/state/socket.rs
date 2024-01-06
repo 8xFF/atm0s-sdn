@@ -21,18 +21,19 @@ pub const DATA_SERVER_META: u8 = 3;
 
 pub struct VirtualSocketBuilder {
     is_client: bool,
+    secure: bool,
     remote: SocketId,
     rx: Receiver<Vec<u8>>,
     meta: HashMap<String, String>,
 }
 
 impl VirtualSocketBuilder {
-    pub(crate) fn new(is_client: bool, remote: SocketId, meta: HashMap<String, String>, rx: Receiver<Vec<u8>>) -> Self {
-        Self { is_client, remote, meta, rx }
+    pub(crate) fn new(is_client: bool, secure: bool, remote: SocketId, meta: HashMap<String, String>, rx: Receiver<Vec<u8>>) -> Self {
+        Self { is_client, secure, remote, meta, rx }
     }
 
     pub fn build(self, state: Arc<RwLock<State>>) -> VirtualSocket {
-        VirtualSocket::new(self.is_client, self.remote, self.meta, self.rx, state)
+        VirtualSocket::new(self.is_client, self.secure, self.remote, self.meta, self.rx, state)
     }
 }
 
@@ -40,24 +41,26 @@ impl VirtualSocketBuilder {
 pub enum VirtualSocketEvent {
     ServerControl(VirtualSocketControlMsg),
     ClientControl(VirtualSocketControlMsg),
-    ServerData(Vec<u8>),
-    ClientData(Vec<u8>),
+    ServerData(Vec<u8>, bool),
+    ClientData(Vec<u8>, bool),
 }
 
 impl VirtualSocketEvent {
     pub fn into_transport_msg(self, local_node: NodeId, remote_node: NodeId, client_id: u32) -> TransportMsg {
         match self {
-            VirtualSocketEvent::ServerData(data) => {
+            VirtualSocketEvent::ServerData(data, secure) => {
                 let header = MsgHeader::build(VIRTUAL_SOCKET_SERVICE_ID, VIRTUAL_SOCKET_SERVICE_ID, RouteRule::ToNode(remote_node))
                     .set_from_node(Some(local_node))
                     .set_stream_id(client_id)
+                    .set_secure(secure)
                     .set_meta(DATA_SERVER_META);
                 TransportMsg::build_raw(header, &data)
             }
-            VirtualSocketEvent::ClientData(data) => {
+            VirtualSocketEvent::ClientData(data, secure) => {
                 let header = MsgHeader::build(VIRTUAL_SOCKET_SERVICE_ID, VIRTUAL_SOCKET_SERVICE_ID, RouteRule::ToNode(remote_node))
                     .set_from_node(Some(local_node))
                     .set_stream_id(client_id)
+                    .set_secure(secure)
                     .set_meta(DATA_CLIENT_META);
                 TransportMsg::build_raw(header, &data)
             }
@@ -65,6 +68,7 @@ impl VirtualSocketEvent {
                 let header = MsgHeader::build(VIRTUAL_SOCKET_SERVICE_ID, VIRTUAL_SOCKET_SERVICE_ID, RouteRule::ToNode(remote_node))
                     .set_from_node(Some(local_node))
                     .set_stream_id(client_id)
+                    .set_secure(true)
                     .set_meta(CONTROL_SERVER_META);
                 TransportMsg::from_payload_bincode(header, &control)
             }
@@ -72,6 +76,7 @@ impl VirtualSocketEvent {
                 let header = MsgHeader::build(VIRTUAL_SOCKET_SERVICE_ID, VIRTUAL_SOCKET_SERVICE_ID, RouteRule::ToNode(remote_node))
                     .set_from_node(Some(local_node))
                     .set_stream_id(client_id)
+                    .set_secure(true)
                     .set_meta(CONTROL_CLIENT_META);
                 TransportMsg::from_payload_bincode(header, &control)
             }
@@ -85,10 +90,11 @@ pub struct VirtualSocket {
 }
 
 impl VirtualSocket {
-    pub(crate) fn new(is_client: bool, remote: SocketId, meta: HashMap<String, String>, rx: Receiver<Vec<u8>>, state: Arc<RwLock<State>>) -> Self {
+    pub(crate) fn new(is_client: bool, secure: bool, remote: SocketId, meta: HashMap<String, String>, rx: Receiver<Vec<u8>>, state: Arc<RwLock<State>>) -> Self {
         Self {
             writer: VirtualSocketWriter {
                 is_client,
+                secure,
                 remote: remote.clone(),
                 state: state.clone(),
             },
@@ -147,6 +153,7 @@ impl Drop for VirtualSocketReader {
 
 pub struct VirtualSocketWriter {
     is_client: bool,
+    secure: bool,
     remote: SocketId,
     state: Arc<RwLock<State>>,
 }
@@ -160,9 +167,9 @@ impl VirtualSocketWriter {
 impl Write for VirtualSocketWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         if self.is_client {
-            self.state.write().send_out(self.remote.clone(), VirtualSocketEvent::ClientData(buf.to_vec()));
+            self.state.write().send_out(self.remote.clone(), VirtualSocketEvent::ClientData(buf.to_vec(), self.secure));
         } else {
-            self.state.write().send_out(self.remote.clone(), VirtualSocketEvent::ServerData(buf.to_vec()));
+            self.state.write().send_out(self.remote.clone(), VirtualSocketEvent::ServerData(buf.to_vec(), self.secure));
         }
         Ok(buf.len())
     }

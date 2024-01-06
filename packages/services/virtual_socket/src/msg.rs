@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VirtualSocketControlMsg {
-    ConnectRequest(String, HashMap<String, String>),
+    ConnectRequest(String, bool, HashMap<String, String>),
     ConnectReponse(bool),
     ConnectingPing,
     ConnectingPong,

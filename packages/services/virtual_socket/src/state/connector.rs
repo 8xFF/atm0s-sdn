@@ -16,8 +16,8 @@ pub struct VirtualSocketConnector {
 }
 
 impl VirtualSocketConnector {
-    pub async fn connect_to(&self, dest: NodeId, listener: &str, meta: HashMap<String, String>) -> Result<VirtualSocket, VirtualSocketConnectorError> {
-        let rx = self.state.write().new_outgoing(dest, listener, meta).ok_or(VirtualSocketConnectorError::Unreachable)?;
+    pub async fn connect_to(&self, secure: bool, dest: NodeId, listener: &str, meta: HashMap<String, String>) -> Result<VirtualSocket, VirtualSocketConnectorError> {
+        let rx = self.state.write().new_outgoing(secure, dest, listener, meta).ok_or(VirtualSocketConnectorError::Unreachable)?;
         match rx.recv().await {
             Ok(VirtualSocketConnectResult::Success(builder)) => Ok(builder.build(self.state.clone())),
             Ok(VirtualSocketConnectResult::Timeout) => Err(VirtualSocketConnectorError::Timeout),
