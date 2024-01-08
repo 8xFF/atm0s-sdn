@@ -33,6 +33,9 @@ pub use atm0s_sdn_pub_sub::{
 #[cfg(feature = "rpc")]
 pub use atm0s_sdn_rpc::{RpcBehavior, RpcBox, RpcEmitter, RpcError, RpcHandler, RpcIdGenerate, RpcMsg, RpcMsgParam, RpcQueue, RpcRequest};
 
+#[cfg(feature = "virtual-socket")]
+pub use atm0s_sdn_virtual_socket as virtual_socket;
+
 #[cfg(feature = "transport-tcp")]
 pub use atm0s_sdn_transport_tcp::TcpTransport;
 #[cfg(feature = "transport-udp")]

@@ -71,14 +71,14 @@ impl UdpTransport {
                 if let Ok((size, addr)) = async_socket.recv_from(&mut buf).await {
                     let current_ms = timer.now_ms();
                     if let Some(msg_tx) = connection.get_mut(&addr) {
-                        msg_tx.0.try_send((buf, size)).expect("should forward to receiver");
+                        let _ = msg_tx.0.try_send((buf, size));
                         msg_tx.1 = current_ms;
                     } else {
                         log::info!("[UdpTransport] on new connection from {}", addr);
                         conn_id_seed += 1;
                         let conn_id = ConnId::from_in(UDP_PROTOCOL_ID, conn_id_seed);
                         let (msg_tx, msg_rx) = async_std::channel::bounded(1024);
-                        msg_tx.try_send((buf, size)).expect("should forward to receiver");
+                        let _ = msg_tx.try_send((buf, size));
                         connection.insert(addr, (msg_tx, current_ms));
                         let socket = socket.clone();
                         let async_socket = async_socket.clone();
