@@ -108,4 +108,3 @@ mod tests {
         assert_eq!(futures::executor::block_on(queue.recv()), Some(2));
     }
 }
-

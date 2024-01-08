@@ -75,13 +75,24 @@ mod test {
         async_std::task::sleep(Duration::from_millis(300)).await;
 
         let server = sdk.create_udp_socket(1000, 10).expect("");
+        assert_eq!(format!("{:?}", server), format!("VirtualUdpSocket {{ local_port: {} }}", server.local_port()));
+
         let client = sdk.create_udp_socket(0, 10).expect("");
         client.send_to(vnet_addr_v4(node_id, 1000), &vec![1, 2, 3], None).expect("Should write");
+        client.send_to_node(node_id, 1000, &vec![4, 5, 6], None).expect("Should write");
         assert_eq!(
             server.try_recv_from(),
             Some(VirtualSocketPkt {
                 src: SocketAddrV4::new(node_id.into(), client.local_port()),
                 payload: vec![1, 2, 3],
+                ecn: None,
+            })
+        );
+        assert_eq!(
+            server.try_recv_from(),
+            Some(VirtualSocketPkt {
+                src: SocketAddrV4::new(node_id.into(), client.local_port()),
+                payload: vec![4, 5, 6],
                 ecn: None,
             })
         );
