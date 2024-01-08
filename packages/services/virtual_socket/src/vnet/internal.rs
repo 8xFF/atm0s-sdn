@@ -56,7 +56,7 @@ impl VirtualNetInternal {
     pub fn unregister_socket(&self, port: u16) {
         let mut sockets = self.sockets.write();
         let mut ports = self.ports.write();
-        if let Some(_) = sockets.remove(&port) {
+        if sockets.remove(&port).is_some() {
             log::info!("[VirtualNetInternal] Unregister socket on port {}", port);
             ports.push(port);
         }

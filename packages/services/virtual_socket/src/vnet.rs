@@ -39,6 +39,6 @@ impl VirtualNet {
     }
 
     pub fn create_udp_socket(&self, port: u16, buffer_size: usize) -> Result<VirtualUdpSocket, VirtualNetError> {
-        Ok(VirtualUdpSocket::new(self.internal.clone(), port, buffer_size)?)
+        VirtualUdpSocket::new(self.internal.clone(), port, buffer_size)
     }
 }

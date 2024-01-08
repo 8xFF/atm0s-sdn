@@ -22,11 +22,8 @@ impl<BE, HE> ConnectionHandler<BE, HE> for VirtualSocketHandler {
 
     /// Called when an event occurs on the connection.
     fn on_event(&mut self, _ctx: &ConnectionContext, _now_ms: u64, event: ConnectionEvent) {
-        match event {
-            ConnectionEvent::Msg(msg) => {
-                self.internal.on_incomming(msg);
-            }
-            _ => {}
+        if let ConnectionEvent::Msg(msg) = event {
+            self.internal.on_incomming(msg);
         }
     }
 
