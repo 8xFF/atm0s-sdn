@@ -17,5 +17,9 @@ futures = "0.3"
 async-trait = { workspace = true }
 async-std = { workspace = true }
 parking_lot = { workspace = true }
-serde = { workspace = true }
-kcp = "0.5.3"
+quinn = { version = "0.10.2", default-features = false, features = ["runtime-async-std", "log", "futures-io"], optional = true }
+quinn-plaintext = "0.2.0"
+
+[features]
+default = ["quic"]
+quic = ["quinn"]

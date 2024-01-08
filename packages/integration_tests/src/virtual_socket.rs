@@ -1,12 +1,13 @@
 #[cfg(test)]
 mod test {
-    use std::{collections::HashMap, sync::Arc, time::Duration};
+    use std::{net::SocketAddrV4, sync::Arc, time::Duration};
 
     use async_std::task::JoinHandle;
     use atm0s_sdn::{
-        convert_enum, KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueSdkEvent, LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent, LayersSpreadRouterSyncHandlerEvent,
-        ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent, NetworkPlane, NetworkPlaneConfig, NodeAddr, NodeAddrBuilder, NodeId, SharedRouter, SystemTimer,
-        VirtualSocketBehavior, VirtualSocketSdk, VirtualStream,
+        convert_enum,
+        virtual_socket::{create_vnet, make_insecure_quinn_client, make_insecure_quinn_server, vnet_addr, vnet_addr_v4, VirtualNet, VirtualSocketPkt},
+        KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueSdkEvent, LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent, LayersSpreadRouterSyncHandlerEvent, ManualBehavior,
+        ManualBehaviorConf, ManualBehaviorEvent, ManualHandlerEvent, NetworkPlane, NetworkPlaneConfig, NodeAddr, NodeAddrBuilder, NodeId, SharedRouter, SystemTimer,
     };
     use atm0s_sdn_transport_vnet::VnetEarth;
 
@@ -29,7 +30,7 @@ mod test {
         KeyValue(KeyValueSdkEvent),
     }
 
-    async fn run_node(vnet: Arc<VnetEarth>, node_id: NodeId, seeds: Vec<NodeAddr>) -> (VirtualSocketSdk, NodeAddr, JoinHandle<()>) {
+    async fn run_node(vnet: Arc<VnetEarth>, node_id: NodeId, seeds: Vec<NodeAddr>) -> (VirtualNet, NodeAddr, JoinHandle<()>) {
         log::info!("Run node {} connect to {:?}", node_id, seeds);
         let node_addr = Arc::new(NodeAddrBuilder::new(node_id));
         let transport = Box::new(atm0s_sdn_transport_vnet::VnetTransport::new(vnet, node_addr.addr()));
@@ -44,8 +45,9 @@ mod test {
             connect_tags: vec![],
         });
 
-        let (virtual_socket_behaviour, virtual_socket_sdk) = VirtualSocketBehavior::new(node_id);
         let router_sync_behaviour = LayersSpreadRouterSyncBehavior::new(router.clone());
+        let router = Arc::new(router);
+        let (virtual_socket_behaviour, virtual_socket_sdk) = create_vnet(node_id, router.clone());
 
         let mut plane = NetworkPlane::<BE, HE, SE>::new(NetworkPlaneConfig {
             node_id,
@@ -53,7 +55,7 @@ mod test {
             behaviors: vec![Box::new(virtual_socket_behaviour), Box::new(router_sync_behaviour), Box::new(manual)],
             transport,
             timer,
-            router: Arc::new(router.clone()),
+            router,
         });
 
         let join = async_std::task::spawn(async move {
@@ -72,52 +74,18 @@ mod test {
         let (sdk, _addr, join) = run_node(vnet.clone(), node_id, vec![]).await;
         async_std::task::sleep(Duration::from_millis(300)).await;
 
-        let mut listener = sdk.listen("DEMO");
-        let connector = sdk.connector();
-        async_std::task::spawn(async move {
-            let mut socket = connector
-                .connect_to(true, node_id, "DEMO", HashMap::from([("k1".to_string(), "k2".to_string())]))
-                .await
-                .expect("Should connect");
-            socket.write(&vec![1, 2, 3]).expect("Should write");
-        });
-
-        if let Some(mut socket) = listener.recv().await {
-            assert_eq!(socket.meta(), &HashMap::from([("k1".to_string(), "k2".to_string())]));
-            assert_eq!(socket.read().await.expect("Should read"), vec![1, 2, 3]);
-            assert_eq!(socket.read().await, None);
-        }
-
-        join.cancel().await;
-    }
-
-    #[async_std::test]
-    async fn local_stream() {
-        let node_id = 1;
-        let vnet = Arc::new(VnetEarth::default());
-        let (sdk, _addr, join) = run_node(vnet.clone(), node_id, vec![]).await;
-        async_std::task::sleep(Duration::from_millis(300)).await;
-
-        let mut listener = sdk.listen("DEMO");
-        let connector = sdk.connector();
-        async_std::task::spawn(async move {
-            let socket = connector
-                .connect_to(true, node_id, "DEMO", HashMap::from([("k1".to_string(), "k2".to_string())]))
-                .await
-                .expect("Should connect");
-            let mut stream = VirtualStream::new(socket);
-            assert_eq!(stream.write_all(&vec![1, 2, 3]).await.expect("Should send"), ());
-            async_std::task::sleep(Duration::from_secs(1)).await;
-        });
-
-        if let Some(socket) = listener.recv().await {
-            let mut stream = VirtualStream::new(socket);
-            assert_eq!(stream.meta(), &HashMap::from([("k1".to_string(), "k2".to_string())]));
-            let mut buf = vec![0; 1500];
-            assert_eq!(stream.read(&mut buf).await.expect("Should read"), 3);
-            assert_eq!(buf[..3], [1, 2, 3]);
-            assert_eq!(stream.read(&mut buf).await.expect("Should read"), 0);
-        }
+        let server = sdk.create_udp_socket(1000, 10).expect("");
+        let client = sdk.create_udp_socket(0, 10).expect("");
+        client.send_to(vnet_addr_v4(node_id, 1000), &vec![1, 2, 3], None).expect("Should write");
+        assert_eq!(
+            server.try_recv_from(),
+            Some(VirtualSocketPkt {
+                src: SocketAddrV4::new(node_id.into(), client.local_port()),
+                payload: vec![1, 2, 3],
+                ecn: None,
+            })
+        );
+        assert_eq!(server.try_recv_from(), None);
 
         join.cancel().await;
     }
@@ -132,28 +100,60 @@ mod test {
         let (sdk2, _addr2, join2) = run_node(vnet.clone(), node_id2, vec![addr1]).await;
         async_std::task::sleep(Duration::from_millis(300)).await;
 
-        let mut listener1 = sdk1.listen("DEMO");
-        let connector2 = sdk2.connector();
-        async_std::task::spawn(async move {
-            let mut socket = connector2
-                .connect_to(true, node_id1, "DEMO", HashMap::from([("k1".to_string(), "k2".to_string())]))
-                .await
-                .expect("Should connect");
-            socket.write(&vec![1, 2, 3]).expect("Should write");
-        });
+        let server1 = sdk1.create_udp_socket(1000, 10).expect("");
+        let client2 = sdk2.create_udp_socket(0, 10).expect("");
+        client2.send_to(vnet_addr_v4(node_id1, 1000), &vec![1, 2, 3], None).expect("Should write");
 
-        if let Some(mut socket) = listener1.recv().await {
-            assert_eq!(socket.meta(), &HashMap::from([("k1".to_string(), "k2".to_string())]));
-            assert_eq!(socket.read().await.expect("Should read"), vec![1, 2, 3]);
-            assert_eq!(socket.read().await, None);
-        }
+        assert_eq!(
+            server1.recv_from().await,
+            Some(VirtualSocketPkt {
+                src: SocketAddrV4::new(node_id2.into(), client2.local_port()),
+                payload: vec![1, 2, 3],
+                ecn: None,
+            })
+        );
 
         join1.cancel().await;
         join2.cancel().await;
     }
 
     #[async_std::test]
-    async fn remote_stream() {
+    async fn local_quinn() {
+        let node_id = 1;
+        let vnet = Arc::new(VnetEarth::default());
+        let (sdk, _addr, join) = run_node(vnet.clone(), node_id, vec![]).await;
+        async_std::task::sleep(Duration::from_millis(300)).await;
+
+        let server = make_insecure_quinn_server(sdk.create_udp_socket(1000, 10).expect("")).expect("");
+        let client = make_insecure_quinn_client(sdk.create_udp_socket(0, 10).expect("")).expect("");
+
+        async_std::task::spawn(async move {
+            let connection = client.connect(vnet_addr(node_id, 1000), "localhost").unwrap().await.unwrap();
+            let (mut send, mut recv) = connection.open_bi().await.unwrap();
+            send.write(&vec![4, 5, 6]).await.unwrap();
+            let mut buf = vec![0; 3];
+            let len = recv.read(&mut buf).await.unwrap();
+            assert_eq!(buf, vec![1, 2, 3]);
+            assert_eq!(len, Some(3));
+            send.write(&vec![7, 8, 9]).await.unwrap();
+            send.finish().await.unwrap();
+        });
+
+        let connection = server.accept().await.unwrap().await.unwrap();
+        let (mut send, mut recv) = connection.accept_bi().await.unwrap();
+        let mut buf = vec![0; 3];
+        let len = recv.read(&mut buf).await.unwrap();
+        assert_eq!(buf, vec![4, 5, 6]);
+        assert_eq!(len, Some(3));
+        send.write(&vec![1, 2, 3]).await.unwrap();
+        let len = recv.read(&mut buf).await.unwrap();
+        assert_eq!(buf, vec![7, 8, 9]);
+        assert_eq!(len, Some(3));
+        join.cancel().await;
+    }
+
+    #[async_std::test]
+    async fn remote_quinn() {
         let vnet = Arc::new(VnetEarth::default());
 
         let node_id1 = 1;
@@ -162,26 +162,31 @@ mod test {
         let (sdk2, _addr2, join2) = run_node(vnet.clone(), node_id2, vec![addr1]).await;
         async_std::task::sleep(Duration::from_millis(300)).await;
 
-        let mut listener1 = sdk1.listen("DEMO");
-        let connector2 = sdk2.connector();
+        let server1 = make_insecure_quinn_server(sdk1.create_udp_socket(1000, 10).expect("")).expect("");
+        let client2 = make_insecure_quinn_client(sdk2.create_udp_socket(0, 10).expect("")).expect("");
+
         async_std::task::spawn(async move {
-            let socket = connector2
-                .connect_to(true, node_id1, "DEMO", HashMap::from([("k1".to_string(), "k2".to_string())]))
-                .await
-                .expect("Should connect");
-            let mut stream = VirtualStream::new(socket);
-            assert_eq!(stream.write_all(&vec![1, 2, 3]).await.expect("Should send"), ());
-            async_std::task::sleep(Duration::from_secs(1)).await;
+            let connection = client2.connect(vnet_addr(node_id1, 1000), "localhost").unwrap().await.unwrap();
+            let (mut send, mut recv) = connection.open_bi().await.unwrap();
+            send.write(&vec![4, 5, 6]).await.unwrap();
+            let mut buf = vec![0; 3];
+            let len = recv.read(&mut buf).await.unwrap();
+            assert_eq!(buf, vec![1, 2, 3]);
+            assert_eq!(len, Some(3));
+            send.write(&vec![7, 8, 9]).await.unwrap();
+            send.finish().await.unwrap();
         });
 
-        if let Some(socket) = listener1.recv().await {
-            let mut stream = VirtualStream::new(socket);
-            assert_eq!(stream.meta(), &HashMap::from([("k1".to_string(), "k2".to_string())]));
-            let mut buf = vec![0; 1500];
-            assert_eq!(stream.read(&mut buf).await.expect("Should read"), 3);
-            assert_eq!(buf[..3], [1, 2, 3]);
-            assert_eq!(stream.read(&mut buf).await.expect("Should read"), 0);
-        }
+        let connection = server1.accept().await.unwrap().await.unwrap();
+        let (mut send, mut recv) = connection.accept_bi().await.unwrap();
+        let mut buf = vec![0; 3];
+        let len = recv.read(&mut buf).await.unwrap();
+        assert_eq!(buf, vec![4, 5, 6]);
+        assert_eq!(len, Some(3));
+        send.write(&vec![1, 2, 3]).await.unwrap();
+        let len = recv.read(&mut buf).await.unwrap();
+        assert_eq!(buf, vec![7, 8, 9]);
+        assert_eq!(len, Some(3));
 
         join1.cancel().await;
         join2.cancel().await;

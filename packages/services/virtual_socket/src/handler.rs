@@ -1,16 +1,13 @@
-use std::sync::Arc;
-
 use atm0s_sdn_identity::{ConnId, NodeId};
 use atm0s_sdn_network::{
     behaviour::{ConnectionContext, ConnectionHandler, ConnectionHandlerAction},
     transport::ConnectionEvent,
 };
-use parking_lot::RwLock;
 
-use crate::state::{process_incoming_data, State};
+use crate::vnet::internal::VirtualNetInternal;
 
 pub struct VirtualSocketHandler {
-    pub(crate) state: Arc<RwLock<State>>,
+    pub(crate) internal: VirtualNetInternal,
 }
 
 impl<BE, HE> ConnectionHandler<BE, HE> for VirtualSocketHandler {
@@ -24,8 +21,13 @@ impl<BE, HE> ConnectionHandler<BE, HE> for VirtualSocketHandler {
     fn on_awake(&mut self, _ctx: &ConnectionContext, _now_ms: u64) {}
 
     /// Called when an event occurs on the connection.
-    fn on_event(&mut self, _ctx: &ConnectionContext, now_ms: u64, event: ConnectionEvent) {
-        process_incoming_data(now_ms, &self.state, event);
+    fn on_event(&mut self, _ctx: &ConnectionContext, _now_ms: u64, event: ConnectionEvent) {
+        match event {
+            ConnectionEvent::Msg(msg) => {
+                self.internal.on_incomming(msg);
+            }
+            _ => {}
+        }
     }
 
     /// Called when an event occurs on another handler.
