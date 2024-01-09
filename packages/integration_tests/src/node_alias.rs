@@ -98,6 +98,16 @@ mod tests {
         );
         assert_eq!(rx.recv().timeout(Duration::from_millis(100)).await.unwrap().unwrap(), Ok(NodeAliasResult::FromLocal));
 
+        sdk.unregister(node_alias.clone());
+        let (tx, rx) = async_std::channel::bounded(1);
+        sdk.find_alias(
+            node_alias.clone(),
+            Box::new(move |res| {
+                tx.try_send(res).expect("");
+            }),
+        );
+        assert!(rx.recv().timeout(Duration::from_millis(100)).await.is_err());
+
         join.cancel().await.print_none("Should cancel join");
     }
 
@@ -123,6 +133,16 @@ mod tests {
             }),
         );
         assert_eq!(rx.recv().timeout(Duration::from_millis(100)).await.unwrap().unwrap(), Ok(NodeAliasResult::FromScan(1)));
+
+        sdk1.unregister(node_alias.clone());
+        let (tx, rx) = async_std::channel::bounded(1);
+        sdk2.find_alias(
+            node_alias.clone(),
+            Box::new(move |res| {
+                tx.try_send(res).expect("");
+            }),
+        );
+        assert!(rx.recv().timeout(Duration::from_millis(100)).await.is_err());
 
         join1.cancel().await.print_none("Should cancel join");
         join2.cancel().await.print_none("Should cancel join");
@@ -155,6 +175,16 @@ mod tests {
             }),
         );
         assert_eq!(rx.recv().timeout(Duration::from_millis(100)).await.unwrap().unwrap(), Ok(NodeAliasResult::FromHint(1)));
+
+        sdk1.unregister(node_alias.clone());
+        let (tx, rx) = async_std::channel::bounded(1);
+        sdk2.find_alias(
+            node_alias.clone(),
+            Box::new(move |res| {
+                tx.try_send(res).expect("");
+            }),
+        );
+        assert!(rx.recv().timeout(Duration::from_millis(100)).await.is_err());
 
         join1.cancel().await.print_none("Should cancel join");
         join2.cancel().await.print_none("Should cancel join");
