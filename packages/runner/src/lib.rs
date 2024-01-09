@@ -44,6 +44,9 @@ pub use atm0s_sdn_transport_udp::UdpTransport;
 #[cfg(feature = "transport-compose")]
 pub use atm0s_sdn_transport_compose::compose_transport;
 
+#[cfg(feature = "node-alias")]
+pub use atm0s_sdn_node_alias::{NodeAliasBehavior, NodeAliasSdk, NodeAliasId, NodeAliasError, NodeAliasResult};
+
 pub mod compose_transport_desp {
     pub use futures_util::{select, FutureExt};
     pub use paste::paste;

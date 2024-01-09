@@ -19,6 +19,7 @@ members = [
     "packages/services/pub_sub",
     "packages/services/rpc",
     "packages/services/virtual_socket",
+    "packages/services/node_alias",
     "packages/transports/vnet",
     "packages/transports/tcp",
     "packages/transports/udp",
