@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-v0.1.6...atm0s-sdn-v0.1.7) - 2024-01-09
+
+### Added
+- node_alias service ([#110](https://github.com/8xFF/atm0s-sdn/pull/110))
+- virtual udp socket and quinn for tunneling between two nodes ([#107](https://github.com/8xFF/atm0s-sdn/pull/107))
+
+### Fixed
+- send node-alias response more faster ([#111](https://github.com/8xFF/atm0s-sdn/pull/111))
+
 ## [0.1.6](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-v0.1.5...atm0s-sdn-v0.1.6) - 2023-12-28
 
 ### Fixed
