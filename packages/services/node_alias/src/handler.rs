@@ -7,7 +7,7 @@ use atm0s_sdn_network::{
 };
 use parking_lot::Mutex;
 
-use crate::{msg::DirectMsg, internal::ServiceInternal};
+use crate::{internal::ServiceInternal, msg::DirectMsg};
 
 pub struct NodeAliasHandler {
     pub(crate) internal: Arc<Mutex<ServiceInternal>>,

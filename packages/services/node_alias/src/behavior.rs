@@ -1,18 +1,24 @@
-use std::{sync::Arc, collections::VecDeque};
+use std::{collections::VecDeque, sync::Arc};
 
 use async_std::task::JoinHandle;
 use atm0s_sdn_identity::{ConnId, NodeId};
 use atm0s_sdn_network::{
     behaviour::{BehaviorContext, ConnectionHandler, NetworkBehavior, NetworkBehaviorAction},
-    msg::{TransportMsg, MsgHeader},
+    msg::{MsgHeader, TransportMsg},
     transport::{ConnectionRejectReason, ConnectionSender, OutgoingConnectionError},
 };
-use atm0s_sdn_pub_sub::{PubsubSdk, Publisher};
+use atm0s_sdn_pub_sub::{Publisher, PubsubSdk};
 use atm0s_sdn_router::RouteRule;
 use bytes::Bytes;
 use parking_lot::Mutex;
 
-use crate::{handler::NodeAliasHandler, NODE_ALIAS_SERVICE_ID, msg::{BroadcastMsg, SdkControl}, internal::{ServiceInternal, ServiceInternalAction}, sdk::NodeAliasSdk};
+use crate::{
+    handler::NodeAliasHandler,
+    internal::{ServiceInternal, ServiceInternalAction},
+    msg::{BroadcastMsg, SdkControl},
+    sdk::NodeAliasSdk,
+    NODE_ALIAS_SERVICE_ID,
+};
 
 const NODE_ALIAS_BROADCAST_CHANNEL: u32 = 0x13ba2c; //TODO hash of "atm0s.node_alias.broadcast"
 
@@ -32,13 +38,13 @@ impl NodeAliasBehavior {
         let instance = Self {
             node_id,
             pub_channel: pubsub_sdk.create_publisher(NODE_ALIAS_BROADCAST_CHANNEL),
-            pubsub_sdk,            
+            pubsub_sdk,
             pubsub_task: None,
             incomming_broadcast_queue: Arc::new(Mutex::new(VecDeque::new())),
             sdk: sdk.clone(),
             internal: Arc::new(Mutex::new(ServiceInternal::new(node_id))),
         };
-        
+
         (instance, sdk)
     }
 }
@@ -82,10 +88,10 @@ impl<BE, HE, SE> NetworkBehavior<BE, HE, SE> for NodeAliasBehavior {
             match msg {
                 SdkControl::Register(alias) => {
                     self.internal.lock().register(now_ms, alias);
-                },
+                }
                 SdkControl::Unregister(alias) => {
                     self.internal.lock().unregister(now_ms, &alias);
-                },
+                }
                 SdkControl::Query(alias, sender) => {
                     self.internal.lock().find_alias(now_ms, &alias, sender);
                 }
@@ -115,17 +121,11 @@ impl<BE, HE, SE> NetworkBehavior<BE, HE, SE> for NodeAliasBehavior {
         Some(Box::new(NodeAliasHandler { internal: self.internal.clone() }))
     }
 
-    fn on_incoming_connection_disconnected(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node_id: NodeId, _conn_id: ConnId) {
-        
-    }
+    fn on_incoming_connection_disconnected(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node_id: NodeId, _conn_id: ConnId) {}
 
-    fn on_outgoing_connection_disconnected(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node_id: NodeId, _conn_id: ConnId) {
-        
-    }
+    fn on_outgoing_connection_disconnected(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node_id: NodeId, _conn_id: ConnId) {}
 
-    fn on_outgoing_connection_error(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node_id: NodeId, _conn_id: ConnId, _err: &OutgoingConnectionError) {
-        
-    }
+    fn on_outgoing_connection_error(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node_id: NodeId, _conn_id: ConnId, _err: &OutgoingConnectionError) {}
 
     fn on_handler_event(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node_id: NodeId, _conn_id: ConnId, _event: BE) {}
 
@@ -144,13 +144,12 @@ impl<BE, HE, SE> NetworkBehavior<BE, HE, SE> for NodeAliasBehavior {
                 let msg = bincode::serialize(&msg).unwrap();
                 self.pub_channel.send(Bytes::from(msg));
                 None
-            },
+            }
             Some(ServiceInternalAction::Unicast(dest, msg)) => {
                 log::info!("[NodeAliasBehavior {}] Unicasting to {}: {:?}", self.node_id, dest, msg);
-                let header = MsgHeader::build(NODE_ALIAS_SERVICE_ID, NODE_ALIAS_SERVICE_ID, RouteRule::ToNode(dest))
-                    .set_from_node(Some(self.node_id));
+                let header = MsgHeader::build(NODE_ALIAS_SERVICE_ID, NODE_ALIAS_SERVICE_ID, RouteRule::ToNode(dest)).set_from_node(Some(self.node_id));
                 Some(NetworkBehaviorAction::ToNet(TransportMsg::from_payload_bincode(header, &msg)))
-            },
+            }
             None => None,
         }
     }

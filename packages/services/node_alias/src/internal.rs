@@ -1,8 +1,12 @@
-use std::collections::{HashMap, VecDeque, hash_map::Entry};
+use std::collections::{hash_map::Entry, HashMap, VecDeque};
 
 use atm0s_sdn_identity::NodeId;
 
-use crate::{msg::{DirectMsg, BroadcastMsg}, sdk::{NodeAliasError, NodeAliasResult}, NodeAliasId};
+use crate::{
+    msg::{BroadcastMsg, DirectMsg},
+    sdk::{NodeAliasError, NodeAliasResult},
+    NodeAliasId,
+};
 
 const FIND_ALIAS_TIMEOUT: u64 = 1000;
 const SCAN_ALIAS_TIMEOUT: u64 = 5000;
@@ -31,7 +35,7 @@ pub enum AliasFindingState {
     Scan {
         started_at: u64,
         waits: Vec<Box<dyn FnOnce(Result<NodeAliasResult, NodeAliasError>) + Send>>,
-    }
+    },
 }
 
 pub struct AliasSlot {
@@ -41,6 +45,7 @@ pub struct AliasSlot {
     remote_hint: Option<AliasHistory>,
 }
 
+#[derive(Debug, PartialEq)]
 pub enum ServiceInternalAction {
     Unicast(NodeId, DirectMsg),
     Broadcast(BroadcastMsg),
@@ -74,7 +79,7 @@ impl ServiceInternal {
                 log::info!("[ServiceInternal {}] Registering a new alias {} as local", self.node_id, entry.key());
                 entry.insert(AliasSlot {
                     local_at: Some(now_ms),
-                    remote_hint: None
+                    remote_hint: None,
                 });
             }
         }
@@ -92,11 +97,7 @@ impl ServiceInternal {
                     log::info!("[ServiceInternal {}] Unregistering a local alias {} that was registered as remote", self.node_id, alias);
                 }
                 self.action.push_back(ServiceInternalAction::Broadcast(BroadcastMsg::Unregister(alias.clone())));
-            } else {
-                panic!("Cannot unregister a remote alias");
             }
-        } else {
-            panic!("Cannot unregister an unknown alias");
         }
     }
 
@@ -114,7 +115,7 @@ impl ServiceInternal {
                         };
                         self.action.push_back(ServiceInternalAction::Broadcast(BroadcastMsg::Query(alias.clone())));
                     }
-                },
+                }
                 AliasFindingState::Scan { started_at, waits } => {
                     if now_ms >= *started_at + SCAN_ALIAS_TIMEOUT {
                         log::info!("[ServiceInternal {}] Alias {} scan timeout => not found", self.node_id, alias);
@@ -146,7 +147,7 @@ impl ServiceInternal {
                 match finding {
                     AliasFindingState::Ping { waits, .. } => {
                         waits.push(handler);
-                    },
+                    }
                     AliasFindingState::Scan { waits, .. } => {
                         waits.push(handler);
                     }
@@ -154,17 +155,23 @@ impl ServiceInternal {
             } else {
                 if let Some(remote_hint_node) = remote {
                     log::info!("[ServiceInternal {}] Alias {} hint node found => trying PING node {}", self.node_id, alias, remote_hint_node);
-                    self.finding_aliases.insert(alias.clone(), AliasFindingState::Ping {
-                        started_at: now_ms,
-                        waits: vec![handler],
-                    });
+                    self.finding_aliases.insert(
+                        alias.clone(),
+                        AliasFindingState::Ping {
+                            started_at: now_ms,
+                            waits: vec![handler],
+                        },
+                    );
                     self.action.push_back(ServiceInternalAction::Unicast(remote_hint_node, DirectMsg::Query(alias.clone())));
                 } else {
                     log::info!("[ServiceInternal {}] Alias {} hint node not found => trying SCAN", self.node_id, alias);
-                    self.finding_aliases.insert(alias.clone(), AliasFindingState::Scan {
-                        started_at: now_ms,
-                        waits: vec![handler],
-                    });
+                    self.finding_aliases.insert(
+                        alias.clone(),
+                        AliasFindingState::Scan {
+                            started_at: now_ms,
+                            waits: vec![handler],
+                        },
+                    );
                     self.action.push_back(ServiceInternalAction::Broadcast(BroadcastMsg::Query(alias.clone())));
                 }
             }
@@ -179,13 +186,7 @@ impl ServiceInternal {
 
                 if let Some(added_at) = added_at {
                     log::info!("[ServiceInternal {}] update alias {} hint to {}", self.node_id, alias, from);
-                    self.aliases.entry(alias.clone()).or_insert(AliasSlot {
-                        local_at: None,
-                        remote_hint: None,
-                    }).remote_hint = Some(AliasHistory {
-                        node: from,
-                        last_seen: added_at,
-                    });
+                    self.aliases.entry(alias.clone()).or_insert(AliasSlot { local_at: None, remote_hint: None }).remote_hint = Some(AliasHistory { node: from, last_seen: added_at });
                 }
 
                 if let Some(finding) = self.finding_aliases.get_mut(&alias) {
@@ -195,14 +196,14 @@ impl ServiceInternal {
                                 log::info!("[ServiceInternal {}] Alias {} found by PING at {}", self.node_id, alias, from);
                                 waits.drain(..).for_each(|wait| wait(Ok(NodeAliasResult::FromHint(from))));
                                 self.finding_aliases.remove(&alias);
-                            } else  {
+                            } else {
                                 *finding = AliasFindingState::Scan {
                                     started_at: *started_at,
                                     waits: waits.drain(..).collect(),
                                 };
                                 self.action.push_back(ServiceInternalAction::Broadcast(BroadcastMsg::Query(alias)));
                             }
-                        },
+                        }
                         AliasFindingState::Scan { started_at: _, waits } => {
                             if added_at.is_some() {
                                 log::info!("[ServiceInternal {}] Alias {} found by SCAN at {}", self.node_id, alias, from);
@@ -212,13 +213,10 @@ impl ServiceInternal {
                         }
                     }
                 }
-            },
+            }
             DirectMsg::Query(alias) => {
                 let added_at = self.aliases.get(&alias).and_then(|slot| slot.local_at);
-                self.action.push_back(ServiceInternalAction::Unicast(from, DirectMsg::Response {
-                    alias,
-                    added_at,
-                }));
+                self.action.push_back(ServiceInternalAction::Unicast(from, DirectMsg::Response { alias, added_at }));
             }
         }
     }
@@ -230,23 +228,17 @@ impl ServiceInternal {
                 match self.aliases.entry(alias) {
                     Entry::Occupied(mut entry) => {
                         log::info!("[ServiceInternal {}] Registering a remote alias {} that was already registered", self.node_id, entry.key());
-                        entry.get_mut().remote_hint = Some(AliasHistory {
-                            node: from,
-                            last_seen: now_ms,
-                        });
+                        entry.get_mut().remote_hint = Some(AliasHistory { node: from, last_seen: now_ms });
                     }
                     Entry::Vacant(entry) => {
                         log::info!("[ServiceInternal {}] Registering a new alias {} as remote", self.node_id, entry.key());
                         entry.insert(AliasSlot {
                             local_at: None,
-                            remote_hint: Some(AliasHistory {
-                                node: from,
-                                last_seen: now_ms,
-                            })
+                            remote_hint: Some(AliasHistory { node: from, last_seen: now_ms }),
                         });
                     }
                 }
-            },
+            }
             BroadcastMsg::Unregister(alias) => {
                 // clear alias hint if from same node
                 if let Some(slot) = self.aliases.get_mut(&alias) {
@@ -254,24 +246,218 @@ impl ServiceInternal {
                         log::info!("[ServiceInternal {}] Unregistering a remote alias {} => removed hint", self.node_id, alias);
                         slot.remote_hint = None;
                     } else {
-                        log::info!("[ServiceInternal {}] Ignore unregistering a remote alias {} but from node difference with last hint", self.node_id, alias);
+                        log::info!(
+                            "[ServiceInternal {}] Ignore unregistering a remote alias {} but from node difference with last hint",
+                            self.node_id,
+                            alias
+                        );
                     }
                 } else {
                     log::warn!("[ServiceInternal {}] Unregistering an unknown alias {}", self.node_id, alias);
                 }
-            },
+            }
             BroadcastMsg::Query(alias) => {
                 let added_at = self.aliases.get(&alias).and_then(|slot| slot.local_at);
                 log::info!("[ServiceInternal {}] On Alias ({}) Query, local {}", self.node_id, alias, added_at.is_some());
-                self.action.push_back(ServiceInternalAction::Unicast(from, DirectMsg::Response {
-                    alias,
-                    added_at,
-                }));
+                self.action.push_back(ServiceInternalAction::Unicast(from, DirectMsg::Response { alias, added_at }));
             }
         }
     }
 
     pub fn pop_action(&mut self) -> Option<ServiceInternalAction> {
         self.action.pop_front()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use parking_lot::Mutex;
+
+    use crate::{
+        internal::{ServiceInternalAction, FIND_ALIAS_TIMEOUT, SCAN_ALIAS_TIMEOUT},
+        msg::{BroadcastMsg, DirectMsg},
+        NodeAliasError, NodeAliasId, NodeAliasResult,
+    };
+
+    use super::ServiceInternal;
+
+    #[test]
+    fn register_local() {
+        let node_id = 1000;
+        let mut internal = ServiceInternal::new(node_id);
+        let alias: NodeAliasId = 666.into();
+
+        internal.register(0, alias.clone());
+        assert_eq!(internal.aliases.len(), 1);
+        assert_eq!(internal.pop_action(), Some(super::ServiceInternalAction::Broadcast(super::BroadcastMsg::Register(alias.clone()))));
+
+        //re-register should fire more broadcast
+        internal.register(0, alias.clone());
+        assert_eq!(internal.aliases.len(), 1);
+        assert_eq!(internal.pop_action(), Some(super::ServiceInternalAction::Broadcast(super::BroadcastMsg::Register(alias.clone()))));
+
+        //unregister should fire broadcast
+        internal.unregister(0, &alias);
+        assert_eq!(internal.aliases.len(), 0);
+        assert_eq!(internal.pop_action(), Some(super::ServiceInternalAction::Broadcast(super::BroadcastMsg::Unregister(alias.clone()))));
+
+        //unregister twice should not fire broadcast
+        internal.unregister(0, &alias);
+        assert_eq!(internal.pop_action(), None);
+    }
+
+    #[test]
+    fn find_alias_scan_found() {
+        let node_id = 1000;
+        let remote_node_id = 2000;
+        let mut internal = ServiceInternal::new(node_id);
+        let alias: NodeAliasId = 666.into();
+
+        let res = Arc::new(Mutex::new(None));
+        let res_clone = res.clone();
+        internal.find_alias(
+            0,
+            &alias,
+            Box::new(move |res| {
+                *res_clone.lock() = Some(res);
+            }),
+        );
+
+        assert_eq!(internal.finding_aliases.len(), 1);
+        assert_eq!(internal.pop_action(), Some(ServiceInternalAction::Broadcast(BroadcastMsg::Query(alias.clone()))));
+
+        internal.on_incomming_unicast(
+            0,
+            remote_node_id,
+            DirectMsg::Response {
+                alias: alias.clone(),
+                added_at: Some(10),
+            },
+        );
+        assert_eq!(internal.finding_aliases.len(), 0);
+        assert_eq!(internal.pop_action(), None);
+        assert_eq!(*res.lock(), Some(Ok(NodeAliasResult::FromScan(remote_node_id))));
+    }
+
+    #[test]
+    fn find_alias_scan_not_found() {
+        let node_id = 1000;
+        let mut internal = ServiceInternal::new(node_id);
+        let alias: NodeAliasId = 666.into();
+
+        let res = Arc::new(Mutex::new(None));
+        let res_clone = res.clone();
+        internal.find_alias(
+            0,
+            &alias,
+            Box::new(move |res| {
+                *res_clone.lock() = Some(res);
+            }),
+        );
+
+        assert_eq!(internal.finding_aliases.len(), 1);
+        assert_eq!(internal.pop_action(), Some(ServiceInternalAction::Broadcast(BroadcastMsg::Query(alias.clone()))));
+
+        internal.on_tick(SCAN_ALIAS_TIMEOUT);
+        assert_eq!(internal.finding_aliases.len(), 0);
+        assert_eq!(internal.pop_action(), None);
+        assert_eq!(*res.lock(), Some(Err(NodeAliasError::Timeout)));
+    }
+
+    #[test]
+    fn find_alias_find_found() {
+        let node_id = 1000;
+        let remote_node_id = 2000;
+        let mut internal = ServiceInternal::new(node_id);
+        let alias: NodeAliasId = 666.into();
+
+        internal.on_incomming_broadcast(0, remote_node_id, BroadcastMsg::Register(alias.clone()));
+
+        let res = Arc::new(Mutex::new(None));
+        let res_clone = res.clone();
+        internal.find_alias(
+            0,
+            &alias,
+            Box::new(move |res| {
+                *res_clone.lock() = Some(res);
+            }),
+        );
+
+        assert_eq!(internal.finding_aliases.len(), 1);
+        assert_eq!(internal.pop_action(), Some(ServiceInternalAction::Unicast(remote_node_id, DirectMsg::Query(alias.clone()))));
+
+        internal.on_incomming_unicast(
+            0,
+            remote_node_id,
+            DirectMsg::Response {
+                alias: alias.clone(),
+                added_at: Some(10),
+            },
+        );
+        assert_eq!(internal.finding_aliases.len(), 0);
+        assert_eq!(internal.pop_action(), None);
+        assert_eq!(*res.lock(), Some(Ok(NodeAliasResult::FromHint(remote_node_id))));
+    }
+
+    #[test]
+    fn find_alias_find_not_found() {
+        let node_id = 1000;
+        let remote_node_id = 2000;
+        let mut internal = ServiceInternal::new(node_id);
+        let alias: NodeAliasId = 666.into();
+
+        internal.on_incomming_broadcast(0, remote_node_id, BroadcastMsg::Register(alias.clone()));
+
+        let res = Arc::new(Mutex::new(None));
+        let res_clone = res.clone();
+        internal.find_alias(
+            0,
+            &alias,
+            Box::new(move |res| {
+                *res_clone.lock() = Some(res);
+            }),
+        );
+
+        assert_eq!(internal.finding_aliases.len(), 1);
+        assert_eq!(internal.pop_action(), Some(ServiceInternalAction::Unicast(remote_node_id, DirectMsg::Query(alias.clone()))));
+
+        internal.on_incomming_unicast(0, remote_node_id, DirectMsg::Response { alias: alias.clone(), added_at: None });
+        assert_eq!(internal.finding_aliases.len(), 1);
+        assert_eq!(internal.pop_action(), Some(ServiceInternalAction::Broadcast(BroadcastMsg::Query(alias.clone()))));
+
+        internal.on_tick(SCAN_ALIAS_TIMEOUT);
+        assert_eq!(internal.finding_aliases.len(), 0);
+        assert_eq!(internal.pop_action(), None);
+        assert_eq!(*res.lock(), Some(Err(NodeAliasError::Timeout)));
+    }
+
+    #[test]
+    fn find_alias_find_switch_scan_after_timeout() {
+        let node_id = 1000;
+        let remote_node_id = 2000;
+        let mut internal = ServiceInternal::new(node_id);
+        let alias: NodeAliasId = 666.into();
+
+        internal.on_incomming_broadcast(0, remote_node_id, BroadcastMsg::Register(alias.clone()));
+
+        let res = Arc::new(Mutex::new(None));
+        let res_clone = res.clone();
+        internal.find_alias(
+            0,
+            &alias,
+            Box::new(move |res| {
+                *res_clone.lock() = Some(res);
+            }),
+        );
+
+        assert_eq!(internal.finding_aliases.len(), 1);
+        assert_eq!(internal.pop_action(), Some(ServiceInternalAction::Unicast(remote_node_id, DirectMsg::Query(alias.clone()))));
+
+        internal.on_tick(FIND_ALIAS_TIMEOUT);
+
+        assert_eq!(internal.finding_aliases.len(), 1);
+        assert_eq!(internal.pop_action(), Some(ServiceInternalAction::Broadcast(BroadcastMsg::Query(alias.clone()))));
     }
 }

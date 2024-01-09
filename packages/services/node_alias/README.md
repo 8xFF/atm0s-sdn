@@ -1,19 +1,19 @@
-# atm0s-sdn-node-alias service
+# atm0s-sdn Node Alias Service
 
-This service implement DNS style mechanism, each node will it self register will number of aliases, which usually used on proxy or tunnel server.
+This service implements a DNS-style mechanism where each node registers itself along with a number of aliases. These aliases are typically used on proxy or tunnel servers.
 
-## How it works
+## Functionality
 
-We using mechanism for avoiding strong sync data between nodes, any nodes can be disconnect and re-join anytime. The mechanism is very simple as described bellow:
+The mechanism used here helps avoid the need for strong synchronization data between nodes. Any node can disconnect and rejoin at any time. The process is quite straightforward, as explained below:
 
-- Each time node REGISTER or UNREGISTER with an alias, it broadcast to all nodes about the changed.
-- When a node received REGISTER it store SENDER as LOCATION_HINT
-- When a node want to finding a location for a alias, it will search in local for getting LOCALTION_HINT
+- Every time a node registers or unregisters an alias, it broadcasts this change to all other nodes.
+- When a node receives a registration, it stores the sender as the location hint.
+- When a node needs to find a location for an alias, it first checks its local storage for the location hint.
 
-    - It ping LOCATION_HINT first for ensuring it still has alias
-    - If don't have LOCATION_HINT or, above ping timeout or node reply with NOT_FOUND, it broadcast SCAN to all other nodes
-    - If a node reply with FOUND, then we got result, if after timeout we dont have FOUND, it mean not found
+    - It pings the location hint to ensure it still holds the alias.
+    - If there's no location hint, or if the ping times out or the node replies with 'NOT FOUND', the node broadcasts a 'SCAN' request to all other nodes.
+    - If a node replies with 'FOUND', then the result is obtained. However, if after a timeout there's no 'FOUND' response, it means the alias was not found.
 
-## Conclusion
+## Usecase
 
-Above mechanism very helpful when we have large of aliases and infrequency changed, this can be found in some system like DNS, Tunnel, Proxy. Please don't use this service if you have alisases which changed in very high frequency and high query frequency.
+This mechanism proves particularly useful when dealing with a large number of aliases that rarely change. This can be observed in systems like DNS, Tunnels, and Proxies. However, this service should not be used if you have aliases that frequently change and are queried often.

@@ -1,4 +1,4 @@
-use std::{sync::Arc, collections::VecDeque};
+use std::{collections::VecDeque, sync::Arc};
 
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_utils::awaker::Awaker;
@@ -28,7 +28,7 @@ impl NodeAliasSdk {
     pub(crate) fn set_awaker(&self, awaker: Arc<dyn Awaker>) {
         *self.awaker.lock() = Some(awaker);
     }
-    
+
     pub fn register(&self, alias: NodeAliasId) {
         log::info!("[NodeAliasSdk] Register alias: {}", alias);
         self.sdk_control_queue.lock().push_back(SdkControl::Register(alias));

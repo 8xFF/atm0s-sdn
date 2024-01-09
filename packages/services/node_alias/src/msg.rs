@@ -1,17 +1,17 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
-use crate::{NodeAliasId, sdk::{NodeAliasError, NodeAliasResult}};
+use crate::{
+    sdk::{NodeAliasError, NodeAliasResult},
+    NodeAliasId,
+};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub(crate) enum DirectMsg {
     Query(NodeAliasId),
-    Response {
-        alias: NodeAliasId,
-        added_at: Option<u64>,
-    },
+    Response { alias: NodeAliasId, added_at: Option<u64> },
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub(crate) enum BroadcastMsg {
     Register(NodeAliasId),
     Unregister(NodeAliasId),
