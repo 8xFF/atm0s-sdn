@@ -35,3 +35,24 @@ impl Deref for NodeAliasId {
         &self.0
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[cfg(test)]
+    mod tests {
+        use crate::NodeAliasId;
+
+        #[test]
+        fn test_node_alias_id_display() {
+            let alias_id = NodeAliasId(123);
+            assert_eq!(format!("{}", alias_id), "Alias(123)");
+        }
+
+        #[test]
+        fn test_node_alias_id_from() {
+            let value: u64 = 456;
+            let alias_id: NodeAliasId = value.into();
+            assert_eq!(*alias_id, value);
+        }
+    }
+}
