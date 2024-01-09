@@ -3,13 +3,23 @@ use std::sync::Arc;
 use atm0s_sdn_identity::{ConnId, NodeId};
 use atm0s_sdn_network::{
     behaviour::{ConnectionContext, ConnectionHandler, ConnectionHandlerAction},
+    msg::{MsgHeader, TransportMsg},
     transport::ConnectionEvent,
 };
+use atm0s_sdn_pub_sub::Publisher;
+use atm0s_sdn_router::RouteRule;
+use bytes::Bytes;
 use parking_lot::Mutex;
 
-use crate::{internal::ServiceInternal, msg::DirectMsg};
+use crate::{
+    internal::{ServiceInternal, ServiceInternalAction},
+    msg::DirectMsg,
+    NODE_ALIAS_SERVICE_ID,
+};
 
 pub struct NodeAliasHandler {
+    pub(crate) node_id: NodeId,
+    pub(crate) pub_channel: Arc<Publisher>,
     pub(crate) internal: Arc<Mutex<ServiceInternal>>,
 }
 
@@ -45,6 +55,19 @@ impl<BE, HE> ConnectionHandler<BE, HE> for NodeAliasHandler {
 
     /// Pops the next action to be taken by the connection handler.
     fn pop_action(&mut self) -> Option<ConnectionHandlerAction<BE, HE>> {
-        None
+        match self.internal.lock().pop_action() {
+            Some(ServiceInternalAction::Broadcast(msg)) => {
+                log::info!("[NodeAliasHandler {}] Broadcasting: {:?}", self.node_id, msg);
+                let msg = bincode::serialize(&msg).unwrap();
+                self.pub_channel.send(Bytes::from(msg));
+                None
+            }
+            Some(ServiceInternalAction::Unicast(dest, msg)) => {
+                log::info!("[NodeAliasHandler {}] Unicasting to {}: {:?}", self.node_id, dest, msg);
+                let header = MsgHeader::build(NODE_ALIAS_SERVICE_ID, NODE_ALIAS_SERVICE_ID, RouteRule::ToNode(dest)).set_from_node(Some(self.node_id));
+                Some(ConnectionHandlerAction::ToNet(TransportMsg::from_payload_bincode(header, &msg)))
+            }
+            None => None,
+        }
     }
 }

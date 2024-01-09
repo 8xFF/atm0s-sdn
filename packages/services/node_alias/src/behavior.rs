@@ -25,7 +25,7 @@ const NODE_ALIAS_BROADCAST_CHANNEL: u32 = 0x13ba2c; //TODO hash of "atm0s.node_a
 pub struct NodeAliasBehavior {
     node_id: NodeId,
     pubsub_sdk: PubsubSdk,
-    pub_channel: Publisher,
+    pub_channel: Arc<Publisher>,
     pubsub_task: Option<JoinHandle<()>>,
     incomming_broadcast_queue: Arc<Mutex<VecDeque<(NodeId, BroadcastMsg)>>>,
     sdk: NodeAliasSdk,
@@ -37,7 +37,7 @@ impl NodeAliasBehavior {
         let sdk = NodeAliasSdk::default();
         let instance = Self {
             node_id,
-            pub_channel: pubsub_sdk.create_publisher(NODE_ALIAS_BROADCAST_CHANNEL),
+            pub_channel: Arc::new(pubsub_sdk.create_publisher(NODE_ALIAS_BROADCAST_CHANNEL)),
             pubsub_sdk,
             pubsub_task: None,
             incomming_broadcast_queue: Arc::new(Mutex::new(VecDeque::new())),
@@ -114,11 +114,19 @@ impl<BE, HE, SE> NetworkBehavior<BE, HE, SE> for NodeAliasBehavior {
     }
 
     fn on_incoming_connection_connected(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _conn: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
-        Some(Box::new(NodeAliasHandler { internal: self.internal.clone() }))
+        Some(Box::new(NodeAliasHandler {
+            node_id: self.node_id,
+            internal: self.internal.clone(),
+            pub_channel: self.pub_channel.clone(),
+        }))
     }
 
     fn on_outgoing_connection_connected(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _conn: Arc<dyn ConnectionSender>) -> Option<Box<dyn ConnectionHandler<BE, HE>>> {
-        Some(Box::new(NodeAliasHandler { internal: self.internal.clone() }))
+        Some(Box::new(NodeAliasHandler {
+            node_id: self.node_id,
+            internal: self.internal.clone(),
+            pub_channel: self.pub_channel.clone(),
+        }))
     }
 
     fn on_incoming_connection_disconnected(&mut self, _ctx: &BehaviorContext, _now_ms: u64, _node_id: NodeId, _conn_id: ConnId) {}

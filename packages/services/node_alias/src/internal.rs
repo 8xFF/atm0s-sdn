@@ -215,6 +215,7 @@ impl ServiceInternal {
                 }
             }
             DirectMsg::Query(alias) => {
+                log::info!("[ServiceInternal {}] On Alias ({}) Query, from {}", self.node_id, alias, from);
                 let added_at = self.aliases.get(&alias).and_then(|slot| slot.local_at);
                 self.action.push_back(ServiceInternalAction::Unicast(from, DirectMsg::Response { alias, added_at }));
             }
