@@ -46,7 +46,7 @@ For a deep dive into the technical aspects of network architecture, please refer
 
 ## Architecture
 
-Each node in the network is embeded with Geo-Location data inside its ID. A Node ID consists of multiple layers, and every node will have multiple routing tables, each is correspond to a layer.
+Each node in the network is embedded with Geo-Location data inside its ID. A Node ID consists of multiple layers, and every node will have multiple routing tables, each corresponding to a layer.
 
   - Layer1: Geo1 Table (Zone level)
   - Layer2: Geo2 Table (Country level)
@@ -54,7 +54,7 @@ Each node in the network is embeded with Geo-Location data inside its ID. A Node
   - Layer4: Inner Group Index Table (DC level)
 
 TODO: Graphics instead of bulletlist
-TODO: an ARCHITECTURE.md with general information about: Project, System structure, Design philosophy, ...
+TODO: ARCHITECTURE.md with general information about: Project, System structure, Design philosophy, ...
 ## Getting started
 
 ```bash
@@ -62,10 +62,10 @@ cargo add 8xff-sdn
 ```
 
 ### Create a group chat application (Optional)
-You can refer to [the chat_example file here](examples/examples/chat_example.rs) to get started on the basic of building an application for the network.
+You can refer to [the chat_example file here](examples/examples/chat_example.rs) to get started on the basis of building an application for the network.
 
 ### Demo group chat application
-#### Running manual discovery multi nodes in single device
+#### Running manual discovery multi nodes in a single device
 
 Start node1:
 
@@ -99,7 +99,7 @@ In node2
 > send hello
 ```
 
-Now, in node1 will received message from node2
+Now, node1 will receive a message from node2
 
 ```shell
 Node 1 to room 1: hello
@@ -114,7 +114,7 @@ Available commands:
 
 #### Running manual discovery multi nodes in multi devices
 
-It also can start chat-example in multi nodes and connect over LAN or Internet
+It can also start chat-example in multi nodes and connect over LAN or Internet
 
 Start node1:
 
@@ -136,14 +136,14 @@ cargo run --example chat_example --node-id 1 --neighbours /p2p/0/ip4/[IP_HERE]/u
   - MiniRedis: [Repo](https://github.com/8xFF/atm0s-sdn/tree/master/packages/apps/redis)
 
 ## Contributing
-The project is continuously being improved and updated. We are always looking for ways to make it better, whether that's through optimizing performance, adding new features, or fixing bugs. We welcome contributions from the community and are always looking for new ideas and suggestions.
+The project is continuously being improved and updated. We are always looking for ways to make it better, whether that's through optimizing performance, adding new features, or fixing bugs. We welcome contributions from the community and are always looking for new ideas and suggestions. If you find it interesting or believe it could be helpful, we welcome your contributions to the codebase or consider starring the repository to show your support and motivate our team!
 
 For more information, you can join our [Discord channel](https://discord.gg/tJ6dxBRk)
 
 
 ## Roadmap
 
-First version will be released together with [Media Server](https://github.com/8xFF/decentralized-media-server) at end of 2023.
+The first version will be released together with [Media Server](https://github.com/8xFF/decentralized-media-server) at the end of 2023.
 
 Details on our roadmap can be seen [TBA]().
 
