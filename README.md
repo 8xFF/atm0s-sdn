@@ -138,8 +138,7 @@ cargo run --example chat_example --node-id 1 --neighbours /p2p/0/ip4/[IP_HERE]/u
 ## Contributing
 The project is continuously being improved and updated. We are always looking for ways to make it better, whether that's through optimizing performance, adding new features, or fixing bugs. We welcome contributions from the community and are always looking for new ideas and suggestions.
 
-For more information, you can join our [Discord channel](https://discord.gg/tJ6dxBRk)
-
+For more information, you can join our [Discord channel](https://discord.gg/qXr5zxsJWp)
 
 ## Roadmap
 
