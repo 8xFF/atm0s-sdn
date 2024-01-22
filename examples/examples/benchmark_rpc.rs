@@ -106,7 +106,10 @@ async fn main() {
             max_duration = 0;
         }
         let started = Instant::now();
-        rpc_emitter.request::<Vec<u8>, Vec<u8>>(100, RouteRule::ToNode(node_id2), "echo", vec![1, 2, 3], 1000).await.expect("Should send rpc");
+        rpc_emitter
+            .request::<Vec<u8>, Vec<u8>>(100, RouteRule::ToNode(node_id2), "echo", vec![1, 2, 3], 1000)
+            .await
+            .expect("Should send rpc");
 
         let duration = started.elapsed().as_millis();
         if max_duration < duration {
