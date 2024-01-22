@@ -111,12 +111,8 @@ impl RpcReliableReceiver {
             //just single msg dont need add to list
             let mut slot = MsgSlot::build(now_ms, msg.header.stream_id);
             slot.append_part(msg)?;
-            if slot.is_finish() {
-                log::info!("[RpcReliableReceiver {}] on msg single part {} finish", self.node_id, msg_id);
-                Some(slot.finalize())
-            } else {
-                None
-            }
+            log::info!("[RpcReliableReceiver {}] on msg single part {} finish", self.node_id, msg_id);
+            Some(slot.finalize())
         } else {
             let msg_key = MsgKey(from_node, msg_id);
             let slot = self.queue.entry(msg_key).or_insert_with(|| MsgSlot::build(now_ms, msg.header.stream_id));
@@ -183,7 +179,9 @@ mod test {
             .set_meta(MSG_DATA)
             .set_stream_id(build_stream_id(0, 0, 1))
             .set_from_node(Some(0));
-        slot.append_part(TransportMsg::build_raw(header, &[1, 2, 3]));
+        assert_eq!(slot.append_part(TransportMsg::build_raw(header.clone(), &[1, 2, 3])), Some(()));
+        // add twice should not success
+        assert_eq!(slot.append_part(TransportMsg::build_raw(header, &[1, 2, 3])), None);
         assert_eq!(slot.part_received, 1);
 
         let header: MsgHeader = MsgHeader::build(111, 111, RouteRule::Direct)
