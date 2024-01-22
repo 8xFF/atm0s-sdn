@@ -104,17 +104,31 @@ impl RpcReliableReceiver {
 
         self.output.push_back(TransportMsg::build_raw(ack_header, &[]));
 
-        let (msg_id, _index, _count_minus_1) = parse_stream_id(msg.header.stream_id);
-        log::info!("[RpcReliableReceiver {}] on msg {}, part {}/{}", self.node_id, msg_id, _index, _count_minus_1 + 1);
+        let (msg_id, _index, count_minus_1) = parse_stream_id(msg.header.stream_id);
+        log::info!("[RpcReliableReceiver {}] on msg {}, part {}/{}", self.node_id, msg_id, _index, count_minus_1 + 1);
 
-        let msg_key = MsgKey(from_node, msg_id);
-        let slot = self.queue.entry(msg_key).or_insert_with(|| MsgSlot::build(now_ms, msg.header.stream_id));
-        slot.append_part(msg)?;
-        if slot.is_finish() {
-            log::info!("[RpcReliableReceiver {}] on msg {} finish", self.node_id, msg_id);
-            Some(slot.finalize())
+        if count_minus_1 == 0 {
+            //just single msg dont need add to list
+            let mut slot = MsgSlot::build(now_ms, msg.header.stream_id);
+            slot.append_part(msg)?;
+            if slot.is_finish() {
+                log::info!("[RpcReliableReceiver {}] on msg single part {} finish", self.node_id, msg_id);
+                Some(slot.finalize())
+            } else {
+                None
+            }
         } else {
-            None
+            let msg_key = MsgKey(from_node, msg_id);
+            let slot = self.queue.entry(msg_key).or_insert_with(|| MsgSlot::build(now_ms, msg.header.stream_id));
+            slot.append_part(msg)?;
+            if slot.is_finish() {
+                let res = slot.finalize();
+                self.queue.remove(&MsgKey(from_node, msg_id));
+                log::info!("[RpcReliableReceiver {}] on msg {} finish, queue len {}", self.node_id, msg_id, self.queue.len());
+                Some(res)
+            } else {
+                None
+            }
         }
     }
 

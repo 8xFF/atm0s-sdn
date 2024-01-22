@@ -54,7 +54,7 @@ impl RpcReliableSender {
         };
 
         let msg_id = self.msg_id_seed;
-        self.msg_id_seed += 1;
+        self.msg_id_seed = self.msg_id_seed.wrapping_add(1);
         for part_index in 0..part_count {
             let header = header.clone().set_stream_id(build_stream_id(msg_id, part_index, part_count - 1)).set_meta(MSG_DATA);
             let msg_pay_start = part_index as usize * MAX_PART_LEN;
@@ -98,13 +98,13 @@ impl RpcReliableSender {
         let mut timout_msg_ids = vec![];
         for (msg_id, slot) in self.queue.iter_mut() {
             if now_ms >= slot.timeout_at {
-                log::info!("[RpcReliableSender {}] msg {} timeout", self.node_id, msg_id);
+                log::warn!("[RpcReliableSender {}] msg {} timeout", self.node_id, msg_id);
                 timout_msg_ids.push(*msg_id);
             } else if now_ms >= slot.create_at + RESEND_AFTER_MS {
                 for part in &slot.parts {
                     if let Some(msg) = part {
                         let (_, index, count) = parse_stream_id(msg.header.stream_id);
-                        log::info!(
+                        log::warn!(
                             "[RpcReliableSender {}] resend msg {} part {}/{} after {} ms",
                             self.node_id,
                             msg_id,
