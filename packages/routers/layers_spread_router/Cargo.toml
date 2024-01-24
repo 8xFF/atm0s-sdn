@@ -1,6 +1,6 @@
 [package]
 name = "atm0s-sdn-layers-spread-router"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 description = "Spread router mechanism in atm0s-sdn"
 license = "MIT"

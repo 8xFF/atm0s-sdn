@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.8](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-v0.1.7...atm0s-sdn-v0.1.8) - 2024-01-24
+
+### Fixed
+- *(deps)* update rust crate snow to 0.9.5 ([#120](https://github.com/8xFF/atm0s-sdn/pull/120))
+- *(deps)* update rust crate local-ip-address to 0.5.7 ([#117](https://github.com/8xFF/atm0s-sdn/pull/117))
+
+### Other
+- update Cargo.toml dependencies
+
 ## [0.1.7](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-v0.1.6...atm0s-sdn-v0.1.7) - 2024-01-09
 
 ### Added

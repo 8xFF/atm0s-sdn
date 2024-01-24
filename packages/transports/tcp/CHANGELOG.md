@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-transport-tcp-v0.1.5...atm0s-sdn-transport-tcp-v0.1.6) - 2024-01-24
+
+### Fixed
+- *(deps)* update rust crate snow to 0.9.5 ([#120](https://github.com/8xFF/atm0s-sdn/pull/120))
+- *(deps)* update rust crate local-ip-address to 0.5.7 ([#117](https://github.com/8xFF/atm0s-sdn/pull/117))
+
 ## [0.1.5](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-transport-tcp-v0.1.4...atm0s-sdn-transport-tcp-v0.1.5) - 2023-12-27
 
 ### Added

@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-layers-spread-router-v0.1.5...atm0s-sdn-layers-spread-router-v0.1.6) - 2024-01-24
+
+### Other
+- update Cargo.toml dependencies
+
 ## [0.1.5](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-layers-spread-router-v0.1.4...atm0s-sdn-layers-spread-router-v0.1.5) - 2023-12-27
 
 ### Other
