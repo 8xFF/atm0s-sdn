@@ -21,4 +21,4 @@ futures-util = "0.3"
 async-notify = { workspace = true }
 socket2 = "0.5.5"
 local-ip-address = "0.5.7"
-snow = "0.9.4"
+snow = "0.9.5"
