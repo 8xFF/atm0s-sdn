@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-transport-vnet-v0.2.0...atm0s-sdn-transport-vnet-v0.2.1) - 2024-01-24
+
+### Other
+- updated the following local packages: atm0s-sdn-network
+
 ## [0.2.0](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-transport-vnet-v0.1.4...atm0s-sdn-transport-vnet-v0.2.0) - 2023-12-27
 
 ### Added

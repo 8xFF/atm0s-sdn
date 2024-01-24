@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-network-v0.3.0...atm0s-sdn-network-v0.3.1) - 2024-01-24
+
+### Other
+- update Cargo.toml dependencies
+
 ## [0.3.0](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-network-v0.2.2...atm0s-sdn-network-v0.3.0) - 2023-12-27
 
 ### Added
