@@ -41,8 +41,10 @@ impl SimpleRemoteStorage {
     pub fn on_event(&mut self, now_ms: u64, from: NodeId, event: SimpleRemoteEvent) {
         match event {
             SimpleRemoteEvent::Set(req_id, key, value, version, ex) => {
-                log::debug!("[SimpleRemote] receive set event from {} key {} value {:?} version {} ex {:?}", from, key, value, version, ex);
                 let setted = self.storage.set(now_ms, key, value, version, from, ex);
+                if setted {
+                    log::info!("[SimpleRemote] receive set event from {} key {} version {} ex {:?}", from, key, version, ex);
+                }
                 self.output_events
                     .push_back(RemoteStorageAction(SimpleLocalEvent::SetAck(req_id, key, version, setted), RouteRule::ToNode(from)));
             }
@@ -59,19 +61,24 @@ impl SimpleRemoteStorage {
                 }
             }
             SimpleRemoteEvent::Del(req_id, key, req_version) => {
-                log::debug!("[SimpleRemote] receive del event from {} key {} version {:?}", from, key, req_version);
                 let version = self.storage.del(&key, req_version).map(|(_, version, _)| version);
+                if version.is_some() {
+                    log::info!("[SimpleRemote] receive del event from {} key {} version {:?}", from, key, req_version);
+                }
                 self.output_events
                     .push_back(RemoteStorageAction(SimpleLocalEvent::DelAck(req_id, key, version), RouteRule::ToNode(from)));
             }
             SimpleRemoteEvent::Sub(req_id, key, ex) => {
-                log::debug!("[SimpleRemote] receive sub event from {} key {} ex {:?}", from, key, ex);
-                self.storage.subscribe(now_ms, &key, from, ex);
+                if self.storage.subscribe(now_ms, &key, from, ex) {
+                    log::info!("[SimpleRemote] receive sub event from {} key {} ex {:?}", from, key, ex);
+                }
                 self.output_events.push_back(RemoteStorageAction(SimpleLocalEvent::SubAck(req_id, key), RouteRule::ToNode(from)));
             }
             SimpleRemoteEvent::Unsub(req_id, key) => {
-                log::debug!("[SimpleRemote] receive unsub event from {} key {}", from, key);
                 let success = self.storage.unsubscribe(&key, &from);
+                if success {
+                    log::info!("[SimpleRemote] receive unsub event from {} key {}", from, key);
+                }
                 self.output_events
                     .push_back(RemoteStorageAction(SimpleLocalEvent::UnsubAck(req_id, key, success), RouteRule::ToNode(from)));
             }

@@ -156,11 +156,13 @@ where
         }
     }
 
-    pub fn subscribe(&mut self, now_ms: u64, key: &Key, handler_uuid: Handler, ex: Option<u64>) {
+    /// return true if subscribe success, false if already subscribed
+    pub fn subscribe(&mut self, now_ms: u64, key: &Key, handler_uuid: Handler, ex: Option<u64>) -> bool {
         match self.keys.get_mut(key) {
             Some(slot) => match slot.listeners.entry(handler_uuid.clone()) {
                 hash_map::Entry::Occupied(mut sub_slot) => {
                     sub_slot.get_mut().expire_at = ex.map(|ex| now_ms + ex);
+                    false
                 }
                 hash_map::Entry::Vacant(sub_slot) => {
                     sub_slot.insert(HandlerSlot {
@@ -170,6 +172,7 @@ where
                     if let Some((value, version, source)) = &slot.value {
                         self.events.push_back(OutputEvent::NotifySet(key.clone(), value.clone(), *version, source.clone(), handler_uuid));
                     }
+                    true
                 }
             },
             None => {
@@ -187,6 +190,7 @@ where
                         )]),
                     },
                 );
+                true
             }
         }
     }

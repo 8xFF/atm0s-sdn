@@ -44,17 +44,18 @@ impl HashmapRemoteStorage {
     pub fn on_event(&mut self, now_ms: u64, from: NodeId, event: HashmapRemoteEvent) {
         match event {
             HashmapRemoteEvent::Set(req_id, key, sub_key, value, version, ex) => {
-                log::debug!(
-                    "[HashmapRemote {}] receive set event from {} key {} sub_key {} value {:?} version {} ex {:?}",
-                    self.node_id,
-                    from,
-                    key,
-                    sub_key,
-                    value,
-                    version,
-                    ex
-                );
                 let setted = self.storage.set(now_ms, key, sub_key, value, version, from, ex);
+                if setted {
+                    log::info!(
+                        "[HashmapRemote {}] receive set event from {} key {} sub_key {} version {} ex {:?}",
+                        self.node_id,
+                        from,
+                        key,
+                        sub_key,
+                        version,
+                        ex
+                    );
+                }
                 self.output_events
                     .push_back(RemoteStorageAction(HashmapLocalEvent::SetAck(req_id, key, sub_key, version, setted), RouteRule::ToNode(from)));
             }
@@ -73,26 +74,31 @@ impl HashmapRemoteStorage {
                 }
             }
             HashmapRemoteEvent::Del(req_id, key, sub_key, req_version) => {
-                log::debug!(
-                    "[HashmapRemote {}] receive del event from {} key {} sub_key {} version {:?}",
-                    self.node_id,
-                    from,
-                    key,
-                    sub_key,
-                    req_version
-                );
                 let version = self.storage.del(&key, &sub_key, req_version).map(|(_, version, _)| version);
+                if version.is_some() {
+                    log::info!(
+                        "[HashmapRemote {}] receive del event from {} key {} sub_key {} version {:?}",
+                        self.node_id,
+                        from,
+                        key,
+                        sub_key,
+                        req_version
+                    );
+                }
                 self.output_events
                     .push_back(RemoteStorageAction(HashmapLocalEvent::DelAck(req_id, key, sub_key, version), RouteRule::ToNode(from)));
             }
             HashmapRemoteEvent::Sub(req_id, key, ex) => {
-                log::debug!("[HashmapRemote {}] receive sub event from {} key {} ex {:?}", self.node_id, from, key, ex);
-                self.storage.subscribe(now_ms, &key, from, ex);
+                if self.storage.subscribe(now_ms, &key, from, ex) {
+                    log::info!("[HashmapRemote {}] receive sub event from {} key {} ex {:?}", self.node_id, from, key, ex);
+                }
                 self.output_events.push_back(RemoteStorageAction(HashmapLocalEvent::SubAck(req_id, key), RouteRule::ToNode(from)));
             }
             HashmapRemoteEvent::Unsub(req_id, key) => {
-                log::debug!("[HashmapRemote {}] receive unsub event from {} key {}", self.node_id, from, key);
                 let success = self.storage.unsubscribe(&key, &from);
+                if success {
+                    log::info!("[HashmapRemote {}] receive unsub event from {} key {}", self.node_id, from, key);
+                }
                 self.output_events
                     .push_back(RemoteStorageAction(HashmapLocalEvent::UnsubAck(req_id, key, success), RouteRule::ToNode(from)));
             }

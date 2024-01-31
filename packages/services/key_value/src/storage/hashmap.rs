@@ -183,11 +183,13 @@ where
         slot.value
     }
 
-    pub fn subscribe(&mut self, now_ms: u64, key: &Key, handler_uuid: Handler, ex: Option<u64>) {
+    /// return true if subscribe success, false if already subscribed
+    pub fn subscribe(&mut self, now_ms: u64, key: &Key, handler_uuid: Handler, ex: Option<u64>) -> bool {
         match self.maps.get_mut(key) {
             Some(slot) => match slot.listeners.entry(handler_uuid.clone()) {
                 hash_map::Entry::Occupied(mut entry) => {
                     entry.get_mut().expire_at = ex.map(|ex| now_ms + ex);
+                    false
                 }
                 hash_map::Entry::Vacant(entry) => {
                     entry.insert(HandlerSlot {
@@ -200,6 +202,7 @@ where
                                 .push_back(OutputEvent::NotifySet(key.clone(), sub_key.clone(), value.clone(), *version, source.clone(), handler_uuid.clone()));
                         }
                     }
+                    true
                 }
             },
             None => {
@@ -216,6 +219,7 @@ where
                         )]),
                     },
                 );
+                true
             }
         }
     }

@@ -133,8 +133,8 @@ impl SimpleLocalStorage {
         let mut removed_keys = Vec::new();
         for (key, slot) in self.data.iter() {
             if slot.acked && now - slot.last_sync >= self.sync_each_ms {
-                let req_id = self.gen_req_id();
                 if let Some(value) = &slot.value {
+                    let req_id = self.gen_req_id();
                     log::debug!("[SimpleLocal] sync set key {} with version {}", key, slot.version);
                     self.output_events.push_back(LocalStorageAction::SendNet(
                         SimpleRemoteEvent::Set(req_id, *key, value.clone(), slot.version, slot.ex.clone()),
@@ -159,8 +159,8 @@ impl SimpleLocalStorage {
         // we sync subscribe each sync_each_ms with each subscribe which acked
         for (key, slot) in self.subscribe.iter() {
             if slot.acked && now - slot.last_sync >= self.sync_each_ms {
-                let req_id = self.gen_req_id();
                 if slot.sub {
+                    let req_id = self.gen_req_id();
                     log::debug!("[SimpleLocal] sync sub key {}", key);
                     self.output_events
                         .push_back(LocalStorageAction::SendNet(SimpleRemoteEvent::Sub(req_id, *key, slot.ex.clone()), RouteRule::ToKey(*key as u32)));
@@ -298,7 +298,7 @@ impl SimpleLocalStorage {
     pub fn set(&mut self, now_ms: u64, key: KeyId, value: ValueType, ex: Option<u64>) {
         let req_id = self.gen_req_id();
         let version = self.gen_version(now_ms);
-        log::debug!("[SimpleLocal] set key {} with version {}", key, version);
+        log::info!("[SimpleLocal] set key {} with version {}", key, version);
         self.data.insert(
             key,
             KeySlotData {
@@ -331,9 +331,10 @@ impl SimpleLocalStorage {
     }
 
     pub fn del(&mut self, key: KeyId) {
-        let req_id = self.gen_req_id();
-        log::debug!("[SimpleLocal] del key {} with req_id {}", key, req_id);
-        if let Some(slot) = self.data.get_mut(&key) {
+        if self.data.contains_key(&key) {
+            let req_id = self.gen_req_id();
+            let slot = self.data.get_mut(&key).expect("key should exists with above contains_key check");
+            log::info!("[SimpleLocal] del key {} with req_id {}", key, req_id);
             slot.value = None;
             slot.last_sync = 0;
             slot.acked = false;
@@ -344,37 +345,47 @@ impl SimpleLocalStorage {
     }
 
     pub fn subscribe(&mut self, key: KeyId, ex: Option<u64>, uuid: u64, service_id: u8) {
-        if let Some(slot) = self.subscribe.get_mut(&key) {
-            log::debug!("[SimpleLocal] subscribe key {} but already subscribed => only add to handers list", key);
+        let need_sub = if let Some(slot) = self.subscribe.get_mut(&key) {
+            log::info!(
+                "[SimpleLocal] subscribe key {} but already has slot => add to handers list and fire event: {}",
+                key,
+                slot.value.is_some()
+            );
             slot.handlers.insert((uuid, service_id), ());
             if let Some((value, version, source)) = &slot.value {
                 self.output_events
                     .push_back(LocalStorageAction::LocalOnChanged(service_id, uuid, key, Some(value.clone()), *version, *source));
             }
-            return;
-        }
+            let need_sub = !slot.sub;
+            slot.sub = true;
+            need_sub
+        } else {
+            let mut handlers = SmallMap::new();
+            handlers.insert((uuid, service_id), ());
+            self.subscribe.insert(
+                key,
+                KeySlotSubscribe {
+                    ex,
+                    last_sync: 0,
+                    sub: true,
+                    acked: false,
+                    handlers,
+                    value: None,
+                },
+            );
+            true
+        };
 
-        let req_id = self.gen_req_id();
-        log::debug!("[SimpleLocal] subscribe key {} with req_id {}", key, req_id);
-        let mut handlers = SmallMap::new();
-        handlers.insert((uuid, service_id), ());
-        self.subscribe.insert(
-            key,
-            KeySlotSubscribe {
-                ex,
-                last_sync: 0,
-                sub: true,
-                acked: false,
-                handlers,
-                value: None,
-            },
-        );
-        self.output_events
-            .push_back(LocalStorageAction::SendNet(SimpleRemoteEvent::Sub(req_id, key, ex), RouteRule::ToKey(key as u32)));
+        if need_sub {
+            let req_id = self.gen_req_id();
+            log::info!("[SimpleLocal] subscribe key {} with req_id {}", key, req_id);
+
+            self.output_events
+                .push_back(LocalStorageAction::SendNet(SimpleRemoteEvent::Sub(req_id, key, ex), RouteRule::ToKey(key as u32)));
+        }
     }
 
     pub fn unsubscribe(&mut self, key: KeyId, uuid: u64, service_id: u8) {
-        let req_id = self.gen_req_id();
         if let Some(slot) = self.subscribe.get_mut(&key) {
             slot.handlers.remove(&(uuid, service_id));
             if slot.handlers.is_empty() {
@@ -382,7 +393,8 @@ impl SimpleLocalStorage {
                 slot.last_sync = 0;
                 slot.acked = false;
 
-                log::debug!("[SimpleLocal] unsubscribe key {} with req_id {}", key, req_id);
+                let req_id = self.gen_req_id();
+                log::info!("[SimpleLocal] unsubscribe key {} with req_id {}", key, req_id);
 
                 self.output_events
                     .push_back(LocalStorageAction::SendNet(SimpleRemoteEvent::Unsub(req_id, key), RouteRule::ToKey(key as u32)));
@@ -601,6 +613,45 @@ mod tests {
         assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(SimpleRemoteEvent::OnKeyDelAck(1), RouteRule::ToNode(2))));
         assert_eq!(storage.pop_action(), Some(LocalStorageAction::LocalOnChanged(10, 11111, 1, None, 0, 1000)));
 
+        assert_eq!(storage.pop_action(), None);
+    }
+
+    #[test]
+    fn resub_after_unsub_ack_should_work() {
+        let mut storage = SimpleLocalStorage::new(10000);
+
+        storage.subscribe(1, None, 11111, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(SimpleRemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), None);
+
+        storage.unsubscribe(1, 11111, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(SimpleRemoteEvent::Unsub(1, 1), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), None);
+
+        storage.on_event(2, SimpleLocalEvent::UnsubAck(1, 1, true));
+        storage.tick(10000);
+
+        // resub before ack should work
+        storage.subscribe(1, None, 11111, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(SimpleRemoteEvent::Sub(2, 1, None), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), None);
+    }
+
+    #[test]
+    fn resub_before_unsub_ack_should_work() {
+        let mut storage = SimpleLocalStorage::new(10000);
+
+        storage.subscribe(1, None, 11111, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(SimpleRemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), None);
+
+        storage.unsubscribe(1, 11111, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(SimpleRemoteEvent::Unsub(1, 1), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), None);
+
+        // resub before ack should work
+        storage.subscribe(1, None, 11111, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(SimpleRemoteEvent::Sub(2, 1, None), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
     }
 
