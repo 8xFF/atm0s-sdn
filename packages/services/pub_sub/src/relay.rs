@@ -103,7 +103,7 @@ impl PubsubRelay {
 
     pub fn on_source_added(&self, channel: ChannelUuid, source: NodeId) {
         if let Some(subs) = self.source_binding.write().on_source_added(channel, source) {
-            log::debug!("[PubsubRelay] channel {} added source  {} => auto sub for local subs {:?}", channel, source, subs);
+            log::info!("[PubsubRelay] channel {} added source  {} => auto sub for local subs {:?}", channel, source, subs);
             for sub in subs {
                 self.logic.write().on_local_sub(ChannelIdentify::new(channel, source), sub);
             }
@@ -112,7 +112,7 @@ impl PubsubRelay {
 
     pub fn on_source_removed(&self, channel: ChannelUuid, source: NodeId) {
         if let Some(subs) = self.source_binding.write().on_source_removed(channel, source) {
-            log::debug!("[PubsubRelay] channel {} removed source {} => auto unsub for local subs {:?}", channel, source, subs);
+            log::info!("[PubsubRelay] channel {} removed source {} => auto unsub for local subs {:?}", channel, source, subs);
             for sub in subs {
                 self.logic.write().on_local_unsub(ChannelIdentify::new(channel, source), sub);
             }

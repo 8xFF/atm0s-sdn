@@ -135,8 +135,8 @@ impl HashmapLocalStorage {
         let mut removed_keys = Vec::new();
         for ((key, sub_key), slot) in self.data.iter() {
             if slot.acked && now - slot.last_sync >= self.sync_each_ms {
-                let req_id = self.gen_req_id();
                 if let Some(value) = &slot.value {
+                    let req_id = self.gen_req_id();
                     log::debug!("[HashmapLocal] sync set key {} with version {}", key, slot.version);
                     self.output_events.push_back(LocalStorageAction::SendNet(
                         HashmapRemoteEvent::Set(req_id, *key, *sub_key, value.clone(), slot.version, slot.ex.clone()),
@@ -161,8 +161,8 @@ impl HashmapLocalStorage {
         // we sync subscribe each sync_each_ms with each subscribe which acked
         for (key, slot) in self.subscribe.iter() {
             if slot.acked && now - slot.last_sync >= self.sync_each_ms {
-                let req_id = self.gen_req_id();
                 if slot.sub {
+                    let req_id = self.gen_req_id();
                     log::debug!("[HashmapLocal] sync sub key {}", key);
                     self.output_events
                         .push_back(LocalStorageAction::SendNet(HashmapRemoteEvent::Sub(req_id, *key, slot.ex.clone()), RouteRule::ToKey(*key as u32)));
@@ -266,6 +266,7 @@ impl HashmapLocalStorage {
                 }
             }
             HashmapLocalEvent::OnKeySet(req_id, key, sub_key, value, version, source) => {
+                log::info!("[HashmapLocal] on_key_set key {}, sub_key {} with version {} from {}", key, sub_key, version, source);
                 self.output_events
                     .push_back(LocalStorageAction::SendNet(HashmapRemoteEvent::OnKeySetAck(req_id), RouteRule::ToNode(from)));
                 if let Some(slot) = self.subscribe.get_mut(&key) {
@@ -279,6 +280,7 @@ impl HashmapLocalStorage {
                 }
             }
             HashmapLocalEvent::OnKeyDel(req_id, key, sub_key, version, source) => {
+                log::info!("[HashmapLocal] on_key_del key {}, sub_key {} with version {} from {}", key, sub_key, version, source);
                 self.output_events
                     .push_back(LocalStorageAction::SendNet(HashmapRemoteEvent::OnKeyDelAck(req_id), RouteRule::ToNode(from)));
                 if let Some(slot) = self.subscribe.get_mut(&key) {
@@ -301,7 +303,7 @@ impl HashmapLocalStorage {
     pub fn set(&mut self, now_ms: u64, key: KeyId, sub_key: SubKeyId, value: ValueType, ex: Option<u64>) {
         let req_id = self.gen_req_id();
         let version = self.gen_version(now_ms);
-        log::debug!("[HashmapLocal] set key {} with version {}", key, version);
+        log::info!("[HashmapLocal] set key {}, sub_key {} with version {}", key, sub_key, version);
         self.data.insert(
             (key, sub_key),
             KeySlotData {
@@ -321,7 +323,7 @@ impl HashmapLocalStorage {
 
     pub fn get(&mut self, now_ms: u64, key: KeyId, uuid: u64, service_id: u8, timeout_ms: u64) {
         let req_id = self.gen_req_id();
-        log::debug!("[HashmapLocal] get key {} with req_id {}", key, req_id);
+        log::info!("[HashmapLocal] get key {} with req_id {}", key, req_id);
         self.get_queue.insert(
             req_id,
             KeySlotGetCallback {
@@ -336,9 +338,10 @@ impl HashmapLocalStorage {
     }
 
     pub fn del(&mut self, key: KeyId, sub_key: SubKeyId) {
-        let req_id = self.gen_req_id();
-        log::debug!("[HashmapLocal] del key {} with req_id {}", key, req_id);
-        if let Some(slot) = self.data.get_mut(&(key, sub_key)) {
+        if self.data.contains_key(&(key, sub_key)) {
+            let req_id = self.gen_req_id();
+            let slot = self.data.get_mut(&(key, sub_key)).expect("Should work with above contains_key check");
+            log::info!("[HashmapLocal] del key {} sub_key {} with req_id {}", key, sub_key, req_id);
             slot.value = None;
             slot.last_sync = 0;
             slot.acked = false;
@@ -349,37 +352,47 @@ impl HashmapLocalStorage {
     }
 
     pub fn subscribe(&mut self, key: KeyId, ex: Option<u64>, uuid: u64, service_id: u8) {
-        if let Some(slot) = self.subscribe.get_mut(&key) {
-            log::debug!("[HashmapLocal] subscribe key {} but already subscribed -> only add to handlers list", key);
+        let need_sub = if let Some(slot) = self.subscribe.get_mut(&key) {
+            log::info!(
+                "[HashmapLocal] subscribe key {} but already has slot -> add to handlers list and fire events for {} sub keys",
+                key,
+                slot.values.len()
+            );
             slot.handlers.insert((uuid, service_id), ());
             for (sub_key, value) in slot.values.iter() {
                 self.output_events
                     .push_back(LocalStorageAction::LocalOnChanged(service_id, uuid, key, *sub_key, Some(value.0.clone()), value.1, value.2));
             }
-            return;
-        }
+            let need_sub = !slot.sub;
+            slot.sub = true;
+            need_sub
+        } else {
+            let mut handlers = SmallMap::new();
+            handlers.insert((uuid, service_id), ());
+            self.subscribe.insert(
+                key,
+                KeySlotSubscribe {
+                    ex,
+                    last_sync: 0,
+                    sub: true,
+                    acked: false,
+                    handlers,
+                    values: HashMap::new(),
+                },
+            );
+            true
+        };
 
-        let req_id = self.gen_req_id();
-        log::debug!("[HashmapLocal] subscribe key {} with req_id {}", key, req_id);
-        let mut handlers = SmallMap::new();
-        handlers.insert((uuid, service_id), ());
-        self.subscribe.insert(
-            key,
-            KeySlotSubscribe {
-                ex,
-                last_sync: 0,
-                sub: true,
-                acked: false,
-                handlers,
-                values: HashMap::new(),
-            },
-        );
-        self.output_events
-            .push_back(LocalStorageAction::SendNet(HashmapRemoteEvent::Sub(req_id, key, ex), RouteRule::ToKey(key as u32)));
+        if need_sub {
+            let req_id = self.gen_req_id();
+            log::info!("[HashmapLocal] subscribe key {} with req_id {}", key, req_id);
+
+            self.output_events
+                .push_back(LocalStorageAction::SendNet(HashmapRemoteEvent::Sub(req_id, key, ex), RouteRule::ToKey(key as u32)));
+        }
     }
 
     pub fn unsubscribe(&mut self, key: KeyId, uuid: u64, service_id: u8) {
-        let req_id = self.gen_req_id();
         if let Some(slot) = self.subscribe.get_mut(&key) {
             slot.handlers.remove(&(uuid, service_id));
 
@@ -387,8 +400,8 @@ impl HashmapLocalStorage {
                 slot.sub = false;
                 slot.last_sync = 0;
                 slot.acked = false;
-
-                log::debug!("[HashmapLocal] unsubscribe key {} with req_id {}", key, req_id);
+                let req_id = self.gen_req_id();
+                log::info!("[HashmapLocal] unsubscribe key {} with req_id {}", key, req_id);
 
                 self.output_events
                     .push_back(LocalStorageAction::SendNet(HashmapRemoteEvent::Unsub(req_id, key), RouteRule::ToKey(key as u32)));
@@ -607,6 +620,45 @@ mod tests {
         storage.on_event(2, HashmapLocalEvent::OnKeyDel(1, 1, 2, 0, 1000));
         assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::OnKeyDelAck(1), RouteRule::ToNode(2))));
         assert_eq!(storage.pop_action(), Some(LocalStorageAction::LocalOnChanged(10, 11111, 1, 2, None, 0, 1000)));
+        assert_eq!(storage.pop_action(), None);
+    }
+
+    #[test]
+    fn resub_after_unsub_ack_should_work() {
+        let mut storage = HashmapLocalStorage::new(10000);
+
+        storage.subscribe(1, None, 11111, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), None);
+
+        storage.unsubscribe(1, 11111, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Unsub(1, 1), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), None);
+
+        storage.on_event(2, HashmapLocalEvent::UnsubAck(1, 1, true));
+        storage.tick(10000);
+
+        // resub before ack should work
+        storage.subscribe(1, None, 11111, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Sub(2, 1, None), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), None);
+    }
+
+    #[test]
+    fn resub_before_unsub_ack_should_work() {
+        let mut storage = HashmapLocalStorage::new(10000);
+
+        storage.subscribe(1, None, 11111, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Sub(0, 1, None), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), None);
+
+        storage.unsubscribe(1, 11111, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Unsub(1, 1), RouteRule::ToKey(1))));
+        assert_eq!(storage.pop_action(), None);
+
+        // resub before ack should work
+        storage.subscribe(1, None, 11111, 10);
+        assert_eq!(storage.pop_action(), Some(LocalStorageAction::SendNet(HashmapRemoteEvent::Sub(2, 1, None), RouteRule::ToKey(1))));
         assert_eq!(storage.pop_action(), None);
     }
 
