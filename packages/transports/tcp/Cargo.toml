@@ -1,6 +1,6 @@
 [package]
 name = "atm0s-sdn-transport-tcp"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 description = "TCP Transport in atm0s-sdn"
 license = "MIT"

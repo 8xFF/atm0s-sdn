@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.8](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-pub-sub-v0.1.7...atm0s-sdn-pub-sub-v0.1.8) - 2024-01-31
+
+### Fixed
+- key value service resub faild if run before unsub ack and subscribe slot is removed ([#123](https://github.com/8xFF/atm0s-sdn/pull/123))
+
 ## [0.1.7](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-pub-sub-v0.1.6...atm0s-sdn-pub-sub-v0.1.7) - 2024-01-24
 
 ### Other
