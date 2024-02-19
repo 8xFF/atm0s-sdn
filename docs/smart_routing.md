@@ -4,7 +4,7 @@
 
 8xFF decentralized network supports a wide range of devices, from high-end servers to slow embedded devices. As high-end servers always have public-IP, it is easy to create P2P connection between any nodes. In contrast, slow embedded devices are always in a NAT network; therefore, we need to also support these devices in NAT. 
 
-With the above conditions, it is not easy to apply structured P2P networks in which nodes need the capability to accurately connect with a list of other nodes to guarantee effective routing. As a result, 8xFF will apply an unstructured overlay network to be adaptive even in cases in which the P2P connection between 2 nodes cannot be set up.
+With the above conditions, the direct connection between each nodes sometime cannot be established, therefore the network will allow data is relayed over other node if needed.
 
 ![Overlay](./imgs/overlay.drawio.svg)
 
