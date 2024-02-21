@@ -1,6 +1,6 @@
 [package]
 name = "atm0s-sdn-virtual-socket"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "Virtual Socket service in atm0s-sdn"
 license = "MIT"
