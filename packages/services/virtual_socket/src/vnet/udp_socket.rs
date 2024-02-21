@@ -69,15 +69,20 @@ impl AsyncUdpSocket for VirtualUdpSocket {
             std::task::Poll::Pending => std::task::Poll::Pending,
             std::task::Poll::Ready(Some(pkt)) => {
                 let len = pkt.payload.len();
-                bufs[0].deref_mut()[0..len].copy_from_slice(&pkt.payload);
-                meta[0] = quinn::udp::RecvMeta {
-                    addr: SocketAddr::V4(pkt.src),
-                    len,
-                    stride: len,
-                    ecn: pkt.ecn.map(|x| EcnCodepoint::from_bits(x).expect("Invalid ECN codepoint")),
-                    dst_ip: None,
-                };
-                std::task::Poll::Ready(Ok(1))
+                if len <= bufs[0].len() {
+                    bufs[0].deref_mut()[0..len].copy_from_slice(&pkt.payload);
+                    meta[0] = quinn::udp::RecvMeta {
+                        addr: SocketAddr::V4(pkt.src),
+                        len,
+                        stride: len,
+                        ecn: pkt.ecn.map(|x| EcnCodepoint::from_bits(x).expect("Invalid ECN codepoint")),
+                        dst_ip: None,
+                    };
+                    std::task::Poll::Ready(Ok(1))
+                } else {
+                    log::warn!("Buffer too small for packet {} vs {}, dropping", len, bufs[0].len());
+                    std::task::Poll::Pending
+                }
             }
             std::task::Poll::Ready(None) => std::task::Poll::Ready(Err(std::io::Error::new(std::io::ErrorKind::ConnectionAborted, "Socket closed"))),
         }
