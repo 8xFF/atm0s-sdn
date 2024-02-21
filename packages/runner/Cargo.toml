@@ -1,6 +1,6 @@
 [package]
 name = "atm0s-sdn"
-version = "0.1.9"
+version = "0.1.10"
 edition = "2021"
 repository = "https://github.com/8xFF/atm0s-sdn"
 description = "Decentralized Ultra-Low-Latency Software Defined Network"
@@ -25,7 +25,7 @@ atm0s-sdn-manual-discovery = { path = "../services/manual_discovery", version = 
 atm0s-sdn-key-value = { path = "../services/key_value", version = "0.1.9", optional = true  }
 atm0s-sdn-pub-sub = { path = "../services/pub_sub", version = "0.1.8", optional = true  }
 atm0s-sdn-rpc = { path = "../services/rpc", version = "0.1.4", optional = true  }
-atm0s-sdn-virtual-socket = { path = "../services/virtual_socket", version = "0.1.1", optional = true  }
+atm0s-sdn-virtual-socket = { path = "../services/virtual_socket", version = "0.1.2", optional = true  }
 atm0s-sdn-node-alias = { path = "../services/node_alias", version = "0.1.3", optional = true  }
 
 async-trait = { workspace = true }
