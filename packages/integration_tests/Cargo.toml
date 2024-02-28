@@ -12,7 +12,7 @@ publish = false
 atm0s-sdn = { path = "../runner", version = "0.1.10", features = ["all"] }
 atm0s-sdn-transport-vnet = { path = "../transports/vnet", version = "0.2.1" }
 bytes = "1.5.0"
-log = "0.4.20"
+log = "0.4.21"
 env_logger = "0.11.1"
 allocation-counter = { workspace = true }
 async-std = { workspace = true }
