@@ -4,6 +4,8 @@ use bytes::BufMut;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
+use crate::transport::TransportBuffer;
+
 pub const DEFAULT_MSG_TTL: u8 = 64;
 
 const ROUTE_RULE_DIRECT: u8 = 0;
@@ -63,7 +65,7 @@ pub enum MsgHeaderError {
 ///
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct MsgHeader {
+pub struct TransportMsgHeader {
     pub version: u8,
     pub ttl: u8,
     pub from_service_id: u8,
@@ -76,7 +78,7 @@ pub struct MsgHeader {
     pub from_node: Option<NodeId>,
 }
 
-impl MsgHeader {
+impl TransportMsgHeader {
     /// Builds a message with the given service_id, route rule.
     pub fn new() -> Self {
         Self {
@@ -378,15 +380,15 @@ impl MsgHeader {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 /// A struct representing a transport message.
-pub struct TransportMsg {
-    buffer: Vec<u8>,
-    pub header: MsgHeader,
+pub struct TransportMsg<'a> {
+    buffer: TransportBuffer<'a>,
+    pub header: TransportMsgHeader,
     pub payload_start: usize,
 }
 
 /// TransportMsg represents a message that can be sent over the network.
 /// It contains methods for building, modifying, and extracting data from the message.
-impl TransportMsg {
+impl<'a> TransportMsg<'a> {
     /// Check if the message is secure
     pub fn is_secure_header(first_byte: u8) -> bool {
         (first_byte >> 2) & 1 == 1
@@ -402,14 +404,14 @@ impl TransportMsg {
     /// # Returns
     ///
     /// A new `TransportMsg` instance.
-    pub fn build_raw(header: MsgHeader, payload: &[u8]) -> Self {
+    pub fn build_raw(header: TransportMsgHeader, payload: &[u8]) -> Self {
         let header_size = header.serialize_size();
         let mut buffer = vec![0; header_size + payload.len()];
         let header_size = header.to_bytes(&mut buffer[0..header_size]).expect("Should serialize header");
 
         buffer[header_size..].copy_from_slice(payload);
         Self {
-            buffer,
+            buffer: TransportBuffer::Vec(buffer),
             header,
             payload_start: header_size,
         }
@@ -428,7 +430,7 @@ impl TransportMsg {
     ///
     /// A new `TransportMsg` instance.
     pub fn build(from_service_id: u8, to_service_id: u8, route: RouteRule, meta: u8, stream_id: u32, payload: &[u8]) -> Self {
-        let header = MsgHeader::new()
+        let header = TransportMsgHeader::new()
             .set_from_service_id(from_service_id)
             .set_to_service_id(to_service_id)
             .set_route(route)
@@ -440,18 +442,18 @@ impl TransportMsg {
 
         buffer[header_size..].copy_from_slice(payload);
         Self {
-            buffer,
+            buffer: TransportBuffer::Vec(buffer),
             header,
             payload_start: header_size,
         }
     }
 
     /// Takes ownership of the message and returns its buffer.
-    pub fn take(self) -> Vec<u8> {
+    pub fn take(self) -> TransportBuffer<'a> {
         self.buffer
     }
 
-    /// Constructs a TransportMsg from a buffer.
+    /// Constructs a TransportMsg from a vector.
     ///
     /// # Arguments
     ///
@@ -462,9 +464,28 @@ impl TransportMsg {
     /// A new `TransportMsg` instance.
     ///
     pub fn from_vec(buf: Vec<u8>) -> Result<Self, MsgHeaderError> {
-        let (header, header_size) = MsgHeader::from_bytes(&buf)?;
+        let (header, header_size) = TransportMsgHeader::from_bytes(&buf)?;
         Ok(Self {
-            buffer: buf,
+            buffer: TransportBuffer::Vec(buf),
+            header,
+            payload_start: header_size,
+        })
+    }
+
+    /// Constructs a TransportMsg from a buf, this will link to buffer.
+    ///
+    /// # Arguments
+    ///
+    /// * `buf` - A vector of bytes containing the message to be parsed.
+    ///
+    /// # Returns
+    ///
+    /// A new `TransportMsg` instance.
+    ///
+    pub fn from_ref(buf: &'a [u8]) -> Result<Self, MsgHeaderError> {
+        let (header, header_size) = TransportMsgHeader::from_bytes(buf)?;
+        Ok(Self {
+            buffer: TransportBuffer::Ref(buf),
             header,
             payload_start: header_size,
         })
@@ -495,7 +516,7 @@ impl TransportMsg {
     ///
     /// An `Option` containing `()` if the route was successfully rewritten, or `None` if the buffer is too small to hold the new route.
     pub fn rewrite_route(&mut self, new_route: RouteRule) -> Option<()> {
-        MsgHeader::rewrite_route(&mut self.buffer, new_route)
+        TransportMsgHeader::rewrite_route(&mut self.buffer, new_route)
     }
 
     /// Deserializes the message payload into a given type using bincode.
@@ -521,7 +542,7 @@ impl TransportMsg {
     /// # Returns
     ///
     /// A new `TransportMsg` instance.
-    pub fn from_payload_bincode<M: Serialize>(header: MsgHeader, msg: &M) -> Self {
+    pub fn from_payload_bincode<M: Serialize>(header: TransportMsgHeader, msg: &M) -> Self {
         let header_size = header.serialize_size();
         let payload_size = bincode::serialized_size(msg).expect("Should serialize payload");
         let mut buffer = vec![0; header_size + payload_size as usize];
@@ -543,7 +564,7 @@ mod tests {
     #[test]
     fn test_header_without_option() {
         let mut buf = vec![0u8; 16];
-        let header = MsgHeader {
+        let header = TransportMsgHeader {
             version: 0,
             ttl: 0,
             from_service_id: 0,
@@ -556,7 +577,7 @@ mod tests {
         };
         let size = header.to_bytes(&mut buf).expect("should serialize");
         assert_eq!(header.serialize_size(), 8);
-        let (header, _) = MsgHeader::from_bytes(&buf[0..size]).unwrap();
+        let (header, _) = TransportMsgHeader::from_bytes(&buf[0..size]).unwrap();
         assert_eq!(header.serialize_size(), 8);
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 0);
@@ -572,7 +593,7 @@ mod tests {
     #[test]
     fn test_header_without_option2() {
         let mut buf = [0; 16];
-        let header = MsgHeader {
+        let header = TransportMsgHeader {
             version: 0,
             ttl: 10,
             from_service_id: 88,
@@ -585,7 +606,7 @@ mod tests {
         };
         let size = header.to_bytes(&mut buf).expect("should serialize");
         assert_eq!(header.serialize_size(), 8);
-        let (header, _) = MsgHeader::from_bytes(&buf[0..size]).unwrap();
+        let (header, _) = TransportMsgHeader::from_bytes(&buf[0..size]).unwrap();
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 10);
         assert_eq!(header.from_service_id, 88);
@@ -600,7 +621,7 @@ mod tests {
     #[test]
     fn test_header_with_dest2() {
         let mut buf = [0; 16];
-        let header = MsgHeader {
+        let header = TransportMsgHeader {
             version: 0,
             ttl: 0,
             from_service_id: 0,
@@ -613,7 +634,7 @@ mod tests {
         };
         let size = header.to_bytes(&mut buf).expect("should serialize");
         assert_eq!(header.serialize_size(), 12);
-        let (header, _) = MsgHeader::from_bytes(&buf[0..size]).unwrap();
+        let (header, _) = TransportMsgHeader::from_bytes(&buf[0..size]).unwrap();
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 0);
         assert_eq!(header.from_service_id, 0);
@@ -627,7 +648,7 @@ mod tests {
     #[test]
     fn test_header_with_all_options() {
         let mut buf = [0; 16];
-        let header = MsgHeader {
+        let header = TransportMsgHeader {
             version: 0,
             ttl: 66,
             from_service_id: 33,
@@ -641,7 +662,7 @@ mod tests {
         let size = header.to_bytes(&mut buf).expect("should serialize");
         println!("{:?}", buf);
         assert_eq!(header.serialize_size(), 16);
-        let (header, _) = MsgHeader::from_bytes(&buf[0..size]).unwrap();
+        let (header, _) = TransportMsgHeader::from_bytes(&buf[0..size]).unwrap();
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 66);
         assert_eq!(header.from_service_id, 33);
@@ -657,7 +678,7 @@ mod tests {
     #[test]
     fn test_header_with_dest() {
         let mut buf = [0; 16];
-        let header = MsgHeader {
+        let header = TransportMsgHeader {
             version: 0,
             ttl: 10,
             from_service_id: 88,
@@ -670,7 +691,7 @@ mod tests {
         };
         let size = header.to_bytes(&mut buf).expect("should serialize");
         assert_eq!(header.serialize_size(), 12);
-        let (header, _) = MsgHeader::from_bytes(&buf[0..size]).unwrap();
+        let (header, _) = TransportMsgHeader::from_bytes(&buf[0..size]).unwrap();
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 10);
         assert_eq!(header.from_service_id, 88);
@@ -685,7 +706,7 @@ mod tests {
     #[test]
     fn test_header_with_option_from_node() {
         let mut buf = [0; 16];
-        let header = MsgHeader {
+        let header = TransportMsgHeader {
             version: 0,
             ttl: 0,
             from_service_id: 0,
@@ -698,7 +719,7 @@ mod tests {
         };
         let size = header.to_bytes(&mut buf).expect("should serialize");
         assert_eq!(header.serialize_size(), 16);
-        let (header, _) = MsgHeader::from_bytes(&buf[0..size]).unwrap();
+        let (header, _) = TransportMsgHeader::from_bytes(&buf[0..size]).unwrap();
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 0);
         assert_eq!(header.from_service_id, 0);
@@ -713,7 +734,7 @@ mod tests {
     #[test]
     fn test_header_with_option_validate_code() {
         let mut buf = [0; 16];
-        let header = MsgHeader {
+        let header = TransportMsgHeader {
             version: 0,
             ttl: 0,
             from_service_id: 0,
@@ -726,7 +747,7 @@ mod tests {
         };
         let size = header.to_bytes(&mut buf).expect("should serialize");
         assert_eq!(header.serialize_size(), 12);
-        let (header, _) = MsgHeader::from_bytes(&buf[0..size]).unwrap();
+        let (header, _) = TransportMsgHeader::from_bytes(&buf[0..size]).unwrap();
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 0);
         assert_eq!(header.from_service_id, 0);
@@ -741,7 +762,7 @@ mod tests {
     #[test]
     fn test_header_with_option_from_node_and_validate_code() {
         let mut buf = [0; 20];
-        let header = MsgHeader {
+        let header = TransportMsgHeader {
             version: 0,
             ttl: 0,
             from_service_id: 0,
@@ -754,7 +775,7 @@ mod tests {
         };
         let size = header.to_bytes(&mut buf).expect("should serialize");
         assert_eq!(header.serialize_size(), 16);
-        let (header, _) = MsgHeader::from_bytes(&buf[0..size]).unwrap();
+        let (header, _) = TransportMsgHeader::from_bytes(&buf[0..size]).unwrap();
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 0);
         assert_eq!(header.from_service_id, 0);
@@ -769,7 +790,7 @@ mod tests {
     #[test]
     fn test_with_invalid_version() {
         let mut buf = [0; 16];
-        let header = MsgHeader {
+        let header = TransportMsgHeader {
             version: 1,
             ttl: 0,
             from_service_id: 0,
@@ -781,7 +802,7 @@ mod tests {
             from_node: None,
         };
         let size = header.to_bytes(&mut buf).expect("should serialize");
-        let err = MsgHeader::from_bytes(&buf[0..size]).unwrap_err();
+        let err = TransportMsgHeader::from_bytes(&buf[0..size]).unwrap_err();
         assert_eq!(err, MsgHeaderError::InvalidVersion);
     }
 
@@ -796,7 +817,7 @@ mod tests {
 
     #[test]
     fn msg_build_raw() {
-        let msg = TransportMsg::build_raw(MsgHeader::new(), &[1, 2, 3, 4]);
+        let msg = TransportMsg::build_raw(TransportMsgHeader::new(), &[1, 2, 3, 4]);
         let buf = msg.get_buf().to_vec();
         let msg2 = TransportMsg::from_vec(buf).unwrap();
         assert_eq!(msg, msg2);
