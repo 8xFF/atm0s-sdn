@@ -24,3 +24,23 @@ impl TimePivot {
         self.time_ms + now.duration_since(self.instant).as_millis() as u64
     }
 }
+
+pub struct TimeTicker {
+    last_tick: Instant,
+    tick_ms: u64,
+}
+
+impl TimeTicker {
+    pub fn build(tick_ms: u64) -> Self {
+        Self { last_tick: Instant::now(), tick_ms }
+    }
+
+    pub fn tick(&mut self, now: Instant) -> bool {
+        if now.duration_since(self.last_tick).as_millis() as u64 >= self.tick_ms {
+            self.last_tick = now;
+            true
+        } else {
+            false
+        }
+    }
+}

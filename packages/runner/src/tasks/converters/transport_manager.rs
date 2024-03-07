@@ -4,11 +4,10 @@ use sans_io_runtime::{bus::BusEvent, Owner, Task, TaskInput, TaskOutput, WorkerI
 
 use crate::tasks::{
     connection,
-    events::ConnectionEvent,
+    events::TransportWorkerEvent,
     plane,
     transport_manager::{self, TransportManagerTask},
-    transport_worker::TransportWorkerTask,
-    SdnChannel, SdnEvent, SdnExtOut, SdnSpawnCfg,
+    transport_worker, SdnChannel, SdnEvent, SdnExtOut, SdnSpawnCfg,
 };
 
 ///
@@ -45,20 +44,23 @@ pub fn convert_output<'a>(
         ),
         TaskOutput::Bus(BusEvent::ChannelPublish(_, safe, event)) => match event {
             transport_manager::EventOut::Transport(event) => WorkerInnerOutput::Task(
-                Owner::group(worker, TransportWorkerTask::TYPE),
+                Owner::group(worker, TransportManagerTask::TYPE),
                 TaskOutput::Bus(BusEvent::ChannelPublish(SdnChannel::Plane, safe, SdnEvent::Plane(plane::EventIn::Transport(event)))),
             ),
-            transport_manager::EventOut::Worker(event) => WorkerInnerOutput::Task(
-                Owner::group(worker, TransportWorkerTask::TYPE),
-                TaskOutput::Bus(BusEvent::ChannelPublish(SdnChannel::TransportWorker(worker), safe, SdnEvent::TransportWorker(event))),
-            ),
+            transport_manager::EventOut::Worker(event) => {
+                let dest = match event {
+                    TransportWorkerEvent::PinConnection(_, _) => transport_worker::ChannelIn::Broadcast,
+                    TransportWorkerEvent::UnPinConnection(_) => transport_worker::ChannelIn::Broadcast,
+                    _ => transport_worker::ChannelIn::Worker(worker),
+                };
+                WorkerInnerOutput::Task(
+                    Owner::group(worker, TransportManagerTask::TYPE),
+                    TaskOutput::Bus(BusEvent::ChannelPublish(SdnChannel::TransportWorker(dest), safe, SdnEvent::TransportWorker(event))),
+                )
+            }
             transport_manager::EventOut::PassthroughConnectionData(conn, data) => WorkerInnerOutput::Task(
-                Owner::group(worker, TransportWorkerTask::TYPE),
-                TaskOutput::Bus(BusEvent::ChannelPublish(
-                    SdnChannel::Connection(conn),
-                    safe,
-                    SdnEvent::Connection(connection::EventIn::Net(ConnectionEvent::Data(now, data))),
-                )),
+                Owner::group(worker, TransportManagerTask::TYPE),
+                TaskOutput::Bus(BusEvent::ChannelPublish(SdnChannel::Connection(conn), safe, SdnEvent::Connection(connection::EventIn::Net(data)))),
             ),
         },
         _ => panic!("Invalid output type from TransportManager"),

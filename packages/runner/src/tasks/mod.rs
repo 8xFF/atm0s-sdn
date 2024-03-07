@@ -6,7 +6,7 @@ mod time;
 mod transport_manager;
 mod transport_worker;
 
-use std::time::Instant;
+use std::{net::SocketAddr, time::Instant};
 
 use sans_io_runtime::{Controller, Task, TaskGroup, TaskGroupInput, TaskGroupOutputsState, WorkerInner, WorkerInnerInput, WorkerInnerOutput};
 
@@ -27,7 +27,8 @@ pub enum SdnChannel {
     Plane,
     TransportManager,
     Connection(ConnId),
-    TransportWorker(u16),
+    TransportWorkerBroadcast,
+    TransportWorker(transport_worker::ChannelIn),
 }
 
 #[derive(Debug, Clone)]
@@ -38,8 +39,16 @@ pub enum SdnEvent {
     TransportWorker(transport_worker::EventIn),
 }
 
+pub struct ControllerCfg {
+    pub password: String,
+    pub seeds: Vec<SocketAddr>,
+    pub behaviours: Vec<()>,
+}
+
 pub struct SdnInnerCfg {
-    pub behaviours: Option<Vec<()>>,
+    pub node_id: u32,
+    pub udp_port: u16,
+    pub controller: Option<ControllerCfg>,
 }
 
 pub struct SdnSpawnCfg {
@@ -60,23 +69,26 @@ impl SdnWorkerInner {}
 
 impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpawnCfg> for SdnWorkerInner {
     fn build(worker: u16, cfg: SdnInnerCfg) -> Self {
-        let core = cfg.behaviours.is_some();
-        Self {
-            worker,
-            plane: if core {
-                Some(PlaneTask::build(PlaneCfg {}))
-            } else {
-                None
-            },
-            transport_manager: if core {
-                Some(TransportManagerTask::build())
-            } else {
-                None
-            },
-            transport_worker: TransportWorkerTask::build(),
-            connections: TaskGroup::new(worker),
-            group_state: TaskGroupOutputsState::default(),
-            last_input_group: None,
+        if let Some(controller) = cfg.controller {
+            Self {
+                worker,
+                plane: Some(PlaneTask::build(PlaneCfg { node_id: cfg.node_id })),
+                transport_manager: Some(TransportManagerTask::build(cfg.node_id, controller.password, controller.seeds)),
+                transport_worker: TransportWorkerTask::build(worker, cfg.udp_port),
+                connections: TaskGroup::new(worker),
+                group_state: TaskGroupOutputsState::default(),
+                last_input_group: None,
+            }
+        } else {
+            Self {
+                worker,
+                plane: None,
+                transport_manager: None,
+                transport_worker: TransportWorkerTask::build(worker, cfg.udp_port),
+                connections: TaskGroup::new(worker),
+                group_state: TaskGroupOutputsState::default(),
+                last_input_group: None,
+            }
         }
     }
 
@@ -95,6 +107,7 @@ impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpaw
     }
 
     fn spawn(&mut self, _now: Instant, cfg: SdnSpawnCfg) {
+        log::info!("Spawn new ConnectionTask on worker {}", self.worker);
         self.connections.add_task(ConnectionTask::build(cfg.cfg));
     }
 
@@ -104,13 +117,13 @@ impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpaw
         loop {
             match gs.current()? {
                 PlaneTask::TYPE => {
-                    if let Some(out) = gs.process(self.plane.as_mut().map(|p| p.on_tick(now))).flatten() {
+                    if let Some(out) = gs.process(self.plane.as_mut().map(|p| p.on_tick(now)).flatten()) {
                         self.last_input_group = Some(PlaneTask::TYPE);
                         return Some(converters::plane::convert_output(self.worker, out));
                     }
                 }
                 TransportManagerTask::TYPE => {
-                    if let Some(out) = gs.process(self.transport_manager.as_mut().map(|p| p.on_tick(now))).flatten() {
+                    if let Some(out) = gs.process(self.transport_manager.as_mut().map(|p| p.on_tick(now)).flatten()) {
                         self.last_input_group = Some(TransportManagerTask::TYPE);
                         return Some(converters::transport_manager::convert_output(self.worker, now, out));
                     }
