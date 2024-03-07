@@ -16,7 +16,7 @@ pub struct PlaneCfg {}
 pub enum EventIn {
     Transport(TransportEvent),
     LocalNet(Vec<u8>),
-    FromHandlerBus(ServiceId, String),
+    FromHandlerBus(ConnId, ServiceId, String),
 }
 
 pub enum EventOut {
@@ -41,7 +41,7 @@ impl Task<ChannelIn, ChannelOut, EventIn, EventOut> for PlaneTask {
         todo!()
     }
 
-    fn on_input<'a>(&mut self, now: Instant, input: TaskInput<'a, ChannelIn, EventIn>) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut>> {
+    fn on_event<'a>(&mut self, now: Instant, input: TaskInput<'a, ChannelIn, EventIn>) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut>> {
         todo!()
     }
 

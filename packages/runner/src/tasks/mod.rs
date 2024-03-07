@@ -1,4 +1,5 @@
 mod connection;
+mod converters;
 mod events;
 mod plane;
 mod time;
@@ -7,7 +8,7 @@ mod transport_worker;
 
 use std::time::Instant;
 
-use sans_io_runtime::{bus::BusEvent, Controller, Owner, Task, TaskGroup, TaskGroupOutputsState, TaskInput, TaskOutput, WorkerInner, WorkerInnerInput, WorkerInnerOutput};
+use sans_io_runtime::{Controller, Task, TaskGroup, TaskGroupInput, TaskGroupOutputsState, WorkerInner, WorkerInnerInput, WorkerInnerOutput};
 
 use self::{
     connection::{ConnId, ConnectionTask},
@@ -55,9 +56,7 @@ pub struct SdnWorkerInner {
     last_input_group: Option<u16>,
 }
 
-impl SdnWorkerInner {
-    
-}
+impl SdnWorkerInner {}
 
 impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpawnCfg> for SdnWorkerInner {
     fn build(worker: u16, cfg: SdnInnerCfg) -> Self {
@@ -95,7 +94,7 @@ impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpaw
             }
     }
 
-    fn spawn(&mut self, now: Instant, cfg: SdnSpawnCfg) {
+    fn spawn(&mut self, _now: Instant, cfg: SdnSpawnCfg) {
         self.connections.add_task(ConnectionTask::build(cfg.cfg));
     }
 
@@ -107,17 +106,27 @@ impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpaw
                 PlaneTask::TYPE => {
                     if let Some(out) = gs.process(self.plane.as_mut().map(|p| p.on_tick(now))).flatten() {
                         self.last_input_group = Some(PlaneTask::TYPE);
-                        return Some(convert_plane_output(self.worker, out));
+                        return Some(converters::plane::convert_output(self.worker, out));
                     }
                 }
                 TransportManagerTask::TYPE => {
                     if let Some(out) = gs.process(self.transport_manager.as_mut().map(|p| p.on_tick(now))).flatten() {
                         self.last_input_group = Some(TransportManagerTask::TYPE);
-                        return Some(convert_transport_manager_output(self.worker, out));
+                        return Some(converters::transport_manager::convert_output(self.worker, now, out));
                     }
                 }
-                TransportWorkerTask::TYPE => {}
-                ConnectionTask::TYPE => {}
+                TransportWorkerTask::TYPE => {
+                    if let Some(out) = gs.process(self.transport_worker.on_tick(now)) {
+                        self.last_input_group = Some(TransportWorkerTask::TYPE);
+                        return Some(converters::transport_worker::convert_output(self.worker, out));
+                    }
+                }
+                ConnectionTask::TYPE => {
+                    if let Some(out) = gs.process(self.connections.on_tick(now)) {
+                        self.last_input_group = Some(ConnectionTask::TYPE);
+                        return Some(converters::connection::convert_output(self.worker, out.0, out.1));
+                    }
+                }
                 _ => panic!("Invalid task type"),
             }
         }
@@ -126,25 +135,34 @@ impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpaw
     fn on_event<'a>(&mut self, now: Instant, event: WorkerInnerInput<'a, SdnExtIn, SdnChannel, SdnEvent>) -> Option<WorkerInnerOutput<'a, SdnExtOut, SdnChannel, SdnEvent, SdnSpawnCfg>> {
         match event {
             WorkerInnerInput::Ext(_) => None,
-            WorkerInnerInput::Task(owner, event) => {
-                match owner.group_id().expect("Should have group_id") {
-                    PlaneTask::TYPE => {
-                        let plane = self.plane.as_mut()?;
-                        let out = plane.on_input(now, convert_plane_input(event))?;
-                        self.last_input_group = Some(PlaneTask::TYPE);
-                        return Some(convert_plane_output(self.worker, out));
-                    },
-                    TransportManagerTask::TYPE => {
-                        let tm = self.transport_manager.as_mut()?;
-                        let out = tm.on_input(now, convert_transport_manager_input(event))?;
-                        self.last_input_group = Some(TransportManagerTask::TYPE);
-                        return Some(convert_transport_manager_output(self.worker, out));
-                    },
-                    TransportWorkerTask::TYPE => None,
-                    ConnectionTask::TYPE => None,
-                    _ => panic!("Invalid task type"),
+            WorkerInnerInput::Task(owner, event) => match owner.group_id().expect("Should have group_id") {
+                PlaneTask::TYPE => {
+                    let plane = self.plane.as_mut()?;
+                    let out = plane.on_event(now, converters::plane::convert_input(event))?;
+                    self.last_input_group = Some(PlaneTask::TYPE);
+                    return Some(converters::plane::convert_output(self.worker, out));
                 }
-            }
+                TransportManagerTask::TYPE => {
+                    let tm = self.transport_manager.as_mut()?;
+                    let out = tm.on_event(now, converters::transport_manager::convert_input(event))?;
+                    self.last_input_group = Some(TransportManagerTask::TYPE);
+                    return Some(converters::transport_manager::convert_output(self.worker, now, out));
+                }
+                TransportWorkerTask::TYPE => {
+                    let tw = &mut self.transport_worker;
+                    let out = tw.on_event(now, converters::transport_worker::convert_input(event))?;
+                    self.last_input_group = Some(TransportWorkerTask::TYPE);
+                    return Some(converters::transport_worker::convert_output(self.worker, out));
+                }
+                ConnectionTask::TYPE => {
+                    let conns = &mut self.connections;
+                    let input = converters::connection::convert_input(event);
+                    let out = conns.on_event(now, TaskGroupInput(owner, input))?;
+                    self.last_input_group = Some(ConnectionTask::TYPE);
+                    return Some(converters::connection::convert_output(self.worker, out.0, out.1));
+                }
+                _ => panic!("Invalid task type"),
+            },
         }
     }
 
@@ -152,135 +170,21 @@ impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpaw
         match self.last_input_group? {
             PlaneTask::TYPE => {
                 let out = self.plane.as_mut().map(|p| p.pop_output(now)).flatten()?;
-                return Some(convert_plane_output(self.worker, out));
+                return Some(converters::plane::convert_output(self.worker, out));
             }
             TransportManagerTask::TYPE => {
-                let out = self.plane.as_mut().map(|p| p.pop_output(now)).flatten()?;
-                return Some(convert_plane_output(self.worker, out));
-            },
-            TransportWorkerTask::TYPE => None,
-            ConnectionTask::TYPE => None,
-            _ => panic!("Invalid task type"),
-        
-        }
-    }
-}
-
-
-/// 
-/// 
-/// This function will convert the input from SDN into Plane task input.
-/// It only accept bus events from the SDN task.
-/// 
-fn convert_plane_input<'a>(event: TaskInput<'a, SdnChannel, SdnEvent>) -> TaskInput<'a, plane::ChannelIn, plane::EventIn> {
-    if let TaskInput::Bus(_, SdnEvent::Plane(event)) = event {
-        TaskInput::Bus((), event)
-    } else {
-        panic!("Invalid input type from Plane")
-    }
-}
-
-
-///
-/// 
-/// This function will convert the output from the Plane task into the output for the SDN task.
-/// It only accept bus events from the Plane task.
-/// 
-fn convert_plane_output<'a>(worker: u16, event: TaskOutput<plane::ChannelIn, plane::ChannelOut, plane::EventOut>) -> WorkerInnerOutput<'a, SdnExtOut, SdnChannel, SdnEvent, SdnSpawnCfg> {
-    match event {
-        TaskOutput::Bus(BusEvent::ChannelSubscribe(_)) => {
-            WorkerInnerOutput::Task(
-                Owner::group(worker, PlaneTask::TYPE),
-                TaskOutput::Bus(BusEvent::ChannelSubscribe(SdnChannel::Plane)),
-            )
-        },
-        TaskOutput::Bus(BusEvent::ChannelUnsubscribe(_)) => {
-            WorkerInnerOutput::Task(
-                Owner::group(worker, PlaneTask::TYPE),
-                TaskOutput::Bus(BusEvent::ChannelUnsubscribe(SdnChannel::Plane)),
-            )
-        },
-        TaskOutput::Bus(BusEvent::ChannelPublish(_, safe, event)) => match event {
-            plane::EventOut::ToHandlerBus(conn, service, data) => {
-                WorkerInnerOutput::Task(
-                    Owner::group(worker, ConnectionTask::TYPE),
-                    TaskOutput::Bus(BusEvent::ChannelPublish(
-                        SdnChannel::Connection(conn),
-                        safe,
-                        SdnEvent::Connection(connection::EventIn::Bus(service, events::BusEvent::FromBehavior(data))),
-                    )),
-                )
-            },
-            plane::EventOut::ConnectTo(addr) => {
-                WorkerInnerOutput::Task(
-                    Owner::group(worker, ConnectionTask::TYPE),
-                    TaskOutput::Bus(BusEvent::ChannelPublish(
-                        SdnChannel::TransportManager,
-                        safe,
-                        SdnEvent::TransportManager(transport_manager::EventIn::ConnectTo(addr)),
-                    )),
-                )
-            },
-            plane::EventOut::SpawnConnection(cfg) => {
-                WorkerInnerOutput::Spawn(SdnSpawnCfg {cfg})
+                let out = self.transport_manager.as_mut().map(|p| p.pop_output(now)).flatten()?;
+                return Some(converters::transport_manager::convert_output(self.worker, now, out));
             }
-        },
-        _ => panic!("Invalid output type from Plane")
-    }
-}
-
-/// 
-/// 
-/// This function will convert the input from SDN into Plane task input.
-/// It only accept bus events from the SDN task.
-/// 
-fn convert_transport_manager_input<'a>(event: TaskInput<'a, SdnChannel, SdnEvent>) -> TaskInput<'a, transport_manager::ChannelIn, transport_manager::EventIn> {
-    if let TaskInput::Bus(_, SdnEvent::TransportManager(event)) = event {
-        TaskInput::Bus((), event)
-    } else {
-        panic!("Invalid input type from Plane")
-    }
-}
-
-///
-/// 
-/// This function will convert the output from the Plane task into the output for the SDN task.
-/// It only accept bus events from the Plane task.
-/// 
-fn convert_transport_manager_output<'a>(worker: u16, event: TaskOutput<transport_manager::ChannelIn, transport_manager::ChannelOut, transport_manager::EventOut>) -> WorkerInnerOutput<'a, SdnExtOut, SdnChannel, SdnEvent, SdnSpawnCfg> {
-    match event {
-        TaskOutput::Bus(BusEvent::ChannelSubscribe(_)) => {
-            WorkerInnerOutput::Task(
-                Owner::group(worker, TransportManagerTask::TYPE),
-                TaskOutput::Bus(BusEvent::ChannelSubscribe(SdnChannel::TransportManager)),
-            )
-        },
-        TaskOutput::Bus(BusEvent::ChannelUnsubscribe(_)) => {
-            WorkerInnerOutput::Task(
-                Owner::group(worker, TransportManagerTask::TYPE),
-                TaskOutput::Bus(BusEvent::ChannelUnsubscribe(SdnChannel::TransportManager)),
-            )
-        },
-        TaskOutput::Bus(BusEvent::ChannelPublish(_, safe, transport_manager::EventOut::Transport(event))) => {
-            WorkerInnerOutput::Task(
-                Owner::group(worker, TransportWorkerTask::TYPE),
-                TaskOutput::Bus(BusEvent::ChannelPublish(
-                    SdnChannel::Plane,
-                    safe,
-                    SdnEvent::Plane(plane::EventIn::Transport(event)),
-                )),
-            )
+            TransportWorkerTask::TYPE => {
+                let out = self.transport_worker.pop_output(now)?;
+                return Some(converters::transport_worker::convert_output(self.worker, out));
+            }
+            ConnectionTask::TYPE => {
+                let out = self.connections.pop_output(now)?;
+                return Some(converters::connection::convert_output(self.worker, out.0, out.1));
+            }
+            _ => panic!("Invalid task type"),
         }
-        TaskOutput::Bus(BusEvent::ChannelPublish(_, safe, transport_manager::EventOut::Worker(event))) => {
-            WorkerInnerOutput::Task(
-                Owner::group(worker, TransportWorkerTask::TYPE),
-                TaskOutput::Bus(BusEvent::ChannelPublish(
-                    SdnChannel::TransportWorker(worker),
-                    safe,
-                    SdnEvent::TransportWorker(event),
-                )),
-            )
-        }
-        _ => panic!("Invalid output type from Plane")
     }
 }

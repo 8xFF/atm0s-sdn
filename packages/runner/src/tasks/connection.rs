@@ -1,8 +1,8 @@
-use std::{net::SocketAddr, time::Instant};
+use std::time::Instant;
 
 use sans_io_runtime::{Task, TaskInput, TaskOutput};
 
-use super::events::{BusAction, BusEvent, ConnectionEvent, ServiceId};
+use super::events::{BusEvent, ConnectionEvent, ServiceId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ConnId(u64);
@@ -12,8 +12,7 @@ pub struct ConnectionStats {
     pub rtt: u8,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ChannelIn(ConnId);
+pub type ChannelIn = ConnId;
 
 pub enum ChannelOut {
     TransportWorker,
@@ -27,10 +26,10 @@ pub enum EventIn {
 }
 
 pub enum EventOut {
-    Disconnected,
-    Net(Vec<u8>),
-    ToBehaviorBus(ServiceId, String),
-    ToHandleBus(ServiceId, Vec<u8>),
+    Disconnected(ConnId),
+    Net(ConnId, Vec<u8>),
+    ToBehaviorBus(ConnId, ServiceId, String),
+    ToHandleBus(ConnId, ConnId, ServiceId, Vec<u8>),
 }
 
 pub struct SpawnCfg {}
@@ -51,7 +50,7 @@ impl Task<ChannelIn, ChannelOut, EventIn, EventOut> for ConnectionTask {
         todo!()
     }
 
-    fn on_input<'a>(&mut self, now: Instant, input: TaskInput<'a, ChannelIn, EventIn>) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut>> {
+    fn on_event<'a>(&mut self, now: Instant, input: TaskInput<'a, ChannelIn, EventIn>) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut>> {
         todo!()
     }
 

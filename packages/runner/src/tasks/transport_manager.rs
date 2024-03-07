@@ -3,7 +3,7 @@ use std::{net::SocketAddr, time::Instant};
 use sans_io_runtime::{Task, TaskInput, TaskOutput};
 
 use super::{
-    connection::{ConnId, ConnectionStats},
+    connection::ConnId,
     events::{TransportEvent, TransportWorkerEvent},
 };
 
@@ -14,11 +14,13 @@ pub type ChannelOut = ();
 pub enum EventIn {
     ConnectTo(SocketAddr),
     UnhandleNetData(SocketAddr, Vec<u8>),
+    Disconnected(ConnId),
 }
 
 pub enum EventOut {
     Transport(TransportEvent),
     Worker(TransportWorkerEvent),
+    PassthroughConnectionData(ConnId, Vec<u8>),
 }
 
 pub struct TransportManagerTask {}
@@ -36,7 +38,7 @@ impl Task<ChannelIn, ChannelOut, EventIn, EventOut> for TransportManagerTask {
         todo!()
     }
 
-    fn on_input<'a>(&mut self, now: Instant, input: TaskInput<'a, ChannelIn, EventIn>) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut>> {
+    fn on_event<'a>(&mut self, now: Instant, input: TaskInput<'a, ChannelIn, EventIn>) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut>> {
         todo!()
     }
 

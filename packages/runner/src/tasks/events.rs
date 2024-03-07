@@ -16,7 +16,7 @@ pub enum TransportEvent {
 #[derive(Debug, Clone)]
 pub enum ConnectionEvent {
     Data(Instant, Vec<u8>),
-    Stats(ConnectionStats),
+    Stats(Instant, ConnectionStats),
 }
 
 #[derive(Debug, Clone)]
@@ -29,11 +29,11 @@ pub enum TransportWorkerEvent {
 #[derive(Debug, Clone)]
 pub enum BusEvent<T> {
     FromBehavior(T),
-    FromHandler(T),
+    FromHandler(ConnId, T),
 }
 
 #[derive(Debug, Clone)]
 pub enum BusAction {
     ToBehavior(String),
-    ToHandler(Vec<u8>),
+    ToHandler(ConnId, Vec<u8>),
 }
