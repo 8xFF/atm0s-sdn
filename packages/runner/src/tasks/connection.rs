@@ -77,7 +77,7 @@ impl Task<ChannelIn, ChannelOut, EventIn, EventOut> for ConnectionTask {
         if self.ping_ticker.tick(now) {
             self.ping_id += 1;
             log::debug!("Send ping {}", self.ping_id);
-            Some(build_out(EventOut::Net(self.conn_id, ConnectionMessage::Ping(self.timer.timestamp_ms(now), self.ping_id))))
+            Some(build_out(EventOut::Net(self.conn_id, ConnectionMessage::Ping(self.timer.timestamp_us(now), self.ping_id))))
         } else {
             None
         }
@@ -100,8 +100,8 @@ impl Task<ChannelIn, ChannelOut, EventIn, EventOut> for ConnectionTask {
                     Some(build_out(EventOut::Net(self.conn_id, ConnectionMessage::Pong(timestamp, ping_id))))
                 }
                 ConnectionMessage::Pong(timestamp, ping_id) => {
-                    let delta = self.timer.timestamp_ms(now) - timestamp;
-                    log::debug!("Received pong for ping {} from remote after {}", ping_id, delta);
+                    let delta = self.timer.timestamp_us(now) - timestamp;
+                    log::info!("Received pong for ping {} from remote after {} us, {} ms", ping_id, delta, delta / 1000);
                     None
                 }
                 ConnectionMessage::Data(data) => {

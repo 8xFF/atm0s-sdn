@@ -2,7 +2,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 pub struct TimePivot {
     instant: Instant,
-    time_ms: u64,
+    time_us: u64,
 }
 
 impl TimePivot {
@@ -12,16 +12,24 @@ impl TimePivot {
 
         Self {
             instant: Instant::now(),
-            time_ms: since_the_epoch.as_millis() as u64,
+            time_us: since_the_epoch.as_micros() as u64,
         }
     }
 
     pub fn started_ms(&self) -> u64 {
-        self.time_ms
+        self.time_us / 1000
     }
 
     pub fn timestamp_ms(&self, now: Instant) -> u64 {
-        self.time_ms + now.duration_since(self.instant).as_millis() as u64
+        self.time_us / 1000 + now.duration_since(self.instant).as_millis() as u64
+    }
+
+    pub fn started_us(&self) -> u64 {
+        self.time_us
+    }
+
+    pub fn timestamp_us(&self, now: Instant) -> u64 {
+        self.time_us + now.duration_since(self.instant).as_micros() as u64
     }
 }
 

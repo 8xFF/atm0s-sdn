@@ -2,7 +2,7 @@ use clap::Parser;
 use std::{net::SocketAddr, time::Duration};
 
 use atm0s_sdn::tasks::*;
-use sans_io_runtime::backend::MioBackend;
+use sans_io_runtime::backend::PollBackend;
 
 /// Simple program to running a node
 #[derive(Parser, Debug)]
@@ -29,7 +29,7 @@ fn main() {
     let args = Args::parse();
     env_logger::builder().format_timestamp_millis().init();
     let mut controler = SdnController::default();
-    controler.add_worker::<_, SdnWorkerInner, MioBackend<128, 128>>(
+    controler.add_worker::<_, SdnWorkerInner, PollBackend<128, 128>>(
         SdnInnerCfg {
             node_id: args.node_id,
             udp_port: args.udp_port,
@@ -42,7 +42,7 @@ fn main() {
         None,
     );
 
-    controler.add_worker::<_, SdnWorkerInner, MioBackend<128, 128>>(
+    controler.add_worker::<_, SdnWorkerInner, PollBackend<128, 128>>(
         SdnInnerCfg {
             node_id: args.node_id,
             udp_port: args.udp_port,
