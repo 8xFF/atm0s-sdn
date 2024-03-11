@@ -26,10 +26,14 @@ pub struct RouterSyncService {
 }
 
 impl RouterSyncService {
-    pub fn new(node_id: NodeId) -> Self {
+    pub fn new(node_id: NodeId, services_id: Vec<u8>) -> Self {
+        let mut router = Router::new(node_id);
+        for service_id in services_id {
+            router.register_service(service_id);
+        }
         Self {
             node_id,
-            router: Router::new(node_id),
+            router,
             metric: None,
             conns: HashMap::new(),
             queue: VecDeque::new(),
@@ -52,6 +56,8 @@ impl Service for RouterSyncService {
             let sync_msg = TransportMsg::build(SERVICE_TYPE, SERVICE_TYPE, RouteRule::Direct, 0, 0, &bincode::serialize(&sync).expect("Should create sync"));
             self.queue.push_back(ServiceOutput::NetData(*id, sync_msg));
         }
+
+        self.router.log_dump();
     }
 
     fn on_conn_connected(&mut self, _now: u64, ctx: &ConnectionCtx) {

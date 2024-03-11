@@ -49,7 +49,7 @@ impl Table {
         debug_assert_eq!(src_send_metric.hops.first(), Some(&src));
         let index = src.layer(self.layer);
         if self.dests[index as usize].is_empty() {
-            log::info!("[Table {}/{}] added index {} from dest {}/{}/{:?}", self.node_id, self.layer, index, src_conn, src, src_send_metric);
+            log::info!("[Table {}/{}] added index {} from conn {} node: {} metric: {:?}", self.node_id, self.layer, index, src_conn, src, src_send_metric);
             self.slots.push(index);
             self.slots.sort();
         }
@@ -59,12 +59,13 @@ impl Table {
     pub fn del_direct(&mut self, src_conn: ConnId) {
         for i in 0..=255 {
             let pre_empty = self.dests[i as usize].is_empty();
-            self.dests[i as usize].del_path(src_conn);
-            if !pre_empty && self.dests[i as usize].is_empty() {
-                log::info!("[Table {}/{}] removed index {} from dest {}", self.node_id, self.layer, i, src_conn);
+            if let Some(path) = self.dests[i as usize].del_path(src_conn) {
+                if !pre_empty && self.dests[i as usize].is_empty() {
+                    log::info!("[Table {}/{}] removed index {} from conn: {}, node: {}", self.node_id, self.layer, i, src_conn, path.1);
 
-                if let Ok(index) = self.slots.binary_search(&i) {
-                    self.slots.remove(index);
+                    if let Ok(index) = self.slots.binary_search(&i) {
+                        self.slots.remove(index);
+                    }
                 }
             }
         }
@@ -98,7 +99,7 @@ impl Table {
 
     pub fn apply_sync(&mut self, src_conn: ConnId, src: NodeId, src_send_metric: Metric, sync: TableSync) {
         debug_assert_eq!(src_send_metric.hops.first(), Some(&src));
-        log::debug!("[Table {}/{}] apply sync from {}/{} -> {}, sync {:?}", self.node_id, self.layer, src_conn, src, self.node_id, sync.0);
+        log::debug!("[Table {}/{}] apply sync from conn: {} node: {}, sync {:?}", self.node_id, self.layer, src_conn, src, sync.0);
         let mut cached: HashMap<u8, Metric> = HashMap::new();
         for (index, metric) in sync.0 {
             if let Some(sum) = metric.add(&src_send_metric) {
@@ -119,7 +120,7 @@ impl Table {
                         let pre_empty = dest.is_empty();
                         dest.del_path(src_conn);
                         if !pre_empty && dest.is_empty() {
-                            log::info!("[Table {}/{}] sync => removed index {} from dest {}", self.node_id, self.layer, i, src);
+                            log::info!("[Table {}/{}] sync => removed index {} from conn: {} node: {}", self.node_id, self.layer, i, src_conn, src);
                             if let Ok(index) = self.slots.binary_search(&i) {
                                 self.slots.remove(index);
                             }
@@ -128,7 +129,7 @@ impl Table {
                 }
                 Some(metric) => {
                     if dest.is_empty() {
-                        log::info!("[Table {}/{}] sync => added index {} from dest {}/{}/{:?}", self.node_id, self.layer, i, src_conn, src, src_send_metric);
+                        log::info!("[Table {}/{}] sync => added index {} from conn: {} node: {} metric: {:?}", self.node_id, self.layer, i, src_conn, src, src_send_metric);
                         self.slots.push(i);
                         self.slots.sort();
                     }

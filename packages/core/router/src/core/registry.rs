@@ -106,14 +106,12 @@ impl Registry {
         }
 
         let mut slots = vec![];
-        let mut nexts = vec![];
         for (index, dest) in self.remote_destinations.iter().enumerate() {
             if !dest.is_empty() {
-                slots.push(index);
-                nexts.push(dest.next(&[]));
+                slots.push((index, dest.next(&[]).map(|(_c, n)| n)));
             }
         }
-        log::info!("[Registry {}] local services: {:?} remote services: {:?}, nexts {:?}", self.node_id, local_services, slots, nexts);
+        log::info!("[Registry {}] local services: {:?} remote services: {:?}", self.node_id, local_services, slots);
     }
 
     pub fn print_dump(&self) {
@@ -125,14 +123,12 @@ impl Registry {
         }
 
         let mut slots = vec![];
-        let mut nexts = vec![];
         for (index, dest) in self.remote_destinations.iter().enumerate() {
             if !dest.is_empty() {
-                slots.push(index);
-                nexts.push(dest.next(&[]));
+                slots.push((index, dest.next(&[]).map(|(_c, n)| n)));
             }
         }
-        println!("[Registry {}] local services: {:?} remote services: {:?}, nexts {:?}", self.node_id, local_services, slots, nexts);
+        println!("[Registry {}] local services: {:?} remote services: {:?}", self.node_id, local_services, slots);
     }
 }
 

@@ -36,8 +36,15 @@ pub struct ControllerPlane {
 
 impl ControllerPlane {
     pub fn new(node_id: NodeId, mut services: Vec<Box<dyn Service>>) -> Self {
+        let mut services_id = vec![
+            core_services::router_sync::SERVICE_TYPE,
+        ];
+        for service in services.iter() {
+            services_id.push(service.service_type());
+        }
+
         // add core services
-        services.push(Box::new(core_services::router_sync::RouterSyncService::new(node_id)));
+        services.push(Box::new(core_services::router_sync::RouterSyncService::new(node_id, services_id)));
 
         // create service map
         let mut services_map: [Option<Box<dyn Service>>; 256] = std::array::from_fn(|_| None);

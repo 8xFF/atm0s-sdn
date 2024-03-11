@@ -14,7 +14,7 @@ pub type Layer = u8;
 pub struct RouterSync(pub RegistrySync, pub [Option<TableSync>; 4]);
 
 pub struct Router {
-    local_node_id: NodeId,
+    node_id: NodeId,
     tables: [Table; 4],
     service_registry: Registry,
 }
@@ -24,14 +24,14 @@ impl Router {
         let tables = [Table::new(local_node_id, 0), Table::new(local_node_id, 1), Table::new(local_node_id, 2), Table::new(local_node_id, 3)];
 
         Router {
-            local_node_id,
+            node_id: local_node_id,
             tables,
             service_registry: Registry::new(local_node_id),
         }
     }
 
     pub fn node_id(&self) -> NodeId {
-        self.local_node_id
+        self.node_id
     }
 
     pub fn size(&self) -> usize {
@@ -51,10 +51,10 @@ impl Router {
     }
 
     pub fn set_direct(&mut self, over: ConnId, over_node: NodeId, metric: Metric) {
-        let eq_util_layer = self.local_node_id.eq_util_layer(&over_node) as usize;
+        let eq_util_layer = self.node_id.eq_util_layer(&over_node) as usize;
         log::debug!(
             "[Router {}] set_direct {}/{} with metric {:?}, eq_util_layer {}",
-            self.local_node_id,
+            self.node_id,
             over,
             over_node,
             metric,
@@ -68,7 +68,7 @@ impl Router {
     }
 
     pub fn del_direct(&mut self, over: ConnId) {
-        log::debug!("[Router {}] del_direct {}", self.local_node_id, over);
+        log::debug!("[Router {}] del_direct {}", self.node_id, over);
         for table in &mut self.tables {
             table.del_direct(over);
         }
@@ -76,7 +76,7 @@ impl Router {
     }
 
     pub fn next(&self, dest: NodeId, excepts: &[NodeId]) -> Option<(ConnId, NodeId)> {
-        let eq_util_layer = self.local_node_id.eq_util_layer(&dest) as usize;
+        let eq_util_layer = self.node_id.eq_util_layer(&dest) as usize;
         debug_assert!(eq_util_layer <= 4);
         if eq_util_layer == 0 {
             None
@@ -86,7 +86,7 @@ impl Router {
     }
 
     pub fn next_path(&self, dest: NodeId, excepts: &[NodeId]) -> Option<Path> {
-        let eq_util_layer = self.local_node_id.eq_util_layer(&dest) as usize;
+        let eq_util_layer = self.node_id.eq_util_layer(&dest) as usize;
         debug_assert!(eq_util_layer <= 4);
         if eq_util_layer == 0 {
             None
@@ -104,7 +104,7 @@ impl Router {
                 //if find nothing => that mean this layer is empty trying to find closest node in next layer
                 continue;
             };
-            let current_node_index = self.local_node_id.layer(i);
+            let current_node_index = self.node_id.layer(i);
             let next_distance = index ^ next_index;
             let local_distance = index ^ current_node_index;
             if local_distance < next_distance {
@@ -116,7 +116,7 @@ impl Router {
                 //other zone => sending this this
                 log::debug!(
                     "[Router {}] next node for {} ({}) in layer {}: {:?} => ({}, {:?})",
-                    self.local_node_id,
+                    self.node_id,
                     key,
                     index,
                     i,
@@ -128,7 +128,7 @@ impl Router {
             } else {
                 log::debug!(
                     "[Router {}] finding closest to {} in layer {}: {:?} -> ({}, {:?})",
-                    self.local_node_id,
+                    self.node_id,
                     key,
                     i,
                     self.tables[i as usize].slots(),
@@ -164,20 +164,20 @@ impl Router {
 
     pub fn log_dump(&self) {
         self.service_registry.log_dump();
-        log::info!("[Router {}] dump begin", self.local_node_id);
+        log::info!("[Router {}] dump begin", self.node_id);
         for i in 0..4 {
             self.tables[3 - i].log_dump();
         }
-        log::info!("[Router {}] dump end", self.local_node_id);
+        log::info!("[Router {}] dump end", self.node_id);
     }
 
     pub fn print_dump(&self) {
         self.service_registry.print_dump();
-        log::info!("[Router {}] dump begin", self.local_node_id);
+        println!("[Router {}] dump begin", self.node_id);
         for i in 0..4 {
             self.tables[3 - i].print_dump();
         }
-        log::info!("[Router {}] dump end", self.local_node_id);
+        println!("[Router {}] dump end", self.node_id);
     }
 }
 

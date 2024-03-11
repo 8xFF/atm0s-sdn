@@ -25,11 +25,10 @@ impl Dest {
         self.paths.sort();
     }
 
-    pub fn del_path(&mut self, over: ConnId) -> Option<()> {
+    pub fn del_path(&mut self, over: ConnId) -> Option<Path> {
         match self.index_of(over) {
             Some(index) => {
-                self.paths.remove(index);
-                Some(())
+                Some(self.paths.remove(index))
             }
             None => None,
         }
