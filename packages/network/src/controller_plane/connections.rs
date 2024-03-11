@@ -11,25 +11,25 @@ const TIMEOUT_CONNECT_MS: u64 = 5000;
 const TIMEOUT_PING_MS: u64 = 5000;
 const DEFAULT_TTL: u32 = 1000;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DisconnectReason {
     RemoteDisconnect,
     Shutdown,
     Timeout,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ConnectError {
     WrongDestination,
     AlreadyConnected,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DisconnectError {
     NotConnected,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ControlMsg {
     ConnectRequest { from: NodeId, to: NodeId },
     ConnectResponse(Result<(), ConnectError>),
@@ -39,22 +39,26 @@ pub enum ControlMsg {
     DisconnectResponse(Result<(), DisconnectError>),
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ConnectionStats {
     pub rtt: u32,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ConnectionEvent {
     ConnectionEstablished(ConnId),
     ConnectionDisconnected(ConnId),
     ConnectionStats(ConnId, ConnectionStats),
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Input {
     ConnectTo(NodeAddr),
     DisconnectFrom(NodeId),
     ControlIn(SocketAddr, ControlMsg),
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Output {
     ControlOut(SocketAddr, ControlMsg),
     ConnectionEvent(ConnectionEvent),
@@ -100,10 +104,10 @@ impl Connections {
     pub fn on_tick(&mut self, now_ms: u64) {
         let mut timeout_outgoings = vec![];
         for (remote, outgoing) in self.outgoings.iter_mut() {
-            if outgoing.created_at + TIMEOUT_CONNECT_MS < now_ms {
+            if outgoing.created_at + TIMEOUT_CONNECT_MS <= now_ms {
                 log::warn!("Connection to {} timed out", remote);
                 timeout_outgoings.push(*remote);
-            } else if outgoing.last_sent + RESEND_CONNECT_MS < now_ms {
+            } else if outgoing.last_sent + RESEND_CONNECT_MS <= now_ms {
                 self.queue.push_back(Output::ControlOut(*remote, ControlMsg::ConnectRequest { from: self.node_id, to: outgoing.to }));
                 outgoing.last_sent = now_ms;
                 log::warn!("Resending connect request to {}", remote)
@@ -116,7 +120,7 @@ impl Connections {
         //sending pings
         let mut timeout_connections = vec![];
         for (remote, conn) in self.conns.iter() {
-            if conn.last_pong + TIMEOUT_PING_MS < now_ms {
+            if conn.last_pong + TIMEOUT_PING_MS <= now_ms {
                 log::warn!("Connection to {}/{}/{} timed out", conn.node, conn.id, remote);
                 self.queue.push_back(Output::ConnectionEvent(ConnectionEvent::ConnectionDisconnected(conn.id)));
                 timeout_connections.push(*remote);
@@ -302,5 +306,190 @@ impl Connections {
     fn generate_conn_id(&mut self, direction: ConnDirection) -> ConnId {
         self.conn_seed += 1;
         ConnId::from_raw(0, direction, self.conn_seed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use std::net::{IpAddr, SocketAddr};
+
+    use atm0s_sdn_identity::{ConnId, NodeAddr};
+
+    use crate::controller_plane::connections::{ConnectError, ConnectionEvent, ConnectionStats, RESEND_CONNECT_MS, TIMEOUT_CONNECT_MS, TIMEOUT_PING_MS};
+
+    use super::{Connections, ControlMsg, Input, Output};
+
+    #[test]
+    fn handle_connect_success() {
+        let node_id = 1;
+        let remote_addr = SocketAddr::new(IpAddr::from([1, 2, 3, 4]), 1234);
+        let remote_node = 2;
+        let mut connections = Connections::new(node_id);
+        connections.on_event(0, Input::ControlIn(remote_addr, ControlMsg::ConnectRequest { from: remote_node, to: node_id }));
+        assert_eq!(connections.pop_output(), Some(Output::ControlOut(remote_addr, ControlMsg::ConnectResponse(Ok(())))));
+        assert_eq!(connections.pop_output(), Some(Output::ConnectionEvent(ConnectionEvent::ConnectionEstablished(ConnId::from_in(0, 1)))));
+        assert_eq!(connections.pop_output(), None);
+        assert_eq!(connections.conns.len(), 1);
+    }
+
+    #[test]
+    fn handle_connect_wrong_destination() {
+        let node_id = 1;
+        let other_node_id = 3;
+        let remote_addr = SocketAddr::new(IpAddr::from([1, 2, 3, 4]), 1234);
+        let remote_node = 2;
+        let mut connections = Connections::new(node_id);
+        connections.on_event(0, Input::ControlIn(remote_addr, ControlMsg::ConnectRequest { from: remote_node, to: other_node_id }));
+        assert_eq!(
+            connections.pop_output(),
+            Some(Output::ControlOut(remote_addr, ControlMsg::ConnectResponse(Err(ConnectError::WrongDestination))))
+        );
+        assert_eq!(connections.pop_output(), None);
+        assert_eq!(connections.conns.len(), 0);
+    }
+
+    #[test]
+    fn handle_connect_error_already_connected() {
+        let node_id = 1;
+        let remote_addr = SocketAddr::new(IpAddr::from([1, 2, 3, 4]), 1234);
+        let remote_node = 2;
+        let mut connections = Connections::new(node_id);
+        connections.on_event(0, Input::ControlIn(remote_addr, ControlMsg::ConnectRequest { from: remote_node, to: node_id }));
+        assert_eq!(connections.pop_output(), Some(Output::ControlOut(remote_addr, ControlMsg::ConnectResponse(Ok(())))));
+        assert_eq!(connections.pop_output(), Some(Output::ConnectionEvent(ConnectionEvent::ConnectionEstablished(ConnId::from_in(0, 1)))));
+        assert_eq!(connections.pop_output(), None);
+
+        connections.on_event(0, Input::ControlIn(remote_addr, ControlMsg::ConnectRequest { from: remote_node, to: node_id }));
+        assert_eq!(
+            connections.pop_output(),
+            Some(Output::ControlOut(remote_addr, ControlMsg::ConnectResponse(Err(ConnectError::AlreadyConnected))))
+        );
+        assert_eq!(connections.pop_output(), None);
+        assert_eq!(connections.conns.len(), 1);
+    }
+
+    #[test]
+    fn resend_connect() {
+        let node_id = 1;
+        let remote_node_addr: NodeAddr = "2@/ip4/1.2.3.4/udp/1234".parse().expect("");
+        let remote_addr = SocketAddr::new(IpAddr::from([1, 2, 3, 4]), 1234);
+        let remote_node = 2;
+        let mut connections = Connections::new(node_id);
+        connections.on_event(0, Input::ConnectTo(remote_node_addr));
+        assert_eq!(
+            connections.pop_output(),
+            Some(Output::ControlOut(remote_addr, ControlMsg::ConnectRequest { from: node_id, to: remote_node }))
+        );
+        assert_eq!(connections.pop_output(), None);
+
+        connections.on_tick(RESEND_CONNECT_MS);
+        assert_eq!(
+            connections.pop_output(),
+            Some(Output::ControlOut(remote_addr, ControlMsg::ConnectRequest { from: node_id, to: remote_node }))
+        );
+        assert_eq!(connections.pop_output(), None);
+    }
+
+    #[test]
+    fn send_connect_success() {
+        let node_id = 1;
+        let remote_node_addr: NodeAddr = "2@/ip4/1.2.3.4/udp/1234".parse().expect("");
+        let remote_addr = SocketAddr::new(IpAddr::from([1, 2, 3, 4]), 1234);
+        let remote_node = 2;
+        let mut connections = Connections::new(node_id);
+        connections.on_event(0, Input::ConnectTo(remote_node_addr));
+        assert_eq!(
+            connections.pop_output(),
+            Some(Output::ControlOut(remote_addr, ControlMsg::ConnectRequest { from: node_id, to: remote_node }))
+        );
+        assert_eq!(connections.pop_output(), None);
+
+        connections.on_event(0, Input::ControlIn(remote_addr, ControlMsg::ConnectResponse(Ok(()))));
+        assert_eq!(connections.pop_output(), Some(Output::ConnectionEvent(ConnectionEvent::ConnectionEstablished(ConnId::from_out(0, 1)))));
+        assert_eq!(connections.pop_output(), None);
+        assert_eq!(connections.outgoings.len(), 0);
+        assert_eq!(connections.conns.len(), 1);
+    }
+
+    #[test]
+    fn send_connect_error() {
+        let node_id = 1;
+        let remote_node_addr: NodeAddr = "2@/ip4/1.2.3.4/udp/1234".parse().expect("");
+        let remote_addr = SocketAddr::new(IpAddr::from([1, 2, 3, 4]), 1234);
+        let remote_node = 2;
+        let mut connections = Connections::new(node_id);
+        connections.on_event(0, Input::ConnectTo(remote_node_addr));
+        assert_eq!(
+            connections.pop_output(),
+            Some(Output::ControlOut(remote_addr, ControlMsg::ConnectRequest { from: node_id, to: remote_node }))
+        );
+        assert_eq!(connections.pop_output(), None);
+
+        connections.on_event(0, Input::ControlIn(remote_addr, ControlMsg::ConnectResponse(Err(ConnectError::WrongDestination))));
+        assert_eq!(connections.pop_output(), None);
+        assert_eq!(connections.outgoings.len(), 0);
+    }
+
+    #[test]
+    fn send_connect_timeout() {
+        let node_id = 1;
+        let remote_node_addr: NodeAddr = "2@/ip4/1.2.3.4/udp/1234".parse().expect("");
+        let remote_addr = SocketAddr::new(IpAddr::from([1, 2, 3, 4]), 1234);
+        let remote_node = 2;
+        let mut connections = Connections::new(node_id);
+        connections.on_event(0, Input::ConnectTo(remote_node_addr));
+        assert_eq!(
+            connections.pop_output(),
+            Some(Output::ControlOut(remote_addr, ControlMsg::ConnectRequest { from: node_id, to: remote_node }))
+        );
+        assert_eq!(connections.pop_output(), None);
+
+        connections.on_tick(TIMEOUT_CONNECT_MS);
+        assert_eq!(connections.pop_output(), None);
+        assert_eq!(connections.outgoings.len(), 0);
+    }
+
+    #[test]
+    fn ping_pong_success() {
+        let node_id = 1;
+        let remote_addr = SocketAddr::new(IpAddr::from([1, 2, 3, 4]), 1234);
+        let remote_node = 2;
+        let mut connections = Connections::new(node_id);
+        connections.on_event(0, Input::ControlIn(remote_addr, ControlMsg::ConnectRequest { from: remote_node, to: node_id }));
+        assert_eq!(connections.pop_output(), Some(Output::ControlOut(remote_addr, ControlMsg::ConnectResponse(Ok(())))));
+        assert_eq!(connections.pop_output(), Some(Output::ConnectionEvent(ConnectionEvent::ConnectionEstablished(ConnId::from_in(0, 1)))));
+        assert_eq!(connections.pop_output(), None);
+
+        connections.on_tick(1000);
+        assert_eq!(connections.pop_output(), Some(Output::ControlOut(remote_addr, ControlMsg::Ping(0, 1000))));
+        assert_eq!(connections.pop_output(), None);
+
+        connections.on_event(1100, Input::ControlIn(remote_addr, ControlMsg::Pong(0, 1000)));
+        assert_eq!(
+            connections.pop_output(),
+            Some(Output::ConnectionEvent(ConnectionEvent::ConnectionStats(ConnId::from_in(0, 1), ConnectionStats { rtt: 100 })))
+        );
+        assert_eq!(connections.pop_output(), None);
+    }
+
+    #[test]
+    fn ping_pong_timeout() {
+        let node_id = 1;
+        let remote_addr = SocketAddr::new(IpAddr::from([1, 2, 3, 4]), 1234);
+        let remote_node = 2;
+        let mut connections = Connections::new(node_id);
+        connections.on_event(0, Input::ControlIn(remote_addr, ControlMsg::ConnectRequest { from: remote_node, to: node_id }));
+        assert_eq!(connections.pop_output(), Some(Output::ControlOut(remote_addr, ControlMsg::ConnectResponse(Ok(())))));
+        assert_eq!(connections.pop_output(), Some(Output::ConnectionEvent(ConnectionEvent::ConnectionEstablished(ConnId::from_in(0, 1)))));
+        assert_eq!(connections.pop_output(), None);
+
+        connections.on_tick(1000);
+        assert_eq!(connections.pop_output(), Some(Output::ControlOut(remote_addr, ControlMsg::Ping(0, 1000))));
+        assert_eq!(connections.pop_output(), None);
+
+        connections.on_tick(1000 + TIMEOUT_PING_MS);
+        assert_eq!(connections.pop_output(), Some(Output::ConnectionEvent(ConnectionEvent::ConnectionDisconnected(ConnId::from_in(0, 1)))));
+        assert_eq!(connections.pop_output(), None);
     }
 }
