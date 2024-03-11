@@ -48,7 +48,7 @@ impl ControllerPlane {
                 todo!()
             }
             Input::ShutdownRequest => {
-                todo!()
+                self.conns.on_event(now_ms, connections::Input::ShutdownRequest);
             }
         }
     }
@@ -56,6 +56,7 @@ impl ControllerPlane {
     pub fn pop_output(&mut self) -> Option<Output> {
         match self.conns.pop_output() {
             Some(connections::Output::ControlOut(remote, msg)) => Some(Output::Data(remote, DataEvent::Control(msg))),
+            Some(connections::Output::ShutdownSuccess) => Some(Output::ShutdownSuccess),
             Some(connections::Output::ConnectionEvent(event)) => None,
             None => None,
         }

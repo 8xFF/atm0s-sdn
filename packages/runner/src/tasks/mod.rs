@@ -5,7 +5,7 @@ mod event_convert;
 use std::time::Instant;
 
 use atm0s_sdn_identity::NodeAddr;
-use sans_io_runtime::{Controller, Task, TaskGroupOutputsState, TaskInput, WorkerInner, WorkerInnerInput, WorkerInnerOutput};
+use sans_io_runtime::{Controller, Task, TaskGroupOutputsState, TaskInput, TaskOutput, WorkerInner, WorkerInnerInput, WorkerInnerOutput};
 
 use self::{
     controller_plane::{ControllerPlaneCfg, ControllerPlaneTask},
@@ -46,15 +46,37 @@ pub struct SdnInnerCfg {
 
 pub struct SdnSpawnCfg {}
 
+enum State {
+    Running,
+    Shutdowning,
+    Shutdowned,
+}
+
 pub struct SdnWorkerInner {
     worker: u16,
     controller: Option<ControllerPlaneTask>,
     data: DataPlaneTask,
     group_state: TaskGroupOutputsState<2>,
     last_input_group: Option<u16>,
+    state: State,
 }
 
-impl SdnWorkerInner {}
+impl SdnWorkerInner {
+    fn convert_controller_output<'a>(
+        &mut self,
+        now: Instant,
+        event: TaskOutput<controller_plane::ChannelIn, controller_plane::ChannelOut, controller_plane::EventOut>,
+    ) -> Option<WorkerInnerOutput<'a, SdnExtOut, SdnChannel, SdnEvent, SdnSpawnCfg>> {
+        match event {
+            TaskOutput::Destroy => {
+                self.state = State::Shutdowned;
+                log::info!("Controller plane task destroyed => will destroy data plane task");
+                Some(event_convert::data_plane::convert_output(self.worker, self.data.shutdown(now)?))
+            }
+            _ => Some(event_convert::controller_plane::convert_output(self.worker, event)),
+        }
+    }
+}
 
 impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpawnCfg> for SdnWorkerInner {
     fn build(worker: u16, cfg: SdnInnerCfg) -> Self {
@@ -68,6 +90,7 @@ impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpaw
                 data: DataPlaneTask::build(worker, cfg.udp_port),
                 group_state: TaskGroupOutputsState::default(),
                 last_input_group: None,
+                state: State::Running,
             }
         } else {
             Self {
@@ -76,6 +99,7 @@ impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpaw
                 data: DataPlaneTask::build(worker, cfg.udp_port),
                 group_state: TaskGroupOutputsState::default(),
                 last_input_group: None,
+                state: State::Running,
             }
         }
     }
@@ -85,14 +109,19 @@ impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpaw
     }
 
     fn tasks(&self) -> usize {
-        1 + if self.controller.is_some() {
-            1
-        } else {
-            0
+        match self.state {
+            State::Running | State::Shutdowning => {
+                1 + if self.controller.is_some() {
+                    1
+                } else {
+                    0
+                }
+            }
+            State::Shutdowned => 0,
         }
     }
 
-    fn spawn(&mut self, _now: Instant, cfg: SdnSpawnCfg) {
+    fn spawn(&mut self, _now: Instant, _cfg: SdnSpawnCfg) {
         todo!("Spawn not implemented")
     }
 
@@ -104,7 +133,7 @@ impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpaw
                 ControllerPlaneTask::TYPE => {
                     if let Some(out) = gs.process(self.controller.as_mut().map(|c| c.on_tick(now)).flatten()) {
                         self.last_input_group = Some(ControllerPlaneTask::TYPE);
-                        return Some(event_convert::controller_plane::convert_output(self.worker, out));
+                        return self.convert_controller_output(now, out);
                     }
                 }
                 DataPlaneTask::TYPE => {
@@ -126,7 +155,7 @@ impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpaw
                     let event = event_convert::controller_plane::convert_input(event);
                     let out = self.controller.as_mut().map(|c| c.on_event(now, event)).flatten()?;
                     self.last_input_group = Some(ControllerPlaneTask::TYPE);
-                    Some(event_convert::controller_plane::convert_output(self.worker, out))
+                    self.convert_controller_output(now, out)
                 }
                 DataPlaneTask::TYPE => {
                     let event = event_convert::data_plane::convert_input(event);
@@ -152,7 +181,7 @@ impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpaw
         match self.last_input_group? {
             ControllerPlaneTask::TYPE => {
                 let out = self.controller.as_mut().map(|c| c.pop_output(now)).flatten()?;
-                Some(event_convert::controller_plane::convert_output(self.worker, out))
+                self.convert_controller_output(now, out)
             }
             DataPlaneTask::TYPE => {
                 let out = self.data.pop_output(now)?;
@@ -163,6 +192,17 @@ impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpaw
     }
 
     fn shutdown<'a>(&mut self, now: Instant) -> Option<WorkerInnerOutput<'a, SdnExtOut, SdnChannel, SdnEvent, SdnSpawnCfg>> {
-        None
+        if !matches!(self.state, State::Running) {
+            return None;
+        }
+
+        if let Some(controller) = &mut self.controller {
+            self.state = State::Shutdowning;
+            let out = controller.shutdown(now)?;
+            self.convert_controller_output(now, out)
+        } else {
+            self.state = State::Shutdowned;
+            Some(event_convert::data_plane::convert_output(self.worker, self.data.shutdown(now)?))
+        }
     }
 }

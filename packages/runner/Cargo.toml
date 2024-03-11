@@ -22,5 +22,6 @@ bincode.workspace = true
 
 [dev-dependencies]
 env_logger = { workspace = true }
+signal-hook = "0.3.17"
 
 [features]

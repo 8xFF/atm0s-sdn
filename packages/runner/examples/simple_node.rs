@@ -1,6 +1,12 @@
 use atm0s_sdn_identity::{NodeAddr, NodeId};
 use clap::Parser;
-use std::time::Duration;
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use atm0s_sdn::builder::SdnBuilder;
 
@@ -26,6 +32,9 @@ struct Args {
 }
 
 fn main() {
+    let term = Arc::new(AtomicBool::new(false));
+    signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&term)).expect("Should register hook");
+    let mut shutdown_wait = 0;
     let args = Args::parse();
     env_logger::builder().format_timestamp_millis().init();
     let mut builder = SdnBuilder::new(args.node_id, args.udp_port);
@@ -36,8 +45,17 @@ fn main() {
 
     let mut controller = builder.build(2);
 
-    loop {
-        controller.process();
+    while controller.process().is_some() {
+        if term.load(Ordering::Relaxed) {
+            if shutdown_wait == 200 {
+                log::warn!("Force shutdown");
+                break;
+            }
+            shutdown_wait += 1;
+            controller.shutdown();
+        }
         std::thread::sleep(Duration::from_millis(10));
     }
+
+    log::info!("Server shutdown");
 }

@@ -56,12 +56,14 @@ pub enum Input {
     ConnectTo(NodeAddr),
     DisconnectFrom(NodeId),
     ControlIn(SocketAddr, ControlMsg),
+    ShutdownRequest,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Output {
     ControlOut(SocketAddr, ControlMsg),
     ConnectionEvent(ConnectionEvent),
+    ShutdownSuccess,
 }
 
 struct Outgoing {
@@ -209,32 +211,22 @@ impl Connections {
                         self.queue.push_back(Output::ControlOut(remote, ControlMsg::DisconnectResponse(Err(DisconnectError::NotConnected))));
                     }
                 }
-                ControlMsg::DisconnectResponse(Ok(())) => {
+                ControlMsg::DisconnectResponse(res) => {
                     if let Some(conn) = self.conns.get(&remote) {
                         if conn.disconnect.is_some() {
                             self.map.remove(&conn.id);
-                            log::info!("Received disconnect response from {} with conn {}", remote, conn.id);
+                            log::info!("Received disconnect response {:?} from {} with conn {}", res, remote, conn.id);
                             self.queue.push_back(Output::ConnectionEvent(ConnectionEvent::ConnectionDisconnected(conn.id)));
                             self.conns.remove(&remote);
+                            if self.conns.is_empty() {
+                                log::info!("All connections closed => output ShutdownSuccess");
+                                self.queue.push_back(Output::ShutdownSuccess);
+                            }
                         } else {
-                            log::warn!("Received disconnect response from {} with conn {} but not disconnecting", remote, conn.id);
+                            log::warn!("Received disconnect response {:?} from {} with conn {} but not disconnecting", res, remote, conn.id);
                         }
                     } else {
-                        log::warn!("Received disconnect response from unknown remote {}", remote);
-                    }
-                }
-                ControlMsg::DisconnectResponse(Err(err)) => {
-                    if let Some(conn) = self.conns.get(&remote) {
-                        if conn.disconnect.is_some() {
-                            self.map.remove(&conn.id);
-                            log::info!("Received disconnect response error {:?} from {} with conn {} => force close", err, remote, conn.id);
-                            self.queue.push_back(Output::ConnectionEvent(ConnectionEvent::ConnectionDisconnected(conn.id)));
-                            self.conns.remove(&remote);
-                        } else {
-                            log::warn!("Received disconnect response from {} with conn {} but not disconnecting", remote, conn.id);
-                        }
-                    } else {
-                        log::warn!("Received disconnect response from unknown remote {}", remote);
+                        log::warn!("Received disconnect response {:?} from unknown remote {}", res, remote);
                     }
                 }
                 ControlMsg::Ping(seq, timestamp) => {
@@ -250,6 +242,20 @@ impl Connections {
                     }
                 }
             },
+            Input::ShutdownRequest => {
+                log::info!("Shutdown request");
+                self.outgoings.clear();
+                if self.conns.is_empty() {
+                    log::info!("No connections to close => output ShutdownSuccess");
+                    self.queue.push_back(Output::ShutdownSuccess);
+                } else {
+                    for (remote, conn) in self.conns.iter_mut() {
+                        log::info!("Sending disconnect request to {} node {} with reason Shutdown", remote, conn.node);
+                        conn.disconnect = Some(DisconnectReason::Shutdown);
+                        self.queue.push_back(Output::ControlOut(*remote, ControlMsg::DisconnectRequest(DisconnectReason::Shutdown)));
+                    }
+                }
+            }
         }
     }
 
@@ -291,10 +297,11 @@ impl Connections {
     }
 
     fn disconnect_from(&mut self, node: NodeId) {
-        log::info!("Disconnect_from: {}", node);
+        log::info!("Disconnect from: {}", node);
 
         for (remote, conn) in self.conns.iter_mut() {
             if conn.node == node {
+                log::info!("Sending disconnect request to {} node {} with reason RemoteDisconnect", remote, conn.node);
                 conn.disconnect = Some(DisconnectReason::RemoteDisconnect);
                 self.queue.push_back(Output::ControlOut(*remote, ControlMsg::DisconnectRequest(DisconnectReason::RemoteDisconnect)));
             }

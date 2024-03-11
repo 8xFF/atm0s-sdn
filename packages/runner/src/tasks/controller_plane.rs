@@ -34,6 +34,7 @@ pub struct ControllerPlaneTask {
     queue: VecDeque<TaskOutput<'static, ChannelIn, ChannelOut, EventOut>>,
     ticker: TimeTicker,
     timer: TimePivot,
+    shutdowned: bool,
 }
 
 impl ControllerPlaneTask {
@@ -44,6 +45,7 @@ impl ControllerPlaneTask {
             queue: VecDeque::from([TaskOutput::Bus(BusEvent::ChannelSubscribe(()))]),
             ticker: TimeTicker::build(1000),
             timer: TimePivot::build(),
+            shutdowned: false,
         }
     }
 
@@ -53,9 +55,7 @@ impl ControllerPlaneTask {
             ControllerOutput::NetworkRule(rule) => {
                 todo!()
             }
-            ControllerOutput::ShutdownSuccess => {
-                todo!()
-            }
+            ControllerOutput::ShutdownSuccess => TaskOutput::Destroy,
         }
     }
 }
