@@ -179,8 +179,12 @@ impl Table {
 
 #[cfg(test)]
 mod tests {
-    use crate::table::{Metric, Path, Table, TableSync};
     use atm0s_sdn_identity::{ConnId, NodeId, NodeIdType};
+
+    use crate::core::{
+        table::{Table, TableSync},
+        Metric, Path,
+    };
 
     #[test]
     fn create_manual() {

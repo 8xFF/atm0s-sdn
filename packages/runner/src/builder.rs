@@ -9,15 +9,25 @@ pub struct SdnBuilder {
     node_id: NodeId,
     udp_port: u16,
     seeds: Vec<NodeAddr>,
+    services: Vec<Box<dyn atm0s_sdn_network::controller_plane::Service>>,
 }
 
 impl SdnBuilder {
     pub fn new(node_id: NodeId, udp_port: u16) -> Self {
-        Self { node_id, udp_port, seeds: vec![] }
+        Self {
+            node_id,
+            udp_port,
+            seeds: vec![],
+            services: vec![],
+        }
     }
 
     pub fn add_seed(&mut self, addr: NodeAddr) {
         self.seeds.push(addr);
+    }
+
+    pub fn add_service(&mut self, service: Box<dyn atm0s_sdn_network::controller_plane::Service>) {
+        self.services.push(service);
     }
 
     pub fn build(self, workers: usize) -> SdnController {
@@ -36,6 +46,7 @@ impl SdnBuilder {
                 controller: Some(ControllerCfg {
                     password: "password".to_string(),
                     tick_ms: 1000,
+                    services: self.services,
                 }),
             },
             None,

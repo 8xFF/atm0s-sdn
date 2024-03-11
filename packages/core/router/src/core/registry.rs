@@ -1,11 +1,10 @@
 use atm0s_sdn_identity::{ConnId, NodeId};
 use std::collections::HashMap;
 
-use crate::ServiceDestination;
 use atm0s_sdn_utils::init_array::init_array;
 use serde::{Deserialize, Serialize};
 
-use crate::table::{Dest, Metric, Path};
+use super::{table::Dest, Metric, Path, ServiceDestination};
 
 pub const REGISTRY_LOCAL_BW: u32 = 1000000; //1Gbps
 
@@ -139,10 +138,9 @@ impl Registry {
 
 #[cfg(test)]
 mod tests {
-    use crate::registry::{Registry, RegistrySync, REGISTRY_LOCAL_BW};
-    use crate::table::Metric;
-    use crate::ServiceDestination;
     use atm0s_sdn_identity::{ConnId, NodeId};
+
+    use crate::core::{registry::REGISTRY_LOCAL_BW, Metric, Registry, RegistrySync, ServiceDestination};
 
     #[test]
     fn create_manual() {

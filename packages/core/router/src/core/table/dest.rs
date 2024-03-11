@@ -1,6 +1,6 @@
-use crate::table::metric::Metric;
-use crate::table::Path;
 use atm0s_sdn_identity::{ConnId, NodeId};
+
+use super::{Metric, Path};
 
 #[derive(Debug, Default)]
 pub struct Dest {
@@ -90,8 +90,9 @@ impl Dest {
 
 #[cfg(test)]
 mod tests {
-    use crate::table::{Dest, Metric, Path};
     use atm0s_sdn_identity::{ConnId, NodeId};
+
+    use crate::core::{table::Dest, Metric, Path};
 
     #[test]
     fn push_sort() {

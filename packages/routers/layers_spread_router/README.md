@@ -1,1 +1,0 @@
-This module not allow async, sync only please

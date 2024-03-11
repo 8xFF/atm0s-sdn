@@ -1,12 +1,5 @@
-mod force_local;
-mod force_node;
-
 use atm0s_sdn_identity::{ConnId, NodeId};
-pub use force_local::ForceLocalRouter;
-pub use force_node::ForceNodeRouter;
-
-#[cfg(any(test, feature = "mock"))]
-use mockall::automock;
+pub mod core;
 
 /// ServiceMeta is using for determine which node will be routed, example node with lowest price or lowest latency, which for future use
 pub type ServiceMeta = u32;
@@ -44,7 +37,6 @@ impl RouteAction {
     }
 }
 
-#[cfg_attr(any(test, feature = "mock"), automock)]
 pub trait RouterTable: Send + Sync {
     /// Register service
     fn register_service(&self, service_id: u8);
@@ -101,14 +93,5 @@ mod tests {
         assert!(!local.is_remote());
         assert!(remote.is_remote());
         assert!(!reject.is_remote());
-    }
-
-    #[test]
-    fn test_derive_action_to_service() {
-        let router = ForceLocalRouter();
-        let route = RouteRule::ToService(3);
-        let service_id = 1;
-
-        assert_eq!(router.derive_action(&route, service_id), RouteAction::Local);
     }
 }

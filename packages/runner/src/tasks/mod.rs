@@ -36,6 +36,7 @@ pub enum SdnEvent {
 pub struct ControllerCfg {
     pub password: String,
     pub tick_ms: u64,
+    pub services: Vec<Box<dyn atm0s_sdn_network::controller_plane::Service>>,
 }
 
 pub struct SdnInnerCfg {
@@ -86,6 +87,7 @@ impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpaw
                 controller: Some(ControllerPlaneTask::build(ControllerPlaneCfg {
                     node_id: cfg.node_id,
                     tick_ms: controller.tick_ms,
+                    services: controller.services,
                 })),
                 data: DataPlaneTask::build(worker, cfg.udp_port),
                 group_state: TaskGroupOutputsState::default(),

@@ -1,9 +1,11 @@
 use atm0s_sdn_identity::{ConnId, NodeId, NodeIdType};
 use serde::{Deserialize, Serialize};
 
-use crate::registry::{Registry, RegistrySync};
-use crate::table::{Metric, NodeIndex, Path, Table, TableSync};
-use crate::ServiceDestination;
+use crate::core::{Metric, Path};
+use crate::core::{Registry, RegistrySync};
+
+use super::table::{NodeIndex, Table, TableSync};
+use super::ServiceDestination;
 
 /// Which layer in node id space, in this case is 0 -> 3
 pub type Layer = u8;
@@ -183,11 +185,11 @@ impl Router {
 mod tests {
     use std::vec;
 
-    use crate::registry::{RegistrySync, REGISTRY_LOCAL_BW};
-    use crate::router::{Router, RouterSync};
-    use crate::table::{Metric, Path, TableSync};
-    use crate::ServiceDestination;
     use atm0s_sdn_identity::{ConnId, NodeId, NodeIdType};
+
+    use crate::core::registry::REGISTRY_LOCAL_BW;
+    use crate::core::{table::TableSync, Metric, Path, Router, RouterSync};
+    use crate::core::{RegistrySync, ServiceDestination};
 
     #[test]
     fn create_manual_multi_layers() {

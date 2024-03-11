@@ -12,4 +12,17 @@ mock = ["mockall"]
 
 [dependencies]
 atm0s-sdn-identity = { path = "../identity", version = "0.2.0" }
+atm0s-sdn-utils = { path = "../utils", version = "0.1.1" }
+serde = { workspace = true }
+log = { workspace = true }
 mockall = { workspace = true, optional = true }
+
+
+[dev-dependencies]
+env_logger = { workspace = true }
+criterion = { version = "0.5.1" }
+rand = { version = "0.8.5" }
+
+[[bench]]
+name = "router"
+harness = false

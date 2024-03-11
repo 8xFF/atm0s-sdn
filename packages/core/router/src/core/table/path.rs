@@ -1,7 +1,7 @@
 use atm0s_sdn_identity::{ConnId, NodeId};
 use std::cmp::Ordering;
 
-use crate::table::Metric;
+use super::Metric;
 
 #[derive(Debug, Clone)]
 pub struct Path(pub ConnId, pub NodeId, pub Metric);
@@ -32,7 +32,9 @@ mod tests {
 
     use atm0s_sdn_identity::ConnId;
 
-    use crate::{Metric, Path};
+    use crate::core::Metric;
+
+    use super::Path;
 
     #[test]
     fn test_compare_path() {

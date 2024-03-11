@@ -88,7 +88,7 @@ impl PartialEq<Self> for Metric {
 
 #[cfg(test)]
 mod tests {
-    use crate::table::metric::{concat_hops, Metric};
+    use super::{concat_hops, Metric};
 
     #[test]
     fn eq() {

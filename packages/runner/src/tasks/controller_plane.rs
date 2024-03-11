@@ -2,7 +2,7 @@ use std::{collections::VecDeque, net::SocketAddr, time::Instant};
 
 use atm0s_sdn_identity::NodeAddr;
 use atm0s_sdn_network::{
-    controller_plane::{ControllerPlane, Input as ControllerInput, Output as ControllerOutput},
+    controller_plane::{ControllerPlane, Input as ControllerInput, Output as ControllerOutput, Service},
     event::DataEvent,
 };
 use sans_io_runtime::{bus::BusEvent, Task, TaskInput, TaskOutput};
@@ -15,6 +15,7 @@ pub type ChannelOut = ();
 pub struct ControllerPlaneCfg {
     pub node_id: u32,
     pub tick_ms: u64,
+    pub services: Vec<Box<dyn Service>>,
 }
 
 #[derive(Debug, Clone)]
@@ -41,7 +42,7 @@ impl ControllerPlaneTask {
     pub fn build(cfg: ControllerPlaneCfg) -> Self {
         Self {
             node_id: cfg.node_id,
-            controller: ControllerPlane::new(cfg.node_id),
+            controller: ControllerPlane::new(cfg.node_id, cfg.services),
             queue: VecDeque::from([TaskOutput::Bus(BusEvent::ChannelSubscribe(()))]),
             ticker: TimeTicker::build(1000),
             timer: TimePivot::build(),
@@ -86,7 +87,8 @@ impl Task<ChannelIn, ChannelOut, EventIn, EventOut> for ControllerPlaneTask {
     }
 
     fn pop_output<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut>> {
-        if let Some(output) = self.controller.pop_output() {
+        let now_ms = self.timer.timestamp_ms(now);
+        if let Some(output) = self.controller.pop_output(now_ms) {
             self.queue.push_back(Self::map_output(output));
         }
         self.queue.pop_front()
