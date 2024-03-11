@@ -1,8 +1,8 @@
+use atm0s_sdn_identity::{NodeAddr, NodeId};
 use clap::Parser;
-use std::{net::SocketAddr, time::Duration};
+use std::time::Duration;
 
-use atm0s_sdn::tasks::*;
-use sans_io_runtime::backend::PollBackend;
+use atm0s_sdn::builder::SdnBuilder;
 
 /// Simple program to running a node
 #[derive(Parser, Debug)]
@@ -10,7 +10,7 @@ use sans_io_runtime::backend::PollBackend;
 struct Args {
     /// Node Id
     #[arg(short, long)]
-    node_id: u32,
+    node_id: NodeId,
 
     /// Listen address
     #[arg(short, long)]
@@ -18,7 +18,7 @@ struct Args {
 
     /// Address of node we should connect to
     #[arg(short, long)]
-    seeds: Vec<SocketAddr>,
+    seeds: Vec<NodeAddr>,
 
     /// Password for the network
     #[arg(short, long, default_value = "password")]
@@ -28,31 +28,16 @@ struct Args {
 fn main() {
     let args = Args::parse();
     env_logger::builder().format_timestamp_millis().init();
-    let mut controler = SdnController::default();
-    controler.add_worker::<_, SdnWorkerInner, PollBackend<128, 128>>(
-        SdnInnerCfg {
-            node_id: args.node_id,
-            udp_port: args.udp_port,
-            controller: Some(ControllerCfg {
-                password: "password".to_string(),
-                behaviours: vec![],
-                seeds: args.seeds,
-            }),
-        },
-        None,
-    );
+    let mut builder = SdnBuilder::new(args.node_id, args.udp_port);
 
-    controler.add_worker::<_, SdnWorkerInner, PollBackend<128, 128>>(
-        SdnInnerCfg {
-            node_id: args.node_id,
-            udp_port: args.udp_port,
-            controller: None,
-        },
-        None,
-    );
+    for seed in args.seeds {
+        builder.add_seed(seed);
+    }
+
+    let mut controller = builder.build(2);
 
     loop {
-        controler.process();
+        controller.process();
         std::thread::sleep(Duration::from_millis(10));
     }
 }

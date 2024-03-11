@@ -34,7 +34,7 @@ impl ConnId {
     /// # Returns
     ///
     /// A new `ConnId` instance.
-    fn from(protocol: u8, direction: ConnDirection, uuid: u64) -> ConnId {
+    pub fn from_raw(protocol: u8, direction: ConnDirection, uuid: u64) -> ConnId {
         let value = uuid << 16 | ((protocol as u64) << 8) | (direction.to_byte() as u64);
         ConnId { value }
     }
@@ -50,7 +50,7 @@ impl ConnId {
     ///
     /// A new `ConnId` instance.
     pub fn from_out(protocol: u8, uuid: u64) -> ConnId {
-        Self::from(protocol, ConnDirection::Outgoing, uuid)
+        Self::from_raw(protocol, ConnDirection::Outgoing, uuid)
     }
 
     /// Creates a new incoming `ConnId` from the given `protocol` and `uuid`.
@@ -72,7 +72,7 @@ impl ConnId {
     /// let conn_id = ConnId::from_in(1, 123456789);
     /// ```
     pub fn from_in(protocol: u8, uuid: u64) -> ConnId {
-        Self::from(protocol, ConnDirection::Incoming, uuid)
+        Self::from_raw(protocol, ConnDirection::Incoming, uuid)
     }
 
     /// Returns the protocol of the connection ID.

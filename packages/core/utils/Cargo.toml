@@ -12,6 +12,3 @@ auto-clear = []
 [dependencies]
 rand = { workspace = true }
 log = { workspace = true }
-async-std = { workspace = true }
-async-notify = { workspace = true }
-async-trait = { workspace = true }
