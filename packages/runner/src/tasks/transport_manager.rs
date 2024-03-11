@@ -9,7 +9,7 @@ use sans_io_runtime::{bus::BusEvent, Task, TaskInput, TaskOutput};
 use super::{
     connection::ConnId,
     events::{ConnectionMessage, TransportEvent, TransportWorkerEvent},
-    time::TimeTicker,
+    time::TimeTicker, transport_worker,
 };
 
 pub type ChannelIn = ();
@@ -51,6 +51,7 @@ pub struct TransportManagerTask {
     connections_reverse: HashMap<ConnId, SocketAddr>,
     ticker: TimeTicker,
     queue: VecDeque<TaskOutput<'static, ChannelIn, ChannelOut, EventOut>>,
+    shutdown: bool,
 }
 
 impl TransportManagerTask {
@@ -66,6 +67,7 @@ impl TransportManagerTask {
             connections_reverse: HashMap::new(),
             ticker: TimeTicker::build(TICK_MS),
             queue: VecDeque::from([TaskOutput::Bus(BusEvent::ChannelSubscribe(()))]),
+            shutdown: false,
         }
     }
 
@@ -79,6 +81,10 @@ impl Task<ChannelIn, ChannelOut, EventIn, EventOut> for TransportManagerTask {
     const TYPE: u16 = 1;
 
     fn on_tick<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut>> {
+        if self.shutdown && self.connections.is_empty() && self.outgoing_connections.is_empty() {
+            self.queue.push_back(TaskOutput::Destroy);
+        }
+
         if let Some(e) = self.queue.pop_front() {
             return Some(e);
         }
@@ -144,6 +150,7 @@ impl Task<ChannelIn, ChannelOut, EventIn, EventOut> for TransportManagerTask {
             }
             EventIn::Disconnected(conn) => {
                 let remote = self.connections_reverse.remove(&conn)?;
+                self.outgoing_connections.remove(&remote);
                 self.connections.remove(&remote);
                 self.queue.push_back(build_out(EventOut::Worker(TransportWorkerEvent::UnPinConnection(conn))));
                 Some(build_out(EventOut::Transport(TransportEvent::Disconnected(conn))))
@@ -152,7 +159,10 @@ impl Task<ChannelIn, ChannelOut, EventIn, EventOut> for TransportManagerTask {
                 ConnectionMessage::Ping(..) => None,
                 ConnectionMessage::Pong(..) => None,
                 ConnectionMessage::ConnectRequest { node_id, meta, password } => {
-                    let res = if password.eq(&self.password) {
+                    let res = if self.shutdown {
+                        log::warn!("TransportManagerTask connect from {remote} but in shutdown state");
+                        Err("In shutdown state".to_string())
+                    } else if password.eq(&self.password) {
                         if self.connections.contains_key(&remote) {
                             log::warn!("TransportManagerTask connect from {remote} but already connected");
                             Err("Already connected".to_string())
@@ -170,7 +180,7 @@ impl Task<ChannelIn, ChannelOut, EventIn, EventOut> for TransportManagerTask {
                         Err("Wrong password".to_string())
                     };
                     Some(build_out(EventOut::Worker(TransportWorkerEvent::SendTo(remote, ConnectionMessage::ConnectResponse(res)))))
-                }
+                },
                 ConnectionMessage::ConnectResponse(res) => match res {
                     Ok(node_id) => {
                         self.outgoing_connections.remove(&remote);
@@ -193,15 +203,47 @@ impl Task<ChannelIn, ChannelOut, EventIn, EventOut> for TransportManagerTask {
                         Some(build_out(EventOut::Transport(TransportEvent::OutgoingError(ConnId(0), err))))
                     }
                 },
+                ConnectionMessage::DisconnectRequest(reason) => {
+                    self.outgoing_connections.remove(&remote);
+                    if let Some(conn) = self.connections.remove(&remote) {
+                        self.connections_reverse.remove(&conn);
+                        self.queue.push_back(build_out(EventOut::Worker(TransportWorkerEvent::UnPinConnection(conn))));
+                        self.queue.push_back(build_out(EventOut::Transport(TransportEvent::Disconnected(conn))));
+                    }
+                    Some(build_out(EventOut::Worker(transport_worker::EventIn::SendTo(remote, ConnectionMessage::DisconnectResponse))))
+                },
+                ConnectionMessage::DisconnectResponse => {
+                    self.outgoing_connections.remove(&remote);
+                    let conn = self.connections.remove(&remote)?;
+                    self.connections_reverse.remove(&conn);
+                    self.queue.push_back(build_out(EventOut::Worker(TransportWorkerEvent::UnPinConnection(conn))));
+                    Some(build_out(EventOut::Transport(TransportEvent::Disconnected(conn))))
+                },
                 ConnectionMessage::Data(data) => {
                     let conn = self.connections.get(&remote)?;
                     Some(build_out(EventOut::PassthroughConnectionData(*conn, ConnectionMessage::Data(data))))
-                }
+                },
             },
         }
     }
 
     fn pop_output<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut>> {
         self.queue.pop_front()
+    }
+
+    fn shutdown<'a>(
+            &mut self,
+            now: Instant,
+        ) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut>> {
+        if self.shutdown {
+            return None;
+        }
+        self.shutdown = true;
+
+        for (remote, _) in &self.outgoing_connections {
+            self.queue.push_back(build_out(EventOut::Worker(transport_worker::EventIn::SendTo(*remote, ConnectionMessage::DisconnectRequest("Shutdown".to_string())))));
+        }
+        
+        None
     }
 }

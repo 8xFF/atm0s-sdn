@@ -79,4 +79,11 @@ impl Task<ChannelIn, ChannelOut, EventIn, EventOut> for PlaneTask {
     fn pop_output<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut>> {
         None
     }
+
+    fn shutdown<'a>(
+            &mut self,
+            now: Instant,
+        ) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut>> {
+        None
+    }
 }

@@ -18,6 +18,8 @@ pub enum TransportEvent {
 pub enum ConnectionMessage {
     ConnectRequest { node_id: u32, meta: String, password: String },
     ConnectResponse(Result<u32, String>),
+    DisconnectRequest(String),
+    DisconnectResponse,
     Ping(u64, u32),
     Pong(u64, u32),
     Data(Vec<u8>),

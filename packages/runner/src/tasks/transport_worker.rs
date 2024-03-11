@@ -117,4 +117,11 @@ impl Task<ChannelIn, ChannelOut, EventIn, EventOut> for TransportWorkerTask {
     fn pop_output<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut>> {
         self.queue.pop_front()
     }
+
+    fn shutdown<'a>(
+            &mut self,
+            now: Instant,
+        ) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut>> {
+        None
+    }
 }

@@ -8,6 +8,7 @@ use super::{
 };
 
 const PING_MS: u64 = 1000;
+const CONNECTION_TIMEOUT_MS: u64 = 10000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ConnId(pub u64);
@@ -49,7 +50,9 @@ pub struct ConnectionTask {
     timer: TimePivot,
     ping_id: u32,
     ping_ticker: TimeTicker,
+    last_data_ms: u64,
     queue: VecDeque<TaskOutput<'static, ChannelIn, ChannelOut, EventOut>>,
+    disconnecting: bool,
 }
 
 impl ConnectionTask {
@@ -61,6 +64,8 @@ impl ConnectionTask {
             ping_id: 0,
             ping_ticker: TimeTicker::build(PING_MS),
             queue: VecDeque::from([TaskOutput::Bus(RuntimeBusEvent::ChannelSubscribe(cfg.conn_id))]),
+            last_data_ms: 0,
+            disconnecting: false,
         }
     }
 }
@@ -70,14 +75,27 @@ impl Task<ChannelIn, ChannelOut, EventIn, EventOut> for ConnectionTask {
     const TYPE: u16 = 3;
 
     fn on_tick<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut>> {
+        if self.last_data_ms == 0 {
+            self.last_data_ms = self.timer.timestamp_ms(now);
+        }
+
         if let Some(e) = self.queue.pop_front() {
             return Some(e);
         }
 
         if self.ping_ticker.tick(now) {
+            if self.disconnecting {
+                self.queue.push_back(build_out(EventOut::Net(self.conn_id, ConnectionMessage::DisconnectRequest("Shutdown".to_string()))));
+            }
+
             self.ping_id += 1;
             log::debug!("Send ping {}", self.ping_id);
-            Some(build_out(EventOut::Net(self.conn_id, ConnectionMessage::Ping(self.timer.timestamp_us(now), self.ping_id))))
+            if self.last_data_ms + CONNECTION_TIMEOUT_MS < self.timer.timestamp_ms(now) {
+                log::warn!("Connection timeout for {:?}", self.conn_id);
+                Some(build_out(EventOut::Disconnected(self.conn_id)))
+            } else {
+                Some(build_out(EventOut::Net(self.conn_id, ConnectionMessage::Ping(self.timer.timestamp_us(now), self.ping_id))))
+            }
         } else {
             None
         }
@@ -96,13 +114,25 @@ impl Task<ChannelIn, ChannelOut, EventIn, EventOut> for ConnectionTask {
             }
             EventIn::Net(event) => match event {
                 ConnectionMessage::Ping(timestamp, ping_id) => {
+                    self.last_data_ms = self.timer.timestamp_ms(now);
                     log::debug!("Received ping from remote: {:?}, id {}", timestamp, ping_id);
                     Some(build_out(EventOut::Net(self.conn_id, ConnectionMessage::Pong(timestamp, ping_id))))
                 }
                 ConnectionMessage::Pong(timestamp, ping_id) => {
+                    self.last_data_ms = self.timer.timestamp_ms(now);
                     let delta = self.timer.timestamp_us(now) - timestamp;
                     log::info!("Received pong for ping {} from remote after {} us, {} ms", ping_id, delta, delta / 1000);
                     None
+                }
+                ConnectionMessage::DisconnectRequest(reason) => {
+                    log::debug!("Received disconnect request from remote: {:?}", reason);
+                    self.queue.push_back(TaskOutput::Destroy);
+                    Some(build_out(EventOut::Disconnected(self.conn_id)))
+                }
+                ConnectionMessage::DisconnectResponse => {
+                    log::debug!("Received disconnect response from remote");
+                    self.queue.push_back(TaskOutput::Destroy);
+                    Some(build_out(EventOut::Disconnected(self.conn_id)))
                 }
                 ConnectionMessage::Data(data) => {
                     log::debug!("Received data from remote: {:?}", data);
@@ -121,6 +151,14 @@ impl Task<ChannelIn, ChannelOut, EventIn, EventOut> for ConnectionTask {
     }
 
     fn pop_output<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut>> {
-        None
+        self.queue.pop_front()
+    }
+
+    fn shutdown<'a>(
+            &mut self,
+            now: Instant,
+        ) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut>> {
+        self.disconnecting = true;
+        Some(build_out(EventOut::Net(self.conn_id, ConnectionMessage::DisconnectRequest("Shutdown".to_string()))))
     }
 }

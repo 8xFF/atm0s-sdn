@@ -8,7 +8,7 @@ mod transport_worker;
 
 use std::{net::SocketAddr, time::Instant};
 
-use sans_io_runtime::{Controller, Task, TaskGroup, TaskGroupInput, TaskGroupOutputsState, WorkerInner, WorkerInnerInput, WorkerInnerOutput};
+use sans_io_runtime::{Controller, Task, TaskGroup, TaskGroupInput, TaskGroupOutputsState, TaskOutput, WorkerInner, WorkerInnerInput, WorkerInnerOutput};
 
 use self::{
     connection::{ConnId, ConnectionTask},
@@ -66,6 +66,22 @@ pub struct SdnWorkerInner {
 }
 
 impl SdnWorkerInner {}
+
+impl SdnWorkerInner {
+    fn convert_transport_manager_out<'a>(
+        &mut self,
+        now: Instant,
+        event: TaskOutput<transport_manager::ChannelIn, transport_manager::ChannelOut, transport_manager::EventOut>,
+    ) -> Option<WorkerInnerOutput<'a, SdnExtOut, SdnChannel, SdnEvent, SdnSpawnCfg>> {
+        if let TaskOutput::Destroy = event {
+            self.transport_manager.take();
+            self.plane.as_mut().map(|p| p.shutdown(now));
+            None
+        } else {
+            Some(converters::transport_manager::convert_output(self.worker, now, event))
+        }
+    }
+}
 
 impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpawnCfg> for SdnWorkerInner {
     fn build(worker: u16, cfg: SdnInnerCfg) -> Self {
@@ -159,7 +175,7 @@ impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpaw
                     let tm = self.transport_manager.as_mut()?;
                     let out = tm.on_event(now, converters::transport_manager::convert_input(event))?;
                     self.last_input_group = Some(TransportManagerTask::TYPE);
-                    return Some(converters::transport_manager::convert_output(self.worker, now, out));
+                    return self.convert_transport_manager_out(now, out);
                 }
                 TransportWorkerTask::TYPE => {
                     let tw = &mut self.transport_worker;
@@ -199,5 +215,14 @@ impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpaw
             }
             _ => panic!("Invalid task type"),
         }
+    }
+
+    fn shutdown<'a>(
+            &mut self,
+            now: Instant,
+        ) -> Option<WorkerInnerOutput<'a, SdnExtOut, SdnChannel, SdnEvent, SdnSpawnCfg>> {
+        self.transport_manager.as_mut().map(|p| p.shutdown(now));
+        let out = self.connections.shutdown(now)?;
+        Some(converters::connection::convert_output(self.worker, out.0, out.1))
     }
 }

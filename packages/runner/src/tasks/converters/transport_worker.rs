@@ -54,6 +54,7 @@ pub fn convert_output<'a>(
         TaskOutput::Net(out) => match out {
             NetOutgoing::UdpListen { addr, reuse } => WorkerInnerOutput::Task(Owner::group(worker, TransportWorkerTask::TYPE), TaskOutput::Net(NetOutgoing::UdpListen { addr, reuse })),
             NetOutgoing::UdpPacket { slot, to, data } => WorkerInnerOutput::Task(Owner::group(worker, TransportWorkerTask::TYPE), TaskOutput::Net(NetOutgoing::UdpPacket { slot, to, data })),
+            NetOutgoing::UdpUnlisten { slot } => WorkerInnerOutput::Task(Owner::group(worker, TransportWorkerTask::TYPE), TaskOutput::Net(NetOutgoing::UdpUnlisten { slot })),
         },
         _ => panic!("Invalid output type from TransportWorker"),
     }
