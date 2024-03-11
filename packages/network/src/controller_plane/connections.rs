@@ -11,7 +11,7 @@ const TIMEOUT_CONNECT_MS: u64 = 5000;
 const TIMEOUT_PING_MS: u64 = 5000;
 const DEFAULT_TTL: u32 = 1000;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DisconnectReason {
     RemoteDisconnect,
     Shutdown,
@@ -35,7 +35,7 @@ pub enum ControlMsg {
     ConnectResponse(Result<(), ConnectError>),
     Ping(u16, u64),
     Pong(u16, u64),
-    DisconnectRequest { reason: DisconnectReason },
+    DisconnectRequest(DisconnectReason),
     DisconnectResponse(Result<(), DisconnectError>),
 }
 
@@ -75,7 +75,7 @@ struct Connnection {
     id: ConnId,
     last_pong: u64,
     ttl: u32,
-    disconnect: bool,
+    disconnect: Option<DisconnectReason>,
 }
 
 pub struct Connections {
@@ -124,6 +124,9 @@ impl Connections {
                 log::warn!("Connection to {}/{}/{} timed out", conn.node, conn.id, remote);
                 self.queue.push_back(Output::ConnectionEvent(ConnectionEvent::ConnectionDisconnected(conn.id)));
                 timeout_connections.push(*remote);
+            } else if let Some(reason) = conn.disconnect {
+                log::debug!("Resending disconnect to node {}, conn:{}, remote: {}", conn.node, conn.id, remote);
+                self.queue.push_back(Output::ControlOut(*remote, ControlMsg::DisconnectRequest(reason)));
             } else {
                 log::debug!("Sending ping to node {}, conn:{}, remote: {}", conn.node, conn.id, remote);
                 self.queue.push_back(Output::ControlOut(*remote, ControlMsg::Ping(self.ping_seq, now_ms)));
@@ -157,7 +160,7 @@ impl Connections {
                                 id: conn_id,
                                 last_pong: now_ms,
                                 ttl: DEFAULT_TTL,
-                                disconnect: false,
+                                disconnect: None,
                             },
                         );
                         self.map.insert(conn_id, remote);
@@ -178,7 +181,7 @@ impl Connections {
                                 id: conn_id,
                                 last_pong: now_ms,
                                 ttl: DEFAULT_TTL,
-                                disconnect: false,
+                                disconnect: None,
                             },
                         );
                         self.map.insert(conn_id, remote);
@@ -195,7 +198,7 @@ impl Connections {
                         log::warn!("Received connect response from unknown remote {}", remote);
                     }
                 }
-                ControlMsg::DisconnectRequest { reason } => {
+                ControlMsg::DisconnectRequest(reason) => {
                     if let Some(conn) = self.conns.remove(&remote) {
                         self.map.remove(&conn.id);
                         log::info!("Received disconnect request from {} with conn {}, reason {:?}", remote, conn.id, reason);
@@ -208,7 +211,7 @@ impl Connections {
                 }
                 ControlMsg::DisconnectResponse(Ok(())) => {
                     if let Some(conn) = self.conns.get(&remote) {
-                        if conn.disconnect {
+                        if conn.disconnect.is_some() {
                             self.map.remove(&conn.id);
                             log::info!("Received disconnect response from {} with conn {}", remote, conn.id);
                             self.queue.push_back(Output::ConnectionEvent(ConnectionEvent::ConnectionDisconnected(conn.id)));
@@ -222,7 +225,7 @@ impl Connections {
                 }
                 ControlMsg::DisconnectResponse(Err(err)) => {
                     if let Some(conn) = self.conns.get(&remote) {
-                        if conn.disconnect {
+                        if conn.disconnect.is_some() {
                             self.map.remove(&conn.id);
                             log::info!("Received disconnect response error {:?} from {} with conn {} => force close", err, remote, conn.id);
                             self.queue.push_back(Output::ConnectionEvent(ConnectionEvent::ConnectionDisconnected(conn.id)));
@@ -292,13 +295,8 @@ impl Connections {
 
         for (remote, conn) in self.conns.iter_mut() {
             if conn.node == node {
-                conn.disconnect = true;
-                self.queue.push_back(Output::ControlOut(
-                    *remote,
-                    ControlMsg::DisconnectRequest {
-                        reason: DisconnectReason::RemoteDisconnect,
-                    },
-                ));
+                conn.disconnect = Some(DisconnectReason::RemoteDisconnect);
+                self.queue.push_back(Output::ControlOut(*remote, ControlMsg::DisconnectRequest(DisconnectReason::RemoteDisconnect)));
             }
         }
     }
@@ -314,11 +312,31 @@ mod tests {
 
     use std::net::{IpAddr, SocketAddr};
 
-    use atm0s_sdn_identity::{ConnId, NodeAddr};
+    use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 
-    use crate::controller_plane::connections::{ConnectError, ConnectionEvent, ConnectionStats, RESEND_CONNECT_MS, TIMEOUT_CONNECT_MS, TIMEOUT_PING_MS};
+    use crate::controller_plane::connections::{ConnectError, ConnectionEvent, ConnectionStats, DisconnectReason, RESEND_CONNECT_MS, TIMEOUT_CONNECT_MS, TIMEOUT_PING_MS};
 
     use super::{Connections, ControlMsg, Input, Output};
+
+    fn created_connections(in_conns: usize) -> (Connections, Vec<(SocketAddr, NodeId, ConnId)>) {
+        let node_id = 1;
+        let mut connections = Connections::new(node_id);
+        let mut remotes = vec![];
+        for incoming_id in 1..=in_conns {
+            let remote_node = 10 + incoming_id as u32;
+            let remote_addr = SocketAddr::new(IpAddr::from([1, 2, 3, 4]), remote_node as u16);
+            let conn_id = ConnId::from_in(0, incoming_id as u64);
+            connections.on_event(0, Input::ControlIn(remote_addr, ControlMsg::ConnectRequest { from: remote_node, to: node_id }));
+            assert_eq!(connections.pop_output(), Some(Output::ControlOut(remote_addr, ControlMsg::ConnectResponse(Ok(())))));
+            assert_eq!(connections.pop_output(), Some(Output::ConnectionEvent(ConnectionEvent::ConnectionEstablished(conn_id))));
+            assert_eq!(connections.pop_output(), None);
+
+            remotes.push((remote_addr, remote_node, conn_id));
+        }
+
+        assert_eq!(connections.conns.len(), in_conns);
+        (connections, remotes)
+    }
 
     #[test]
     fn handle_connect_success() {
@@ -452,44 +470,81 @@ mod tests {
 
     #[test]
     fn ping_pong_success() {
-        let node_id = 1;
-        let remote_addr = SocketAddr::new(IpAddr::from([1, 2, 3, 4]), 1234);
-        let remote_node = 2;
-        let mut connections = Connections::new(node_id);
-        connections.on_event(0, Input::ControlIn(remote_addr, ControlMsg::ConnectRequest { from: remote_node, to: node_id }));
-        assert_eq!(connections.pop_output(), Some(Output::ControlOut(remote_addr, ControlMsg::ConnectResponse(Ok(())))));
-        assert_eq!(connections.pop_output(), Some(Output::ConnectionEvent(ConnectionEvent::ConnectionEstablished(ConnId::from_in(0, 1)))));
-        assert_eq!(connections.pop_output(), None);
+        let (mut connections, remotes) = created_connections(1);
 
         connections.on_tick(1000);
-        assert_eq!(connections.pop_output(), Some(Output::ControlOut(remote_addr, ControlMsg::Ping(0, 1000))));
+        assert_eq!(connections.pop_output(), Some(Output::ControlOut(remotes[0].0, ControlMsg::Ping(0, 1000))));
         assert_eq!(connections.pop_output(), None);
 
-        connections.on_event(1100, Input::ControlIn(remote_addr, ControlMsg::Pong(0, 1000)));
+        connections.on_event(1100, Input::ControlIn(remotes[0].0, ControlMsg::Pong(0, 1000)));
         assert_eq!(
             connections.pop_output(),
-            Some(Output::ConnectionEvent(ConnectionEvent::ConnectionStats(ConnId::from_in(0, 1), ConnectionStats { rtt: 100 })))
+            Some(Output::ConnectionEvent(ConnectionEvent::ConnectionStats(remotes[0].2, ConnectionStats { rtt: 100 })))
         );
         assert_eq!(connections.pop_output(), None);
     }
 
     #[test]
     fn ping_pong_timeout() {
-        let node_id = 1;
-        let remote_addr = SocketAddr::new(IpAddr::from([1, 2, 3, 4]), 1234);
-        let remote_node = 2;
-        let mut connections = Connections::new(node_id);
-        connections.on_event(0, Input::ControlIn(remote_addr, ControlMsg::ConnectRequest { from: remote_node, to: node_id }));
-        assert_eq!(connections.pop_output(), Some(Output::ControlOut(remote_addr, ControlMsg::ConnectResponse(Ok(())))));
-        assert_eq!(connections.pop_output(), Some(Output::ConnectionEvent(ConnectionEvent::ConnectionEstablished(ConnId::from_in(0, 1)))));
-        assert_eq!(connections.pop_output(), None);
+        let (mut connections, remotes) = created_connections(1);
 
         connections.on_tick(1000);
-        assert_eq!(connections.pop_output(), Some(Output::ControlOut(remote_addr, ControlMsg::Ping(0, 1000))));
+        assert_eq!(connections.pop_output(), Some(Output::ControlOut(remotes[0].0, ControlMsg::Ping(0, 1000))));
         assert_eq!(connections.pop_output(), None);
 
         connections.on_tick(1000 + TIMEOUT_PING_MS);
-        assert_eq!(connections.pop_output(), Some(Output::ConnectionEvent(ConnectionEvent::ConnectionDisconnected(ConnId::from_in(0, 1)))));
+        assert_eq!(connections.pop_output(), Some(Output::ConnectionEvent(ConnectionEvent::ConnectionDisconnected(remotes[0].2))));
+        assert_eq!(connections.pop_output(), None);
+    }
+
+    #[test]
+    fn disconnect_node_success() {
+        let (mut connections, remotes) = created_connections(1);
+
+        connections.disconnect_from(remotes[0].1);
+        assert_eq!(
+            connections.pop_output(),
+            Some(Output::ControlOut(remotes[0].0, ControlMsg::DisconnectRequest(DisconnectReason::RemoteDisconnect)))
+        );
+        assert_eq!(connections.pop_output(), None);
+
+        connections.on_event(10, Input::ControlIn(remotes[0].0, ControlMsg::DisconnectResponse(Ok(()))));
+        assert_eq!(connections.pop_output(), Some(Output::ConnectionEvent(ConnectionEvent::ConnectionDisconnected(remotes[0].2))));
+        assert_eq!(connections.pop_output(), None);
+    }
+
+    #[test]
+    fn disconnect_node_resend() {
+        let (mut connections, remotes) = created_connections(1);
+
+        connections.disconnect_from(remotes[0].1);
+        assert_eq!(
+            connections.pop_output(),
+            Some(Output::ControlOut(remotes[0].0, ControlMsg::DisconnectRequest(DisconnectReason::RemoteDisconnect)))
+        );
+        assert_eq!(connections.pop_output(), None);
+
+        connections.on_tick(10);
+        assert_eq!(
+            connections.pop_output(),
+            Some(Output::ControlOut(remotes[0].0, ControlMsg::DisconnectRequest(DisconnectReason::RemoteDisconnect)))
+        );
+        assert_eq!(connections.pop_output(), None);
+    }
+
+    #[test]
+    fn disconnect_node_timeout() {
+        let (mut connections, remotes) = created_connections(1);
+
+        connections.disconnect_from(remotes[0].1);
+        assert_eq!(
+            connections.pop_output(),
+            Some(Output::ControlOut(remotes[0].0, ControlMsg::DisconnectRequest(DisconnectReason::RemoteDisconnect)))
+        );
+        assert_eq!(connections.pop_output(), None);
+
+        connections.on_tick(TIMEOUT_PING_MS);
+        assert_eq!(connections.pop_output(), Some(Output::ConnectionEvent(ConnectionEvent::ConnectionDisconnected(remotes[0].2))));
         assert_eq!(connections.pop_output(), None);
     }
 }
