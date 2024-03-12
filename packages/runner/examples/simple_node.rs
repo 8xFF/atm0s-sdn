@@ -1,5 +1,6 @@
 use atm0s_sdn_identity::{NodeAddr, NodeId};
 use clap::Parser;
+use sans_io_runtime::backend::PollBackend;
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -43,7 +44,7 @@ fn main() {
         builder.add_seed(seed);
     }
 
-    let mut controller = builder.build(2);
+    let mut controller = builder.build::<PollBackend<128, 128>>(2);
 
     while controller.process().is_some() {
         if term.load(Ordering::Relaxed) {

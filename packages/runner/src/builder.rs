@@ -1,7 +1,7 @@
 use std::net::Ipv4Addr;
 
 use atm0s_sdn_identity::{NodeAddr, NodeAddrBuilder, NodeId, Protocol};
-use sans_io_runtime::{backend::PollBackend, Owner};
+use sans_io_runtime::{backend::Backend, Owner};
 
 use crate::tasks::{ControllerCfg, SdnController, SdnExtIn, SdnInnerCfg, SdnWorkerInner};
 
@@ -30,7 +30,7 @@ impl SdnBuilder {
         self.services.push(service);
     }
 
-    pub fn build(self, workers: usize) -> SdnController {
+    pub fn build<B: Backend>(self, workers: usize) -> SdnController {
         assert!(workers > 0);
         let mut addr_builder = NodeAddrBuilder::new(self.node_id);
         addr_builder.add_protocol(Protocol::Ip4(Ipv4Addr::new(127, 0, 0, 1)));
@@ -39,7 +39,7 @@ impl SdnBuilder {
         log::info!("Created node on addr {}", addr);
 
         let mut controler = SdnController::default();
-        controler.add_worker::<_, SdnWorkerInner, PollBackend<128, 128>>(
+        controler.add_worker::<_, SdnWorkerInner, B>(
             SdnInnerCfg {
                 node_id: self.node_id,
                 udp_port: self.udp_port,
@@ -53,7 +53,7 @@ impl SdnBuilder {
         );
 
         for _ in 1..workers {
-            controler.add_worker::<_, SdnWorkerInner, PollBackend<128, 128>>(
+            controler.add_worker::<_, SdnWorkerInner, B>(
                 SdnInnerCfg {
                     node_id: self.node_id,
                     udp_port: self.udp_port,
