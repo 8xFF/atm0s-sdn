@@ -1,14 +1,12 @@
 use atm0s_sdn_identity::ConnId;
+use atm0s_sdn_router::core::RouterDelta;
 
 use crate::msg::TransportMsg;
 
-use super::{
-    connections::{ConnectionCtx, ConnectionStats},
-    NetworkRule,
-};
+use super::connections::{ConnectionCtx, ConnectionStats};
 
 pub enum ServiceOutput {
-    NetworkRule(NetworkRule),
+    RouterRule(RouterDelta),
     NetData(ConnId, TransportMsg),
 }
 

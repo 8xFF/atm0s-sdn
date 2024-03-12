@@ -45,6 +45,14 @@ pub fn convert_output<'a>(
                     SdnEvent::DataPlane(data_plane::EventIn::Data(remote, data)),
                 )),
             ),
+            controller_plane::EventOut::RouterRule(rule) => WorkerInnerOutput::Task(
+                Owner::group(worker, ControllerPlaneTask::TYPE),
+                TaskOutput::Bus(BusEvent::ChannelPublish(
+                    SdnChannel::DataPlane(data_plane::ChannelIn::Broadcast),
+                    safe,
+                    SdnEvent::DataPlane(data_plane::EventIn::RouterRule(rule)),
+                )),
+            ),
         },
         _ => panic!("Invalid output type from ControllerPlane {:?}", event),
     }

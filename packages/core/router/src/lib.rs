@@ -1,5 +1,6 @@
 use atm0s_sdn_identity::{ConnId, NodeId};
 pub mod core;
+pub mod shadow;
 
 /// ServiceMeta is using for determine which node will be routed, example node with lowest price or lowest latency, which for future use
 pub type ServiceMeta = u32;

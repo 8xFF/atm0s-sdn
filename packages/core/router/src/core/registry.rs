@@ -1,12 +1,21 @@
 use atm0s_sdn_identity::{ConnId, NodeId};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use atm0s_sdn_utils::init_array::init_array;
 use serde::{Deserialize, Serialize};
 
-use super::{table::Dest, Metric, Path, ServiceDestination};
+use super::{
+    table::{Dest, DestDelta},
+    Metric, Path, ServiceDestination,
+};
 
 pub const REGISTRY_LOCAL_BW: u32 = 1000000; //1Gbps
+
+pub enum RegistryDelta {
+    ServiceRemote(u8, DestDelta),
+    SetServiceLocal(u8),
+    DelServiceLocal(u8),
+}
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct RegistrySync(pub Vec<(u8, Metric)>);
@@ -15,6 +24,7 @@ pub struct Registry {
     node_id: NodeId,
     local_destinations: [bool; 256],
     remote_destinations: [Dest; 256],
+    deltas: VecDeque<RegistryDelta>,
 }
 
 impl Registry {
@@ -23,24 +33,30 @@ impl Registry {
             node_id,
             local_destinations: init_array!(bool, 256, false),
             remote_destinations: init_array!(Dest, 256, Default::default()),
+            deltas: VecDeque::new(),
         }
     }
 
     pub fn add_service(&mut self, service_id: u8) {
         self.local_destinations[service_id as usize] = true;
+        self.deltas.push_back(RegistryDelta::SetServiceLocal(service_id));
     }
 
     #[allow(unused)]
     pub fn remove_service(&mut self, service_id: u8) {
         self.local_destinations[service_id as usize] = false;
+        self.deltas.push_back(RegistryDelta::DelServiceLocal(service_id));
     }
 
     pub fn del_direct(&mut self, conn: ConnId) {
-        for i in 0..256 {
+        for i in 0..=255 {
             let pre_empty = self.remote_destinations[i as usize].is_empty();
             self.remote_destinations[i as usize].del_path(conn);
             if !pre_empty && self.remote_destinations[i as usize].is_empty() {
                 log::info!("[Registry] removed service {} from dest {} because of direct disconnected", i, conn);
+            }
+            while let Some(delta) = self.remote_destinations[i as usize].pop_delta() {
+                self.deltas.push_back(RegistryDelta::ServiceRemote(i, delta));
             }
         }
     }
@@ -77,7 +93,14 @@ impl Registry {
                     dest.set_path(src_conn, src, metric);
                 }
             }
+            while let Some(delta) = dest.pop_delta() {
+                self.deltas.push_back(RegistryDelta::ServiceRemote(i, delta));
+            }
         }
+    }
+
+    pub fn pop_delta(&mut self) -> Option<RegistryDelta> {
+        self.deltas.pop_front()
     }
 
     pub fn sync_for(&self, node: NodeId) -> RegistrySync {
@@ -111,7 +134,7 @@ impl Registry {
                 slots.push((index, dest.next(&[]).map(|(_c, n)| n)));
             }
         }
-        log::info!("[Registry {}] local services: {:?} remote services: {:?}", self.node_id, local_services, slots);
+        log::debug!("[Registry {}] local services: {:?} remote services: {:?}", self.node_id, local_services, slots);
     }
 
     pub fn print_dump(&self) {

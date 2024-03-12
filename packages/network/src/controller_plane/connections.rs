@@ -79,6 +79,7 @@ pub enum Output {
     ShutdownSuccess,
 }
 
+//TODO we should add a session_id to Outgoing for detect same connection
 struct Outgoing {
     to: NodeId,
     created_at: u64,
@@ -165,6 +166,7 @@ impl Connections {
                             self.queue.push_back(Output::ControlOut(remote, ControlMsg::ConnectResponse(Err(ConnectError::AlreadyConnected))));
                             return;
                         }
+                        self.outgoings.remove(&remote);
                         self.queue.push_back(Output::ControlOut(remote, ControlMsg::ConnectResponse(Ok(()))));
                         let conn_id = self.generate_conn_id(ConnDirection::Incoming);
                         let conn = Connnection {

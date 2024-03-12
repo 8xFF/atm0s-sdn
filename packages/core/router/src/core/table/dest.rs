@@ -1,14 +1,24 @@
+use std::collections::VecDeque;
+
 use atm0s_sdn_identity::{ConnId, NodeId};
 
 use super::{Metric, Path};
 
+#[derive(Debug)]
+pub enum DestDelta {
+    SetBestPath(ConnId),
+    DelBestPath,
+}
+
 #[derive(Debug, Default)]
 pub struct Dest {
     paths: Vec<Path>,
+    deltas: VecDeque<DestDelta>,
 }
 
 impl Dest {
     pub fn set_path(&mut self, over: ConnId, over_node: NodeId, metric: Metric) {
+        let pre_best_conn = self.paths.first().map(|p| p.0);
         match self.index_of(over) {
             Some(index) => match self.paths.get_mut(index) {
                 Some(slot) => {
@@ -23,15 +33,36 @@ impl Dest {
             }
         }
         self.paths.sort();
+        let after_best_conn = self.paths.first().map(|p| p.0);
+        if pre_best_conn != after_best_conn {
+            if let Some(conn) = after_best_conn {
+                self.deltas.push_back(DestDelta::SetBestPath(conn));
+            } else {
+                self.deltas.push_back(DestDelta::DelBestPath);
+            }
+        }
     }
 
     pub fn del_path(&mut self, over: ConnId) -> Option<Path> {
         match self.index_of(over) {
             Some(index) => {
+                if index == 0 {
+                    //if remove first => changed best
+                    let after_best_conn = self.paths.get(1).map(|p| p.0);
+                    if let Some(conn) = after_best_conn {
+                        self.deltas.push_back(DestDelta::SetBestPath(conn));
+                    } else {
+                        self.deltas.push_back(DestDelta::DelBestPath);
+                    }
+                }
                 Some(self.paths.remove(index))
             }
             None => None,
         }
+    }
+
+    pub fn pop_delta(&mut self) -> Option<DestDelta> {
+        self.deltas.pop_front()
     }
 
     pub fn is_empty(&self) -> bool {

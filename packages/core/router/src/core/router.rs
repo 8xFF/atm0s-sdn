@@ -4,8 +4,14 @@ use serde::{Deserialize, Serialize};
 use crate::core::{Metric, Path};
 use crate::core::{Registry, RegistrySync};
 
-use super::table::{NodeIndex, Table, TableSync};
+use super::registry::RegistryDelta;
+use super::table::{NodeIndex, Table, TableDelta, TableSync};
 use super::ServiceDestination;
+
+pub enum RouterDelta {
+    Table(u8, TableDelta),
+    Registry(RegistryDelta),
+}
 
 /// Which layer in node id space, in this case is 0 -> 3
 pub type Layer = u8;
@@ -52,14 +58,7 @@ impl Router {
 
     pub fn set_direct(&mut self, over: ConnId, over_node: NodeId, metric: Metric) {
         let eq_util_layer = self.node_id.eq_util_layer(&over_node) as usize;
-        log::debug!(
-            "[Router {}] set_direct {}/{} with metric {:?}, eq_util_layer {}",
-            self.node_id,
-            over,
-            over_node,
-            metric,
-            eq_util_layer
-        );
+        log::debug!("[Router {}] set_direct {}/{} with metric {:?}, eq_util_layer {}", self.node_id, over, over_node, metric, eq_util_layer);
         assert!(eq_util_layer <= 4);
         debug_assert!(eq_util_layer > 0);
         if eq_util_layer > 0 {
@@ -162,13 +161,25 @@ impl Router {
         }
     }
 
+    pub fn pop_delta(&mut self) -> Option<RouterDelta> {
+        if let Some(delta) = self.service_registry.pop_delta() {
+            return Some(RouterDelta::Registry(delta));
+        }
+        for (layer, table) in &mut self.tables.iter_mut().enumerate() {
+            if let Some(delta) = table.pop_delta() {
+                return Some(RouterDelta::Table(layer as u8, delta));
+            }
+        }
+        None
+    }
+
     pub fn log_dump(&self) {
         self.service_registry.log_dump();
-        log::info!("[Router {}] dump begin", self.node_id);
+        log::debug!("[Router {}] dump begin", self.node_id);
         for i in 0..4 {
             self.tables[3 - i].log_dump();
         }
-        log::info!("[Router {}] dump end", self.node_id);
+        log::debug!("[Router {}] dump end", self.node_id);
     }
 
     pub fn print_dump(&self) {

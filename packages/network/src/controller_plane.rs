@@ -1,6 +1,8 @@
 use std::{collections::HashMap, net::SocketAddr};
 
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
+use atm0s_sdn_router::core::{DestDelta, RegistryDelta, RouterDelta, TableDelta};
+use atm0s_sdn_router::shadow::ShadowRouterDelta;
 
 use crate::event::DataEvent;
 
@@ -19,10 +21,8 @@ pub enum Input {
     ShutdownRequest,
 }
 
-pub enum NetworkRule {}
-
 pub enum Output {
-    NetworkRule(NetworkRule),
+    RouterRule(ShadowRouterDelta<SocketAddr>),
     Data(SocketAddr, DataEvent),
     ShutdownSuccess,
 }
@@ -36,9 +36,7 @@ pub struct ControllerPlane {
 
 impl ControllerPlane {
     pub fn new(node_id: NodeId, mut services: Vec<Box<dyn Service>>) -> Self {
-        let mut services_id = vec![
-            core_services::router_sync::SERVICE_TYPE,
-        ];
+        let mut services_id = vec![core_services::router_sync::SERVICE_TYPE];
         for service in services.iter() {
             services_id.push(service.service_type());
         }
@@ -139,7 +137,24 @@ impl ControllerPlane {
 
     fn convert_service_out(&mut self, _now_ms: u64, out: ServiceOutput) -> Option<Output> {
         match out {
-            ServiceOutput::NetworkRule(rule) => Some(Output::NetworkRule(rule)),
+            ServiceOutput::RouterRule(rule) => {
+                let rule = match rule {
+                    RouterDelta::Table(layer, TableDelta(index, DestDelta::SetBestPath(conn))) => ShadowRouterDelta::SetTable {
+                        layer,
+                        index,
+                        remote: self.conns_id.get(&conn)?.remote,
+                    },
+                    RouterDelta::Table(layer, TableDelta(index, DestDelta::DelBestPath)) => ShadowRouterDelta::DelTable { layer, index },
+                    RouterDelta::Registry(RegistryDelta::SetServiceLocal(service)) => ShadowRouterDelta::SetServiceLocal { service },
+                    RouterDelta::Registry(RegistryDelta::DelServiceLocal(service)) => ShadowRouterDelta::DelServiceLocal { service },
+                    RouterDelta::Registry(RegistryDelta::ServiceRemote(service, DestDelta::SetBestPath(conn))) => ShadowRouterDelta::SetServiceRemote {
+                        service,
+                        remote: self.conns_id.get(&conn)?.remote,
+                    },
+                    RouterDelta::Registry(RegistryDelta::ServiceRemote(service, DestDelta::DelBestPath)) => ShadowRouterDelta::DelServiceRemote { service },
+                };
+                Some(Output::RouterRule(rule))
+            }
             ServiceOutput::NetData(id, msg) => {
                 let conn = self.conns_id.get(&id)?;
                 Some(Output::Data(conn.remote, DataEvent::Network(msg)))

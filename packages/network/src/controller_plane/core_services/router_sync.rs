@@ -90,6 +90,9 @@ impl Service for RouterSyncService {
     }
 
     fn pop_output(&mut self) -> Option<ServiceOutput> {
+        while let Some(delta) = self.router.pop_delta() {
+            self.queue.push_back(ServiceOutput::RouterRule(delta));
+        }
         self.queue.pop_front()
     }
 }

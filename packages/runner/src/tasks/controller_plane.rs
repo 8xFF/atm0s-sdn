@@ -5,6 +5,7 @@ use atm0s_sdn_network::{
     controller_plane::{ControllerPlane, Input as ControllerInput, Output as ControllerOutput, Service},
     event::DataEvent,
 };
+use atm0s_sdn_router::shadow::ShadowRouterDelta;
 use sans_io_runtime::{bus::BusEvent, Task, TaskInput, TaskOutput};
 
 use crate::time::{TimePivot, TimeTicker};
@@ -27,6 +28,7 @@ pub enum EventIn {
 #[derive(Debug)]
 pub enum EventOut {
     Data(SocketAddr, DataEvent),
+    RouterRule(ShadowRouterDelta<SocketAddr>),
 }
 
 pub struct ControllerPlaneTask {
@@ -53,9 +55,7 @@ impl ControllerPlaneTask {
     fn map_output<'a>(output: ControllerOutput) -> TaskOutput<'a, ChannelIn, ChannelOut, EventOut> {
         match output {
             ControllerOutput::Data(remote, msg) => TaskOutput::Bus(BusEvent::ChannelPublish((), true, EventOut::Data(remote, msg))),
-            ControllerOutput::NetworkRule(rule) => {
-                todo!()
-            }
+            ControllerOutput::RouterRule(rule) => TaskOutput::Bus(BusEvent::ChannelPublish((), true, EventOut::RouterRule(rule))),
             ControllerOutput::ShutdownSuccess => TaskOutput::Destroy,
         }
     }

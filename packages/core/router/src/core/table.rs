@@ -1,11 +1,11 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use atm0s_sdn_identity::{ConnId, NodeId, NodeIdType};
 use atm0s_sdn_utils::init_array::init_array;
 use serde::{Deserialize, Serialize};
 
-pub use dest::Dest;
-pub use metric::{Metric, BANDWIDTH_LIMIT};
+pub use dest::{Dest, DestDelta};
+pub use metric::Metric;
 pub use path::Path;
 
 mod dest;
@@ -15,6 +15,8 @@ mod path;
 /// Index of node-id inside this table (0-255)
 pub type NodeIndex = u8;
 
+pub struct TableDelta(pub u8, pub DestDelta);
+
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct TableSync(pub Vec<(u8, Metric)>);
 
@@ -23,12 +25,19 @@ pub struct Table {
     layer: u8,
     dests: [Dest; 256],
     slots: Vec<u8>,
+    deltas: VecDeque<TableDelta>,
 }
 
 impl Table {
     pub fn new(node_id: NodeId, layer: u8) -> Self {
         let dests = init_array!(Dest, 256, Default::default());
-        Table { node_id, layer, dests, slots: vec![] }
+        Table {
+            node_id,
+            layer,
+            dests,
+            slots: vec![],
+            deltas: VecDeque::new(),
+        }
     }
 
     pub fn slots(&self) -> Vec<u8> {
@@ -49,11 +58,20 @@ impl Table {
         debug_assert_eq!(src_send_metric.hops.first(), Some(&src));
         let index = src.layer(self.layer);
         if self.dests[index as usize].is_empty() {
-            log::info!("[Table {}/{}] added index {} from conn {} node: {} metric: {:?}", self.node_id, self.layer, index, src_conn, src, src_send_metric);
+            log::info!(
+                "[Table {}/{}] added index {} from conn {} node: {} metric: {:?}",
+                self.node_id,
+                self.layer,
+                index,
+                src_conn,
+                src,
+                src_send_metric
+            );
             self.slots.push(index);
             self.slots.sort();
         }
         self.dests[index as usize].set_path(src_conn, src, src_send_metric);
+        self.poll_delta_index(index);
     }
 
     pub fn del_direct(&mut self, src_conn: ConnId) {
@@ -67,6 +85,7 @@ impl Table {
                         self.slots.remove(index);
                     }
                 }
+                self.poll_delta_index(i);
             }
         }
     }
@@ -129,14 +148,27 @@ impl Table {
                 }
                 Some(metric) => {
                     if dest.is_empty() {
-                        log::info!("[Table {}/{}] sync => added index {} from conn: {} node: {} metric: {:?}", self.node_id, self.layer, i, src_conn, src, src_send_metric);
+                        log::info!(
+                            "[Table {}/{}] sync => added index {} from conn: {} node: {} metric: {:?}",
+                            self.node_id,
+                            self.layer,
+                            i,
+                            src_conn,
+                            src,
+                            src_send_metric
+                        );
                         self.slots.push(i);
                         self.slots.sort();
                     }
                     dest.set_path(src_conn, src, metric);
                 }
             }
+            self.poll_delta_index(i);
         }
+    }
+
+    pub fn pop_delta(&mut self) -> Option<TableDelta> {
+        self.deltas.pop_front()
     }
 
     pub fn sync_for(&self, node: NodeId) -> Option<TableSync> {
@@ -164,7 +196,7 @@ impl Table {
                 slots.push(index);
             }
         }
-        log::info!("[Table {}/{}/{}] slots: {:?}", self.node_id, self.layer, self.node_id.layer(self.layer), slots);
+        log::debug!("[Table {}/{}/{}] slots: {:?}", self.node_id, self.layer, self.node_id.layer(self.layer), slots);
     }
 
     pub fn print_dump(&self) {
@@ -175,6 +207,12 @@ impl Table {
             }
         }
         println!("[Table {}/{}/{}] slots: {:?}", self.node_id, self.layer, self.node_id.layer(self.layer), slots);
+    }
+
+    fn poll_delta_index(&mut self, index: u8) {
+        while let Some(delta) = self.dests[index as usize].pop_delta() {
+            self.deltas.push_back(TableDelta(index, delta));
+        }
     }
 }
 

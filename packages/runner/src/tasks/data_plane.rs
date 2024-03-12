@@ -5,6 +5,7 @@ use std::{
 };
 
 use atm0s_sdn_network::event::DataEvent;
+use atm0s_sdn_router::shadow::{ShadowRouter, ShadowRouterDelta};
 use sans_io_runtime::{bus::BusEvent, Buffer, NetIncoming, NetOutgoing, Task, TaskInput, TaskOutput};
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -18,6 +19,7 @@ pub type ChannelOut = ();
 #[derive(Debug, Clone)]
 pub enum EventIn {
     Data(SocketAddr, DataEvent),
+    RouterRule(ShadowRouterDelta<SocketAddr>),
 }
 
 #[derive(Debug, Clone)]
@@ -29,6 +31,7 @@ pub struct DataPlaneTask {
     worker: u16,
     port: u16,
     backend_slot: usize,
+    router: ShadowRouter<SocketAddr>,
     queue: VecDeque<TaskOutput<'static, ChannelIn, ChannelOut, EventOut>>,
 }
 
@@ -39,6 +42,7 @@ impl DataPlaneTask {
             worker,
             port,
             backend_slot: 0,
+            router: ShadowRouter::new(),
             queue: VecDeque::from([
                 TaskOutput::Net(NetOutgoing::UdpListen { addr, reuse: true }),
                 TaskOutput::Bus(BusEvent::ChannelSubscribe(ChannelIn::Broadcast)),
@@ -78,6 +82,11 @@ impl Task<ChannelIn, ChannelOut, EventIn, EventOut> for DataPlaneTask {
                     to: remote,
                     data: Buffer::Vec(msg.into()),
                 }))
+            }
+            TaskInput::Bus(_, EventIn::RouterRule(rule)) => {
+                log::info!("On apply router rule {:?}", rule);
+                self.router.apply_delta(rule);
+                None
             }
         }
     }

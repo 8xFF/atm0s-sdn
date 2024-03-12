@@ -4,9 +4,9 @@ mod registry;
 mod router;
 mod table;
 
-pub use self::registry::{Registry, RegistrySync};
-pub use self::router::{Router, RouterSync};
-pub use self::table::{Metric, Path};
+pub use self::registry::{Registry, RegistryDelta, RegistrySync};
+pub use self::router::{Router, RouterDelta, RouterSync};
+pub use self::table::{DestDelta, Metric, Path, TableDelta};
 
 #[derive(PartialEq, Debug)]
 pub enum ServiceDestination {
