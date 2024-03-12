@@ -9,7 +9,7 @@ use sans_io_runtime::{Controller, Task, TaskGroupOutputsState, TaskInput, TaskOu
 
 use self::{
     controller_plane::{ControllerPlaneCfg, ControllerPlaneTask},
-    data_plane::DataPlaneTask,
+    data_plane::{DataPlaneCfg, DataPlaneTask},
 };
 
 pub type SdnController = Controller<SdnExtIn, SdnExtOut, SdnSpawnCfg, SdnChannel, SdnEvent, 128>;
@@ -37,12 +37,16 @@ pub struct ControllerCfg {
     pub password: String,
     pub tick_ms: u64,
     pub services: Vec<Box<dyn atm0s_sdn_network::controller_plane::Service>>,
+    #[cfg(feature = "vpn")]
+    pub vpn_tun_device: sans_io_runtime::backend::tun::TunDevice,
 }
 
 pub struct SdnInnerCfg {
     pub node_id: u32,
     pub udp_port: u16,
     pub controller: Option<ControllerCfg>,
+    #[cfg(feature = "vpn")]
+    pub vpn_tun_fd: sans_io_runtime::backend::tun::TunFd,
 }
 
 pub struct SdnSpawnCfg {}
@@ -88,8 +92,16 @@ impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpaw
                     node_id: cfg.node_id,
                     tick_ms: controller.tick_ms,
                     services: controller.services,
+                    #[cfg(feature = "vpn")]
+                    vpn_tun_device: controller.vpn_tun_device,
                 })),
-                data: DataPlaneTask::build(worker, cfg.node_id, cfg.udp_port),
+                data: DataPlaneTask::build(DataPlaneCfg {
+                    worker,
+                    node_id: cfg.node_id,
+                    port: cfg.udp_port,
+                    #[cfg(feature = "vpn")]
+                    vpn_tun_fd: cfg.vpn_tun_fd,
+                }),
                 group_state: TaskGroupOutputsState::default(),
                 last_input_group: None,
                 state: State::Running,
@@ -98,7 +110,13 @@ impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpaw
             Self {
                 worker,
                 controller: None,
-                data: DataPlaneTask::build(worker, cfg.node_id, cfg.udp_port),
+                data: DataPlaneTask::build(DataPlaneCfg {
+                    worker,
+                    node_id: cfg.node_id,
+                    port: cfg.udp_port,
+                    #[cfg(feature = "vpn")]
+                    vpn_tun_fd: cfg.vpn_tun_fd,
+                }),
                 group_state: TaskGroupOutputsState::default(),
                 last_input_group: None,
                 state: State::Running,

@@ -17,6 +17,8 @@ pub struct ControllerPlaneCfg {
     pub node_id: u32,
     pub tick_ms: u64,
     pub services: Vec<Box<dyn Service>>,
+    #[cfg(feature = "vpn")]
+    pub vpn_tun_device: sans_io_runtime::backend::tun::TunDevice,
 }
 
 #[derive(Debug, Clone)]
@@ -32,12 +34,14 @@ pub enum EventOut {
 }
 
 pub struct ControllerPlaneTask {
+    #[allow(unused)]
     node_id: u32,
     controller: ControllerPlane,
     queue: VecDeque<TaskOutput<'static, ChannelIn, ChannelOut, EventOut>>,
     ticker: TimeTicker,
     timer: TimePivot,
-    shutdowned: bool,
+    #[cfg(feature = "vpn")]
+    vpn_tun_device: sans_io_runtime::backend::tun::TunDevice,
 }
 
 impl ControllerPlaneTask {
@@ -48,7 +52,8 @@ impl ControllerPlaneTask {
             queue: VecDeque::from([TaskOutput::Bus(BusEvent::ChannelSubscribe(()))]),
             ticker: TimeTicker::build(1000),
             timer: TimePivot::build(),
-            shutdowned: false,
+            #[cfg(feature = "vpn")]
+            vpn_tun_device: cfg.vpn_tun_device,
         }
     }
 

@@ -12,7 +12,7 @@ pub use self::service::{Service, ServiceOutput};
 use self::connections::{ConnectionCtx, ConnectionEvent, Connections};
 
 mod connections;
-mod core_services;
+pub mod core_services;
 mod service;
 
 pub enum Input {
@@ -36,13 +36,19 @@ pub struct ControllerPlane {
 
 impl ControllerPlane {
     pub fn new(node_id: NodeId, mut services: Vec<Box<dyn Service>>) -> Self {
-        let mut services_id = vec![core_services::router_sync::SERVICE_TYPE];
+        let mut services_id = vec![
+            core_services::router_sync::SERVICE_TYPE,
+            #[cfg(feature = "vpn")]
+            core_services::vpn::SERVICE_TYPE,
+        ];
         for service in services.iter() {
             services_id.push(service.service_type());
         }
 
         // add core services
         services.push(Box::new(core_services::router_sync::RouterSyncService::new(node_id, services_id)));
+        #[cfg(feature = "vpn")]
+        services.push(Box::new(core_services::vpn::VpnService::default()));
 
         // create service map
         let mut services_map: [Option<Box<dyn Service>>; 256] = std::array::from_fn(|_| None);

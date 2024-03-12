@@ -10,6 +10,10 @@ pub struct SdnBuilder {
     udp_port: u16,
     seeds: Vec<NodeAddr>,
     services: Vec<Box<dyn atm0s_sdn_network::controller_plane::Service>>,
+    #[cfg(feature = "vpn")]
+    vpn_ip: Option<(u8, u8, u8, u8)>,
+    #[cfg(feature = "vpn")]
+    vpn_netmask: Option<(u8, u8, u8, u8)>,
 }
 
 impl SdnBuilder {
@@ -19,6 +23,10 @@ impl SdnBuilder {
             udp_port,
             seeds: vec![],
             services: vec![],
+            #[cfg(feature = "vpn")]
+            vpn_ip: None,
+            #[cfg(feature = "vpn")]
+            vpn_netmask: None,
         }
     }
 
@@ -30,6 +38,16 @@ impl SdnBuilder {
         self.services.push(service);
     }
 
+    #[cfg(feature = "vpn")]
+    pub fn set_vpn_ip(&mut self, ip: (u8, u8, u8, u8)) {
+        self.vpn_ip = Some(ip);
+    }
+
+    #[cfg(feature = "vpn")]
+    pub fn set_vpn_netmask(&mut self, netmask: (u8, u8, u8, u8)) {
+        self.vpn_netmask = Some(netmask);
+    }
+
     pub fn build<B: Backend>(self, workers: usize) -> SdnController {
         assert!(workers > 0);
         let mut addr_builder = NodeAddrBuilder::new(self.node_id);
@@ -37,6 +55,18 @@ impl SdnBuilder {
         addr_builder.add_protocol(Protocol::Udp(self.udp_port));
         let addr = addr_builder.addr();
         log::info!("Created node on addr {}", addr);
+
+        #[cfg(feature = "vpn")]
+        let (tun_device, mut queue_fds) = {
+            let vpn_ip = self.vpn_ip.unwrap_or((10, 33, 33, self.node_id as u8));
+            let vpn_netmask = self.vpn_netmask.unwrap_or((255, 255, 255, 0));
+            let mut tun_device = sans_io_runtime::backend::tun::create_tun(&format!("utun{}", self.node_id as u8), vpn_ip, vpn_netmask, workers);
+            let mut queue_fds = std::collections::VecDeque::with_capacity(workers);
+            for i in 0..workers {
+                queue_fds.push_back(tun_device.get_queue_fd(i).expect("Should have tun queue fd"));
+            }
+            (tun_device, queue_fds)
+        };
 
         let mut controler = SdnController::default();
         controler.add_worker::<_, SdnWorkerInner, B>(
@@ -47,7 +77,11 @@ impl SdnBuilder {
                     password: "password".to_string(),
                     tick_ms: 1000,
                     services: self.services,
+                    #[cfg(feature = "vpn")]
+                    vpn_tun_device: tun_device,
                 }),
+                #[cfg(feature = "vpn")]
+                vpn_tun_fd: queue_fds.pop_front().expect("Should have tun queue fd"),
             },
             None,
         );
@@ -58,6 +92,8 @@ impl SdnBuilder {
                     node_id: self.node_id,
                     udp_port: self.udp_port,
                     controller: None,
+                    #[cfg(feature = "vpn")]
+                    vpn_tun_fd: queue_fds.pop_front().expect("Should have tun queue fd"),
                 },
                 None,
             );

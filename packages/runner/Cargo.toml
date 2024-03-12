@@ -10,7 +10,7 @@ license = "MIT"
 
 [dependencies]
 thiserror = { workspace = true }
-sans-io-runtime = { path = "../../../sans-io-runtime" }
+sans-io-runtime = { path = "../../../sans-io-runtime", features = ["poll-backend", "udp"]}
 atm0s-sdn-identity = { path = "../core/identity", version = "0.2.0" }
 atm0s-sdn-router = { path = "../core/router", version = "0.1.4" }
 atm0s-sdn-network = { path = "../network", version = "0.3.1" }
@@ -26,3 +26,9 @@ env_logger = { workspace = true }
 signal-hook = "0.3.17"
 
 [features]
+default = []
+vpn = ["sans-io-runtime/tun-tap", "atm0s-sdn-network/vpn"]
+
+[[example]]
+name = "simple_node"
+features = ["sans-io-runtime/mio-backend"]
