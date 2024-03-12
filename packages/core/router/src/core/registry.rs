@@ -11,6 +11,7 @@ use super::{
 
 pub const REGISTRY_LOCAL_BW: u32 = 1000000; //1Gbps
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum RegistryDelta {
     ServiceRemote(u8, DestDelta),
     SetServiceLocal(u8),
@@ -159,7 +160,7 @@ impl Registry {
 mod tests {
     use atm0s_sdn_identity::{ConnId, NodeId};
 
-    use crate::core::{registry::REGISTRY_LOCAL_BW, Metric, Registry, RegistrySync, ServiceDestination};
+    use crate::core::{registry::REGISTRY_LOCAL_BW, DestDelta, Metric, Registry, RegistryDelta, RegistrySync, ServiceDestination};
 
     #[test]
     fn create_manual() {
@@ -170,9 +171,10 @@ mod tests {
         let _node3: NodeId = 0x3;
 
         registry.add_service(1);
+        assert_eq!(registry.pop_delta(), Some(RegistryDelta::SetServiceLocal(1)));
+        assert_eq!(registry.pop_delta(), None);
 
         assert_eq!(registry.next(1, &[]), Some(ServiceDestination::Local));
-        // assert_eq!(registry.next(1, &[0]), None);
 
         let sync = registry.sync_for(node1);
         assert_eq!(sync.0, vec![(1, Metric::new(0, vec![0], REGISTRY_LOCAL_BW))]);
@@ -190,9 +192,14 @@ mod tests {
 
         assert_eq!(registry.next(1, &[]), None);
         registry.apply_sync(conn1, node1, Metric::new(1, vec![1, 0], 1), RegistrySync(vec![(1, Metric::new(1, vec![1], 1))]));
+        assert_eq!(registry.pop_delta(), Some(RegistryDelta::ServiceRemote(1, DestDelta::SetBestPath(conn1))));
+        assert_eq!(registry.pop_delta(), None);
+
         assert_eq!(registry.next(1, &[]), Some(ServiceDestination::Remote(conn1, node1)));
 
         registry.del_direct(conn1);
+        assert_eq!(registry.pop_delta(), Some(RegistryDelta::ServiceRemote(1, DestDelta::DelBestPath)));
+        assert_eq!(registry.pop_delta(), None);
         assert_eq!(registry.next(1, &[]), None);
     }
 
@@ -208,6 +215,9 @@ mod tests {
 
         let sync = vec![(2, Metric::new(1, vec![node1], 1)), (3, Metric::new(1, vec![node1], 1))];
         registry.apply_sync(conn1, node1, Metric::new(1, vec![node1, node0], 2), RegistrySync(sync));
+        assert_eq!(registry.pop_delta(), Some(RegistryDelta::ServiceRemote(2, DestDelta::SetBestPath(conn1))));
+        assert_eq!(registry.pop_delta(), Some(RegistryDelta::ServiceRemote(3, DestDelta::SetBestPath(conn1))));
+        assert_eq!(registry.pop_delta(), None);
 
         assert_eq!(registry.next(1, &[]), None);
         assert_eq!(registry.next(2, &[]), Some(ServiceDestination::Remote(conn1, node1)));
@@ -215,6 +225,9 @@ mod tests {
 
         let sync = vec![(3, Metric::new(1, vec![node1], 1))];
         registry.apply_sync(conn1, node1, Metric::new(1, vec![node1, node0], 1), RegistrySync(sync));
+        assert_eq!(registry.pop_delta(), Some(RegistryDelta::ServiceRemote(2, DestDelta::DelBestPath)));
+        assert_eq!(registry.pop_delta(), None);
+
         assert_eq!(registry.next(1, &[]), None);
         assert_eq!(registry.next(2, &[]), None);
         assert_eq!(registry.next(3, &[]), Some(ServiceDestination::Remote(conn1, node1)));

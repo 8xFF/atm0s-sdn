@@ -97,44 +97,17 @@ impl Router {
     pub fn closest_node(&self, key: NodeId, excepts: &[NodeId]) -> Option<(ConnId, NodeId, Layer, NodeIndex)> {
         for i in [3, 2, 1, 0] {
             let index = key.layer(i);
-            let (mut next_index, next_conn, next_node) = if let Some(res) = self.tables[i as usize].closest_for(index, excepts) {
-                res
+            if let Some((next_index, next_conn, next_node)) = self.tables[i as usize].closest_for(index, excepts) {
+                let next_distance = next_index ^ index;
+                let current_index = self.node_id.layer(i);
+                let curent_distance = index ^ current_index;
+                if curent_distance > next_distance {
+                    return Some((next_conn, next_node, i, next_index));
+                }
             } else {
                 //if find nothing => that mean this layer is empty trying to find closest node in next layer
                 continue;
             };
-            let current_node_index = self.node_id.layer(i);
-            let next_distance = index ^ next_index;
-            let local_distance = index ^ current_node_index;
-            if local_distance < next_distance {
-                //if current node is closer => set to current index
-                next_index = current_node_index;
-            }
-
-            if next_index != current_node_index {
-                //other zone => sending this this
-                log::debug!(
-                    "[Router {}] next node for {} ({}) in layer {}: {:?} => ({}, {:?})",
-                    self.node_id,
-                    key,
-                    index,
-                    i,
-                    self.tables[i as usize].slots(),
-                    next_index,
-                    next_node
-                );
-                return Some((next_conn, next_node, i, next_index));
-            } else {
-                log::debug!(
-                    "[Router {}] finding closest to {} in layer {}: {:?} -> ({}, {:?})",
-                    self.node_id,
-                    key,
-                    i,
-                    self.tables[i as usize].slots(),
-                    next_index,
-                    next_node
-                );
-            }
         }
 
         None

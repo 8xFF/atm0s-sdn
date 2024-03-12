@@ -15,6 +15,7 @@ mod path;
 /// Index of node-id inside this table (0-255)
 pub type NodeIndex = u8;
 
+#[derive(Debug, PartialEq, Eq)]
 pub struct TableDelta(pub u8, pub DestDelta);
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
@@ -101,27 +102,25 @@ impl Table {
     }
 
     pub fn closest_for(&self, key: u8, excepts: &[NodeId]) -> Option<(NodeIndex, ConnId, NodeId)> {
-        let mut closest_distance: u16 = 256;
-        let mut res = None;
+        let mut closest_distance: Option<(u8, ConnId, u32, u8)> = None;
         for slot in &self.slots {
-            let distance = (*slot ^ key) as u16;
-            if distance < closest_distance {
+            let distance = *slot ^ key;
+            if closest_distance.is_none() || distance < closest_distance.expect("").3 {
                 if let Some((conn, node)) = self.dests[*slot as usize].next(excepts) {
-                    res = Some((*slot, conn, node));
-                    closest_distance = distance;
+                    closest_distance = Some((*slot, conn, node, distance));
                 }
             }
         }
 
-        res
+        closest_distance.map(|(index, conn, node, _)| (index, conn, node))
     }
 
-    pub fn apply_sync(&mut self, src_conn: ConnId, src: NodeId, src_send_metric: Metric, sync: TableSync) {
-        debug_assert_eq!(src_send_metric.hops.first(), Some(&src));
+    pub fn apply_sync(&mut self, src_conn: ConnId, src: NodeId, metric: Metric, sync: TableSync) {
+        debug_assert_eq!(metric.hops.first(), Some(&src));
         log::debug!("[Table {}/{}] apply sync from conn: {} node: {}, sync {:?}", self.node_id, self.layer, src_conn, src, sync.0);
         let mut cached: HashMap<u8, Metric> = HashMap::new();
         for (index, metric) in sync.0 {
-            if let Some(sum) = metric.add(&src_send_metric) {
+            if let Some(sum) = metric.add(&metric) {
                 cached.insert(index, sum);
             }
         }
@@ -132,35 +131,30 @@ impl Table {
             }
 
             let dest = &mut self.dests[i as usize];
-            match cached.remove(&i) {
-                None => {
-                    if !dest.is_empty() && src.layer(self.layer) != i {
-                        // log::debug!("remove {} over {}", i, src);
-                        let pre_empty = dest.is_empty();
-                        dest.del_path(src_conn);
-                        if !pre_empty && dest.is_empty() {
-                            log::info!("[Table {}/{}] sync => removed index {} from conn: {} node: {}", self.node_id, self.layer, i, src_conn, src);
-                            if let Ok(index) = self.slots.binary_search(&i) {
-                                self.slots.remove(index);
-                            }
-                        }
-                    }
+            if let Some(metric) = cached.remove(&i) {
+                if dest.is_empty() {
+                    log::info!(
+                        "[Table {}/{}] sync => added index {} from conn: {} node: {} metric: {:?}",
+                        self.node_id,
+                        self.layer,
+                        i,
+                        src_conn,
+                        src,
+                        metric
+                    );
+                    self.slots.push(i);
+                    self.slots.sort();
                 }
-                Some(metric) => {
-                    if dest.is_empty() {
-                        log::info!(
-                            "[Table {}/{}] sync => added index {} from conn: {} node: {} metric: {:?}",
-                            self.node_id,
-                            self.layer,
-                            i,
-                            src_conn,
-                            src,
-                            src_send_metric
-                        );
-                        self.slots.push(i);
-                        self.slots.sort();
+                dest.set_path(src_conn, src, metric);
+            } else if !dest.is_empty() && src.layer(self.layer) != i {
+                // log::debug!("remove {} over {}", i, src);
+                let pre_empty = dest.is_empty();
+                dest.del_path(src_conn);
+                if !pre_empty && dest.is_empty() {
+                    log::info!("[Table {}/{}] sync => removed index {} from conn: {} node: {}", self.node_id, self.layer, i, src_conn, src);
+                    if let Ok(index) = self.slots.binary_search(&i) {
+                        self.slots.remove(index);
                     }
-                    dest.set_path(src_conn, src, metric);
                 }
             }
             self.poll_delta_index(i);
@@ -222,7 +216,7 @@ mod tests {
 
     use crate::core::{
         table::{Table, TableSync},
-        Metric, Path,
+        DestDelta, Metric, Path, TableDelta,
     };
 
     #[test]
@@ -238,19 +232,25 @@ mod tests {
         let conn3: ConnId = ConnId::from_out(0, 0x3);
 
         table.add_direct(conn1, node1, Metric::new(1, vec![1, 0], 1));
+        assert_eq!(table.pop_delta(), Some(TableDelta(1, DestDelta::SetBestPath(conn1))));
         table.add_direct(conn2, node2, Metric::new(2, vec![2, 4, 0], 1));
+        assert_eq!(table.pop_delta(), Some(TableDelta(2, DestDelta::SetBestPath(conn2))));
         // fake
         table.add_direct(conn3, node3, Metric::new(1, vec![3, 0], 1));
+        assert_eq!(table.pop_delta(), Some(TableDelta(3, DestDelta::SetBestPath(conn3))));
 
         assert_eq!(table.slots(), vec![1, 2, 3]);
 
-        assert_eq!(table.next(node1, &[node2]), Some((conn1, node1)));
+        assert_eq!(table.next(node1, &[]), Some((conn1, node1)));
 
         assert_eq!(table.sync_for(node1), Some(TableSync(vec![(2, Metric::new(2, vec![2, 4, 0], 1)), (3, Metric::new(1, vec![3, 0], 1))])));
         assert_eq!(table.sync_for(4), Some(TableSync(vec![(1, Metric::new(1, vec![1, 0], 1)), (3, Metric::new(1, vec![3, 0], 1))])));
 
         table.del_direct(conn1);
-        assert_eq!(table.next(node1, &[node2]), None);
+        assert_eq!(table.pop_delta(), Some(TableDelta(1, DestDelta::DelBestPath)));
+        assert_eq!(table.pop_delta(), None);
+
+        assert_eq!(table.next(node1, &[]), None);
     }
 
     #[test]
@@ -286,9 +286,12 @@ mod tests {
         let _conn3: ConnId = ConnId::from_out(0, 0x3);
 
         table.add_direct(conn1, node1, Metric::new(1, vec![1, 0], 1));
+        assert_eq!(table.pop_delta(), Some(TableDelta(1, DestDelta::SetBestPath(conn1))));
 
         let sync = vec![(2, Metric::new(1, vec![2, 1], 1)), (3, Metric::new(1, vec![3, 1], 1))];
         table.apply_sync(conn1, node1, Metric::new(1, vec![1, 0], 2), TableSync(sync));
+        assert_eq!(table.pop_delta(), Some(TableDelta(2, DestDelta::SetBestPath(conn1))));
+        assert_eq!(table.pop_delta(), Some(TableDelta(3, DestDelta::SetBestPath(conn1))));
 
         assert_eq!(table.slots(), vec![1, 2, 3]);
         assert_eq!(table.next_path(node1, &[node2]), Some(Path(conn1, node1, Metric::new(1, vec![1, 0], 1))));
@@ -297,6 +300,9 @@ mod tests {
 
         let sync = vec![(3, Metric::new(1, vec![3, 1], 1))];
         table.apply_sync(conn1, node1, Metric::new(1, vec![1, 0], 1), TableSync(sync));
+        assert_eq!(table.pop_delta(), Some(TableDelta(2, DestDelta::DelBestPath)));
+        assert_eq!(table.pop_delta(), None);
+
         assert_eq!(table.next(node1, &[node2]), Some((conn1, node1)));
         assert_eq!(table.next(node2, &[node2]), None);
         assert_eq!(table.next(node3, &[node2]), Some((conn1, node1)));
@@ -323,12 +329,19 @@ mod tests {
 
         table_a.add_direct(conn_b, node_b, Metric::new(1, vec![node_b, node_a], 1));
         table_a.add_direct(conn_c, node_c, Metric::new(1, vec![node_c, node_a], 1));
+        assert_eq!(table_a.pop_delta(), Some(TableDelta(1, DestDelta::SetBestPath(conn_b))));
+        assert_eq!(table_a.pop_delta(), Some(TableDelta(2, DestDelta::SetBestPath(conn_c))));
+        assert_eq!(table_a.pop_delta(), None);
 
         let sync1 = vec![(node_c.layer(0), Metric::new(1, vec![node_c, node_b], 1)), (node_d.layer(0), Metric::new(2, vec![node_d, node_b], 1))];
         table_a.apply_sync(conn_b, node_b, Metric::new(1, vec![node_b, node_a], 1), TableSync(sync1));
+        assert_eq!(table_a.pop_delta(), Some(TableDelta(3, DestDelta::SetBestPath(conn_b))));
+        assert_eq!(table_a.pop_delta(), None);
 
         let sync2 = vec![(node_b.layer(0), Metric::new(2, vec![node_b, node_c], 2)), (node_d.layer(0), Metric::new(1, vec![node_d, node_c], 1))];
         table_a.apply_sync(conn_c, node_c, Metric::new(1, vec![node_c, node_a], 1), TableSync(sync2));
+        assert_eq!(table_a.pop_delta(), Some(TableDelta(3, DestDelta::SetBestPath(conn_c))));
+        assert_eq!(table_a.pop_delta(), None);
 
         assert_eq!(table_a.next_path(node_b, &[]), Some(Path(conn_b, node_b, Metric::new(1, vec![node_b, node_a], 1))));
         assert_eq!(table_a.next(node_c, &[]), Some((conn_c, node_c)));
@@ -342,6 +355,8 @@ mod tests {
 
         let sync2 = vec![(node_b.layer(0), Metric::new(2, vec![node_b, node_c], 1))];
         table_a.apply_sync(conn_c, node_c, Metric::new(1, vec![node_c, node_a], 1), TableSync(sync2));
+        assert_eq!(table_a.pop_delta(), Some(TableDelta(3, DestDelta::SetBestPath(conn_b))));
+        assert_eq!(table_a.pop_delta(), None);
 
         assert_eq!(table_a.next(node_b, &[]), Some((conn_b, node_b)));
         assert_eq!(table_a.next(node_c, &[]), Some((conn_c, node_c)));

@@ -89,7 +89,7 @@ impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpaw
                     tick_ms: controller.tick_ms,
                     services: controller.services,
                 })),
-                data: DataPlaneTask::build(worker, cfg.udp_port),
+                data: DataPlaneTask::build(worker, cfg.node_id, cfg.udp_port),
                 group_state: TaskGroupOutputsState::default(),
                 last_input_group: None,
                 state: State::Running,
@@ -98,7 +98,7 @@ impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpaw
             Self {
                 worker,
                 controller: None,
-                data: DataPlaneTask::build(worker, cfg.udp_port),
+                data: DataPlaneTask::build(worker, cfg.node_id, cfg.udp_port),
                 group_state: TaskGroupOutputsState::default(),
                 last_input_group: None,
                 state: State::Running,

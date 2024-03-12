@@ -4,7 +4,7 @@ use atm0s_sdn_identity::{ConnId, NodeId};
 
 use super::{Metric, Path};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum DestDelta {
     SetBestPath(ConnId),
     DelBestPath,
@@ -122,7 +122,7 @@ impl Dest {
 mod tests {
     use atm0s_sdn_identity::{ConnId, NodeId};
 
-    use crate::core::{table::Dest, Metric, Path};
+    use crate::core::{table::Dest, DestDelta, Metric, Path};
 
     #[test]
     fn push_sort() {
@@ -137,7 +137,9 @@ mod tests {
 
         let mut dest = Dest::default();
         dest.set_path(conn1, node1, Metric::new(1, vec![4, 1], 1)); //directed connection
+        assert_eq!(dest.pop_delta(), Some(DestDelta::SetBestPath(conn1)));
         dest.set_path(conn2, node2, Metric::new(2, vec![4, 2], 1));
+        assert_eq!(dest.pop_delta(), None);
 
         assert_eq!(dest.next(&[]), Some((conn1, node1)));
         assert_eq!(dest.next_path(&[node1]), Some(Path(conn2, node2, Metric::new(2, vec![4, 2], 1))));
@@ -160,10 +162,13 @@ mod tests {
 
         let mut dest = Dest::default();
         dest.set_path(conn1, node1, Metric::new(1, vec![4, 1], 1));
+        assert_eq!(dest.pop_delta(), Some(DestDelta::SetBestPath(conn1)));
         dest.set_path(conn2, node2, Metric::new(2, vec![4, 6, 2], 1));
         dest.set_path(conn3, node3, Metric::new(3, vec![4, 6, 2, 3], 1));
+        assert_eq!(dest.pop_delta(), None);
 
         dest.del_path(conn1);
+        assert_eq!(dest.pop_delta(), Some(DestDelta::SetBestPath(conn2)));
 
         assert_eq!(dest.next(&[]), Some((conn2, node2)));
         assert_eq!(dest.next_path(&[node1]), Some(Path(conn2, node2, Metric::new(2, vec![4, 6, 2], 1))));

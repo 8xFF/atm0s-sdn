@@ -1,4 +1,4 @@
-use atm0s_sdn_identity::{ConnId, NodeId};
+use atm0s_sdn_identity::NodeId;
 pub mod core;
 pub mod shadow;
 
@@ -15,16 +15,16 @@ pub enum RouteRule {
 
 /// Determine the destination of an action/message
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum RouteAction {
+pub enum RouteAction<Remote> {
     /// Reject the message
     Reject,
     /// Will be processed locally
     Local,
-    /// Will be forward to the given node
-    Next(ConnId, NodeId),
+    /// Will be forward to the given connection
+    Next(Remote),
 }
 
-impl RouteAction {
+impl<Remote> RouteAction<Remote> {
     pub fn is_local(&self) -> bool {
         matches!(self, RouteAction::Local)
     }
@@ -34,22 +34,20 @@ impl RouteAction {
     }
 
     pub fn is_remote(&self) -> bool {
-        matches!(self, RouteAction::Next(_, _))
+        matches!(self, RouteAction::Next(_))
     }
 }
 
-pub trait RouterTable: Send + Sync {
-    /// Register service
-    fn register_service(&self, service_id: u8);
+pub trait RouterTable<Remote> {
     /// Determine the next action for the given destination node
-    fn path_to_node(&self, dest: NodeId) -> RouteAction;
+    fn path_to_node(&self, dest: NodeId) -> RouteAction<Remote>;
     /// Determine the next action for the given key
-    fn path_to_key(&self, key: NodeId) -> RouteAction;
+    fn path_to_key(&self, key: NodeId) -> RouteAction<Remote>;
     /// Determine the next action for the given service
-    fn path_to_service(&self, service_id: u8) -> RouteAction;
+    fn path_to_service(&self, service_id: u8) -> RouteAction<Remote>;
     /// Determine next action for incoming messages
     /// given the route rule and service id
-    fn derive_action(&self, route: &RouteRule, service_id: u8) -> RouteAction {
+    fn derive_action(&self, route: &RouteRule, service_id: u8) -> RouteAction<Remote> {
         match route {
             RouteRule::Direct => RouteAction::Local,
             RouteRule::ToNode(dest) => self.path_to_node(*dest),
@@ -61,12 +59,13 @@ pub trait RouterTable: Send + Sync {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use atm0s_sdn_identity::ConnId;
+    type RouteAction = super::RouteAction<ConnId>;
 
     #[test]
     fn test_is_local() {
         let local = RouteAction::Local;
-        let remote = RouteAction::Next(ConnId::from_in(1, 1), 2);
+        let remote = RouteAction::Next(ConnId::from_in(1, 1));
         let reject = RouteAction::Reject;
 
         assert!(local.is_local());
@@ -77,7 +76,7 @@ mod tests {
     #[test]
     fn test_is_reject() {
         let local = RouteAction::Local;
-        let remote = RouteAction::Next(ConnId::from_in(1, 1), 2);
+        let remote = RouteAction::Next(ConnId::from_in(1, 1));
         let reject = RouteAction::Reject;
 
         assert!(!local.is_reject());
@@ -88,7 +87,7 @@ mod tests {
     #[test]
     fn test_is_remote() {
         let local = RouteAction::Local;
-        let remote = RouteAction::Next(ConnId::from_in(1, 1), 2);
+        let remote = RouteAction::Next(ConnId::from_in(1, 1));
         let reject = RouteAction::Reject;
 
         assert!(!local.is_remote());
