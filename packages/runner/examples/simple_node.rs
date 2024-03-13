@@ -38,7 +38,7 @@ struct Args {
     password: String,
 
     /// Backend type
-    #[arg(short, long, default_value = "BackendType::Poll")]
+    #[arg(short, long, default_value = "poll")]
     backend: BackendType,
 }
 
