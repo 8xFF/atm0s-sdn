@@ -4,7 +4,7 @@ use atm0s_sdn_identity::{ConnId, NodeId};
 
 use super::{Metric, Path};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum DestDelta {
     SetBestPath(ConnId),
     DelBestPath,

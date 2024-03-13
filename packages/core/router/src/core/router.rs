@@ -8,6 +8,7 @@ use super::registry::RegistryDelta;
 use super::table::{NodeIndex, Table, TableDelta, TableSync};
 use super::ServiceDestination;
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum RouterDelta {
     Table(u8, TableDelta),
     Registry(RegistryDelta),
@@ -16,7 +17,7 @@ pub enum RouterDelta {
 /// Which layer in node id space, in this case is 0 -> 3
 pub type Layer = u8;
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct RouterSync(pub RegistrySync, pub [Option<TableSync>; 4]);
 
 pub struct Router {

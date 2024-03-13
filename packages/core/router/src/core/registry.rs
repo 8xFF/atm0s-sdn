@@ -11,7 +11,7 @@ use super::{
 
 pub const REGISTRY_LOCAL_BW: u32 = 1000000; //1Gbps
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum RegistryDelta {
     ServiceRemote(u8, DestDelta),
     SetServiceLocal(u8),

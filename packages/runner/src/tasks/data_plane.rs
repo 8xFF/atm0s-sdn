@@ -78,13 +78,13 @@ impl DataPlaneTask {
             log::trace!("Received from remote {}", from);
             return Some(TaskOutput::Bus(BusEvent::ChannelPublish((), true, EventOut::Data(from, data))));
         };
-        let next = self.router.derive_action(&header.route, header.to_service_id);
+        let next = self.router.derive_action(&header.route, header.service);
         match next {
             RouteAction::Local => {
                 #[cfg(feature = "vpn")]
                 {
-                    const SERVICE_TYPE: u8 = atm0s_sdn_network::controller_plane::core_services::vpn::SERVICE_TYPE;
-                    if header.to_service_id == SERVICE_TYPE {
+                    const SERVICE_TYPE: u8 = atm0s_sdn_network::controller_plane::service::vpn::SERVICE_TYPE;
+                    if header.service == SERVICE_TYPE {
                         //for vpn service, direct sending to tun socket
                         rewrite_tun_pkt(&mut buf[header.serialize_size()..]);
                         return Some(TaskOutput::Net(NetOutgoing::TunPacket {
@@ -138,8 +138,9 @@ impl DataPlaneTask {
             match self.router.path_to_node(dest) {
                 RouteAction::Next(remote) => {
                     //TODO decrease TTL
-                    const SERVICE_TYPE: u8 = atm0s_sdn_network::controller_plane::core_services::vpn::SERVICE_TYPE;
-                    let msg = TransportMsg::build(SERVICE_TYPE, SERVICE_TYPE, RouteRule::ToNode(dest), 0, 0, buf);
+                    const FEATURE_TYPE: u8 = atm0s_sdn_network::controller_plane::feature::FeatureType::UserCustomFeature as u8;
+                    const SERVICE_TYPE: u8 = atm0s_sdn_network::controller_plane::service::vpn::SERVICE_TYPE;
+                    let msg = TransportMsg::build(FEATURE_TYPE, SERVICE_TYPE, RouteRule::ToNode(dest), buf);
                     Some(TaskOutput::Net(NetOutgoing::UdpPacket {
                         slot: self.backend_udp_slot,
                         to: remote,

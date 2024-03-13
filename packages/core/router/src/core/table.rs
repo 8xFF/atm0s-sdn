@@ -15,7 +15,7 @@ mod path;
 /// Index of node-id inside this table (0-255)
 pub type NodeIndex = u8;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct TableDelta(pub u8, pub DestDelta);
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
