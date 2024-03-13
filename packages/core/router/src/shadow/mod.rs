@@ -1,17 +1,20 @@
+use std::hash::Hash;
+
 use atm0s_sdn_identity::{NodeId, NodeIdType};
 
 use crate::{RouteAction, RouterTable, ServiceMeta};
 
-use self::table::ShadowTable;
+use self::{service::Service, table::ShadowTable};
 
+mod service;
 mod table;
 
 #[derive(Debug, Clone)]
 pub enum ShadowRouterDelta<Remote> {
-    SetTable { layer: u8, index: u8, remote: Remote },
+    SetTable { layer: u8, index: u8, next: Remote },
     DelTable { layer: u8, index: u8 },
-    SetServiceRemote { service: u8, remote: Remote },
-    DelServiceRemote { service: u8 },
+    SetServiceRemote { service: u8, next: Remote, dest: NodeId, score: u32 },
+    DelServiceRemote { service: u8, next: Remote },
     SetServiceLocal { service: u8 },
     DelServiceLocal { service: u8 },
 }
@@ -19,33 +22,33 @@ pub enum ShadowRouterDelta<Remote> {
 pub struct ShadowRouter<Remote> {
     node_id: NodeId,
     local_registries: [bool; 256],
-    remote_registry: [Option<Remote>; 256],
+    remote_registry: [Service<Remote>; 256],
     tables: [ShadowTable<Remote>; 4],
 }
 
-impl<Remote: Clone + Copy> ShadowRouter<Remote> {
+impl<Remote: Hash + Eq + Clone + Copy> ShadowRouter<Remote> {
     pub fn new(node_id: NodeId) -> Self {
         Self {
             node_id,
             local_registries: [false; 256],
-            remote_registry: [None; 256],
+            remote_registry: std::array::from_fn(|_| Service::new()),
             tables: [ShadowTable::new(0), ShadowTable::new(1), ShadowTable::new(2), ShadowTable::new(3)],
         }
     }
 
     pub fn apply_delta(&mut self, delta: ShadowRouterDelta<Remote>) {
         match delta {
-            ShadowRouterDelta::SetTable { layer, index, remote } => {
+            ShadowRouterDelta::SetTable { layer, index, next: remote } => {
                 self.tables[layer as usize].set(index, remote);
             }
             ShadowRouterDelta::DelTable { layer, index } => {
                 self.tables[layer as usize].del(index);
             }
-            ShadowRouterDelta::SetServiceRemote { service, remote } => {
-                self.remote_registry[service as usize] = Some(remote);
+            ShadowRouterDelta::SetServiceRemote { service, next, dest, score } => {
+                self.remote_registry[service as usize].set_conn(next, dest, score);
             }
-            ShadowRouterDelta::DelServiceRemote { service } => {
-                self.remote_registry[service as usize] = None;
+            ShadowRouterDelta::DelServiceRemote { service, next } => {
+                self.remote_registry[service as usize].del_conn(next);
             }
             ShadowRouterDelta::SetServiceLocal { service } => {
                 self.local_registries[service as usize] = true;
@@ -84,7 +87,7 @@ impl<Remote: Clone + Copy> ShadowRouter<Remote> {
     }
 }
 
-impl<Remote: Clone + Copy> RouterTable<Remote> for ShadowRouter<Remote> {
+impl<Remote: Hash + Eq + Clone + Copy> RouterTable<Remote> for ShadowRouter<Remote> {
     fn path_to_key(&self, key: NodeId) -> RouteAction<Remote> {
         match self.closest_for(key) {
             Some(remote) => RouteAction::Next(remote),
@@ -108,11 +111,18 @@ impl<Remote: Clone + Copy> RouterTable<Remote> for ShadowRouter<Remote> {
                 if self.local_registries[service_id as usize] {
                     RouteAction::Local
                 } else {
-                    self.remote_registry[service_id as usize].clone().map(RouteAction::Next).unwrap_or(RouteAction::Reject)
+                    self.remote_registry[service_id as usize].best_conn().map(RouteAction::Next).unwrap_or(RouteAction::Reject)
                 }
             }
-            ServiceMeta::Broadcast => {
-                todo!()
+            ServiceMeta::Broadcast(level) => {
+                let local = self.local_registries[service_id as usize];
+                if let Some(nexts) = self.remote_registry[service_id as usize].broadcast_dests(self.node_id, level) {
+                    RouteAction::Broadcast(local, nexts)
+                } else if local {
+                    RouteAction::Local
+                } else {
+                    RouteAction::Reject
+                }
             }
         }
     }

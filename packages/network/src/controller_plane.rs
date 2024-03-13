@@ -1,7 +1,7 @@
 use std::{collections::HashMap, net::SocketAddr};
 
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
-use atm0s_sdn_router::core::{DestDelta, RegistryDelta, RouterDelta, TableDelta};
+use atm0s_sdn_router::core::{DestDelta, RegistryDelta, RegistryDestDelta, RouterDelta, TableDelta};
 use atm0s_sdn_router::shadow::ShadowRouterDelta;
 
 use crate::event::DataEvent;
@@ -174,16 +174,21 @@ impl ControllerPlane {
                     RouterDelta::Table(layer, TableDelta(index, DestDelta::SetBestPath(conn))) => ShadowRouterDelta::SetTable {
                         layer,
                         index,
-                        remote: self.conns_id.get(&conn)?.remote,
+                        next: self.conns_id.get(&conn)?.remote,
                     },
                     RouterDelta::Table(layer, TableDelta(index, DestDelta::DelBestPath)) => ShadowRouterDelta::DelTable { layer, index },
                     RouterDelta::Registry(RegistryDelta::SetServiceLocal(service)) => ShadowRouterDelta::SetServiceLocal { service },
                     RouterDelta::Registry(RegistryDelta::DelServiceLocal(service)) => ShadowRouterDelta::DelServiceLocal { service },
-                    RouterDelta::Registry(RegistryDelta::ServiceRemote(service, DestDelta::SetBestPath(conn))) => ShadowRouterDelta::SetServiceRemote {
+                    RouterDelta::Registry(RegistryDelta::ServiceRemote(service, RegistryDestDelta::SetServicePath(conn, dest, score))) => ShadowRouterDelta::SetServiceRemote {
                         service,
-                        remote: self.conns_id.get(&conn)?.remote,
+                        next: self.conns_id.get(&conn)?.remote,
+                        dest,
+                        score,
                     },
-                    RouterDelta::Registry(RegistryDelta::ServiceRemote(service, DestDelta::DelBestPath)) => ShadowRouterDelta::DelServiceRemote { service },
+                    RouterDelta::Registry(RegistryDelta::ServiceRemote(service, RegistryDestDelta::DelServicePath(conn))) => ShadowRouterDelta::DelServiceRemote {
+                        service,
+                        next: self.conns_id.get(&conn)?.remote,
+                    },
                 };
                 Some(Output::RouterRule(rule))
             }

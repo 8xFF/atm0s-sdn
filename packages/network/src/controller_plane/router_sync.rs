@@ -50,7 +50,7 @@ impl RouterSyncLogic {
     pub fn on_conn_router_sync(&mut self, _now: u64, ctx: &ConnectionCtx, sync_msg: RouterSync) {
         if let Some(metric) = &self.metric {
             log::debug!("RouterSyncService::on_conn_data sync router from {}, remote {}", ctx.node, ctx.remote);
-            self.router.apply_sync(ctx.id, ctx.node, metric.clone(), sync_msg);
+            self.router.apply_sync(ctx.id, metric.clone(), sync_msg);
         } else {
             log::warn!("RouterSyncService::on_conn_data sync router from {}, remote {} failed, no metric available", ctx.node, ctx.remote);
         }
@@ -60,7 +60,7 @@ impl RouterSyncLogic {
         log::debug!("RouterSyncService::on_conn_stats {}, remote {}, rtt {}", ctx.node, ctx.remote, stats.rtt);
         let metric = Metric::new(stats.rtt, vec![ctx.node, self.node_id], 10000000);
         self.metric = Some(metric.clone());
-        self.router.set_direct(ctx.id, ctx.node, metric);
+        self.router.set_direct(ctx.id, metric);
     }
 
     pub fn on_conn_disconnected(&mut self, _now: u64, ctx: &ConnectionCtx) {

@@ -9,6 +9,9 @@ use super::connections::{ConnectionCtx, ConnectionStats};
 #[repr(u8)]
 pub enum FeatureType {
     UserCustomFeature = 0,
+    DhtKeyValue = 1,
+    LazyKeyValue = 2,
+    Pubsub = 3,
 }
 
 pub enum FeatureOutput {

@@ -4,7 +4,7 @@ mod registry;
 mod router;
 mod table;
 
-pub use self::registry::{Registry, RegistryDelta, RegistrySync};
+pub use self::registry::{Registry, RegistryDelta, RegistryDestDelta, RegistrySync};
 pub use self::router::{Router, RouterDelta, RouterSync};
 pub use self::table::{DestDelta, Metric, Path, TableDelta};
 

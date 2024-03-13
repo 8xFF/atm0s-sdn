@@ -1,19 +1,60 @@
-use atm0s_sdn_identity::NodeId;
+use atm0s_sdn_identity::{NodeId, NodeIdType};
 pub mod core;
 pub mod shadow;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ServiceBroadcastLevel {
+    Global,
+    Geo1,
+    Geo2,
+    Group,
+}
+
+impl ServiceBroadcastLevel {
+    pub fn same_level(&self, node1: NodeId, node2: NodeId) -> bool {
+        match self {
+            ServiceBroadcastLevel::Global => true,
+            ServiceBroadcastLevel::Geo1 => node1.geo1() == node2.geo1(),
+            ServiceBroadcastLevel::Geo2 => node1.geo1() == node2.geo1() && node1.geo2() == node2.geo2(),
+            ServiceBroadcastLevel::Group => node1.geo1() == node2.geo1() && node1.geo2() == node2.geo2() && node1.group() == node2.group(),
+        }
+    }
+}
+
+impl Into<u8> for ServiceBroadcastLevel {
+    fn into(self) -> u8 {
+        match self {
+            ServiceBroadcastLevel::Global => 0,
+            ServiceBroadcastLevel::Geo1 => 1,
+            ServiceBroadcastLevel::Geo2 => 2,
+            ServiceBroadcastLevel::Group => 3,
+        }
+    }
+}
+
+impl From<u8> for ServiceBroadcastLevel {
+    fn from(val: u8) -> Self {
+        match val {
+            0 => ServiceBroadcastLevel::Global,
+            1 => ServiceBroadcastLevel::Geo1,
+            2 => ServiceBroadcastLevel::Geo2,
+            _ => ServiceBroadcastLevel::Group,
+        }
+    }
+}
 
 /// ServiceMeta is using for determine which node will be routed, example node with lowest price or lowest latency, which for future use
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ServiceMeta {
     Closest,
-    Broadcast,
+    Broadcast(ServiceBroadcastLevel),
 }
 
 impl ServiceMeta {
     pub fn to_be_bytes(&self) -> [u8; 4] {
         match self {
             ServiceMeta::Closest => [0, 0, 0, 0],
-            ServiceMeta::Broadcast => [1, 1, 1, 1],
+            ServiceMeta::Broadcast(level) => [1, (*level).into(), 0, 0],
         }
     }
 }
@@ -22,7 +63,7 @@ impl From<[u8; 4]> for ServiceMeta {
     fn from(buf: [u8; 4]) -> Self {
         match buf[0] {
             0 => ServiceMeta::Closest,
-            _ => ServiceMeta::Broadcast,
+            _ => ServiceMeta::Broadcast(buf[1].into()),
         }
     }
 }

@@ -5,23 +5,25 @@ use atm0s_sdn_identity::{ConnId, NodeId};
 use super::{Metric, Path};
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum DestDelta {
-    SetBestPath(ConnId),
-    DelBestPath,
+pub enum RegistryDestDelta {
+    SetServicePath(ConnId, NodeId, u32),
+    DelServicePath(ConnId),
 }
 
 #[derive(Debug, Default)]
-pub struct Dest {
+pub struct RegistryDest {
     paths: Vec<Path>,
-    deltas: VecDeque<DestDelta>,
+    deltas: VecDeque<RegistryDestDelta>,
 }
 
-impl Dest {
+impl RegistryDest {
     pub fn set_path(&mut self, over: ConnId, metric: Metric) {
-        let pre_best_conn = self.paths.first().map(|p| p.0);
         match self.index_of(over) {
             Some(index) => match self.paths.get_mut(index) {
                 Some(slot) => {
+                    if slot.1.score() != metric.score() || slot.1.dest_node() != metric.dest_node() {
+                        self.deltas.push_back(RegistryDestDelta::SetServicePath(over, metric.dest_node(), metric.score()));
+                    }
                     slot.1 = metric;
                 }
                 None => {
@@ -29,39 +31,25 @@ impl Dest {
                 }
             },
             None => {
+                self.deltas.push_back(RegistryDestDelta::SetServicePath(over, metric.dest_node(), metric.score()));
                 self.paths.push(Path(over, metric));
             }
         }
         self.paths.sort();
-        let after_best_conn = self.paths.first().map(|p| p.0);
-        if pre_best_conn != after_best_conn {
-            if let Some(conn) = after_best_conn {
-                self.deltas.push_back(DestDelta::SetBestPath(conn));
-            } else {
-                self.deltas.push_back(DestDelta::DelBestPath);
-            }
-        }
     }
 
     pub fn del_path(&mut self, over: ConnId) -> Option<Path> {
         match self.index_of(over) {
             Some(index) => {
-                if index == 0 {
-                    //if remove first => changed best
-                    let after_best_conn = self.paths.get(1).map(|p| p.0);
-                    if let Some(conn) = after_best_conn {
-                        self.deltas.push_back(DestDelta::SetBestPath(conn));
-                    } else {
-                        self.deltas.push_back(DestDelta::DelBestPath);
-                    }
-                }
-                Some(self.paths.remove(index))
+                let path: Path = self.paths.remove(index);
+                self.deltas.push_back(RegistryDestDelta::DelServicePath(over));
+                Some(path)
             }
             None => None,
         }
     }
 
-    pub fn pop_delta(&mut self) -> Option<DestDelta> {
+    pub fn pop_delta(&mut self) -> Option<RegistryDestDelta> {
         self.deltas.pop_front()
     }
 
@@ -120,9 +108,9 @@ impl Dest {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::core::{table::BANDWIDTH_LIMIT, Metric, Path};
     use atm0s_sdn_identity::{ConnId, NodeId};
-
-    use crate::core::{table::Dest, DestDelta, Metric, Path};
 
     #[test]
     fn push_sort() {
@@ -135,16 +123,20 @@ mod tests {
         let _conn3: ConnId = ConnId::from_out(0, 0x3);
         let node3: NodeId = 0x3;
 
-        let mut dest = Dest::default();
-        dest.set_path(conn1, Metric::new(1, vec![4, 1], 1)); //directed connection
-        assert_eq!(dest.pop_delta(), Some(DestDelta::SetBestPath(conn1)));
-        dest.set_path(conn2, Metric::new(2, vec![4, 2], 1));
+        let node4: NodeId = 0x4;
+
+        let mut dest = RegistryDest::default();
+        dest.set_path(conn1, Metric::new(1, vec![4, 1], BANDWIDTH_LIMIT)); //directed connection
+        assert_eq!(dest.pop_delta(), Some(RegistryDestDelta::SetServicePath(conn1, node4, 21)));
+        assert_eq!(dest.pop_delta(), None);
+        dest.set_path(conn2, Metric::new(2, vec![4, 2], BANDWIDTH_LIMIT));
+        assert_eq!(dest.pop_delta(), Some(RegistryDestDelta::SetServicePath(conn2, node4, 22)));
         assert_eq!(dest.pop_delta(), None);
 
         assert_eq!(dest.next(&[]), Some((conn1, node1)));
-        assert_eq!(dest.next_path(&[node1]), Some(Path(conn2, Metric::new(2, vec![4, 2], 1))));
-        assert_eq!(dest.next_path(&[node2]), Some(Path(conn1, Metric::new(1, vec![4, 1], 1))));
-        assert_eq!(dest.next_path(&[node3]), Some(Path(conn1, Metric::new(1, vec![4, 1], 1))));
+        assert_eq!(dest.next_path(&[node1]), Some(Path(conn2, Metric::new(2, vec![4, 2], BANDWIDTH_LIMIT))));
+        assert_eq!(dest.next_path(&[node2]), Some(Path(conn1, Metric::new(1, vec![4, 1], BANDWIDTH_LIMIT))));
+        assert_eq!(dest.next_path(&[node3]), Some(Path(conn1, Metric::new(1, vec![4, 1], BANDWIDTH_LIMIT))));
         assert_eq!(dest.next(&[node1, node2]), None);
         assert_eq!(dest.next_path(&[node1, node2]), None);
     }
@@ -160,20 +152,24 @@ mod tests {
         let conn3: ConnId = ConnId::from_out(0, 0x3);
         let node3: NodeId = 0x3;
 
-        let mut dest = Dest::default();
-        dest.set_path(conn1, Metric::new(1, vec![4, 1], 1));
-        assert_eq!(dest.pop_delta(), Some(DestDelta::SetBestPath(conn1)));
-        dest.set_path(conn2, Metric::new(2, vec![4, 6, 2], 1));
-        dest.set_path(conn3, Metric::new(3, vec![4, 6, 2, 3], 1));
+        let node4: NodeId = 0x4;
+
+        let mut dest = RegistryDest::default();
+        dest.set_path(conn1, Metric::new(1, vec![4, 1], BANDWIDTH_LIMIT));
+        assert_eq!(dest.pop_delta(), Some(RegistryDestDelta::SetServicePath(conn1, node4, 21)));
+        dest.set_path(conn2, Metric::new(2, vec![4, 6, 2], BANDWIDTH_LIMIT));
+        assert_eq!(dest.pop_delta(), Some(RegistryDestDelta::SetServicePath(conn2, node4, 32)));
+        dest.set_path(conn3, Metric::new(3, vec![4, 6, 2, 3], BANDWIDTH_LIMIT));
+        assert_eq!(dest.pop_delta(), Some(RegistryDestDelta::SetServicePath(conn3, node4, 43)));
         assert_eq!(dest.pop_delta(), None);
 
         dest.del_path(conn1);
-        assert_eq!(dest.pop_delta(), Some(DestDelta::SetBestPath(conn2)));
+        assert_eq!(dest.pop_delta(), Some(RegistryDestDelta::DelServicePath(conn1)));
 
         assert_eq!(dest.next(&[]), Some((conn2, node2)));
-        assert_eq!(dest.next_path(&[node1]), Some(Path(conn2, Metric::new(2, vec![4, 6, 2], 1))));
-        assert_eq!(dest.next_path(&[node2]), Some(Path(conn3, Metric::new(3, vec![4, 6, 2, 3], 1))));
-        assert_eq!(dest.next_path(&[node3]), Some(Path(conn2, Metric::new(2, vec![4, 6, 2], 1))));
+        assert_eq!(dest.next_path(&[node1]), Some(Path(conn2, Metric::new(2, vec![4, 6, 2], BANDWIDTH_LIMIT))));
+        assert_eq!(dest.next_path(&[node2]), Some(Path(conn3, Metric::new(3, vec![4, 6, 2, 3], BANDWIDTH_LIMIT))));
+        assert_eq!(dest.next_path(&[node3]), Some(Path(conn2, Metric::new(2, vec![4, 6, 2], BANDWIDTH_LIMIT))));
     }
 
     #[test]
@@ -190,11 +186,11 @@ mod tests {
         let _conn4: ConnId = ConnId::from_out(0, 0x4);
         let node4: NodeId = 0x4;
 
-        let mut dest = Dest::default();
+        let mut dest = RegistryDest::default();
         //this path from 3 => 2 => 1
-        dest.set_path(conn1, Metric::new(1, vec![3, 2, 1], 1));
+        dest.set_path(conn1, Metric::new(1, vec![3, 2, 1], BANDWIDTH_LIMIT));
 
-        assert_eq!(dest.best_for(node4), Some(Path(conn1, Metric::new(1, vec![3, 2, 1], 1))));
+        assert_eq!(dest.best_for(node4), Some(Path(conn1, Metric::new(1, vec![3, 2, 1], BANDWIDTH_LIMIT))));
         assert_eq!(dest.best_for(node1), None);
         assert_eq!(dest.best_for(node2), None);
     }
