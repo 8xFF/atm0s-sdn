@@ -47,7 +47,7 @@ pub struct ConnectionCtx {
 }
 
 impl ConnectionCtx {
-    fn new(id: ConnId, node: NodeId, remote: SocketAddr) -> Self {
+    pub fn new(id: ConnId, node: NodeId, remote: SocketAddr) -> Self {
         Self { id, node, remote }
     }
 }

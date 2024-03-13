@@ -53,7 +53,7 @@ pub enum MsgHeaderError {
 /// - Route destination (Route Destination): 32 bits (if R is not Direct)
 ///
 ///     - If route type is ToNode, this field is 32bit node_id
-///     - If route type is ToService, this field is service meta
+///     - If route type is ToService, this field is 32bit service meta
 ///     - If route type is ToKey, this field is 32bit key
 ///
 /// - Stream ID: 32 bits
@@ -215,7 +215,7 @@ impl TransportMsgHeader {
                 if bytes.len() < ptr + 4 {
                     return Err(MsgHeaderError::TooSmall);
                 }
-                let rr = RouteRule::ToService(u32::from_be_bytes([bytes[ptr], bytes[ptr + 1], bytes[ptr + 2], bytes[ptr + 3]]));
+                let rr = RouteRule::ToService([bytes[ptr], bytes[ptr + 1], bytes[ptr + 2], bytes[ptr + 3]].into());
                 ptr += 4;
                 rr
             }
@@ -359,6 +359,46 @@ impl TransportMsgHeader {
         };
         buf[0] &= 0b11111000;
         buf[0] |= route_type;
+        Some(())
+    }
+
+    /// Rewrite the ttl in the given buffer with the new ttl.
+    ///
+    /// # Arguments
+    ///
+    /// * `buf` - A mutable slice of bytes representing the buffer to rewrite the ttl in.
+    /// * `new_ttl` - The new ttl to use for rewriting the ttl.
+    ///
+    /// # Returns
+    ///
+    /// An `Option` containing `()` if the ttl was successfully rewritten,
+    /// or `None` if the buffer is too small to hold the new ttl.
+    pub fn rewrite_ttl(buf: &mut [u8], new_ttl: u8) -> Option<()> {
+        if buf.len() < 2 {
+            return None;
+        }
+        buf[1] = new_ttl;
+        Some(())
+    }
+
+    /// Decrease the ttl in the given buffer.
+    ///
+    /// # Arguments
+    ///
+    /// * `buf` - A mutable slice of bytes representing the buffer to decrease the ttl in.
+    ///
+    /// # Returns
+    ///
+    /// An `Option` containing `()` if the ttl was successfully decreased,
+    /// or `None` if the buffer is too small to hold the new ttl or ttl too small.
+    pub fn decrease_ttl(buf: &mut [u8]) -> Option<()> {
+        if buf.len() < 2 {
+            return None;
+        }
+        if buf[1] == 0 {
+            return None;
+        }
+        buf[1] = buf[1].saturating_sub(1);
         Some(())
     }
 

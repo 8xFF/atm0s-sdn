@@ -1,6 +1,6 @@
 use atm0s_sdn_identity::{NodeId, NodeIdType};
 
-use crate::{RouteAction, RouterTable};
+use crate::{RouteAction, RouterTable, ServiceMeta};
 
 use self::table::ShadowTable;
 
@@ -102,11 +102,18 @@ impl<Remote: Clone + Copy> RouterTable<Remote> for ShadowRouter<Remote> {
         }
     }
 
-    fn path_to_service(&self, service_id: u8) -> RouteAction<Remote> {
-        if self.local_registries[service_id as usize] {
-            RouteAction::Local
-        } else {
-            self.remote_registry[service_id as usize].clone().map(RouteAction::Next).unwrap_or(RouteAction::Reject)
+    fn path_to_service(&self, service_id: u8, meta: ServiceMeta) -> RouteAction<Remote> {
+        match meta {
+            ServiceMeta::Closest => {
+                if self.local_registries[service_id as usize] {
+                    RouteAction::Local
+                } else {
+                    self.remote_registry[service_id as usize].clone().map(RouteAction::Next).unwrap_or(RouteAction::Reject)
+                }
+            }
+            ServiceMeta::Broadcast => {
+                todo!()
+            }
         }
     }
 }

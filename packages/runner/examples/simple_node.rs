@@ -1,5 +1,5 @@
 use atm0s_sdn_identity::{NodeAddr, NodeId};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use sans_io_runtime::backend::{MioBackend, PollBackend};
 use std::{
     sync::{
@@ -10,6 +10,12 @@ use std::{
 };
 
 use atm0s_sdn::builder::SdnBuilder;
+
+#[derive(Debug, Clone, ValueEnum)]
+enum BackendType {
+    Poll,
+    Mio,
+}
 
 /// Simple program to running a node
 #[derive(Parser, Debug)]
@@ -30,6 +36,10 @@ struct Args {
     /// Password for the network
     #[arg(short, long, default_value = "password")]
     password: String,
+
+    /// Backend type
+    #[arg(short, long, default_value = "BackendType::Poll")]
+    backend: BackendType,
 }
 
 fn main() {
@@ -44,7 +54,10 @@ fn main() {
         builder.add_seed(seed);
     }
 
-    let mut controller = builder.build::<MioBackend<128, 128>>(2);
+    let mut controller = match args.backend {
+        BackendType::Mio => builder.build::<MioBackend<128, 128>>(2),
+        BackendType::Poll => builder.build::<PollBackend<128, 128>>(2),
+    };
 
     while controller.process().is_some() {
         if term.load(Ordering::Relaxed) {

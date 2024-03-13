@@ -5,9 +5,9 @@ use std::{
 };
 
 use atm0s_sdn_identity::NodeId;
-use atm0s_sdn_network::event::DataEvent;
+use atm0s_sdn_network::{event::DataEvent, msg::TransportMsgHeader};
 use atm0s_sdn_router::shadow::{ShadowRouter, ShadowRouterDelta};
-use atm0s_sdn_router::{RouteAction, RouteRule, RouterTable};
+use atm0s_sdn_router::{RouteAction, RouterTable};
 use sans_io_runtime::{bus::BusEvent, Buffer, NetIncoming, NetOutgoing, Task, TaskInput, TaskOutput};
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -78,12 +78,7 @@ impl DataPlaneTask {
             log::trace!("Received from remote {}", from);
             return Some(TaskOutput::Bus(BusEvent::ChannelPublish((), true, EventOut::Data(from, data))));
         };
-        let next = match header.route {
-            RouteRule::Direct => RouteAction::Local,
-            RouteRule::ToNode(dest) => self.router.path_to_node(dest),
-            RouteRule::ToKey(key) => self.router.path_to_key(key),
-            RouteRule::ToService(_) => self.router.path_to_service(header.to_service_id),
-        };
+        let next = self.router.derive_action(&header.route, header.to_service_id);
         match next {
             RouteAction::Local => {
                 #[cfg(feature = "vpn")]
@@ -105,10 +100,20 @@ impl DataPlaneTask {
             }
             RouteAction::Reject => None,
             RouteAction::Next(next) => {
+                TransportMsgHeader::decrease_ttl(buf);
                 log::trace!("Forward to next {}", next);
                 Some(TaskOutput::Net(NetOutgoing::UdpPacket {
                     slot: self.backend_udp_slot,
                     to: next,
+                    data: Buffer::Ref(buf),
+                }))
+            }
+            RouteAction::Broadcast(_local, remotes) => {
+                log::trace!("Forward to next remotes {:?}", remotes);
+                TransportMsgHeader::decrease_ttl(buf);
+                Some(TaskOutput::Net(NetOutgoing::UdpPackets {
+                    slot: self.backend_udp_slot,
+                    to: remotes,
                     data: Buffer::Ref(buf),
                 }))
             }
@@ -119,6 +124,7 @@ impl DataPlaneTask {
     fn process_incoming_tun<'a>(&self, buf: &'a mut [u8]) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut>> {
         use atm0s_sdn_identity::NodeIdType;
         use atm0s_sdn_network::msg::TransportMsg;
+        use atm0s_sdn_router::RouteRule;
 
         let to_ip = &buf[20..24];
         let dest = NodeId::build(self.node_id.geo1(), self.node_id.geo2(), self.node_id.group(), to_ip[3]);
