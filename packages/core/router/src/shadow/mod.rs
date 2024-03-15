@@ -184,16 +184,10 @@ mod tests {
             score: 1,
         });
 
-        assert_eq!(
-            router.path_to_services(1, ServiceBroadcastLevel::Global),
-            RouteAction::Broadcast(false, vec![4, 3])
-        );
+        assert_eq!(router.path_to_services(1, ServiceBroadcastLevel::Global), RouteAction::Broadcast(false, vec![4, 3]));
 
         router.apply_delta(ShadowRouterDelta::SetServiceLocal { service: 1 });
-        assert_eq!(
-            router.path_to_services(1, ServiceBroadcastLevel::Global),
-            RouteAction::Broadcast(true, vec![4, 3])
-        );
+        assert_eq!(router.path_to_services(1, ServiceBroadcastLevel::Global), RouteAction::Broadcast(true, vec![4, 3]));
 
         router.apply_delta(ShadowRouterDelta::SetServiceRemote {
             service: 1,
@@ -201,9 +195,6 @@ mod tests {
             dest: 5,
             score: 1,
         });
-        assert_eq!(
-            router.path_to_services(1, ServiceBroadcastLevel::Global),
-            RouteAction::Broadcast(true, vec![4, 3, 2])
-        );
+        assert_eq!(router.path_to_services(1, ServiceBroadcastLevel::Global), RouteAction::Broadcast(true, vec![4, 3, 2]));
     }
 }

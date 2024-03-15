@@ -1,7 +1,6 @@
 use sans_io_runtime::{bus::BusEvent, Owner, Task, TaskInput, TaskOutput, WorkerInnerOutput};
 
 use crate::tasks::{
-    controller_plane,
     data_plane::{self, DataPlaneTask},
     SdnChannel, SdnEvent, SdnExtOut, SdnSpawnCfg,
 };
@@ -29,23 +28,18 @@ pub fn convert_output<'a>(
     event: TaskOutput<'a, data_plane::ChannelIn, data_plane::ChannelOut, data_plane::EventOut>,
 ) -> WorkerInnerOutput<'a, SdnExtOut, SdnChannel, SdnEvent, SdnSpawnCfg> {
     match event {
-        TaskOutput::Bus(BusEvent::ChannelSubscribe(channel)) => {
-            WorkerInnerOutput::Task(Owner::group(worker, DataPlaneTask::TYPE), TaskOutput::Bus(BusEvent::ChannelSubscribe(SdnChannel::DataPlane(channel))))
+        TaskOutput::Bus(BusEvent::ChannelSubscribe(channel)) => WorkerInnerOutput::Task(
+            Owner::group(worker, DataPlaneTask::<(), ()>::TYPE),
+            TaskOutput::Bus(BusEvent::ChannelSubscribe(SdnChannel::DataPlane(channel))),
+        ),
+        TaskOutput::Bus(BusEvent::ChannelUnsubscribe(channel)) => WorkerInnerOutput::Task(
+            Owner::group(worker, DataPlaneTask::<(), ()>::TYPE),
+            TaskOutput::Bus(BusEvent::ChannelUnsubscribe(SdnChannel::DataPlane(channel))),
+        ),
+        TaskOutput::Bus(BusEvent::ChannelPublish(_, safe, event)) => {
+            todo!()
         }
-        TaskOutput::Bus(BusEvent::ChannelUnsubscribe(channel)) => {
-            WorkerInnerOutput::Task(Owner::group(worker, DataPlaneTask::TYPE), TaskOutput::Bus(BusEvent::ChannelUnsubscribe(SdnChannel::DataPlane(channel))))
-        }
-        TaskOutput::Bus(BusEvent::ChannelPublish(_, safe, event)) => match event {
-            data_plane::EventOut::Data(remote, data) => WorkerInnerOutput::Task(
-                Owner::group(worker, DataPlaneTask::TYPE),
-                TaskOutput::Bus(BusEvent::ChannelPublish(
-                    SdnChannel::ControllerPlane(()),
-                    safe,
-                    SdnEvent::ControllerPlane(controller_plane::EventIn::Data(remote, data)),
-                )),
-            ),
-        },
-        TaskOutput::Net(out) => WorkerInnerOutput::Task(Owner::group(worker, DataPlaneTask::TYPE), TaskOutput::Net(out)),
+        TaskOutput::Net(out) => WorkerInnerOutput::Task(Owner::group(worker, DataPlaneTask::<(), ()>::TYPE), TaskOutput::Net(out)),
         _ => panic!("Invalid output type from DataPlane {:?}", event),
     }
 }

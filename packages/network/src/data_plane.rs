@@ -40,6 +40,7 @@ pub enum Output<'a, TC> {
     ToServiceController(ServiceId, TC),
     NeigboursControl(SocketAddr, NeighboursControl),
     ShutdownResponse,
+    Continue,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -91,11 +92,11 @@ impl<TC, TW> DataPlane<TC, TW> {
             }
             Input::FromFeatureController(to) => {
                 let out = self.features.on_input(&mut self.ctx, now_ms, FeatureWorkerInput::FromController(to))?;
-                self.convert_features(now_ms, out)
+                Some(self.convert_features(now_ms, out))
             }
             Input::FromServiceController(service, to) => {
                 let out = self.services.on_input(now_ms, service, ServiceWorkerInput::FromController(to))?;
-                self.convert_services(now_ms, service, out)
+                Some(self.convert_services(now_ms, service, out))
             }
             Input::NeigboursControl(remote, control) => {
                 let buf = (&control).try_into().ok()?;
@@ -128,8 +129,8 @@ impl<TC, TW> DataPlane<TC, TW> {
             } else {
                 self.last_task = None;
                 match self.queue_output.pop_front()? {
-                    QueueOutput::Feature(out) => self.convert_features(now_ms, out),
-                    QueueOutput::Service(service, out) => self.convert_services(now_ms, service, out),
+                    QueueOutput::Feature(out) => Some(self.convert_features(now_ms, out)),
+                    QueueOutput::Service(service, out) => Some(self.convert_services(now_ms, service, out)),
                 }
             }
         } else {
@@ -157,11 +158,11 @@ impl<TC, TW> DataPlane<TC, TW> {
         match last_task {
             TaskType::Feature => {
                 let out = self.features.pop_output()?;
-                self.convert_features(now_ms, out)
+                Some(self.convert_features(now_ms, out))
             }
             TaskType::Service => {
                 let (service, out) = self.services.pop_output()?;
-                self.convert_services(now_ms, service, out)
+                Some(self.convert_services(now_ms, service, out))
             }
         }
     }
@@ -171,7 +172,7 @@ impl<TC, TW> DataPlane<TC, TW> {
             RouteAction::Reject => None,
             RouteAction::Local => {
                 let out = self.features.on_input(&mut self.ctx, now_ms, FeatureWorkerInput::Local(msg))?;
-                self.convert_features(now_ms, out)
+                Some(self.convert_features(now_ms, out))
             }
             RouteAction::Next(remote) => Some(Output::UdpPacket(remote, msg.take().into())),
             RouteAction::Broadcast(local, remotes) => {
@@ -185,42 +186,46 @@ impl<TC, TW> DataPlane<TC, TW> {
         }
     }
 
-    fn convert_features<'a>(&mut self, now_ms: u64, out: FeatureWorkerOutput<FeaturesControl, FeaturesEvent, FeaturesToController>) -> Option<Output<'a, TC>> {
-        let out = match out {
-            FeatureWorkerOutput::ForwardControlToController(service, control) => Some(Output::ForwardControlToController(service, control)),
-            FeatureWorkerOutput::ForwardNetworkToController(conn, msg) => Some(Output::ForwardNetworkToController(conn, msg)),
-            FeatureWorkerOutput::ToController(control) => Some(Output::ToFeatureController(control)),
-            FeatureWorkerOutput::Event(service, event) => self
-                .services
-                .on_input(now_ms, service, ServiceWorkerInput::FeatureEvent(event))
-                .map(|o| self.convert_services(now_ms, service, o))
-                .flatten(),
-            FeatureWorkerOutput::SendDirect(conn, msg) => self.conns_reverse.get(&conn).map(|addr| Output::UdpPacket(*addr, msg.take().into())),
-            FeatureWorkerOutput::SendRoute(msg) => self.process_route(now_ms, msg),
-        };
-        if out.is_some() {
-            out
-        } else {
-            let out = self.features.pop_output()?;
-            self.convert_features(now_ms, out)
+    fn convert_features<'a>(&mut self, now_ms: u64, out: FeatureWorkerOutput<FeaturesControl, FeaturesEvent, FeaturesToController>) -> Output<'a, TC> {
+        self.last_task = Some(TaskType::Feature);
+        match out {
+            FeatureWorkerOutput::ForwardControlToController(service, control) => Output::ForwardControlToController(service, control),
+            FeatureWorkerOutput::ForwardNetworkToController(conn, msg) => Output::ForwardNetworkToController(conn, msg),
+            FeatureWorkerOutput::ToController(control) => Output::ToFeatureController(control),
+            FeatureWorkerOutput::Event(service, event) => {
+                if let Some(out) = self.services.on_input(now_ms, service, ServiceWorkerInput::FeatureEvent(event)) {
+                    self.queue_output.push_back(QueueOutput::Service(service, out));
+                }
+                Output::Continue
+            }
+            FeatureWorkerOutput::SendDirect(conn, msg) => {
+                if let Some(addr) = self.conns_reverse.get(&conn) {
+                    Output::UdpPacket(*addr, msg.take().into())
+                } else {
+                    Output::Continue
+                }
+            }
+            FeatureWorkerOutput::SendRoute(msg) => {
+                if let Some(out) = self.process_route(now_ms, msg) {
+                    out
+                } else {
+                    Output::Continue
+                }
+            }
         }
     }
 
-    fn convert_services<'a>(&mut self, now_ms: u64, service: ServiceId, out: ServiceWorkerOutput<FeaturesControl, FeaturesEvent, TC>) -> Option<Output<'a, TC>> {
-        let out = match out {
-            ServiceWorkerOutput::ForwardFeatureEventToController(event) => Some(Output::ForwardEventToController(service, event)),
-            ServiceWorkerOutput::ToController(tc) => Some(Output::ToServiceController(service, tc)),
-            ServiceWorkerOutput::FeatureControl(control) => self
-                .features
-                .on_input(&mut self.ctx, now_ms, FeatureWorkerInput::Control(service, control))
-                .map(|o| self.convert_features(now_ms, o))
-                .flatten(),
-        };
-        if out.is_some() {
-            out
-        } else {
-            let (service, out) = self.services.pop_output()?;
-            self.convert_services(now_ms, service, out)
+    fn convert_services<'a>(&mut self, now_ms: u64, service: ServiceId, out: ServiceWorkerOutput<FeaturesControl, FeaturesEvent, TC>) -> Output<'a, TC> {
+        self.last_task = Some(TaskType::Service);
+        match out {
+            ServiceWorkerOutput::ForwardFeatureEventToController(event) => Output::ForwardEventToController(service, event),
+            ServiceWorkerOutput::ToController(tc) => Output::ToServiceController(service, tc),
+            ServiceWorkerOutput::FeatureControl(control) => {
+                if let Some(out) = self.features.on_input(&mut self.ctx, now_ms, FeatureWorkerInput::Control(service, control)) {
+                    self.queue_output.push_back(QueueOutput::Feature(out));
+                }
+                Output::Continue
+            }
         }
     }
 }

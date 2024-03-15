@@ -29,31 +29,16 @@ pub fn convert_output<'a>(
 ) -> WorkerInnerOutput<'a, SdnExtOut, SdnChannel, SdnEvent, SdnSpawnCfg> {
     match event {
         TaskOutput::Bus(BusEvent::ChannelSubscribe(channel)) => WorkerInnerOutput::Task(
-            Owner::group(worker, ControllerPlaneTask::TYPE),
+            Owner::group(worker, ControllerPlaneTask::<(), ()>::TYPE),
             TaskOutput::Bus(BusEvent::ChannelSubscribe(SdnChannel::ControllerPlane(channel))),
         ),
         TaskOutput::Bus(BusEvent::ChannelUnsubscribe(channel)) => WorkerInnerOutput::Task(
-            Owner::group(worker, ControllerPlaneTask::TYPE),
+            Owner::group(worker, ControllerPlaneTask::<(), ()>::TYPE),
             TaskOutput::Bus(BusEvent::ChannelUnsubscribe(SdnChannel::ControllerPlane(channel))),
         ),
-        TaskOutput::Bus(BusEvent::ChannelPublish(_, safe, event)) => match event {
-            controller_plane::EventOut::Data(remote, data) => WorkerInnerOutput::Task(
-                Owner::group(worker, ControllerPlaneTask::TYPE),
-                TaskOutput::Bus(BusEvent::ChannelPublish(
-                    SdnChannel::DataPlane(data_plane::ChannelIn::Worker(0)),
-                    safe,
-                    SdnEvent::DataPlane(data_plane::EventIn::Data(remote, data)),
-                )),
-            ),
-            controller_plane::EventOut::RouterRule(rule) => WorkerInnerOutput::Task(
-                Owner::group(worker, ControllerPlaneTask::TYPE),
-                TaskOutput::Bus(BusEvent::ChannelPublish(
-                    SdnChannel::DataPlane(data_plane::ChannelIn::Broadcast),
-                    safe,
-                    SdnEvent::DataPlane(data_plane::EventIn::RouterRule(rule)),
-                )),
-            ),
-        },
+        TaskOutput::Bus(BusEvent::ChannelPublish(_, safe, event)) => {
+            todo!()
+        }
         _ => panic!("Invalid output type from ControllerPlane {:?}", event),
     }
 }

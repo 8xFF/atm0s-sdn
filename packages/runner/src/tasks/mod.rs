@@ -36,7 +36,7 @@ pub enum SdnEvent {
 pub struct ControllerCfg {
     pub password: String,
     pub tick_ms: u64,
-    pub services: Vec<Box<dyn atm0s_sdn_network::controller_plane::Service>>,
+    // pub services: Vec<Box<dyn atm0s_sdn_network::controller_plane::Service>>,
     #[cfg(feature = "vpn")]
     pub vpn_tun_device: sans_io_runtime::backend::tun::TunDevice,
 }
@@ -57,16 +57,16 @@ enum State {
     Shutdowned,
 }
 
-pub struct SdnWorkerInner {
+pub struct SdnWorkerInner<TC, TW> {
     worker: u16,
-    controller: Option<ControllerPlaneTask>,
-    data: DataPlaneTask,
+    controller: Option<ControllerPlaneTask<TC, TW>>,
+    data: DataPlaneTask<TC, TW>,
     group_state: TaskGroupOutputsState<2>,
     last_input_group: Option<u16>,
     state: State,
 }
 
-impl SdnWorkerInner {
+impl<TC, TW> SdnWorkerInner<TC, TW> {
     fn convert_controller_output<'a>(
         &mut self,
         now: Instant,
@@ -83,7 +83,7 @@ impl SdnWorkerInner {
     }
 }
 
-impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpawnCfg> for SdnWorkerInner {
+impl<TC, TW> WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpawnCfg> for SdnWorkerInner<TC, TW> {
     fn build(worker: u16, cfg: SdnInnerCfg) -> Self {
         if let Some(controller) = cfg.controller {
             Self {
@@ -91,7 +91,7 @@ impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpaw
                 controller: Some(ControllerPlaneTask::build(ControllerPlaneCfg {
                     node_id: cfg.node_id,
                     tick_ms: controller.tick_ms,
-                    services: controller.services,
+                    // services: controller.services,
                     #[cfg(feature = "vpn")]
                     vpn_tun_device: controller.vpn_tun_device,
                 })),
@@ -150,15 +150,15 @@ impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpaw
         let gs = &mut self.group_state;
         loop {
             match gs.current()? {
-                ControllerPlaneTask::TYPE => {
+                ControllerPlaneTask::<(), ()>::TYPE => {
                     if let Some(out) = gs.process(self.controller.as_mut().map(|c| c.on_tick(now)).flatten()) {
-                        self.last_input_group = Some(ControllerPlaneTask::TYPE);
+                        self.last_input_group = Some(ControllerPlaneTask::<(), ()>::TYPE);
                         return self.convert_controller_output(now, out);
                     }
                 }
-                DataPlaneTask::TYPE => {
+                DataPlaneTask::<(), ()>::TYPE => {
                     if let Some(out) = gs.process(self.data.on_tick(now)) {
-                        self.last_input_group = Some(DataPlaneTask::TYPE);
+                        self.last_input_group = Some(DataPlaneTask::<(), ()>::TYPE);
                         return Some(event_convert::data_plane::convert_output(self.worker, out));
                     }
                 }
@@ -171,16 +171,16 @@ impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpaw
         self.last_input_group = None;
         match event {
             WorkerInnerInput::Task(owner, event) => match owner.group_id()? {
-                ControllerPlaneTask::TYPE => {
+                ControllerPlaneTask::<(), ()>::TYPE => {
                     let event = event_convert::controller_plane::convert_input(event);
                     let out = self.controller.as_mut().map(|c| c.on_event(now, event)).flatten()?;
-                    self.last_input_group = Some(ControllerPlaneTask::TYPE);
+                    self.last_input_group = Some(ControllerPlaneTask::<(), ()>::TYPE);
                     self.convert_controller_output(now, out)
                 }
-                DataPlaneTask::TYPE => {
+                DataPlaneTask::<(), ()>::TYPE => {
                     let event = event_convert::data_plane::convert_input(event);
                     let out = self.data.on_event(now, event)?;
-                    self.last_input_group = Some(DataPlaneTask::TYPE);
+                    self.last_input_group = Some(DataPlaneTask::<(), ()>::TYPE);
                     Some(event_convert::data_plane::convert_output(self.worker, out))
                 }
                 _ => panic!("unknown task type"),
@@ -190,7 +190,7 @@ impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpaw
                     log::info!("Connect to {}", addr);
                     let event = TaskInput::Bus((), controller_plane::EventIn::ConnectTo(addr));
                     let out = self.controller.as_mut().map(|c| c.on_event(now, event)).flatten()?;
-                    self.last_input_group = Some(ControllerPlaneTask::TYPE);
+                    self.last_input_group = Some(ControllerPlaneTask::<(), ()>::TYPE);
                     Some(event_convert::controller_plane::convert_output(self.worker, out))
                 }
             },
@@ -199,11 +199,11 @@ impl WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent, SdnInnerCfg, SdnSpaw
 
     fn pop_output<'a>(&mut self, now: Instant) -> Option<WorkerInnerOutput<'a, SdnExtOut, SdnChannel, SdnEvent, SdnSpawnCfg>> {
         match self.last_input_group? {
-            ControllerPlaneTask::TYPE => {
+            ControllerPlaneTask::<(), ()>::TYPE => {
                 let out = self.controller.as_mut().map(|c| c.pop_output(now)).flatten()?;
                 self.convert_controller_output(now, out)
             }
-            DataPlaneTask::TYPE => {
+            DataPlaneTask::<(), ()>::TYPE => {
                 let out = self.data.pop_output(now)?;
                 Some(event_convert::data_plane::convert_output(self.worker, out))
             }

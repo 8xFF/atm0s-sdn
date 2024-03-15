@@ -1,10 +1,7 @@
 use std::{collections::VecDeque, net::SocketAddr, time::Instant};
 
 use atm0s_sdn_identity::NodeAddr;
-use atm0s_sdn_network::{
-    controller_plane::{ControllerPlane, Input as ControllerInput, Output as ControllerOutput, Service},
-    event::DataEvent,
-};
+use atm0s_sdn_network::controller_plane::{ControllerPlane, Input as ControllerInput, Output as ControllerOutput};
 use atm0s_sdn_router::shadow::ShadowRouterDelta;
 use sans_io_runtime::{bus::BusEvent, Task, TaskInput, TaskOutput};
 
@@ -16,7 +13,6 @@ pub type ChannelOut = ();
 pub struct ControllerPlaneCfg {
     pub node_id: u32,
     pub tick_ms: u64,
-    pub services: Vec<Box<dyn Service>>,
     #[cfg(feature = "vpn")]
     pub vpn_tun_device: sans_io_runtime::backend::tun::TunDevice,
 }
@@ -24,19 +20,17 @@ pub struct ControllerPlaneCfg {
 #[derive(Debug, Clone)]
 pub enum EventIn {
     ConnectTo(NodeAddr),
-    Data(SocketAddr, DataEvent),
 }
 
 #[derive(Debug)]
 pub enum EventOut {
-    Data(SocketAddr, DataEvent),
     RouterRule(ShadowRouterDelta<SocketAddr>),
 }
 
-pub struct ControllerPlaneTask {
+pub struct ControllerPlaneTask<TC, TW> {
     #[allow(unused)]
     node_id: u32,
-    controller: ControllerPlane,
+    controller: ControllerPlane<TC, TW>,
     queue: VecDeque<TaskOutput<'static, ChannelIn, ChannelOut, EventOut>>,
     ticker: TimeTicker,
     timer: TimePivot,
@@ -44,11 +38,11 @@ pub struct ControllerPlaneTask {
     vpn_tun_device: sans_io_runtime::backend::tun::TunDevice,
 }
 
-impl ControllerPlaneTask {
+impl<TC, TW> ControllerPlaneTask<TC, TW> {
     pub fn build(cfg: ControllerPlaneCfg) -> Self {
         Self {
             node_id: cfg.node_id,
-            controller: ControllerPlane::new(cfg.node_id, cfg.services),
+            controller: ControllerPlane::new(cfg.node_id),
             queue: VecDeque::from([TaskOutput::Bus(BusEvent::ChannelSubscribe(()))]),
             ticker: TimeTicker::build(1000),
             timer: TimePivot::build(),
@@ -56,17 +50,9 @@ impl ControllerPlaneTask {
             vpn_tun_device: cfg.vpn_tun_device,
         }
     }
-
-    fn map_output<'a>(output: ControllerOutput) -> TaskOutput<'a, ChannelIn, ChannelOut, EventOut> {
-        match output {
-            ControllerOutput::Data(remote, msg) => TaskOutput::Bus(BusEvent::ChannelPublish((), true, EventOut::Data(remote, msg))),
-            ControllerOutput::RouterRule(rule) => TaskOutput::Bus(BusEvent::ChannelPublish((), true, EventOut::RouterRule(rule))),
-            ControllerOutput::ShutdownSuccess => TaskOutput::Destroy,
-        }
-    }
 }
 
-impl Task<ChannelIn, ChannelOut, EventIn, EventOut> for ControllerPlaneTask {
+impl<TC, TW> Task<ChannelIn, ChannelOut, EventIn, EventOut> for ControllerPlaneTask<TC, TW> {
     /// The type identifier for the task.
     const TYPE: u16 = 0;
 
@@ -80,11 +66,8 @@ impl Task<ChannelIn, ChannelOut, EventIn, EventOut> for ControllerPlaneTask {
     fn on_event<'a>(&mut self, now: Instant, input: TaskInput<'a, ChannelIn, EventIn>) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut>> {
         let now_ms = self.timer.timestamp_ms(now);
         match input {
-            TaskInput::Bus(_, EventIn::Data(remote, data)) => {
-                self.controller.on_event(now_ms, ControllerInput::Data(remote, data));
-            }
-            TaskInput::Bus(_, EventIn::ConnectTo(addr)) => {
-                self.controller.on_event(now_ms, ControllerInput::ConnectTo(addr));
+            TaskInput::Bus(_, event) => {
+                todo!()
             }
             _ => {}
         };
@@ -93,10 +76,14 @@ impl Task<ChannelIn, ChannelOut, EventIn, EventOut> for ControllerPlaneTask {
 
     fn pop_output<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut>> {
         let now_ms = self.timer.timestamp_ms(now);
-        if let Some(output) = self.controller.pop_output(now_ms) {
-            self.queue.push_back(Self::map_output(output));
+        if let Some(output) = self.queue.pop_front() {
+            return Some(output);
         }
-        self.queue.pop_front()
+        let output = self.controller.pop_output(now_ms)?;
+        match output {
+            ControllerOutput::ShutdownSuccess => Some(TaskOutput::Destroy),
+            _ => todo!(),
+        }
     }
 
     fn shutdown<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut>> {

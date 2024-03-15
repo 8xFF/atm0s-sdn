@@ -9,7 +9,7 @@ pub struct SdnBuilder {
     node_id: NodeId,
     udp_port: u16,
     seeds: Vec<NodeAddr>,
-    services: Vec<Box<dyn atm0s_sdn_network::controller_plane::Service>>,
+    // services: Vec<Box<dyn atm0s_sdn_network::controller_plane::Service>>,
     #[cfg(feature = "vpn")]
     vpn_ip: Option<(u8, u8, u8, u8)>,
     #[cfg(feature = "vpn")]
@@ -22,7 +22,7 @@ impl SdnBuilder {
             node_id,
             udp_port,
             seeds: vec![],
-            services: vec![],
+            // services: vec![],
             #[cfg(feature = "vpn")]
             vpn_ip: None,
             #[cfg(feature = "vpn")]
@@ -34,9 +34,9 @@ impl SdnBuilder {
         self.seeds.push(addr);
     }
 
-    pub fn add_service(&mut self, service: Box<dyn atm0s_sdn_network::controller_plane::Service>) {
-        self.services.push(service);
-    }
+    // pub fn add_service(&mut self, service: Box<dyn atm0s_sdn_network::controller_plane::Service>) {
+    //     self.services.push(service);
+    // }
 
     #[cfg(feature = "vpn")]
     pub fn set_vpn_ip(&mut self, ip: (u8, u8, u8, u8)) {
@@ -69,14 +69,14 @@ impl SdnBuilder {
         };
 
         let mut controler = SdnController::default();
-        controler.add_worker::<_, SdnWorkerInner, B>(
+        controler.add_worker::<_, SdnWorkerInner<(), ()>, B>(
             SdnInnerCfg {
                 node_id: self.node_id,
                 udp_port: self.udp_port,
                 controller: Some(ControllerCfg {
                     password: "password".to_string(),
                     tick_ms: 1000,
-                    services: self.services,
+                    // services: self.services,
                     #[cfg(feature = "vpn")]
                     vpn_tun_device: tun_device,
                 }),
@@ -87,7 +87,7 @@ impl SdnBuilder {
         );
 
         for _ in 1..workers {
-            controler.add_worker::<_, SdnWorkerInner, B>(
+            controler.add_worker::<_, SdnWorkerInner<(), ()>, B>(
                 SdnInnerCfg {
                     node_id: self.node_id,
                     udp_port: self.udp_port,
