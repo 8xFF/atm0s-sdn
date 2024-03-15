@@ -22,11 +22,13 @@ pub enum Output {
     Event(NeighboursEvent),
 }
 
-pub struct NeighboursManager {}
+pub struct NeighboursManager {
+    node_id: NodeId,
+}
 
 impl NeighboursManager {
-    pub fn new() -> Self {
-        todo!()
+    pub fn new(node_id: NodeId) -> Self {
+        Self { node_id }
     }
 
     pub fn conn<'a>(&self, conn: ConnId) -> Option<&'a ConnectionCtx> {

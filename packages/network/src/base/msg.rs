@@ -183,7 +183,7 @@ impl TransportMsgHeader {
                 ptr += 4;
                 rr
             }
-            ROUTE_RULE_TO_SERVICE => {
+            ROUTE_RULE_TO_SERVICES => {
                 if bytes.len() < ptr + 4 {
                     return Err(MsgHeaderError::TooSmall);
                 }

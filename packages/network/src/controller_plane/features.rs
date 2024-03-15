@@ -21,7 +21,12 @@ pub struct FeatureManager {
 
 impl FeatureManager {
     pub fn new() -> Self {
-        todo!()
+        Self {
+            neighbours: neighbours::NeighboursFeature::default(),
+            data: data::DataFeature::default(),
+            last_input_feature: None,
+            switcher: TasksSwitcher::default(),
+        }
     }
 
     pub fn on_input<'a>(&mut self, now_ms: u64, input: FeaturesInput<'a>) {

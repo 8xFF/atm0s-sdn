@@ -91,12 +91,16 @@ pub struct DataPlane<TC, TW> {
 
 impl<TC, TW> DataPlane<TC, TW> {
     pub fn new(node_id: NodeId) -> Self {
-        // Self {
-        //     ctx: FeatureWorkerContext {
-        //         router: ShadowRouter::new(node_id),
-        //     },
-        // }
-        todo!()
+        Self {
+            ctx: FeatureWorkerContext { router: ShadowRouter::new(node_id) },
+            features: FeatureWorkerManager::new(),
+            services: ServiceWorkerManager::new(),
+            conns: HashMap::new(),
+            conns_reverse: HashMap::new(),
+            queue_output: VecDeque::new(),
+            last_task: None,
+            switcher: TasksSwitcher::default(),
+        }
     }
 
     pub fn on_tick<'a>(&mut self, now_ms: u64) {
@@ -161,12 +165,14 @@ impl<TC, TW> DataPlane<TC, TW> {
             while let Some(current) = self.switcher.current() {
                 match current {
                     0 => {
-                        if let Some(out) = self.pop_last(now_ms, TaskType::Feature) {
+                        let out = self.pop_last(now_ms, TaskType::Feature);
+                        if let Some(out) = self.switcher.process(out) {
                             return Some(out);
                         }
                     }
                     1 => {
-                        if let Some(out) = self.pop_last(now_ms, TaskType::Service) {
+                        let out = self.pop_last(now_ms, TaskType::Service);
+                        if let Some(out) = self.switcher.process(out) {
                             return Some(out);
                         }
                     }

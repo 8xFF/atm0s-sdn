@@ -85,7 +85,7 @@ pub struct ControllerPlane<TC, TW> {
 impl<TC, TW> ControllerPlane<TC, TW> {
     pub fn new(node_id: NodeId) -> Self {
         Self {
-            neighbours: NeighboursManager::new(),
+            neighbours: NeighboursManager::new(node_id),
             features: FeatureManager::new(),
             services: ServiceManager::new(),
             last_task: None,

@@ -109,7 +109,7 @@ pub trait FeatureWorker<SdkControl, SdkEvent, ToController, ToWorker> {
                 log::warn!("No handler for FromController in {}", self.feature_name());
                 None
             }
-            FeatureWorkerInput::Local(msg) => {
+            FeatureWorkerInput::Local(_msg) => {
                 log::warn!("No handler for local message in {}", self.feature_name());
                 None
             }

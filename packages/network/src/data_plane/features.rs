@@ -21,7 +21,12 @@ pub struct FeatureWorkerManager {
 
 impl FeatureWorkerManager {
     pub fn new() -> Self {
-        todo!()
+        Self {
+            neighbours: neighbours::NeighboursFeatureWorker::default(),
+            data: data::DataFeatureWorker::default(),
+            last_input_feature: None,
+            switcher: TasksSwitcher::default(),
+        }
     }
 
     pub fn on_tick(&mut self, ctx: &mut FeatureWorkerContext, now_ms: u64) {
