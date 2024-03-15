@@ -5,14 +5,19 @@ use crate::base::{Feature, FeatureInput, FeatureOutput, FeatureWorker, FeatureWo
 pub const FEATURE_ID: u8 = 0;
 pub const FEATURE_NAME: &str = "neighbours_api";
 
+#[derive(Debug, Clone)]
 pub enum Control {
     ConnectTo(NodeAddr),
     DisconnectFrom(NodeId),
 }
 
+#[derive(Debug, Clone)]
 pub enum Event {}
 
+#[derive(Debug, Clone)]
 pub struct ToWorker;
+
+#[derive(Debug, Clone)]
 pub struct ToController;
 
 pub struct NeighboursFeature {}

@@ -4,7 +4,7 @@ use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 
 use crate::{
     base::{FeatureInput, FeatureOutput, FeatureSharedInput, NeighboursControl, SecureContext, ServiceId, ServiceInput, ServiceOutput, ServiceSharedInput, TransportMsg},
-    features::{FeaturesToController, FeaturesToWorker},
+    features::{FeaturesControl, FeaturesEvent, FeaturesToController, FeaturesToWorker},
     san_io_utils::TasksSwitcher,
 };
 
@@ -14,23 +14,50 @@ mod features;
 mod neighbours;
 mod services;
 
-pub enum Input<TC> {
+#[derive(Debug, Clone)]
+pub enum BusIn<TC> {
     ConnectTo(NodeAddr),
     DisconnectFrom(NodeId),
     NeigboursControl(SocketAddr, NeighboursControl),
     FromFeatureWorker(FeaturesToController),
     FromServiceWorker(ServiceId, TC),
+    ForwardNetFromWorker(ConnId, TransportMsg),
+    ForwardControlFromWorker(ServiceId, FeaturesControl),
+    ForwardEventFromWorker(ServiceId, FeaturesEvent),
+}
+
+#[derive(Debug, Clone, convert_enum::From)]
+pub enum Input<TC> {
+    Bus(BusIn<TC>),
+    #[convert_enum(optout)]
     ShutdownRequest,
 }
 
-pub enum Output<TW> {
+#[derive(Debug, Clone)]
+pub enum BusOutSingle {
     NeigboursControl(SocketAddr, NeighboursControl),
     NetDirect(ConnId, TransportMsg),
     NetRoute(TransportMsg),
+}
+
+#[derive(Debug, Clone)]
+pub enum BusOutMultiple<TW> {
     Pin(ConnId, SocketAddr, SecureContext),
     UnPin(ConnId),
     ToFeatureWorkers(FeaturesToWorker),
     ToServiceWorkers(ServiceId, TW),
+}
+
+#[derive(Debug, Clone, convert_enum::From)]
+pub enum BusOut<TW> {
+    Single(BusOutSingle),
+    Multiple(BusOutMultiple<TW>),
+}
+
+#[derive(Debug, Clone, convert_enum::From)]
+pub enum Output<TW> {
+    Bus(BusOut<TW>),
+    #[convert_enum(optout)]
     ShutdownSuccess,
 }
 
@@ -75,25 +102,39 @@ impl<TC, TW> ControllerPlane<TC, TW> {
 
     pub fn on_event(&mut self, now_ms: u64, event: Input<TC>) {
         match event {
-            Input::ConnectTo(addr) => {
+            Input::Bus(BusIn::ConnectTo(addr)) => {
                 self.last_task = Some(TaskType::Neighbours);
                 self.neighbours.on_input(neighbours::Input::ConnectTo(addr));
             }
-            Input::DisconnectFrom(node) => {
+            Input::Bus(BusIn::DisconnectFrom(node)) => {
                 self.last_task = Some(TaskType::Neighbours);
                 self.neighbours.on_input(neighbours::Input::DisconnectFrom(node));
             }
-            Input::NeigboursControl(remote, control) => {
+            Input::Bus(BusIn::NeigboursControl(remote, control)) => {
                 self.last_task = Some(TaskType::Neighbours);
                 self.neighbours.on_input(neighbours::Input::Control(remote, control));
             }
-            Input::FromFeatureWorker(to) => {
+            Input::Bus(BusIn::FromFeatureWorker(to)) => {
                 self.last_task = Some(TaskType::Feature);
                 self.features.on_input(now_ms, FeatureInput::FromWorker(to));
             }
-            Input::FromServiceWorker(service, to) => {
+            Input::Bus(BusIn::FromServiceWorker(service, to)) => {
                 self.last_task = Some(TaskType::Service);
                 self.services.on_input(now_ms, service, ServiceInput::FromWorker(to));
+            }
+            Input::Bus(BusIn::ForwardNetFromWorker(conn, msg)) => {
+                self.last_task = Some(TaskType::Feature);
+                if let Some(ctx) = self.neighbours.conn(conn) {
+                    self.features.on_input(now_ms, FeatureInput::ForwardNetFromWorker(ctx, msg));
+                }
+            }
+            Input::Bus(BusIn::ForwardEventFromWorker(service, event)) => {
+                self.last_task = Some(TaskType::Service);
+                self.services.on_input(now_ms, service, ServiceInput::FeatureEvent(event));
+            }
+            Input::Bus(BusIn::ForwardControlFromWorker(service, control)) => {
+                self.last_task = Some(TaskType::Feature);
+                self.features.on_input(now_ms, FeatureInput::Control(service, control));
             }
             Input::ShutdownRequest => {
                 self.last_task = None;
@@ -141,7 +182,7 @@ impl<TC, TW> ControllerPlane<TC, TW> {
         let out = self.neighbours.pop_output()?;
         match out {
             neighbours::Output::Control(remote, control) => {
-                return Some(Output::NeigboursControl(remote, control));
+                return Some(Output::Bus(BusOut::Single(BusOutSingle::NeigboursControl(remote, control))));
             }
             neighbours::Output::Event(event) => {
                 todo!("Process event here")
@@ -152,14 +193,14 @@ impl<TC, TW> ControllerPlane<TC, TW> {
     fn pop_features(&mut self, now_ms: u64) -> Option<Output<TW>> {
         let out = self.features.pop_output()?;
         match out {
-            FeatureOutput::BroadcastToWorkers(to) => Some(Output::ToFeatureWorkers(to)),
+            FeatureOutput::BroadcastToWorkers(to) => Some(Output::Bus(BusOut::Multiple(BusOutMultiple::ToFeatureWorkers(to)))),
             FeatureOutput::Event(service, event) => {
                 //TODO may be we need stack style for optimize performance
                 self.services.on_input(now_ms, service, ServiceInput::FeatureEvent(event));
                 None
             }
-            FeatureOutput::SendDirect(conn, msg) => Some(Output::NetDirect(conn, msg)),
-            FeatureOutput::SendRoute(msg) => Some(Output::NetRoute(msg)),
+            FeatureOutput::SendDirect(conn, msg) => Some(Output::Bus(BusOut::Single(BusOutSingle::NetDirect(conn, msg)))),
+            FeatureOutput::SendRoute(msg) => Some(Output::Bus(BusOut::Single(BusOutSingle::NetRoute(msg)))),
             FeatureOutput::NeighboursConnectTo(addr) => {
                 //TODO may be we need stack style for optimize performance
                 self.neighbours.on_input(neighbours::Input::ConnectTo(addr));
@@ -180,7 +221,7 @@ impl<TC, TW> ControllerPlane<TC, TW> {
                 self.features.on_input(now_ms, FeatureInput::Control(service, control));
                 None
             }
-            ServiceOutput::BroadcastWorkers(to) => Some(Output::ToServiceWorkers(service, to)),
+            ServiceOutput::BroadcastWorkers(to) => Some(Output::Bus(BusOut::Multiple(BusOutMultiple::ToServiceWorkers(service, to)))),
         }
     }
 }

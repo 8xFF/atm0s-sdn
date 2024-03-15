@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 
-use crate::base::NeighboursControl;
+use crate::base::{ConnectionCtx, NeighboursControl};
 
 mod connection;
 
@@ -29,7 +29,7 @@ impl NeighboursManager {
         todo!()
     }
 
-    pub fn get_addr(&self, conn: ConnId) -> Option<SocketAddr> {
+    pub fn conn<'a>(&self, conn: ConnId) -> Option<&'a ConnectionCtx> {
         None
     }
 

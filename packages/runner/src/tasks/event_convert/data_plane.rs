@@ -10,11 +10,11 @@ use crate::tasks::{
 /// This function will convert the input from SDN into Plane task input.
 /// It only accept bus events from the SDN task.
 ///
-pub fn convert_input<'a>(event: TaskInput<'a, SdnChannel, SdnEvent>) -> TaskInput<'a, data_plane::ChannelIn, data_plane::EventIn> {
+pub fn convert_input<'a, TC, TW>(event: TaskInput<'a, SdnChannel, SdnEvent<TC, TW>>) -> TaskInput<'a, data_plane::ChannelIn, data_plane::EventIn<TW>> {
     match event {
         TaskInput::Bus(SdnChannel::DataPlane(channel), SdnEvent::DataPlane(event)) => TaskInput::Bus(channel, event),
         TaskInput::Net(event) => TaskInput::Net(event),
-        _ => panic!("Invalid input type for DataPlane {:?}", event),
+        _ => panic!("Invalid input type for DataPlane"),
     }
 }
 
@@ -23,10 +23,10 @@ pub fn convert_input<'a>(event: TaskInput<'a, SdnChannel, SdnEvent>) -> TaskInpu
 /// This function will convert the output from the Plane task into the output for the SDN task.
 /// It only accept bus events from the Plane task.
 ///
-pub fn convert_output<'a>(
+pub fn convert_output<'a, TC, TW>(
     worker: u16,
-    event: TaskOutput<'a, data_plane::ChannelIn, data_plane::ChannelOut, data_plane::EventOut>,
-) -> WorkerInnerOutput<'a, SdnExtOut, SdnChannel, SdnEvent, SdnSpawnCfg> {
+    event: TaskOutput<'a, data_plane::ChannelIn, data_plane::ChannelOut, data_plane::EventOut<TC>>,
+) -> WorkerInnerOutput<'a, SdnExtOut, SdnChannel, SdnEvent<TC, TW>, SdnSpawnCfg> {
     match event {
         TaskOutput::Bus(BusEvent::ChannelSubscribe(channel)) => WorkerInnerOutput::Task(
             Owner::group(worker, DataPlaneTask::<(), ()>::TYPE),
@@ -40,6 +40,6 @@ pub fn convert_output<'a>(
             todo!()
         }
         TaskOutput::Net(out) => WorkerInnerOutput::Task(Owner::group(worker, DataPlaneTask::<(), ()>::TYPE), TaskOutput::Net(out)),
-        _ => panic!("Invalid output type from DataPlane {:?}", event),
+        _ => panic!("Invalid output type from DataPlane"),
     }
 }

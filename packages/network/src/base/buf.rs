@@ -1,5 +1,6 @@
 use std::ops::{Deref, DerefMut};
 
+#[derive(Debug, Clone)]
 pub enum GenericBuffer<'a> {
     Ref(&'a [u8]),
     Vec(Vec<u8>),
@@ -28,6 +29,7 @@ impl From<Vec<u8>> for GenericBuffer<'_> {
     }
 }
 
+#[derive(Debug)]
 pub enum GenericBufferMut<'a> {
     Ref(&'a mut [u8]),
     Vec(Vec<u8>),

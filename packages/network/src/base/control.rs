@@ -2,27 +2,27 @@ use atm0s_sdn_identity::NodeId;
 use bincode::Options;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum NeighboursConnectError {
     AlreadyConnected,
     InvalidSignature,
     InvalidData,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum NeighboursDisconnectReason {
     Shutdown,
     Other,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum NeighboursDisconnectError {
     WrongSession,
     NotConnected,
     InvalidSignature,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum NeighboursControl {
     ConnectRequest {
         from: NodeId,

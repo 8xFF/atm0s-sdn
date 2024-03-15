@@ -51,6 +51,17 @@ impl FeatureManager {
                     self.neighbours.on_input(now_ms, FeatureInput::Control(service, control))
                 }
             },
+            FeatureInput::ForwardNetFromWorker(ctx, msg) => match msg.header.feature {
+                data::FEATURE_ID => {
+                    self.last_input_feature = Some(data::FEATURE_ID);
+                    self.data.on_input(now_ms, FeatureInput::ForwardNetFromWorker(ctx, msg))
+                }
+                neighbours::FEATURE_ID => {
+                    self.last_input_feature = Some(neighbours::FEATURE_ID);
+                    self.neighbours.on_input(now_ms, FeatureInput::ForwardNetFromWorker(ctx, msg))
+                }
+                _ => {}
+            },
         }
     }
 

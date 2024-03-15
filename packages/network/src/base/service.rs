@@ -53,7 +53,17 @@ pub enum ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ToController> {
 pub trait ServiceWorker<FeaturesControl, FeaturesEvent, ToController, ToWorker> {
     fn service_id(&self) -> u8;
     fn service_name(&self) -> &str;
-    fn on_tick(&mut self, _now: u64);
-    fn on_input(&mut self, _now: u64, input: ServiceWorkerInput<FeaturesEvent, ToWorker>) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ToController>>;
-    fn pop_output(&mut self) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ToController>>;
+    fn on_tick(&mut self, _now: u64) {}
+    fn on_input(&mut self, _now: u64, input: ServiceWorkerInput<FeaturesEvent, ToWorker>) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ToController>> {
+        match input {
+            ServiceWorkerInput::FeatureEvent(event) => Some(ServiceWorkerOutput::ForwardFeatureEventToController(event)),
+            ServiceWorkerInput::FromController(_) => {
+                log::warn!("No handler for FromController in {}", self.service_name());
+                None
+            }
+        }
+    }
+    fn pop_output(&mut self) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ToController>> {
+        None
+    }
 }

@@ -48,7 +48,11 @@ impl SdnBuilder {
         self.vpn_netmask = Some(netmask);
     }
 
-    pub fn build<B: Backend>(self, workers: usize) -> SdnController {
+    pub fn build<B: Backend, TC, TW>(self, workers: usize) -> SdnController<TC, TW>
+    where
+        TC: 'static + Clone + Send + Sync,
+        TW: 'static + Clone + Send + Sync,
+    {
         assert!(workers > 0);
         let mut addr_builder = NodeAddrBuilder::new(self.node_id);
         addr_builder.add_protocol(Protocol::Ip4(Ipv4Addr::new(127, 0, 0, 1)));
@@ -69,7 +73,7 @@ impl SdnBuilder {
         };
 
         let mut controler = SdnController::default();
-        controler.add_worker::<_, SdnWorkerInner<(), ()>, B>(
+        controler.add_worker::<_, SdnWorkerInner<TC, TW>, B>(
             SdnInnerCfg {
                 node_id: self.node_id,
                 udp_port: self.udp_port,
@@ -87,7 +91,7 @@ impl SdnBuilder {
         );
 
         for _ in 1..workers {
-            controler.add_worker::<_, SdnWorkerInner<(), ()>, B>(
+            controler.add_worker::<_, SdnWorkerInner<TC, TW>, B>(
                 SdnInnerCfg {
                     node_id: self.node_id,
                     udp_port: self.udp_port,

@@ -13,7 +13,6 @@ pub enum FeatureSharedInput<'a> {
     Tick(u64),
     ConnectionConnected(&'a ConnectionCtx),
     ConnectionStats(&'a ConnectionCtx, &'a ConnectionStats),
-    ConnectionData(&'a ConnectionCtx, TransportMsg),
     ConnectionDisconnected(&'a ConnectionCtx),
 }
 
@@ -21,6 +20,7 @@ pub enum FeatureInput<'a, Control, ToController> {
     Shared(FeatureSharedInput<'a>),
     FromWorker(ToController),
     Control(ServiceId, Control),
+    ForwardNetFromWorker(&'a ConnectionCtx, TransportMsg),
 }
 
 pub enum FeatureOutput<Event, ToWorker> {
@@ -101,6 +101,21 @@ pub trait FeatureWorker<SdkControl, SdkEvent, ToController, ToWorker> {
     fn feature_type(&self) -> u8;
     fn feature_name(&self) -> &str;
     fn on_tick(&mut self, _ctx: &mut FeatureWorkerContext, _now: u64) {}
-    fn on_input(&mut self, _ctx: &mut FeatureWorkerContext, _now: u64, input: FeatureWorkerInput<SdkControl, ToWorker>) -> Option<FeatureWorkerOutput<SdkControl, SdkEvent, ToController>>;
-    fn pop_output(&mut self) -> Option<FeatureWorkerOutput<SdkControl, SdkEvent, ToController>>;
+    fn on_input(&mut self, _ctx: &mut FeatureWorkerContext, _now: u64, input: FeatureWorkerInput<SdkControl, ToWorker>) -> Option<FeatureWorkerOutput<SdkControl, SdkEvent, ToController>> {
+        match input {
+            FeatureWorkerInput::Control(service, control) => Some(FeatureWorkerOutput::ForwardControlToController(service, control)),
+            FeatureWorkerInput::Network(conn, msg) => Some(FeatureWorkerOutput::ForwardNetworkToController(conn, msg)),
+            FeatureWorkerInput::FromController(_event) => {
+                log::warn!("No handler for FromController in {}", self.feature_name());
+                None
+            }
+            FeatureWorkerInput::Local(msg) => {
+                log::warn!("No handler for local message in {}", self.feature_name());
+                None
+            }
+        }
+    }
+    fn pop_output(&mut self) -> Option<FeatureWorkerOutput<SdkControl, SdkEvent, ToController>> {
+        None
+    }
 }

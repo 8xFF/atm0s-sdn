@@ -42,6 +42,9 @@ struct Args {
     backend: BackendType,
 }
 
+type TC = ();
+type TW = ();
+
 fn main() {
     let term = Arc::new(AtomicBool::new(false));
     signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&term)).expect("Should register hook");
@@ -55,8 +58,8 @@ fn main() {
     }
 
     let mut controller = match args.backend {
-        BackendType::Mio => builder.build::<MioBackend<128, 128>>(2),
-        BackendType::Poll => builder.build::<PollBackend<128, 128>>(2),
+        BackendType::Mio => builder.build::<MioBackend<128, 128>, TC, TW>(2),
+        BackendType::Poll => builder.build::<PollBackend<128, 128>, TC, TW>(2),
     };
 
     while controller.process().is_some() {

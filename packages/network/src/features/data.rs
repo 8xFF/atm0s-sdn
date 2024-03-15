@@ -5,15 +5,20 @@ use crate::base::{Feature, FeatureInput, FeatureOutput, FeatureWorker, FeatureWo
 pub const FEATURE_ID: u8 = 1;
 pub const FEATURE_NAME: &str = "data_transfer";
 
+#[derive(Debug, Clone)]
 pub enum Control {
     Send(RouteRule, Vec<u8>),
 }
 
+#[derive(Debug, Clone)]
 pub enum Event {
     Data(Vec<u8>),
 }
 
+#[derive(Debug, Clone)]
 pub struct ToWorker;
+
+#[derive(Debug, Clone)]
 pub struct ToController;
 
 pub struct DataFeature {}
