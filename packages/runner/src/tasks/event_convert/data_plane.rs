@@ -36,9 +36,10 @@ pub fn convert_output<'a, TC, TW>(
             Owner::group(worker, DataPlaneTask::<(), ()>::TYPE),
             TaskOutput::Bus(BusEvent::ChannelUnsubscribe(SdnChannel::DataPlane(channel))),
         ),
-        TaskOutput::Bus(BusEvent::ChannelPublish(_, safe, event)) => {
-            todo!()
-        }
+        TaskOutput::Bus(BusEvent::ChannelPublish(_, safe, event)) => WorkerInnerOutput::Task(
+            Owner::group(worker, DataPlaneTask::<(), ()>::TYPE),
+            TaskOutput::Bus(BusEvent::ChannelPublish(SdnChannel::ControllerPlane(()), safe, SdnEvent::ControllerPlane(event.into()))),
+        ),
         TaskOutput::Net(out) => WorkerInnerOutput::Task(Owner::group(worker, DataPlaneTask::<(), ()>::TYPE), TaskOutput::Net(out)),
         _ => panic!("Invalid output type from DataPlane"),
     }
