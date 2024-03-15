@@ -16,7 +16,7 @@ pub struct FeatureWorkerManager {
     neighbours: neighbours::NeighboursFeatureWorker,
     data: data::DataFeatureWorker,
     last_input_feature: Option<u8>,
-    switcher: TasksSwitcher<2>,
+    switcher: TasksSwitcher<256>,
 }
 
 impl FeatureWorkerManager {

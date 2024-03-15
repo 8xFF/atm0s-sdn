@@ -15,7 +15,7 @@ use crate::san_io_utils::TasksSwitcher;
 pub struct FeatureManager {
     neighbours: neighbours::NeighboursFeature,
     data: data::DataFeature,
-    switcher: TasksSwitcher<2>,
+    switcher: TasksSwitcher<256>,
     last_input_feature: Option<u8>,
 }
 
