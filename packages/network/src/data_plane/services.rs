@@ -32,16 +32,17 @@ impl<ToController, ToWorker> ServiceWorkerManager<ToController, ToWorker> {
         service.on_input(now, input)
     }
 
-    pub fn pop_output(&mut self) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ToController>> {
+    pub fn pop_output(&mut self) -> Option<(ServiceId, ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ToController>)> {
         if let Some(last_service) = self.last_input_service {
-            self.services[*last_service as usize].as_mut()?.pop_output()
+            let out = self.services[*last_service as usize].as_mut()?.pop_output()?;
+            Some((last_service, out))
         } else {
             loop {
                 let s = &mut self.switcher;
                 let index = s.current()?;
                 if let Some(Some(service)) = self.services.get_mut(index) {
                     if let Some(output) = s.process(service.pop_output()) {
-                        return Some(output);
+                        return Some(((index as u8).into(), output));
                     }
                 } else {
                     s.process::<()>(None);

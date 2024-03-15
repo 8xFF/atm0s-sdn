@@ -1,8 +1,8 @@
-use std::hash::Hash;
+use std::{fmt::Debug, hash::Hash};
 
 use atm0s_sdn_identity::{NodeId, NodeIdType};
 
-use crate::{RouteAction, RouterTable, ServiceMeta};
+use crate::{RouteAction, RouterTable};
 
 use self::{service::Service, table::ShadowTable};
 
@@ -26,7 +26,7 @@ pub struct ShadowRouter<Remote> {
     tables: [ShadowTable<Remote>; 4],
 }
 
-impl<Remote: Hash + Eq + Clone + Copy> ShadowRouter<Remote> {
+impl<Remote: Debug + Hash + Eq + Clone + Copy> ShadowRouter<Remote> {
     pub fn new(node_id: NodeId) -> Self {
         Self {
             node_id,
@@ -87,7 +87,7 @@ impl<Remote: Hash + Eq + Clone + Copy> ShadowRouter<Remote> {
     }
 }
 
-impl<Remote: Hash + Eq + Clone + Copy> RouterTable<Remote> for ShadowRouter<Remote> {
+impl<Remote: Debug + Hash + Eq + Clone + Copy> RouterTable<Remote> for ShadowRouter<Remote> {
     fn path_to_key(&self, key: NodeId) -> RouteAction<Remote> {
         match self.closest_for(key) {
             Some(remote) => RouteAction::Next(remote),
@@ -105,25 +105,105 @@ impl<Remote: Hash + Eq + Clone + Copy> RouterTable<Remote> for ShadowRouter<Remo
         }
     }
 
-    fn path_to_service(&self, service_id: u8, meta: ServiceMeta) -> RouteAction<Remote> {
-        match meta {
-            ServiceMeta::Closest => {
-                if self.local_registries[service_id as usize] {
-                    RouteAction::Local
-                } else {
-                    self.remote_registry[service_id as usize].best_conn().map(RouteAction::Next).unwrap_or(RouteAction::Reject)
-                }
-            }
-            ServiceMeta::Broadcast(level) => {
-                let local = self.local_registries[service_id as usize];
-                if let Some(nexts) = self.remote_registry[service_id as usize].broadcast_dests(self.node_id, level) {
-                    RouteAction::Broadcast(local, nexts)
-                } else if local {
-                    RouteAction::Local
-                } else {
-                    RouteAction::Reject
-                }
-            }
+    fn path_to_service(&self, service_id: u8) -> RouteAction<Remote> {
+        if self.local_registries[service_id as usize] {
+            RouteAction::Local
+        } else {
+            self.remote_registry[service_id as usize].best_conn().map(RouteAction::Next).unwrap_or(RouteAction::Reject)
         }
+    }
+
+    fn path_to_services(&self, service_id: u8, level: crate::ServiceBroadcastLevel) -> RouteAction<Remote> {
+        let local = self.local_registries[service_id as usize];
+        if let Some(nexts) = self.remote_registry[service_id as usize].broadcast_dests(self.node_id, level) {
+            RouteAction::Broadcast(local, nexts)
+        } else if local {
+            RouteAction::Local
+        } else {
+            RouteAction::Reject
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{RouteAction, RouterTable, ServiceBroadcastLevel};
+
+    use super::{ShadowRouter, ShadowRouterDelta};
+
+    #[test]
+    fn should_route_to_next_service_local() {
+        let mut router = ShadowRouter::<u64>::new(1);
+        router.apply_delta(ShadowRouterDelta::SetServiceLocal { service: 1 });
+
+        assert_eq!(router.path_to_service(0), RouteAction::Reject);
+        assert_eq!(router.path_to_service(1), RouteAction::Local);
+    }
+
+    #[test]
+    fn should_route_to_next_service_remote() {
+        let mut router = ShadowRouter::<u64>::new(1);
+        router.apply_delta(ShadowRouterDelta::SetServiceRemote {
+            service: 1,
+            next: 2,
+            dest: 3,
+            score: 4,
+        });
+
+        assert_eq!(router.path_to_service(0), RouteAction::Reject);
+        assert_eq!(router.path_to_service(1), RouteAction::Next(2));
+    }
+
+    #[test]
+    fn should_broadcast_to_next_service_local() {
+        let mut router = ShadowRouter::<u64>::new(1);
+        router.apply_delta(ShadowRouterDelta::SetServiceLocal { service: 1 });
+
+        assert_eq!(router.path_to_services(1, ServiceBroadcastLevel::Global), RouteAction::Local);
+    }
+
+    #[test]
+    fn should_broadcast_to_next_service_remote() {
+        let mut router = ShadowRouter::<u64>::new(1);
+        router.apply_delta(ShadowRouterDelta::SetServiceRemote {
+            service: 1,
+            next: 2,
+            dest: 3,
+            score: 4,
+        });
+        router.apply_delta(ShadowRouterDelta::SetServiceRemote {
+            service: 1,
+            next: 3,
+            dest: 6,
+            score: 2,
+        });
+        router.apply_delta(ShadowRouterDelta::SetServiceRemote {
+            service: 1,
+            next: 4,
+            dest: 3,
+            score: 1,
+        });
+
+        assert_eq!(
+            router.path_to_services(1, ServiceBroadcastLevel::Global),
+            RouteAction::Broadcast(false, vec![4, 3])
+        );
+
+        router.apply_delta(ShadowRouterDelta::SetServiceLocal { service: 1 });
+        assert_eq!(
+            router.path_to_services(1, ServiceBroadcastLevel::Global),
+            RouteAction::Broadcast(true, vec![4, 3])
+        );
+
+        router.apply_delta(ShadowRouterDelta::SetServiceRemote {
+            service: 1,
+            next: 4,
+            dest: 5,
+            score: 1,
+        });
+        assert_eq!(
+            router.path_to_services(1, ServiceBroadcastLevel::Global),
+            RouteAction::Broadcast(true, vec![4, 3, 2])
+        );
     }
 }

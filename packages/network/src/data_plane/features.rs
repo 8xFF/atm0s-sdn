@@ -30,7 +30,7 @@ impl FeatureWorkerManager {
         self.data.on_tick(ctx, now_ms);
     }
 
-    pub fn on_input<'a>(&mut self, ctx: &mut FeatureWorkerContext, now_ms: u64, feature: u8, input: FeaturesWorkerInput) -> Option<FeaturesWorkerOutput> {
+    pub fn on_input<'a>(&mut self, ctx: &mut FeatureWorkerContext, now_ms: u64, input: FeaturesWorkerInput) -> Option<FeaturesWorkerOutput> {
         match input {
             FeatureWorkerInput::Control(service, control) => match control {
                 FeaturesControl::Data(control) => self.data.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| a.into2()),
@@ -40,9 +40,14 @@ impl FeatureWorkerManager {
                 FeaturesToWorker::Data(to) => self.data.on_input(ctx, now_ms, FeatureWorkerInput::FromController(to)).map(|a| a.into2()),
                 FeaturesToWorker::Neighbours(to) => self.neighbours.on_input(ctx, now_ms, FeatureWorkerInput::FromController(to)).map(|a| a.into2()),
             },
-            FeatureWorkerInput::Network(conn, msg) => match feature {
+            FeatureWorkerInput::Network(conn, msg) => match msg.header.feature {
                 data::FEATURE_ID => self.data.on_input(ctx, now_ms, FeatureWorkerInput::Network(conn, msg)).map(|a| a.into2()),
                 neighbours::FEATURE_ID => self.neighbours.on_input(ctx, now_ms, FeatureWorkerInput::Network(conn, msg)).map(|a| a.into2()),
+                _ => None,
+            },
+            FeatureWorkerInput::Local(msg) => match msg.header.feature {
+                data::FEATURE_ID => self.data.on_input(ctx, now_ms, FeatureWorkerInput::Local(msg)).map(|a| a.into2()),
+                neighbours::FEATURE_ID => self.neighbours.on_input(ctx, now_ms, FeatureWorkerInput::Local(msg)).map(|a| a.into2()),
                 _ => None,
             },
         }

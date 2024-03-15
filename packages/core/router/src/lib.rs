@@ -43,36 +43,12 @@ impl From<u8> for ServiceBroadcastLevel {
     }
 }
 
-/// ServiceMeta is using for determine which node will be routed, example node with lowest price or lowest latency, which for future use
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ServiceMeta {
-    Closest,
-    Broadcast(ServiceBroadcastLevel),
-}
-
-impl ServiceMeta {
-    pub fn to_be_bytes(&self) -> [u8; 4] {
-        match self {
-            ServiceMeta::Closest => [0, 0, 0, 0],
-            ServiceMeta::Broadcast(level) => [1, (*level).into(), 0, 0],
-        }
-    }
-}
-
-impl From<[u8; 4]> for ServiceMeta {
-    fn from(buf: [u8; 4]) -> Self {
-        match buf[0] {
-            0 => ServiceMeta::Closest,
-            _ => ServiceMeta::Broadcast(buf[1].into()),
-        }
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RouteRule {
     Direct,
     ToNode(NodeId),
-    ToService(ServiceMeta),
+    ToService(u8),
+    ToServices(u8, ServiceBroadcastLevel),
     ToKey(NodeId),
 }
 
@@ -109,15 +85,17 @@ pub trait RouterTable<Remote> {
     /// Determine the next action for the given key
     fn path_to_key(&self, key: NodeId) -> RouteAction<Remote>;
     /// Determine the next action for the given service
-    fn path_to_service(&self, service_id: u8, meta: ServiceMeta) -> RouteAction<Remote>;
+    fn path_to_service(&self, service_id: u8) -> RouteAction<Remote>;
+    fn path_to_services(&self, service_id: u8, level: ServiceBroadcastLevel) -> RouteAction<Remote>;
     /// Determine next action for incoming messages
     /// given the route rule and service id
-    fn derive_action(&self, route: &RouteRule, service_id: u8) -> RouteAction<Remote> {
+    fn derive_action(&self, route: &RouteRule) -> RouteAction<Remote> {
         match route {
             RouteRule::Direct => RouteAction::Local,
             RouteRule::ToNode(dest) => self.path_to_node(*dest),
             RouteRule::ToKey(key) => self.path_to_key(*key),
-            RouteRule::ToService(meta) => self.path_to_service(service_id, *meta),
+            RouteRule::ToService(service) => self.path_to_service(*service),
+            RouteRule::ToServices(service, level) => self.path_to_services(*service, *level),
         }
     }
 }

@@ -46,7 +46,7 @@ pub enum ServiceWorkerInput<FeaturesEvent, ToWorker> {
 
 pub enum ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ToController> {
     ForwardFeatureEventToController(FeaturesEvent),
-    ForwardController(ToController),
+    ToController(ToController),
     FeatureControl(FeaturesControl),
 }
 

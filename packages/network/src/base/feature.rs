@@ -63,6 +63,7 @@ pub enum FeatureWorkerInput<Control, ToWorker> {
     FromController(ToWorker),
     Control(ServiceId, Control),
     Network(ConnId, TransportMsg),
+    Local(TransportMsg),
 }
 
 pub enum FeatureWorkerOutput<Control, Event, ToController> {

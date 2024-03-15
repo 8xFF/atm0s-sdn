@@ -1,4 +1,4 @@
-use std::{collections::HashMap, hash::Hash};
+use std::{collections::HashMap, fmt::Debug, hash::Hash};
 
 use atm0s_sdn_identity::NodeId;
 
@@ -15,7 +15,7 @@ impl<Remote: Eq + PartialEq> Ord for ServiceConn<Remote> {
 
 impl<Remote: Eq + PartialEq> PartialOrd for ServiceConn<Remote> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
+        Some(self.2.cmp(&other.2))
     }
 }
 
@@ -23,7 +23,7 @@ pub struct Service<Remote> {
     dests: Vec<ServiceConn<Remote>>,
 }
 
-impl<Remote: Hash + Copy + Eq + PartialEq> Service<Remote> {
+impl<Remote: Debug + Hash + Copy + Eq + PartialEq> Service<Remote> {
     pub fn new() -> Self {
         Self { dests: Vec::new() }
     }
@@ -53,13 +53,15 @@ impl<Remote: Hash + Copy + Eq + PartialEq> Service<Remote> {
         if self.dests.is_empty() {
             return None;
         }
+        let mut remotes = vec![];
         let mut dests = HashMap::new();
         for dest in &self.dests {
-            if dests.contains_key(&dest.0) || !level.same_level(node_id, dest.2) {
+            if dests.contains_key(&dest.1) || !level.same_level(node_id, dest.2) {
                 continue;
             }
-            dests.insert(dest.0, ());
+            dests.insert(dest.1, ());
+            remotes.push(dest.0);
         }
-        Some(dests.into_iter().map(|a| a.0).collect())
+        Some(remotes)
     }
 }

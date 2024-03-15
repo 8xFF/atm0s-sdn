@@ -1,5 +1,5 @@
 use atm0s_sdn_identity::NodeId;
-use atm0s_sdn_router::RouteRule;
+use atm0s_sdn_router::{RouteRule, ServiceBroadcastLevel};
 use bytes::BufMut;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -9,7 +9,8 @@ pub const DEFAULT_MSG_TTL: u8 = 64;
 const ROUTE_RULE_DIRECT: u8 = 0;
 const ROUTE_RULE_TO_NODE: u8 = 1;
 const ROUTE_RULE_TO_SERVICE: u8 = 2;
-const ROUTE_RULE_TO_KEY: u8 = 3;
+const ROUTE_RULE_TO_SERVICES: u8 = 3;
+const ROUTE_RULE_TO_KEY: u8 = 4;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum MsgHeaderError {
@@ -24,13 +25,11 @@ pub enum MsgHeaderError {
 ///     0                   1                   2                   3
 ///     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-///    |V=0|E|N|S|  R  |      TTL      |  Feature       |    Service   |
+///    |V=0|E|N|   R   |      TTL      |  Feature       |     Meta     |
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ///    |                         Route destination (Opt)               |
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ///    |                         FromNodeId (Opt)                      |
-///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-///    |Service Id(Opt)|                                               |
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 /// ```
 ///
@@ -39,32 +38,16 @@ pub enum MsgHeaderError {
 /// - Version (V) : 2 bits (now is 0)
 /// - Encrypt (E): 1 bits, If this bit is set, this msg should be encrypted
 /// - From Node (N)    : 1 bits, If this bit is set, from node_id will occupy 32 bits in header
-/// - From Service (S) : 1 bits, If this bit is set, from service_id will occupy 8 bits in header
 /// - Route Type (R): 4 bits
 ///
 ///     - 0: Direct : which node received this msg will handle it, no route destionation
 ///     - 1: ToNode : which node received this msg will route it to node_id
 ///     - 2: ToService : which node received this msg will route it to service meta
 ///     - 3: ToKey : which node received this msg will route it to key
-///     - 4: Not used
-///     - 5: Not used
-///     - 6: Not used
-///     - 7: Not used
+///     - .. Not used
 ///
 /// - Ttl (TTL): 8 bits
 /// - Feature Id: 8 bits
-///     
-///     - 0: User custom logic
-///     - 1: DHT Key Value
-///     - 2: Lazy Key Value
-///     - 3: PubSub
-///     - ...
-///
-/// - To Service Id: 8 bits
-///     
-///     - 0: vpn service
-///     - .. to 100: reversed for core service
-///     - 100 .. 255: reversed for user service
 ///
 /// - Route destination (Route Destination): 32 bits (if R is not Direct)
 ///
@@ -73,9 +56,6 @@ pub enum MsgHeaderError {
 ///     - If route type is ToKey, this field is 32bit key
 ///
 /// - From Node Id: 32 bits (optional if N bit is set)
-/// - From Service Id: 8 bits (optional if S bit is set)
-///
-///
 ///
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -85,10 +65,9 @@ pub struct TransportMsgHeader {
     pub route: RouteRule,
     pub ttl: u8,
     pub feature: u8,
-    pub service: u8,
+    pub meta: u8,
     /// Which can be anonymous or specific node
     pub from_node: Option<NodeId>,
-    pub from_service: Option<u8>,
 }
 
 impl TransportMsgHeader {
@@ -100,22 +79,20 @@ impl TransportMsgHeader {
             route: RouteRule::Direct,
             ttl: DEFAULT_MSG_TTL,
             feature: 0,
-            service: 0,
+            meta: 0,
             from_node: None,
-            from_service: None,
         }
     }
 
-    pub fn build(feature: u8, service_id: u8, route: RouteRule) -> Self {
+    pub fn build(feature: u8, meta: u8, route: RouteRule) -> Self {
         Self {
             version: 0,
             encrypt: false,
             route,
             ttl: DEFAULT_MSG_TTL,
             feature,
-            service: service_id,
+            meta,
             from_node: None,
-            from_service: None,
         }
     }
 
@@ -137,12 +114,6 @@ impl TransportMsgHeader {
         self
     }
 
-    /// Set from service_id
-    pub fn set_from_service(mut self, service_id: Option<u8>) -> Self {
-        self.from_service = service_id;
-        self
-    }
-
     /// Set to feature
     pub fn set_feature(mut self, feature: u8) -> Self {
         self.feature = feature;
@@ -150,8 +121,8 @@ impl TransportMsgHeader {
     }
 
     /// Set to service_id
-    pub fn set_service(mut self, service_id: u8) -> Self {
-        self.service = service_id;
+    pub fn set_meta(mut self, meta: u8) -> Self {
+        self.meta = meta;
         self
     }
 
@@ -182,8 +153,7 @@ impl TransportMsgHeader {
         let version = bytes[0] >> 6; //2 bits
         let e_bit = (bytes[0] >> 5) & 1 == 1; //1 bit
         let n_bit = (bytes[0] >> 4) & 1 == 1; //1 bit
-        let s_bit = (bytes[0] >> 3) & 1 == 1; //1 bit
-        let route_type = bytes[0] & 7; //3 bits
+        let route_type = bytes[0] & 15; //4 bits
 
         if version != 0 {
             return Err(MsgHeaderError::InvalidVersion);
@@ -191,7 +161,7 @@ impl TransportMsgHeader {
 
         let ttl = bytes[1];
         let feature = bytes[2];
-        let service = bytes[3];
+        let meta = bytes[3];
 
         let mut ptr = 4;
 
@@ -209,7 +179,15 @@ impl TransportMsgHeader {
                 if bytes.len() < ptr + 4 {
                     return Err(MsgHeaderError::TooSmall);
                 }
-                let rr = RouteRule::ToService([bytes[ptr], bytes[ptr + 1], bytes[ptr + 2], bytes[ptr + 3]].into());
+                let rr = RouteRule::ToService(bytes[ptr]);
+                ptr += 4;
+                rr
+            }
+            ROUTE_RULE_TO_SERVICE => {
+                if bytes.len() < ptr + 4 {
+                    return Err(MsgHeaderError::TooSmall);
+                }
+                let rr = RouteRule::ToServices(bytes[ptr], ServiceBroadcastLevel::from(bytes[ptr + 1]));
                 ptr += 4;
                 rr
             }
@@ -235,24 +213,9 @@ impl TransportMsgHeader {
             None
         };
 
-        let from_service = if s_bit {
-            if bytes.len() < ptr + 1 {
-                return Err(MsgHeaderError::TooSmall);
-            }
-            let from_service_id = bytes[ptr];
-            ptr += 1;
-            Some(from_service_id)
-        } else {
-            None
-        };
-
         let len =
             4 + if from_node.is_some() {
                 4
-            } else {
-                0
-            } + if from_service.is_some() {
-                1
             } else {
                 0
             } + if route_type == ROUTE_RULE_DIRECT {
@@ -268,9 +231,8 @@ impl TransportMsgHeader {
                 ttl,
                 route,
                 feature,
-                service,
+                meta,
                 from_node,
-                from_service,
             },
             len,
         ))
@@ -301,23 +263,19 @@ impl TransportMsgHeader {
         } else {
             0
         };
-        let s_bit = if self.from_service.is_some() {
-            1 << 3
-        } else {
-            0
-        };
 
         let route_type = match self.route {
             RouteRule::Direct => ROUTE_RULE_DIRECT,
             RouteRule::ToNode(_) => ROUTE_RULE_TO_NODE,
             RouteRule::ToService(_) => ROUTE_RULE_TO_SERVICE,
+            RouteRule::ToServices(_, _) => ROUTE_RULE_TO_SERVICES,
             RouteRule::ToKey(_) => ROUTE_RULE_TO_KEY,
         };
 
-        output[0] = (self.version << 6) | e_bit | n_bit | s_bit | (route_type & 7);
+        output[0] = (self.version << 6) | e_bit | n_bit | (route_type & 15);
         output[1] = self.ttl;
         output[2] = self.feature;
-        output[3] = self.service;
+        output[3] = self.meta;
         let mut ptr = 4;
         match self.route {
             RouteRule::Direct => {
@@ -327,8 +285,13 @@ impl TransportMsgHeader {
                 output[ptr..ptr + 4].copy_from_slice(&node_id.to_be_bytes());
                 ptr += 4;
             }
-            RouteRule::ToService(service_meta) => {
-                output[ptr..ptr + 4].copy_from_slice(&service_meta.to_be_bytes());
+            RouteRule::ToService(service) => {
+                output[ptr] = service;
+                ptr += 4;
+            }
+            RouteRule::ToServices(service, level) => {
+                output[ptr] = service;
+                output[ptr + 1] = level.into();
                 ptr += 4;
             }
             RouteRule::ToKey(key) => {
@@ -340,18 +303,10 @@ impl TransportMsgHeader {
             output[ptr..ptr + 4].copy_from_slice(&from_node.to_be_bytes());
             ptr += 4;
         }
-        if let Some(from_service) = self.from_service {
-            output[ptr] = from_service;
-            ptr += 1;
-        }
 
         Some(
             4 + if self.from_node.is_some() {
                 4
-            } else {
-                0
-            } + if self.from_service.is_some() {
-                1
             } else {
                 0
             } + if self.route == RouteRule::Direct {
@@ -406,10 +361,6 @@ impl TransportMsgHeader {
     pub fn serialize_size(&self) -> usize {
         4 + if self.from_node.is_some() {
             4
-        } else {
-            0
-        } + if self.from_service.is_some() {
-            1
         } else {
             0
         } + if self.route == RouteRule::Direct {
@@ -471,8 +422,8 @@ impl TransportMsg {
     /// # Returns
     ///
     /// A new `TransportMsg` instance.
-    pub fn build(feature: u8, service: u8, route: RouteRule, payload: &[u8]) -> Self {
-        let header = TransportMsgHeader::new().set_feature(feature).set_service(service).set_route(route);
+    pub fn build(feature: u8, meta: u8, route: RouteRule, payload: &[u8]) -> Self {
+        let header = TransportMsgHeader::new().set_feature(feature).set_meta(meta).set_route(route);
         let header_size = header.serialize_size();
         let mut buffer = vec![0; header_size + payload.len()];
         let header_size = header.to_bytes(&mut buffer[0..header_size]).expect("Should serialize header");
@@ -592,11 +543,10 @@ mod tests {
             version: 0,
             ttl: 1,
             feature: 2,
-            service: 3,
+            meta: 3,
             route: RouteRule::Direct,
             encrypt: true,
             from_node: None,
-            from_service: None,
         };
         let size = header.to_bytes(&mut buf).expect("should serialize");
         assert_eq!(header.serialize_size(), 4);
@@ -605,26 +555,24 @@ mod tests {
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 1);
         assert_eq!(header.feature, 2);
-        assert_eq!(header.service, 3);
+        assert_eq!(header.meta, 3);
         assert_eq!(header.route, RouteRule::Direct);
         assert_eq!(header.encrypt, true);
         assert_eq!(header.from_node, None);
-        assert_eq!(header.from_service, None);
     }
 
     /// test header without option
     #[test]
-    fn test_header_with_dest() {
+    fn test_header_with_node_dest() {
         let mut buf = [0; 16];
         let header = TransportMsgHeader {
             version: 0,
             ttl: 1,
             feature: 2,
-            service: 3,
+            meta: 3,
             route: RouteRule::ToNode(4),
             encrypt: true,
             from_node: None,
-            from_service: None,
         };
         let size = header.to_bytes(&mut buf).expect("should serialize");
         assert_eq!(header.serialize_size(), 8);
@@ -632,10 +580,33 @@ mod tests {
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 1);
         assert_eq!(header.feature, 2);
-        assert_eq!(header.service, 3);
+        assert_eq!(header.meta, 3);
         assert_eq!(header.route, RouteRule::ToNode(4));
         assert_eq!(header.from_node, None);
-        assert_eq!(header.from_service, None);
+    }
+
+    /// test header without option
+    #[test]
+    fn test_header_with_service_dest() {
+        let mut buf = [0; 16];
+        let header = TransportMsgHeader {
+            version: 0,
+            ttl: 1,
+            feature: 2,
+            meta: 3,
+            route: RouteRule::ToServices(4, ServiceBroadcastLevel::Geo2),
+            encrypt: true,
+            from_node: None,
+        };
+        let size = header.to_bytes(&mut buf).expect("should serialize");
+        assert_eq!(header.serialize_size(), 8);
+        let (header, _) = TransportMsgHeader::from_bytes(&buf[0..size]).unwrap();
+        assert_eq!(header.version, 0);
+        assert_eq!(header.ttl, 1);
+        assert_eq!(header.feature, 2);
+        assert_eq!(header.meta, 3);
+        assert_eq!(header.route, RouteRule::ToServices(4, ServiceBroadcastLevel::Geo2));
+        assert_eq!(header.from_node, None);
     }
 
     /// test header without option
@@ -646,11 +617,10 @@ mod tests {
             version: 0,
             ttl: 1,
             feature: 2,
-            service: 3,
-            route: RouteRule::ToNode(4),
+            meta: 3,
+            route: RouteRule::ToService(4),
             encrypt: true,
             from_node: Some(5),
-            from_service: Some(6),
         };
         let size = header.to_bytes(&mut buf).expect("should serialize");
         assert_eq!(header.serialize_size(), 13);
@@ -658,10 +628,9 @@ mod tests {
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 1);
         assert_eq!(header.feature, 2);
-        assert_eq!(header.service, 3);
-        assert_eq!(header.route, RouteRule::ToNode(4));
+        assert_eq!(header.meta, 3);
+        assert_eq!(header.route, RouteRule::ToService(4));
         assert_eq!(header.from_node, Some(5));
-        assert_eq!(header.from_service, Some(6));
     }
 
     /// test with invalid version
@@ -672,11 +641,10 @@ mod tests {
             version: 1,
             ttl: 1,
             feature: 2,
-            service: 3,
+            meta: 3,
             route: RouteRule::ToNode(4),
             encrypt: true,
             from_node: Some(5),
-            from_service: Some(6),
         };
         let size = header.to_bytes(&mut buf).expect("should serialize");
         let err = TransportMsgHeader::from_bytes(&buf[0..size]).unwrap_err();

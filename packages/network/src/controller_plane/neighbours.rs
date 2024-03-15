@@ -1,69 +1,24 @@
 use std::net::SocketAddr;
 
-use atm0s_sdn_identity::NodeId;
+use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
+
+use crate::base::NeighboursControl;
 
 mod connection;
-
-pub enum NeighboursConnectError {
-    AlreadyConnected,
-    InvalidSignature,
-    InvalidData,
-}
-
-pub enum NeighboursDisconnectReason {
-    Shutdown,
-    Other,
-}
-
-pub enum NeighboursDisconnectError {
-    WrongSession,
-    NotConnected,
-    InvalidSignature,
-}
-
-pub enum NeighboursControl {
-    ConnectRequest {
-        from: NodeId,
-        to: NodeId,
-        session: u64,
-        signature: Vec<u8>,
-    },
-    ConnectResponse {
-        from: NodeId,
-        to: NodeId,
-        session: u64,
-        signature: Vec<u8>,
-        result: Result<(), NeighboursConnectError>,
-    },
-    Ping {
-        session: u64,
-        seq: u64,
-        sent_us: u64,
-    },
-    Pong {
-        session: u64,
-        seq: u64,
-        sent_us: u64,
-    },
-    DisconnectRequest {
-        session: u64,
-        signature: Vec<u8>,
-        reason: NeighboursDisconnectReason,
-    },
-    DisconnectResponse {
-        session: u64,
-        signature: Vec<u8>,
-        result: Result<(), NeighboursDisconnectError>,
-    },
-}
 
 pub enum NeighboursEvent {
     NeighbourConnected,
     NeighbourDisconnected,
 }
 
+pub enum Input {
+    ConnectTo(NodeAddr),
+    DisconnectFrom(NodeId),
+    Control(SocketAddr, NeighboursControl),
+}
+
 pub enum Output {
-    Control(NeighboursControl),
+    Control(SocketAddr, NeighboursControl),
     Event(NeighboursEvent),
 }
 
@@ -74,9 +29,13 @@ impl NeighboursManager {
         todo!()
     }
 
+    pub fn get_addr(&self, conn: ConnId) -> Option<SocketAddr> {
+        None
+    }
+
     pub fn on_tick(&mut self, now_ms: u64) {}
 
-    pub fn on_remote(&mut self, remote: SocketAddr, msg: NeighboursControl) {}
+    pub fn on_input(&mut self, input: Input) {}
 
     pub fn pop_output(&mut self) -> Option<Output> {
         None
