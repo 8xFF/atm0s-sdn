@@ -20,20 +20,11 @@ pub const FEATURE_NAME: &str = "router_sync";
 const INIT_RTT_MS: u16 = 1000;
 const INIT_BW: u32 = 100_000_000;
 
-#[derive(Debug, Clone)]
-pub enum Control {
-    Send(RouteRule, Vec<u8>),
-}
-
-#[derive(Debug, Clone)]
-pub enum Event {
-    Data(Vec<u8>),
-}
+pub type Control = ();
+pub type Event = ();
 
 pub type ToWorker = ShadowRouterDelta<SocketAddr>;
-
-#[derive(Debug, Clone)]
-pub struct ToController;
+pub type ToController = ();
 
 pub struct RouterSyncFeature {
     router: Router,
