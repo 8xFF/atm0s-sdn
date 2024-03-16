@@ -163,8 +163,9 @@ impl<TC, TW> Task<ChannelIn, ChannelOut, EventIn<TW>, EventOut<TC>> for DataPlan
         self.pop_output_direct(now)
     }
 
-    fn shutdown<'a>(&mut self, _now: Instant) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut<TC>>> {
-        None
+    fn shutdown<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut<TC>>> {
+        let output = self.data_plane.on_event(self.timer.timestamp_ms(now), DataPlaneInput::ShutdownRequest)?;
+        self.try_process_output(now, output)
     }
 }
 

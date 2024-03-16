@@ -137,8 +137,8 @@ impl<TC, TW> ControllerPlane<TC, TW> {
                 self.features.on_input(now_ms, FeatureInput::Control(service, control));
             }
             Input::ShutdownRequest => {
-                self.last_task = None;
-                //TODO handle shutdown
+                self.last_task = Some(TaskType::Neighbours);
+                self.neighbours.on_input(now_ms, neighbours::Input::ShutdownRequest);
             }
         }
     }
@@ -174,6 +174,7 @@ impl<TC, TW> ControllerPlane<TC, TW> {
                     _ => panic!("Should not happend!"),
                 }
             }
+
             None
         }
     }
@@ -188,6 +189,9 @@ impl<TC, TW> ControllerPlane<TC, TW> {
                 self.features.on_input(now_ms, FeatureInput::Shared(FeatureSharedInput::Connection(event.clone())));
                 self.services.on_shared_input(now_ms, ServiceSharedInput::Connection(event));
                 None
+            }
+            neighbours::Output::ShutdownResponse => {
+                return Some(Output::ShutdownSuccess);
             }
         }
     }

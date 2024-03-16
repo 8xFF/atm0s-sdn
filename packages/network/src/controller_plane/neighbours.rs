@@ -16,11 +16,13 @@ pub enum Input {
     ConnectTo(NodeAddr),
     DisconnectFrom(NodeId),
     Control(SocketAddr, NeighboursControl),
+    ShutdownRequest,
 }
 
 pub enum Output {
     Control(SocketAddr, NeighboursControl),
     Event(base::ConnectionEvent),
+    ShutdownResponse,
 }
 
 pub struct NeighboursManager {
@@ -29,6 +31,7 @@ pub struct NeighboursManager {
     connections: HashMap<SocketAddr, NeighbourConnection>,
     neighbours: HashMap<ConnId, ConnectionCtx>,
     queue: VecDeque<Output>,
+    shutdown: bool,
 }
 
 impl NeighboursManager {
@@ -39,6 +42,7 @@ impl NeighboursManager {
             connections: HashMap::new(),
             neighbours: HashMap::new(),
             queue: VecDeque::new(),
+            shutdown: false,
         }
     }
 
@@ -94,13 +98,23 @@ impl NeighboursManager {
                     match &control.cmd {
                         NeigboursControlCmds::ConnectRequest { from, to: _, session } => {
                             let conn_id = self.gen_conn_id(ConnDirection::Incoming);
-                            let conn = NeighbourConnection::new_incoming(conn_id, self.node_id, *from, *session, addr, now_ms);
+                            let mut conn = NeighbourConnection::new_incoming(conn_id, self.node_id, *from, *session, addr, now_ms);
+                            conn.on_input(now_ms, control);
                             self.connections.insert(addr, conn);
                         }
                         _ => {
                             log::warn!("Neighbour connection not found for control {:?}", control);
                         }
                     }
+                }
+            }
+            Input::ShutdownRequest => {
+                self.shutdown = true;
+                for conn in self.connections.values_mut() {
+                    conn.disconnect(now_ms);
+                }
+                if self.connections.is_empty() {
+                    self.queue.push_back(Output::ShutdownResponse);
                 }
             }
         }
@@ -154,6 +168,10 @@ impl NeighboursManager {
 
         for remote in to_remove {
             self.connections.remove(&remote);
+
+            if self.shutdown && self.connections.is_empty() {
+                self.queue.push_back(Output::ShutdownResponse);
+            }
         }
 
         self.queue.pop_front()

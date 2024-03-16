@@ -246,7 +246,9 @@ impl NeighbourConnection {
             NeigboursControlCmds::DisconnectRequest { session, .. } => {
                 if session == self.session {
                     self.state = State::Disconnected;
+                    self.output.push_back(self.generate_control(now_ms, NeigboursControlCmds::DisconnectResponse { session }));
                     self.output.push_back(Output::Event(ConnectionEvent::Disconnected));
+                    log::info!("Disconnect request from {}", self.remote);
                 } else {
                     log::warn!("Invalid session in disconnect request from {}", self.remote);
                 }
@@ -256,6 +258,7 @@ impl NeighbourConnection {
                     if let State::Disconnecting { .. } = self.state {
                         self.state = State::Disconnected;
                         self.output.push_back(Output::Event(ConnectionEvent::Disconnected));
+                        log::info!("Disconnected response from {}", self.remote);
                     } else {
                         log::warn!("Invalid state, should be Disconnecting for disconnect response from {}", self.remote);
                     }
