@@ -153,6 +153,10 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for RouterSyncFeature
                 log::warn!("No handler for local message in {}", self.feature_name());
                 None
             }
+            FeatureWorkerInput::TunPkt(_buf) => {
+                log::warn!("No handler for tun packet in {}", self.feature_name());
+                None
+            }
         }
     }
 }

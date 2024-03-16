@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 use atm0s_sdn_router::{shadow::ShadowRouter, RouteRule};
 
-use super::{ConnectionCtx, ConnectionEvent, GenericBuffer, ServiceId};
+use super::{ConnectionCtx, ConnectionEvent, GenericBuffer, GenericBufferMut, ServiceId};
 
 ///
 ///
@@ -65,6 +65,7 @@ pub enum FeatureWorkerInput<'a, Control, ToWorker> {
     Control(ServiceId, Control),
     Network(ConnId, GenericBuffer<'a>),
     Local(GenericBuffer<'a>),
+    TunPkt(GenericBufferMut<'a>),
 }
 
 #[derive(Clone)]
@@ -78,6 +79,9 @@ pub enum FeatureWorkerOutput<'a, Control, Event, ToController> {
     SendRoute(RouteRule, Vec<u8>),
     RawDirect(ConnId, GenericBuffer<'a>),
     RawBroadcast(Vec<ConnId>, GenericBuffer<'a>),
+    RawDirect2(SocketAddr, GenericBuffer<'a>),
+    RawBroadcast2(Vec<SocketAddr>, GenericBuffer<'a>),
+    TunPkt(GenericBuffer<'a>),
 }
 
 impl<'a, Control, Event, ToController> FeatureWorkerOutput<'a, Control, Event, ToController> {
@@ -97,6 +101,9 @@ impl<'a, Control, Event, ToController> FeatureWorkerOutput<'a, Control, Event, T
             FeatureWorkerOutput::SendRoute(route, buf) => FeatureWorkerOutput::SendRoute(route, buf),
             FeatureWorkerOutput::RawDirect(conn, buf) => FeatureWorkerOutput::RawDirect(conn, buf),
             FeatureWorkerOutput::RawBroadcast(conns, buf) => FeatureWorkerOutput::RawBroadcast(conns, buf),
+            FeatureWorkerOutput::RawDirect2(conn, buf) => FeatureWorkerOutput::RawDirect2(conn, buf),
+            FeatureWorkerOutput::RawBroadcast2(conns, buf) => FeatureWorkerOutput::RawBroadcast2(conns, buf),
+            FeatureWorkerOutput::TunPkt(buf) => FeatureWorkerOutput::TunPkt(buf),
         }
     }
 
@@ -111,6 +118,9 @@ impl<'a, Control, Event, ToController> FeatureWorkerOutput<'a, Control, Event, T
             FeatureWorkerOutput::SendRoute(route, buf) => FeatureWorkerOutput::SendRoute(route, buf),
             FeatureWorkerOutput::RawDirect(conn, buf) => FeatureWorkerOutput::RawDirect(conn, buf.owned()),
             FeatureWorkerOutput::RawBroadcast(conns, buf) => FeatureWorkerOutput::RawBroadcast(conns, buf.owned()),
+            FeatureWorkerOutput::RawDirect2(conn, buf) => FeatureWorkerOutput::RawDirect2(conn, buf.owned()),
+            FeatureWorkerOutput::RawBroadcast2(conns, buf) => FeatureWorkerOutput::RawBroadcast2(conns, buf.owned()),
+            FeatureWorkerOutput::TunPkt(buf) => FeatureWorkerOutput::TunPkt(buf.owned()),
         }
     }
 }
@@ -137,6 +147,7 @@ pub trait FeatureWorker<SdkControl, SdkEvent, ToController, ToWorker> {
         match input {
             FeatureWorkerInput::Control(service, control) => Some(FeatureWorkerOutput::ForwardControlToController(service, control)),
             FeatureWorkerInput::Network(conn, buf) => Some(FeatureWorkerOutput::ForwardNetworkToController(conn, buf.to_vec())),
+            FeatureWorkerInput::TunPkt(_buf) => None,
             FeatureWorkerInput::FromController(_event) => {
                 log::warn!("No handler for FromController in {}", self.feature_name());
                 None

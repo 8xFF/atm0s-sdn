@@ -51,6 +51,15 @@ pub enum GenericBufferMut<'a> {
     Vec(Vec<u8>),
 }
 
+impl<'a> GenericBufferMut<'a> {
+    pub fn to_readonly(self) -> GenericBuffer<'a> {
+        match self {
+            GenericBufferMut::Ref(r) => GenericBuffer::Ref(r),
+            GenericBufferMut::Vec(v) => GenericBuffer::Vec(v),
+        }
+    }
+}
+
 impl<'a> From<&'a mut [u8]> for GenericBufferMut<'a> {
     fn from(value: &'a mut [u8]) -> Self {
         GenericBufferMut::Ref(value)

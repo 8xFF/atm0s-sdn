@@ -73,6 +73,10 @@ impl<TC, TW> DataPlaneTask<TC, TW> {
                 to,
                 data: convert_buf1(buf),
             })),
+            DataPlaneOutput::Net(NetOutput::TunPacket(buf)) => Some(TaskOutput::Net(NetOutgoing::TunPacket {
+                slot: self.backend_tun_slot,
+                data: convert_buf1(buf),
+            })),
             DataPlaneOutput::Net(NetOutput::UdpPackets(to, buf)) => Some(TaskOutput::Net(NetOutgoing::UdpPackets {
                 slot: self.backend_udp_slot,
                 to,
@@ -131,7 +135,7 @@ impl<TC: Debug, TW: Debug> Task<ChannelIn, ChannelOut, EventIn<TW>, EventOut<TC>
                 NetIncoming::UdpListenResult { bind, result } => {
                     let res = result.expect("Should to bind UDP socket");
                     self.backend_udp_slot = res.1;
-                    log::info!("Data plane task bound {} to {}", bind, res.0);
+                    log::info!("Data plane task bound udp {} to {}", bind, res.0);
                     None
                 }
                 NetIncoming::UdpPacket { slot: _, from, data } => {
@@ -143,11 +147,15 @@ impl<TC: Debug, TW: Debug> Task<ChannelIn, ChannelOut, EventIn<TW>, EventOut<TC>
                 NetIncoming::TunBindResult { result } => {
                     let res = result.expect("Should to bind TUN device");
                     self.backend_tun_slot = res;
-                    log::info!("Data plane task bound to {}", res);
+                    log::info!("Data plane task bound tun to {}", res);
                     None
                 }
                 #[cfg(feature = "vpn")]
-                NetIncoming::TunPacket { slot: _, data } => self.process_incoming_tun(data),
+                NetIncoming::TunPacket { slot: _, data } => {
+                    let now_ms = self.timer.timestamp_ms(now);
+                    let out = self.data_plane.on_event(now_ms, DataPlaneInput::Net(NetInput::TunPacket(data.into())))?;
+                    self.try_process_output(now, out)
+                }
             },
             TaskInput::Bus(_, event) => {
                 let output = self.data_plane.on_event(self.timer.timestamp_ms(now), DataPlaneInput::Bus(event))?;
@@ -167,20 +175,6 @@ impl<TC: Debug, TW: Debug> Task<ChannelIn, ChannelOut, EventIn<TW>, EventOut<TC>
     fn shutdown<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut<TC>>> {
         let output = self.data_plane.on_event(self.timer.timestamp_ms(now), DataPlaneInput::ShutdownRequest)?;
         self.try_process_output(now, output)
-    }
-}
-
-#[cfg(feature = "vpn")]
-fn rewrite_tun_pkt(payload: &mut [u8]) {
-    #[cfg(any(target_os = "macos", target_os = "ios"))]
-    {
-        payload[2] = 0;
-        payload[3] = 2;
-    }
-    #[cfg(any(target_os = "linux", target_os = "android"))]
-    {
-        payload[2] = 8;
-        payload[3] = 0;
     }
 }
 

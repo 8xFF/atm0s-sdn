@@ -26,7 +26,7 @@ env_logger = { workspace = true }
 signal-hook = "0.3.17"
 
 [features]
-default = []
+default = ["vpn"]
 vpn = ["sans-io-runtime/tun-tap", "atm0s-sdn-network/vpn"]
 
 [[example]]

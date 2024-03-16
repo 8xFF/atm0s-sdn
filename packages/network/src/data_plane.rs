@@ -8,10 +8,10 @@ use atm0s_sdn_router::{shadow::ShadowRouter, RouteAction, RouteRule, RouterTable
 
 use crate::{
     base::{
-        FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer, NeighboursControl, SecureContext, ServiceId, ServiceWorkerInput, ServiceWorkerOutput, TransportMsg,
-        TransportMsgHeader,
+        FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer, GenericBufferMut, NeighboursControl, SecureContext, ServiceId, ServiceWorkerInput, ServiceWorkerOutput,
+        TransportMsg, TransportMsgHeader,
     },
-    features::{FeaturesControl, FeaturesEvent, FeaturesToController, FeaturesToWorker},
+    features::{vpn, FeaturesControl, FeaturesEvent, FeaturesToController, FeaturesToWorker},
     san_io_utils::TasksSwitcher,
 };
 
@@ -21,9 +21,10 @@ mod connection;
 mod features;
 mod services;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum NetInput<'a> {
     UdpPacket(SocketAddr, GenericBuffer<'a>),
+    TunPacket(GenericBufferMut<'a>),
 }
 
 #[derive(Debug, Clone)]
@@ -37,17 +38,18 @@ pub enum BusInput<TW> {
     UnPin(ConnId),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Input<'a, TW> {
     Net(NetInput<'a>),
     Bus(BusInput<TW>),
     ShutdownRequest,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum NetOutput<'a> {
     UdpPacket(SocketAddr, GenericBuffer<'a>),
     UdpPackets(Vec<SocketAddr>, GenericBuffer<'a>),
+    TunPacket(GenericBuffer<'a>),
 }
 
 #[derive(Debug, Clone)]
@@ -97,7 +99,7 @@ impl<TC, TW> DataPlane<TC, TW> {
     pub fn new(node_id: NodeId) -> Self {
         Self {
             ctx: FeatureWorkerContext { router: ShadowRouter::new(node_id) },
-            features: FeatureWorkerManager::new(),
+            features: FeatureWorkerManager::new(node_id),
             services: ServiceWorkerManager::new(),
             conns: HashMap::new(),
             conns_reverse: HashMap::new(),
@@ -105,6 +107,10 @@ impl<TC, TW> DataPlane<TC, TW> {
             last_task: None,
             switcher: TasksSwitcher::default(),
         }
+    }
+
+    pub fn route(&self, rule: RouteRule) -> RouteAction<SocketAddr> {
+        self.ctx.router.derive_action(&rule)
     }
 
     pub fn on_tick<'a>(&mut self, now_ms: u64) {
@@ -121,6 +127,10 @@ impl<TC, TW> DataPlane<TC, TW> {
                 } else {
                     self.incoming_route(now_ms, remote, buf)
                 }
+            }
+            Input::Net(NetInput::TunPacket(pkt)) => {
+                let (feature, out) = self.features.on_input(&mut self.ctx, vpn::FEATURE_ID, now_ms, FeatureWorkerInput::TunPkt(pkt))?;
+                Some(self.convert_features(now_ms, feature, out))
             }
             Input::Bus(BusInput::FromFeatureController(to)) => {
                 let (feature, out) = self.features.on_input(&mut self.ctx, 0, now_ms, FeatureWorkerInput::FromController(to))?;
@@ -290,6 +300,9 @@ impl<TC, TW> DataPlane<TC, TW> {
                 let addrs = conns.iter().filter_map(|conn| self.conns_reverse.get(conn)).cloned().collect();
                 NetOutput::UdpPackets(addrs, buf).into()
             }
+            FeatureWorkerOutput::RawDirect2(addr, buf) => NetOutput::UdpPacket(addr, buf).into(),
+            FeatureWorkerOutput::RawBroadcast2(addrs, buf) => NetOutput::UdpPackets(addrs, buf).into(),
+            FeatureWorkerOutput::TunPkt(pkt) => NetOutput::TunPacket(pkt).into(),
         }
     }
 

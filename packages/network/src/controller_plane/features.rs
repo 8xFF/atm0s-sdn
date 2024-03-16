@@ -18,7 +18,8 @@ pub struct FeatureManager {
     neighbours: neighbours::NeighboursFeature,
     data: data::DataFeature,
     router_sync: router_sync::RouterSyncFeature,
-    switcher: TasksSwitcher<3>,
+    vpn: vpn::VpnFeature,
+    switcher: TasksSwitcher<4>,
     last_input_feature: Option<u8>,
 }
 
@@ -28,6 +29,7 @@ impl FeatureManager {
             neighbours: neighbours::NeighboursFeature::default(),
             data: data::DataFeature::default(),
             router_sync: router_sync::RouterSyncFeature::new(node),
+            vpn: vpn::VpnFeature::default(),
             last_input_feature: None,
             switcher: TasksSwitcher::default(),
         }
@@ -55,6 +57,10 @@ impl FeatureManager {
                     self.last_input_feature = Some(router_sync::FEATURE_ID);
                     self.router_sync.on_input(now_ms, FeatureInput::FromWorker(to))
                 }
+                FeaturesToController::Vpn(to) => {
+                    self.last_input_feature = Some(vpn::FEATURE_ID);
+                    self.vpn.on_input(now_ms, FeatureInput::FromWorker(to))
+                }
             },
             FeatureInput::Control(service, control) => match control {
                 FeaturesControl::Data(control) => {
@@ -69,6 +75,10 @@ impl FeatureManager {
                     self.last_input_feature = Some(router_sync::FEATURE_ID);
                     self.router_sync.on_input(now_ms, FeatureInput::Control(service, control))
                 }
+                FeaturesControl::Vpn(control) => {
+                    self.last_input_feature = Some(vpn::FEATURE_ID);
+                    self.vpn.on_input(now_ms, FeatureInput::Control(service, control))
+                }
             },
             FeatureInput::ForwardNetFromWorker(ctx, buf) => match feature {
                 data::FEATURE_ID => {
@@ -82,6 +92,10 @@ impl FeatureManager {
                 router_sync::FEATURE_ID => {
                     self.last_input_feature = Some(router_sync::FEATURE_ID);
                     self.router_sync.on_input(now_ms, FeatureInput::ForwardNetFromWorker(ctx, buf))
+                }
+                vpn::FEATURE_ID => {
+                    self.last_input_feature = Some(vpn::FEATURE_ID);
+                    self.vpn.on_input(now_ms, FeatureInput::ForwardNetFromWorker(ctx, buf))
                 }
                 _ => {}
             },
@@ -98,6 +112,10 @@ impl FeatureManager {
                     self.last_input_feature = Some(router_sync::FEATURE_ID);
                     self.router_sync.on_input(now_ms, FeatureInput::ForwardLocalFromWorker(buf))
                 }
+                vpn::FEATURE_ID => {
+                    self.last_input_feature = Some(vpn::FEATURE_ID);
+                    self.vpn.on_input(now_ms, FeatureInput::ForwardLocalFromWorker(buf))
+                }
                 _ => {}
             },
         }
@@ -109,6 +127,7 @@ impl FeatureManager {
                 data::FEATURE_ID => self.data.pop_output().map(|a| (data::FEATURE_ID, a.into2())),
                 neighbours::FEATURE_ID => self.neighbours.pop_output().map(|a| (neighbours::FEATURE_ID, a.into2())),
                 router_sync::FEATURE_ID => self.router_sync.pop_output().map(|a| (router_sync::FEATURE_ID, a.into2())),
+                vpn::FEATURE_ID => self.vpn.pop_output().map(|a| (vpn::FEATURE_ID, a.into2())),
                 _ => None,
             };
             if res.is_none() {
@@ -132,6 +151,11 @@ impl FeatureManager {
                     router_sync::FEATURE_ID => {
                         if let Some(out) = s.process(self.router_sync.pop_output()) {
                             return Some((router_sync::FEATURE_ID, out.into2()));
+                        }
+                    }
+                    vpn::FEATURE_ID => {
+                        if let Some(out) = s.process(self.vpn.pop_output()) {
+                            return Some((vpn::FEATURE_ID, out.into2()));
                         }
                     }
                     _ => return None,
