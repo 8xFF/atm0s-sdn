@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 use atm0s_sdn_router::{shadow::ShadowRouter, RouteRule};
 
-use super::{ConnectionCtx, ConnectionEvent, ServiceId};
+use super::{ConnectionCtx, ConnectionEvent, GenericBuffer, ServiceId};
 
 ///
 ///
@@ -104,7 +104,18 @@ pub trait FeatureWorker<SdkControl, SdkEvent, ToController, ToWorker> {
     fn feature_type(&self) -> u8;
     fn feature_name(&self) -> &str;
     fn on_tick(&mut self, _ctx: &mut FeatureWorkerContext, _now: u64) {}
-    fn on_input(&mut self, _ctx: &mut FeatureWorkerContext, _now: u64, input: FeatureWorkerInput<SdkControl, ToWorker>) -> Option<FeatureWorkerOutput<SdkControl, SdkEvent, ToController>> {
+    fn on_network_raw<'a>(
+        &mut self,
+        ctx: &mut FeatureWorkerContext,
+        now: u64,
+        conn: ConnId,
+        header_len: usize,
+        buf: GenericBuffer<'a>,
+    ) -> Option<FeatureWorkerOutput<SdkControl, SdkEvent, ToController>> {
+        let buf = &(&buf)[header_len..];
+        self.on_input(ctx, now, FeatureWorkerInput::Network(conn, buf.to_vec()))
+    }
+    fn on_input<'a>(&mut self, _ctx: &mut FeatureWorkerContext, _now: u64, input: FeatureWorkerInput<SdkControl, ToWorker>) -> Option<FeatureWorkerOutput<SdkControl, SdkEvent, ToController>> {
         match input {
             FeatureWorkerInput::Control(service, control) => Some(FeatureWorkerOutput::ForwardControlToController(service, control)),
             FeatureWorkerInput::Network(conn, buf) => Some(FeatureWorkerOutput::ForwardNetworkToController(conn, buf)),

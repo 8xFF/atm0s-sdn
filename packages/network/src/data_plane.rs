@@ -7,7 +7,10 @@ use atm0s_sdn_identity::{ConnId, NodeId};
 use atm0s_sdn_router::{shadow::ShadowRouter, RouteAction, RouteRule, RouterTable};
 
 use crate::{
-    base::{FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer, NeighboursControl, SecureContext, ServiceId, ServiceWorkerInput, ServiceWorkerOutput, TransportMsg},
+    base::{
+        FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer, NeighboursControl, SecureContext, ServiceId, ServiceWorkerInput, ServiceWorkerOutput, TransportMsg,
+        TransportMsgHeader,
+    },
     features::{FeaturesControl, FeaturesEvent, FeaturesToController, FeaturesToWorker},
     san_io_utils::TasksSwitcher,
 };
@@ -116,7 +119,7 @@ impl<TC, TW> DataPlane<TC, TW> {
                 if let Ok(control) = NeighboursControl::try_from(&*buf) {
                     Some(BusOutput::NeigboursControl(remote, control).into())
                 } else {
-                    self.incoming_route(now_ms, remote, TransportMsg::from_ref(&buf).ok()?)
+                    self.incoming_route(now_ms, remote, buf)
                 }
             }
             Input::Bus(BusInput::FromFeatureController(to)) => {
@@ -144,7 +147,7 @@ impl<TC, TW> DataPlane<TC, TW> {
             }
             Input::Bus(BusInput::UnPin(conn)) => {
                 if let Some(addr) = self.conns_reverse.remove(&conn) {
-                    log::info!("Pin: conn: {} <--> addr: {}", conn, addr);
+                    log::info!("UnPin: conn: {} <--> addr: {}", conn, addr);
                     self.conns.remove(&addr);
                 }
                 None
@@ -200,29 +203,25 @@ impl<TC, TW> DataPlane<TC, TW> {
         }
     }
 
-    fn incoming_route<'a>(&mut self, now_ms: u64, remote: SocketAddr, msg: TransportMsg) -> Option<Output<'a, TC>> {
-        match self.ctx.router.derive_action(&msg.header.route) {
+    fn incoming_route<'a>(&mut self, now_ms: u64, remote: SocketAddr, buf: GenericBuffer<'a>) -> Option<Output<'a, TC>> {
+        let (header, header_len) = TransportMsgHeader::from_bytes(&buf).ok()?;
+        match self.ctx.router.derive_action(&header.route) {
             RouteAction::Reject => None,
             RouteAction::Local => {
                 let conn = self.conns.get(&remote)?;
-                let (feature, out) = self
-                    .features
-                    .on_input(&mut self.ctx, msg.header.feature, now_ms, FeatureWorkerInput::Network(conn.conn(), msg.payload().to_vec().into()))?;
+                let (feature, out) = self.features.on_network_raw(&mut self.ctx, header.feature, now_ms, conn.conn(), header_len, buf)?;
                 Some(self.convert_features(now_ms, feature, out))
             }
-            RouteAction::Next(remote) => Some(NetOutput::UdpPacket(remote, msg.take().into()).into()),
+            RouteAction::Next(remote) => Some(NetOutput::UdpPacket(remote, buf).into()),
             RouteAction::Broadcast(local, remotes) => {
                 if local {
                     if let Some(conn) = self.conns.get(&remote) {
-                        if let Some((feature, out)) = self
-                            .features
-                            .on_input(&mut self.ctx, msg.header.feature, now_ms, FeatureWorkerInput::Network(conn.conn(), msg.payload().to_vec().into()))
-                        {
+                        if let Some((feature, out)) = self.features.on_network_raw(&mut self.ctx, header.feature, now_ms, conn.conn(), header_len, buf.clone()) {
                             self.queue_output.push_back(QueueOutput::Feature(feature, out));
                         }
                     }
                 }
-                Some(NetOutput::UdpPackets(remotes, msg.take().into()).into())
+                Some(NetOutput::UdpPackets(remotes, buf).into())
             }
         }
     }

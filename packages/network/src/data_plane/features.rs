@@ -1,4 +1,6 @@
-use crate::base::{FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput};
+use atm0s_sdn_identity::ConnId;
+
+use crate::base::{FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer};
 use crate::features::*;
 
 pub type FeaturesWorkerInput = FeatureWorkerInput<FeaturesControl, FeaturesToWorker>;
@@ -37,6 +39,15 @@ impl FeatureWorkerManager {
         self.data.on_tick(ctx, now_ms);
     }
 
+    pub fn on_network_raw<'a>(&mut self, ctx: &mut FeatureWorkerContext, feature: u8, now_ms: u64, conn: ConnId, header_len: usize, buf: GenericBuffer<'a>) -> Option<(u8, FeaturesWorkerOutput)> {
+        match feature {
+            neighbours::FEATURE_ID => self.neighbours.on_network_raw(ctx, now_ms, conn, header_len, buf).map(|a| (neighbours::FEATURE_ID, a.into2())),
+            data::FEATURE_ID => self.data.on_network_raw(ctx, now_ms, conn, header_len, buf).map(|a| (data::FEATURE_ID, a.into2())),
+            router_sync::FEATURE_ID => self.router_sync.on_network_raw(ctx, now_ms, conn, header_len, buf).map(|a| (router_sync::FEATURE_ID, a.into2())),
+            _ => None,
+        }
+    }
+
     pub fn on_input<'a>(&mut self, ctx: &mut FeatureWorkerContext, feature: u8, now_ms: u64, input: FeaturesWorkerInput) -> Option<(u8, FeaturesWorkerOutput)> {
         match input {
             FeatureWorkerInput::Control(service, control) => match control {
@@ -61,18 +72,9 @@ impl FeatureWorkerManager {
                     .on_input(ctx, now_ms, FeatureWorkerInput::FromController(to))
                     .map(|a| (router_sync::FEATURE_ID, a.into2())),
             },
-            FeatureWorkerInput::Network(conn, buf) => match feature {
-                neighbours::FEATURE_ID => self
-                    .neighbours
-                    .on_input(ctx, now_ms, FeatureWorkerInput::Network(conn, buf))
-                    .map(|a| (neighbours::FEATURE_ID, a.into2())),
-                data::FEATURE_ID => self.data.on_input(ctx, now_ms, FeatureWorkerInput::Network(conn, buf)).map(|a| (data::FEATURE_ID, a.into2())),
-                router_sync::FEATURE_ID => self
-                    .router_sync
-                    .on_input(ctx, now_ms, FeatureWorkerInput::Network(conn, buf))
-                    .map(|a| (router_sync::FEATURE_ID, a.into2())),
-                _ => None,
-            },
+            FeatureWorkerInput::Network(_conn, _buf) => {
+                panic!("should call above on_network_raw")
+            }
             FeatureWorkerInput::Local(buf) => match feature {
                 neighbours::FEATURE_ID => self.neighbours.on_input(ctx, now_ms, FeatureWorkerInput::Local(buf)).map(|a| (neighbours::FEATURE_ID, a.into2())),
                 data::FEATURE_ID => self.data.on_input(ctx, now_ms, FeatureWorkerInput::Local(buf)).map(|a| (data::FEATURE_ID, a.into2())),
