@@ -1,4 +1,4 @@
-use std::net::Ipv4Addr;
+use std::{fmt::Debug, net::Ipv4Addr};
 
 use atm0s_sdn_identity::{NodeAddr, NodeAddrBuilder, NodeId, Protocol};
 use sans_io_runtime::{backend::Backend, Owner};
@@ -48,7 +48,7 @@ impl SdnBuilder {
         self.vpn_netmask = Some(netmask);
     }
 
-    pub fn build<B: Backend, TC, TW>(self, workers: usize) -> SdnController<TC, TW>
+    pub fn build<B: Backend, TC: Debug, TW: Debug>(self, workers: usize) -> SdnController<TC, TW>
     where
         TC: 'static + Clone + Send + Sync,
         TW: 'static + Clone + Send + Sync,

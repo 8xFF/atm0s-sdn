@@ -6,7 +6,7 @@ use std::{
 use atm0s_sdn_identity::{ConnDirection, ConnId, NodeAddr, NodeId, Protocol};
 use atm0s_sdn_utils::random::{self, Random};
 
-use crate::base::{self, ConnectionCtx, NeigboursControlCmds, NeighboursControl};
+use crate::base::{self, ConnectionCtx, NeigboursControlCmds, NeighboursControl, SecureContext};
 
 use self::connection::{ConnectionEvent, NeighbourConnection};
 
@@ -134,7 +134,7 @@ impl NeighboursManager {
                             ConnectionEvent::Connected => {
                                 let ctx = conn.ctx();
                                 self.neighbours.insert(ctx.conn, ctx.clone());
-                                Some(base::ConnectionEvent::Connected(ctx))
+                                Some(base::ConnectionEvent::Connected(ctx, SecureContext {}))
                             }
                             ConnectionEvent::ConnectError(_) => {
                                 to_remove.push(*remote);

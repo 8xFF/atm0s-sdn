@@ -1,3 +1,5 @@
+use atm0s_sdn_identity::NodeId;
+
 use crate::base::{Feature, FeatureInput, FeatureOutput};
 use crate::features::*;
 
@@ -16,16 +18,16 @@ pub struct FeatureManager {
     neighbours: neighbours::NeighboursFeature,
     data: data::DataFeature,
     router_sync: router_sync::RouterSyncFeature,
-    switcher: TasksSwitcher<256>,
+    switcher: TasksSwitcher<3>,
     last_input_feature: Option<u8>,
 }
 
 impl FeatureManager {
-    pub fn new() -> Self {
+    pub fn new(node: NodeId) -> Self {
         Self {
             neighbours: neighbours::NeighboursFeature::default(),
             data: data::DataFeature::default(),
-            router_sync: router_sync::RouterSyncFeature::default(),
+            router_sync: router_sync::RouterSyncFeature::new(node),
             last_input_feature: None,
             switcher: TasksSwitcher::default(),
         }
@@ -87,12 +89,16 @@ impl FeatureManager {
 
     pub fn pop_output(&mut self) -> Option<FeaturesOutput> {
         if let Some(last_feature) = self.last_input_feature {
-            match last_feature {
+            let res = match last_feature {
                 data::FEATURE_ID => self.data.pop_output().map(|a| a.into2()),
                 neighbours::FEATURE_ID => self.neighbours.pop_output().map(|a| a.into2()),
                 router_sync::FEATURE_ID => self.router_sync.pop_output().map(|a| a.into2()),
                 _ => None,
+            };
+            if res.is_none() {
+                self.last_input_feature = None;
             }
+            res
         } else {
             loop {
                 let s = &mut self.switcher;

@@ -14,4 +14,8 @@ impl DataPlaneConnection {
     pub fn new(conn: ConnId, addr: SocketAddr, secure: SecureContext) -> Self {
         Self { conn, addr, secure }
     }
+
+    pub fn conn(&self) -> ConnId {
+        self.conn
+    }
 }

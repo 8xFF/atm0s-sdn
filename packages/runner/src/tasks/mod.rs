@@ -2,7 +2,7 @@ mod controller_plane;
 mod data_plane;
 mod event_convert;
 
-use std::time::Instant;
+use std::{fmt::Debug, time::Instant};
 
 use atm0s_sdn_identity::NodeAddr;
 use sans_io_runtime::{Controller, Task, TaskGroupOutputsState, TaskInput, TaskOutput, WorkerInner, WorkerInnerInput, WorkerInnerOutput};
@@ -66,7 +66,7 @@ pub struct SdnWorkerInner<TC, TW> {
     state: State,
 }
 
-impl<TC, TW> SdnWorkerInner<TC, TW> {
+impl<TC: Debug, TW: Debug> SdnWorkerInner<TC, TW> {
     fn convert_controller_output<'a>(
         &mut self,
         now: Instant,
@@ -83,7 +83,7 @@ impl<TC, TW> SdnWorkerInner<TC, TW> {
     }
 }
 
-impl<TC, TW> WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent<TC, TW>, SdnInnerCfg, SdnSpawnCfg> for SdnWorkerInner<TC, TW> {
+impl<TC: Debug, TW: Debug> WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent<TC, TW>, SdnInnerCfg, SdnSpawnCfg> for SdnWorkerInner<TC, TW> {
     fn build(worker: u16, cfg: SdnInnerCfg) -> Self {
         if let Some(controller) = cfg.controller {
             Self {

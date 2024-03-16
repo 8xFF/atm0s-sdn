@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use atm0s_sdn_network::controller_plane::BusOut;
 use sans_io_runtime::{bus::BusEvent, Owner, Task, TaskInput, TaskOutput, WorkerInnerOutput};
 
@@ -24,7 +26,7 @@ pub fn convert_input<'a, TC, TW>(event: TaskInput<'a, SdnChannel, SdnEvent<TC, T
 /// This function will convert the output from the Plane task into the output for the SDN task.
 /// It only accept bus events from the Plane task.
 ///
-pub fn convert_output<'a, TC, TW>(
+pub fn convert_output<'a, TC: Debug, TW: Debug>(
     worker: u16,
     event: TaskOutput<controller_plane::ChannelIn, controller_plane::ChannelOut, controller_plane::EventOut<TW>>,
 ) -> WorkerInnerOutput<'a, SdnExtOut, SdnChannel, SdnEvent<TC, TW>, SdnSpawnCfg> {

@@ -22,6 +22,7 @@ pub enum FeatureInput<'a, Control, ToController> {
     ForwardNetFromWorker(&'a ConnectionCtx, TransportMsg),
 }
 
+#[derive(Debug)]
 pub enum FeatureOutput<Event, ToWorker> {
     BroadcastToWorkers(ToWorker),
     Event(ServiceId, Event),

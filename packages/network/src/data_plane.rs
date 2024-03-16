@@ -115,7 +115,7 @@ impl<TC, TW> DataPlane<TC, TW> {
                 if let Ok(control) = NeighboursControl::try_from(&*buf) {
                     Some(BusOutput::NeigboursControl(remote, control).into())
                 } else {
-                    self.process_route(now_ms, TransportMsg::from_ref(&buf).ok()?)
+                    self.incoming_route(now_ms, remote, TransportMsg::from_ref(&buf).ok()?)
                 }
             }
             Input::Bus(BusInput::FromFeatureController(to)) => {
@@ -134,7 +134,7 @@ impl<TC, TW> DataPlane<TC, TW> {
                 let addr = self.conns_reverse.get(&conn)?;
                 Some(NetOutput::UdpPacket(*addr, msg.take().into()).into())
             }
-            Input::Bus(BusInput::NetRoute(msg)) => self.process_route(now_ms, msg),
+            Input::Bus(BusInput::NetRoute(msg)) => self.outgoing_route(now_ms, msg),
             Input::Bus(BusInput::Pin(conn, addr, secure)) => {
                 self.conns.insert(addr, DataPlaneConnection::new(conn, addr, secure));
                 self.conns_reverse.insert(conn, addr);
@@ -142,6 +142,7 @@ impl<TC, TW> DataPlane<TC, TW> {
             }
             Input::Bus(BusInput::UnPin(conn)) => {
                 if let Some(addr) = self.conns_reverse.remove(&conn) {
+                    log::info!("Pin: conn: {} <--> addr: {}", conn, addr);
                     self.conns.remove(&addr);
                 }
                 None
@@ -197,7 +198,29 @@ impl<TC, TW> DataPlane<TC, TW> {
         }
     }
 
-    fn process_route<'a>(&mut self, now_ms: u64, msg: TransportMsg) -> Option<Output<'a, TC>> {
+    fn incoming_route<'a>(&mut self, now_ms: u64, remote: SocketAddr, msg: TransportMsg) -> Option<Output<'a, TC>> {
+        match self.ctx.router.derive_action(&msg.header.route) {
+            RouteAction::Reject => None,
+            RouteAction::Local => {
+                let conn = self.conns.get(&remote)?;
+                let out = self.features.on_input(&mut self.ctx, now_ms, FeatureWorkerInput::Network(conn.conn(), msg))?;
+                Some(self.convert_features(now_ms, out))
+            }
+            RouteAction::Next(remote) => Some(NetOutput::UdpPacket(remote, msg.take().into()).into()),
+            RouteAction::Broadcast(local, remotes) => {
+                if local {
+                    if let Some(conn) = self.conns.get(&remote) {
+                        if let Some(out) = self.features.on_input(&mut self.ctx, now_ms, FeatureWorkerInput::Network(conn.conn(), msg.clone())) {
+                            self.queue_output.push_back(QueueOutput::Feature(out));
+                        }
+                    }
+                }
+                Some(NetOutput::UdpPackets(remotes, msg.take().into()).into())
+            }
+        }
+    }
+
+    fn outgoing_route<'a>(&mut self, now_ms: u64, msg: TransportMsg) -> Option<Output<'a, TC>> {
         match self.ctx.router.derive_action(&msg.header.route) {
             RouteAction::Reject => None,
             RouteAction::Local => {
@@ -229,6 +252,7 @@ impl<TC, TW> DataPlane<TC, TW> {
                 Output::Continue
             }
             FeatureWorkerOutput::SendDirect(conn, msg) => {
+                log::info!("SendDirect: conn: {} <--> msg: {:?}", conn, msg);
                 if let Some(addr) = self.conns_reverse.get(&conn) {
                     NetOutput::UdpPacket(*addr, msg.take().into()).into()
                 } else {
@@ -236,7 +260,8 @@ impl<TC, TW> DataPlane<TC, TW> {
                 }
             }
             FeatureWorkerOutput::SendRoute(msg) => {
-                if let Some(out) = self.process_route(now_ms, msg) {
+                log::info!("SendRoute: {:?}", msg.header.route);
+                if let Some(out) = self.outgoing_route(now_ms, msg) {
                     out
                 } else {
                     Output::Continue

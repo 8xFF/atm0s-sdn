@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 
 use crate::{
-    base::{FeatureInput, FeatureOutput, FeatureSharedInput, NeighboursControl, SecureContext, ServiceId, ServiceInput, ServiceOutput, ServiceSharedInput, TransportMsg},
+    base::{ConnectionEvent, FeatureInput, FeatureOutput, FeatureSharedInput, NeighboursControl, SecureContext, ServiceId, ServiceInput, ServiceOutput, ServiceSharedInput, TransportMsg},
     features::{FeaturesControl, FeaturesEvent, FeaturesToController, FeaturesToWorker},
     san_io_utils::TasksSwitcher,
 };
@@ -86,7 +86,7 @@ impl<TC, TW> ControllerPlane<TC, TW> {
     pub fn new(node_id: NodeId) -> Self {
         Self {
             neighbours: NeighboursManager::new(node_id),
-            features: FeatureManager::new(),
+            features: FeatureManager::new(node_id),
             services: ServiceManager::new(),
             last_task: None,
             switcher: TasksSwitcher::default(),
@@ -182,17 +182,17 @@ impl<TC, TW> ControllerPlane<TC, TW> {
     fn pop_neighbours(&mut self, now_ms: u64) -> Option<Output<TW>> {
         let out = self.neighbours.pop_output()?;
         match out {
-            neighbours::Output::Control(remote, control) => {
-                return Some(Output::Bus(BusOut::Single(BusOutSingle::NeigboursControl(remote, control))));
-            }
+            neighbours::Output::Control(remote, control) => Some(Output::Bus(BusOut::Single(BusOutSingle::NeigboursControl(remote, control)))),
             neighbours::Output::Event(event) => {
                 self.features.on_input(now_ms, FeatureInput::Shared(FeatureSharedInput::Connection(event.clone())));
-                self.services.on_shared_input(now_ms, ServiceSharedInput::Connection(event));
-                None
+                self.services.on_shared_input(now_ms, ServiceSharedInput::Connection(event.clone()));
+                match event {
+                    ConnectionEvent::Connected(ctx, secure) => Some(Output::Bus(BusOut::Multiple(BusOutMultiple::Pin(ctx.conn, ctx.remote, secure)))),
+                    ConnectionEvent::Stats(ctx, stats) => None,
+                    ConnectionEvent::Disconnected(ctx) => Some(Output::Bus(BusOut::Multiple(BusOutMultiple::UnPin(ctx.conn)))),
+                }
             }
-            neighbours::Output::ShutdownResponse => {
-                return Some(Output::ShutdownSuccess);
-            }
+            neighbours::Output::ShutdownResponse => Some(Output::ShutdownSuccess),
         }
     }
 

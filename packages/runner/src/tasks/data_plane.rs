@@ -1,5 +1,6 @@
 use std::{
     collections::VecDeque,
+    fmt::Debug,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     time::Instant,
 };
@@ -110,7 +111,7 @@ impl<TC, TW> DataPlaneTask<TC, TW> {
     }
 }
 
-impl<TC, TW> Task<ChannelIn, ChannelOut, EventIn<TW>, EventOut<TC>> for DataPlaneTask<TC, TW> {
+impl<TC: Debug, TW: Debug> Task<ChannelIn, ChannelOut, EventIn<TW>, EventOut<TC>> for DataPlaneTask<TC, TW> {
     /// The type identifier for the task.
     const TYPE: u16 = 1;
 

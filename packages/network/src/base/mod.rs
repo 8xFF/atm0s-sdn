@@ -30,7 +30,7 @@ pub struct ConnectionStats {
 
 #[derive(Debug, Clone)]
 pub enum ConnectionEvent {
-    Connected(ConnectionCtx),
+    Connected(ConnectionCtx, SecureContext),
     Stats(ConnectionCtx, ConnectionStats),
     Disconnected(ConnectionCtx),
 }
