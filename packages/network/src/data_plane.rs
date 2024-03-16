@@ -78,7 +78,7 @@ enum TaskType {
 }
 
 enum QueueOutput<TC> {
-    Feature(u8, FeatureWorkerOutput<FeaturesControl, FeaturesEvent, FeaturesToController>),
+    Feature(u8, FeatureWorkerOutput<'static, FeaturesControl, FeaturesEvent, FeaturesToController>),
     Service(ServiceId, ServiceWorkerOutput<FeaturesControl, FeaturesEvent, TC>),
 }
 
@@ -217,7 +217,7 @@ impl<TC, TW> DataPlane<TC, TW> {
                 if local {
                     if let Some(conn) = self.conns.get(&remote) {
                         if let Some((feature, out)) = self.features.on_network_raw(&mut self.ctx, header.feature, now_ms, conn.conn(), header_len, buf.clone()) {
-                            self.queue_output.push_back(QueueOutput::Feature(feature, out));
+                            self.queue_output.push_back(QueueOutput::Feature(feature, out.owned()));
                         }
                     }
                 }
@@ -230,8 +230,8 @@ impl<TC, TW> DataPlane<TC, TW> {
         match self.ctx.router.derive_action(&rule) {
             RouteAction::Reject => None,
             RouteAction::Local => {
-                let (feature, out) = self.features.on_input(&mut self.ctx, feature, now_ms, FeatureWorkerInput::Local(&buf))?;
-                Some(self.convert_features(now_ms, feature, out))
+                let (feature, out) = self.features.on_input(&mut self.ctx, feature, now_ms, FeatureWorkerInput::Local(buf.into()))?;
+                Some(self.convert_features(now_ms, feature, out.owned()))
             }
             RouteAction::Next(remote) => {
                 let msg = TransportMsg::build(feature, 0, rule, &buf);
@@ -240,8 +240,8 @@ impl<TC, TW> DataPlane<TC, TW> {
             RouteAction::Broadcast(local, remotes) => {
                 let msg = TransportMsg::build(feature, 0, rule, &buf);
                 if local {
-                    if let Some((feature, out)) = self.features.on_input(&mut self.ctx, feature, now_ms, FeatureWorkerInput::Local(&buf)) {
-                        self.queue_output.push_back(QueueOutput::Feature(feature, out));
+                    if let Some((feature, out)) = self.features.on_input(&mut self.ctx, feature, now_ms, FeatureWorkerInput::Local(buf.into())) {
+                        self.queue_output.push_back(QueueOutput::Feature(feature, out.owned()));
                     }
                 }
 
@@ -250,7 +250,7 @@ impl<TC, TW> DataPlane<TC, TW> {
         }
     }
 
-    fn convert_features<'a>(&mut self, now_ms: u64, feature: u8, out: FeatureWorkerOutput<FeaturesControl, FeaturesEvent, FeaturesToController>) -> Output<'a, TC> {
+    fn convert_features<'a>(&mut self, now_ms: u64, feature: u8, out: FeatureWorkerOutput<'a, FeaturesControl, FeaturesEvent, FeaturesToController>) -> Output<'a, TC> {
         self.last_task = Some(TaskType::Feature);
         match out {
             FeatureWorkerOutput::ForwardControlToController(service, control) => BusOutput::ForwardControlToController(service, control).into(),
@@ -278,6 +278,17 @@ impl<TC, TW> DataPlane<TC, TW> {
                 } else {
                     Output::Continue
                 }
+            }
+            FeatureWorkerOutput::RawDirect(conn, buf) => {
+                if let Some(addr) = self.conns_reverse.get(&conn) {
+                    NetOutput::UdpPacket(*addr, buf).into()
+                } else {
+                    Output::Continue
+                }
+            }
+            FeatureWorkerOutput::RawBroadcast(conns, buf) => {
+                let addrs = conns.iter().filter_map(|conn| self.conns_reverse.get(conn)).cloned().collect();
+                NetOutput::UdpPackets(addrs, buf).into()
             }
         }
     }

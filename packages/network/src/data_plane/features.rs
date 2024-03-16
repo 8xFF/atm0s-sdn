@@ -4,7 +4,7 @@ use crate::base::{FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, Featu
 use crate::features::*;
 
 pub type FeaturesWorkerInput<'a> = FeatureWorkerInput<'a, FeaturesControl, FeaturesToWorker>;
-pub type FeaturesWorkerOutput = FeatureWorkerOutput<FeaturesControl, FeaturesEvent, FeaturesToController>;
+pub type FeaturesWorkerOutput<'a> = FeatureWorkerOutput<'a, FeaturesControl, FeaturesEvent, FeaturesToController>;
 
 use crate::san_io_utils::TasksSwitcher;
 
@@ -39,7 +39,7 @@ impl FeatureWorkerManager {
         self.data.on_tick(ctx, now_ms);
     }
 
-    pub fn on_network_raw<'a>(&mut self, ctx: &mut FeatureWorkerContext, feature: u8, now_ms: u64, conn: ConnId, header_len: usize, buf: GenericBuffer<'a>) -> Option<(u8, FeaturesWorkerOutput)> {
+    pub fn on_network_raw<'a>(&mut self, ctx: &mut FeatureWorkerContext, feature: u8, now_ms: u64, conn: ConnId, header_len: usize, buf: GenericBuffer<'a>) -> Option<(u8, FeaturesWorkerOutput<'a>)> {
         match feature {
             neighbours::FEATURE_ID => self.neighbours.on_network_raw(ctx, now_ms, conn, header_len, buf).map(|a| (neighbours::FEATURE_ID, a.into2())),
             data::FEATURE_ID => self.data.on_network_raw(ctx, now_ms, conn, header_len, buf).map(|a| (data::FEATURE_ID, a.into2())),
@@ -48,7 +48,7 @@ impl FeatureWorkerManager {
         }
     }
 
-    pub fn on_input<'a>(&mut self, ctx: &mut FeatureWorkerContext, feature: u8, now_ms: u64, input: FeaturesWorkerInput) -> Option<(u8, FeaturesWorkerOutput)> {
+    pub fn on_input<'a>(&mut self, ctx: &mut FeatureWorkerContext, feature: u8, now_ms: u64, input: FeaturesWorkerInput<'a>) -> Option<(u8, FeaturesWorkerOutput<'a>)> {
         match input {
             FeatureWorkerInput::Control(service, control) => match control {
                 FeaturesControl::Neighbours(control) => self
@@ -84,12 +84,12 @@ impl FeatureWorkerManager {
         }
     }
 
-    pub fn pop_output(&mut self) -> Option<(u8, FeaturesWorkerOutput)> {
+    pub fn pop_output(&mut self) -> Option<(u8, FeaturesWorkerOutput<'static>)> {
         if let Some(last_feature) = self.last_input_feature {
             match last_feature {
-                neighbours::FEATURE_ID => self.neighbours.pop_output().map(|a| (neighbours::FEATURE_ID, a.into2())),
-                data::FEATURE_ID => self.data.pop_output().map(|a| (data::FEATURE_ID, a.into2())),
-                router_sync::FEATURE_ID => self.router_sync.pop_output().map(|a| (router_sync::FEATURE_ID, a.into2())),
+                neighbours::FEATURE_ID => self.neighbours.pop_output().map(|a| (neighbours::FEATURE_ID, a.owned().into2())),
+                data::FEATURE_ID => self.data.pop_output().map(|a| (data::FEATURE_ID, a.owned().into2())),
+                router_sync::FEATURE_ID => self.router_sync.pop_output().map(|a| (router_sync::FEATURE_ID, a.owned().into2())),
                 _ => None,
             }
         } else {
@@ -98,17 +98,17 @@ impl FeatureWorkerManager {
                 match s.current()? as u8 {
                     neighbours::FEATURE_ID => {
                         if let Some(out) = s.process(self.neighbours.pop_output()) {
-                            return Some((neighbours::FEATURE_ID, out.into2()));
+                            return Some((neighbours::FEATURE_ID, out.owned().into2()));
                         }
                     }
                     data::FEATURE_ID => {
                         if let Some(out) = s.process(self.data.pop_output()) {
-                            return Some((data::FEATURE_ID, out.into2()));
+                            return Some((data::FEATURE_ID, out.owned().into2()));
                         }
                     }
                     router_sync::FEATURE_ID => {
                         if let Some(out) = s.process(self.router_sync.pop_output()) {
-                            return Some((router_sync::FEATURE_ID, out.into2()));
+                            return Some((router_sync::FEATURE_ID, out.owned().into2()));
                         }
                     }
                     _ => return None,

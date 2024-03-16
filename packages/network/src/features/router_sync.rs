@@ -141,7 +141,7 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for RouterSyncFeature
         FEATURE_NAME
     }
 
-    fn on_input(&mut self, ctx: &mut FeatureWorkerContext, _now: u64, input: FeatureWorkerInput<Control, ToWorker>) -> Option<FeatureWorkerOutput<Control, Event, ToController>> {
+    fn on_input<'a>(&mut self, ctx: &mut FeatureWorkerContext, _now: u64, input: FeatureWorkerInput<'a, Control, ToWorker>) -> Option<FeatureWorkerOutput<'a, Control, Event, ToController>> {
         match input {
             FeatureWorkerInput::Control(service, control) => Some(FeatureWorkerOutput::ForwardControlToController(service, control)),
             FeatureWorkerInput::Network(conn, msg) => Some(FeatureWorkerOutput::ForwardNetworkToController(conn, msg.to_vec())),

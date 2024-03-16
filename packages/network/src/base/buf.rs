@@ -6,6 +6,22 @@ pub enum GenericBuffer<'a> {
     Vec(Vec<u8>),
 }
 
+impl<'a> GenericBuffer<'a> {
+    pub fn owned(self) -> GenericBuffer<'static> {
+        match self {
+            GenericBuffer::Ref(r) => r.to_vec().into(),
+            GenericBuffer::Vec(v) => v.into(),
+        }
+    }
+
+    pub fn sub_view(&self, range: std::ops::Range<usize>) -> GenericBuffer<'a> {
+        match self {
+            GenericBuffer::Ref(r) => GenericBuffer::Ref(&r[range]),
+            GenericBuffer::Vec(v) => GenericBuffer::Vec(v[range].to_vec()),
+        }
+    }
+}
+
 impl<'a> Deref for GenericBuffer<'_> {
     type Target = [u8];
 
