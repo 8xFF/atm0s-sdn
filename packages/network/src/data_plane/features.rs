@@ -3,7 +3,7 @@ use atm0s_sdn_identity::ConnId;
 use crate::base::{FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer};
 use crate::features::*;
 
-pub type FeaturesWorkerInput = FeatureWorkerInput<FeaturesControl, FeaturesToWorker>;
+pub type FeaturesWorkerInput<'a> = FeatureWorkerInput<'a, FeaturesControl, FeaturesToWorker>;
 pub type FeaturesWorkerOutput = FeatureWorkerOutput<FeaturesControl, FeaturesEvent, FeaturesToController>;
 
 use crate::san_io_utils::TasksSwitcher;

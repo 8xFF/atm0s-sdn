@@ -230,7 +230,7 @@ impl<TC, TW> DataPlane<TC, TW> {
         match self.ctx.router.derive_action(&rule) {
             RouteAction::Reject => None,
             RouteAction::Local => {
-                let (feature, out) = self.features.on_input(&mut self.ctx, feature, now_ms, FeatureWorkerInput::Local(buf))?;
+                let (feature, out) = self.features.on_input(&mut self.ctx, feature, now_ms, FeatureWorkerInput::Local(&buf))?;
                 Some(self.convert_features(now_ms, feature, out))
             }
             RouteAction::Next(remote) => {
@@ -240,7 +240,7 @@ impl<TC, TW> DataPlane<TC, TW> {
             RouteAction::Broadcast(local, remotes) => {
                 let msg = TransportMsg::build(feature, 0, rule, &buf);
                 if local {
-                    if let Some((feature, out)) = self.features.on_input(&mut self.ctx, feature, now_ms, FeatureWorkerInput::Local((&buf).to_vec().into())) {
+                    if let Some((feature, out)) = self.features.on_input(&mut self.ctx, feature, now_ms, FeatureWorkerInput::Local(&buf)) {
                         self.queue_output.push_back(QueueOutput::Feature(feature, out));
                     }
                 }

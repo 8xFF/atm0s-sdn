@@ -60,11 +60,11 @@ pub trait Feature<Control, Event, ToController, ToWorker>: Send + Sync {
 ///
 ///
 
-pub enum FeatureWorkerInput<Control, ToWorker> {
+pub enum FeatureWorkerInput<'a, Control, ToWorker> {
     FromController(ToWorker),
     Control(ServiceId, Control),
-    Network(ConnId, Vec<u8>),
-    Local(Vec<u8>),
+    Network(ConnId, &'a [u8]),
+    Local(&'a [u8]),
 }
 
 pub enum FeatureWorkerOutput<Control, Event, ToController> {
@@ -113,12 +113,12 @@ pub trait FeatureWorker<SdkControl, SdkEvent, ToController, ToWorker> {
         buf: GenericBuffer<'a>,
     ) -> Option<FeatureWorkerOutput<SdkControl, SdkEvent, ToController>> {
         let buf = &(&buf)[header_len..];
-        self.on_input(ctx, now, FeatureWorkerInput::Network(conn, buf.to_vec()))
+        self.on_input(ctx, now, FeatureWorkerInput::Network(conn, buf))
     }
     fn on_input<'a>(&mut self, _ctx: &mut FeatureWorkerContext, _now: u64, input: FeatureWorkerInput<SdkControl, ToWorker>) -> Option<FeatureWorkerOutput<SdkControl, SdkEvent, ToController>> {
         match input {
             FeatureWorkerInput::Control(service, control) => Some(FeatureWorkerOutput::ForwardControlToController(service, control)),
-            FeatureWorkerInput::Network(conn, buf) => Some(FeatureWorkerOutput::ForwardNetworkToController(conn, buf)),
+            FeatureWorkerInput::Network(conn, buf) => Some(FeatureWorkerOutput::ForwardNetworkToController(conn, buf.to_vec())),
             FeatureWorkerInput::FromController(_event) => {
                 log::warn!("No handler for FromController in {}", self.feature_name());
                 None
