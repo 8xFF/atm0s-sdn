@@ -1,9 +1,10 @@
 use std::net::SocketAddr;
 
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
+use atm0s_sdn_router::RouteRule;
 
 use crate::{
-    base::{ConnectionEvent, FeatureInput, FeatureOutput, FeatureSharedInput, NeighboursControl, SecureContext, ServiceId, ServiceInput, ServiceOutput, ServiceSharedInput, TransportMsg},
+    base::{ConnectionEvent, FeatureInput, FeatureOutput, FeatureSharedInput, NeighboursControl, SecureContext, ServiceId, ServiceInput, ServiceOutput, ServiceSharedInput},
     features::{FeaturesControl, FeaturesEvent, FeaturesToController, FeaturesToWorker},
     san_io_utils::TasksSwitcher,
 };
@@ -21,7 +22,8 @@ pub enum BusIn<TC> {
     NeigboursControl(SocketAddr, NeighboursControl),
     FromFeatureWorker(FeaturesToController),
     FromServiceWorker(ServiceId, TC),
-    ForwardNetFromWorker(ConnId, TransportMsg),
+    ForwardNetFromWorker(u8, ConnId, Vec<u8>),
+    ForwardLocalFromWorker(u8, Vec<u8>),
     ForwardControlFromWorker(ServiceId, FeaturesControl),
     ForwardEventFromWorker(ServiceId, FeaturesEvent),
 }
@@ -36,8 +38,8 @@ pub enum Input<TC> {
 #[derive(Debug, Clone)]
 pub enum BusOutSingle {
     NeigboursControl(SocketAddr, NeighboursControl),
-    NetDirect(ConnId, TransportMsg),
-    NetRoute(TransportMsg),
+    NetDirect(u8, ConnId, Vec<u8>),
+    NetRoute(u8, RouteRule, Vec<u8>),
 }
 
 #[derive(Debug, Clone)]
@@ -96,7 +98,7 @@ impl<TC, TW> ControllerPlane<TC, TW> {
     pub fn on_tick(&mut self, now_ms: u64) {
         self.last_task = None;
         self.neighbours.on_tick(now_ms);
-        self.features.on_input(now_ms, FeatureInput::Shared(FeatureSharedInput::Tick(now_ms)));
+        self.features.on_shared_input(now_ms, FeatureSharedInput::Tick(now_ms));
         self.services.on_shared_input(now_ms, ServiceSharedInput::Tick(now_ms));
     }
 
@@ -116,17 +118,21 @@ impl<TC, TW> ControllerPlane<TC, TW> {
             }
             Input::Bus(BusIn::FromFeatureWorker(to)) => {
                 self.last_task = Some(TaskType::Feature);
-                self.features.on_input(now_ms, FeatureInput::FromWorker(to));
+                self.features.on_input(now_ms, 0, FeatureInput::FromWorker(to));
             }
             Input::Bus(BusIn::FromServiceWorker(service, to)) => {
                 self.last_task = Some(TaskType::Service);
                 self.services.on_input(now_ms, service, ServiceInput::FromWorker(to));
             }
-            Input::Bus(BusIn::ForwardNetFromWorker(conn, msg)) => {
+            Input::Bus(BusIn::ForwardNetFromWorker(feature, conn, msg)) => {
                 if let Some(ctx) = self.neighbours.conn(conn) {
                     self.last_task = Some(TaskType::Feature);
-                    self.features.on_input(now_ms, FeatureInput::ForwardNetFromWorker(ctx, msg));
+                    self.features.on_input(now_ms, feature, FeatureInput::ForwardNetFromWorker(ctx, msg));
                 }
+            }
+            Input::Bus(BusIn::ForwardLocalFromWorker(feature, msg)) => {
+                self.last_task = Some(TaskType::Feature);
+                self.features.on_input(now_ms, feature, FeatureInput::ForwardLocalFromWorker(msg));
             }
             Input::Bus(BusIn::ForwardEventFromWorker(service, event)) => {
                 self.last_task = Some(TaskType::Service);
@@ -134,7 +140,7 @@ impl<TC, TW> ControllerPlane<TC, TW> {
             }
             Input::Bus(BusIn::ForwardControlFromWorker(service, control)) => {
                 self.last_task = Some(TaskType::Feature);
-                self.features.on_input(now_ms, FeatureInput::Control(service, control));
+                self.features.on_input(now_ms, 0, FeatureInput::Control(service, control));
             }
             Input::ShutdownRequest => {
                 self.last_task = Some(TaskType::Neighbours);
@@ -184,7 +190,7 @@ impl<TC, TW> ControllerPlane<TC, TW> {
         match out {
             neighbours::Output::Control(remote, control) => Some(Output::Bus(BusOut::Single(BusOutSingle::NeigboursControl(remote, control)))),
             neighbours::Output::Event(event) => {
-                self.features.on_input(now_ms, FeatureInput::Shared(FeatureSharedInput::Connection(event.clone())));
+                self.features.on_shared_input(now_ms, FeatureSharedInput::Connection(event.clone()));
                 self.services.on_shared_input(now_ms, ServiceSharedInput::Connection(event.clone()));
                 match event {
                     ConnectionEvent::Connected(ctx, secure) => Some(Output::Bus(BusOut::Multiple(BusOutMultiple::Pin(ctx.conn, ctx.remote, secure)))),
@@ -197,7 +203,7 @@ impl<TC, TW> ControllerPlane<TC, TW> {
     }
 
     fn pop_features(&mut self, now_ms: u64) -> Option<Output<TW>> {
-        let out = self.features.pop_output()?;
+        let (feature, out) = self.features.pop_output()?;
         match out {
             FeatureOutput::BroadcastToWorkers(to) => Some(Output::Bus(BusOut::Multiple(BusOutMultiple::ToFeatureWorkers(to)))),
             FeatureOutput::Event(service, event) => {
@@ -205,8 +211,8 @@ impl<TC, TW> ControllerPlane<TC, TW> {
                 self.services.on_input(now_ms, service, ServiceInput::FeatureEvent(event));
                 None
             }
-            FeatureOutput::SendDirect(conn, msg) => Some(Output::Bus(BusOut::Single(BusOutSingle::NetDirect(conn, msg)))),
-            FeatureOutput::SendRoute(msg) => Some(Output::Bus(BusOut::Single(BusOutSingle::NetRoute(msg)))),
+            FeatureOutput::SendDirect(conn, buf) => Some(Output::Bus(BusOut::Single(BusOutSingle::NetDirect(feature, conn, buf)))),
+            FeatureOutput::SendRoute(rule, buf) => Some(Output::Bus(BusOut::Single(BusOutSingle::NetRoute(feature, rule, buf)))),
             FeatureOutput::NeighboursConnectTo(addr) => {
                 //TODO may be we need stack style for optimize performance
                 self.neighbours.on_input(now_ms, neighbours::Input::ConnectTo(addr));
@@ -224,7 +230,7 @@ impl<TC, TW> ControllerPlane<TC, TW> {
         let (service, out) = self.services.pop_output()?;
         match out {
             ServiceOutput::FeatureControl(control) => {
-                self.features.on_input(now_ms, FeatureInput::Control(service, control));
+                self.features.on_input(now_ms, 0, FeatureInput::Control(service, control));
                 None
             }
             ServiceOutput::BroadcastWorkers(to) => Some(Output::Bus(BusOut::Multiple(BusOutMultiple::ToServiceWorkers(service, to)))),

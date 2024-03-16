@@ -1,9 +1,9 @@
 use std::net::SocketAddr;
 
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
-use atm0s_sdn_router::shadow::ShadowRouter;
+use atm0s_sdn_router::{shadow::ShadowRouter, RouteRule};
 
-use super::{ConnectionCtx, ConnectionEvent, ServiceId, TransportMsg};
+use super::{ConnectionCtx, ConnectionEvent, ServiceId};
 
 ///
 ///
@@ -16,23 +16,23 @@ pub enum FeatureSharedInput {
 
 #[derive(Debug, Clone)]
 pub enum FeatureInput<'a, Control, ToController> {
-    Shared(FeatureSharedInput),
     FromWorker(ToController),
     Control(ServiceId, Control),
-    ForwardNetFromWorker(&'a ConnectionCtx, TransportMsg),
+    ForwardNetFromWorker(&'a ConnectionCtx, Vec<u8>),
+    ForwardLocalFromWorker(Vec<u8>),
 }
 
 #[derive(Debug)]
 pub enum FeatureOutput<Event, ToWorker> {
     BroadcastToWorkers(ToWorker),
     Event(ServiceId, Event),
-    SendDirect(ConnId, TransportMsg),
-    SendRoute(TransportMsg),
+    SendDirect(ConnId, Vec<u8>),
+    SendRoute(RouteRule, Vec<u8>),
     NeighboursConnectTo(NodeAddr),
     NeighboursDisconnectFrom(NodeId),
 }
 
-impl<Event, ToWorker> FeatureOutput<Event, ToWorker> {
+impl<'a, Event, ToWorker> FeatureOutput<Event, ToWorker> {
     pub fn into2<Event2, ToWorker2>(self) -> FeatureOutput<Event2, ToWorker2>
     where
         Event2: From<Event>,
@@ -42,7 +42,7 @@ impl<Event, ToWorker> FeatureOutput<Event, ToWorker> {
             FeatureOutput::BroadcastToWorkers(to) => FeatureOutput::BroadcastToWorkers(to.into()),
             FeatureOutput::Event(service, event) => FeatureOutput::Event(service, event.into()),
             FeatureOutput::SendDirect(conn, msg) => FeatureOutput::SendDirect(conn, msg),
-            FeatureOutput::SendRoute(msg) => FeatureOutput::SendRoute(msg),
+            FeatureOutput::SendRoute(rule, buf) => FeatureOutput::SendRoute(rule, buf),
             FeatureOutput::NeighboursConnectTo(addr) => FeatureOutput::NeighboursConnectTo(addr),
             FeatureOutput::NeighboursDisconnectFrom(id) => FeatureOutput::NeighboursDisconnectFrom(id),
         }
@@ -52,6 +52,7 @@ impl<Event, ToWorker> FeatureOutput<Event, ToWorker> {
 pub trait Feature<Control, Event, ToController, ToWorker>: Send + Sync {
     fn feature_type(&self) -> u8;
     fn feature_name(&self) -> &str;
+    fn on_shared_input(&mut self, _now: u64, _input: FeatureSharedInput);
     fn on_input<'a>(&mut self, now_ms: u64, input: FeatureInput<'a, Control, ToController>);
     fn pop_output(&mut self) -> Option<FeatureOutput<Event, ToWorker>>;
 }
@@ -62,17 +63,18 @@ pub trait Feature<Control, Event, ToController, ToWorker>: Send + Sync {
 pub enum FeatureWorkerInput<Control, ToWorker> {
     FromController(ToWorker),
     Control(ServiceId, Control),
-    Network(ConnId, TransportMsg),
-    Local(TransportMsg),
+    Network(ConnId, Vec<u8>),
+    Local(Vec<u8>),
 }
 
 pub enum FeatureWorkerOutput<Control, Event, ToController> {
     ForwardControlToController(ServiceId, Control),
-    ForwardNetworkToController(ConnId, TransportMsg),
+    ForwardNetworkToController(ConnId, Vec<u8>),
+    ForwardLocalToController(Vec<u8>),
     ToController(ToController),
     Event(ServiceId, Event),
-    SendDirect(ConnId, TransportMsg),
-    SendRoute(TransportMsg),
+    SendDirect(ConnId, Vec<u8>),
+    SendRoute(RouteRule, Vec<u8>),
 }
 
 impl<Control, Event, ToController> FeatureWorkerOutput<Control, Event, ToController> {
@@ -85,10 +87,11 @@ impl<Control, Event, ToController> FeatureWorkerOutput<Control, Event, ToControl
         match self {
             FeatureWorkerOutput::ForwardControlToController(service, control) => FeatureWorkerOutput::ForwardControlToController(service, control.into()),
             FeatureWorkerOutput::ForwardNetworkToController(conn, msg) => FeatureWorkerOutput::ForwardNetworkToController(conn, msg),
+            FeatureWorkerOutput::ForwardLocalToController(buf) => FeatureWorkerOutput::ForwardLocalToController(buf),
             FeatureWorkerOutput::ToController(to) => FeatureWorkerOutput::ToController(to.into()),
             FeatureWorkerOutput::Event(service, event) => FeatureWorkerOutput::Event(service, event.into()),
-            FeatureWorkerOutput::SendDirect(conn, msg) => FeatureWorkerOutput::SendDirect(conn, msg),
-            FeatureWorkerOutput::SendRoute(msg) => FeatureWorkerOutput::SendRoute(msg),
+            FeatureWorkerOutput::SendDirect(conn, buf) => FeatureWorkerOutput::SendDirect(conn, buf),
+            FeatureWorkerOutput::SendRoute(route, buf) => FeatureWorkerOutput::SendRoute(route, buf),
         }
     }
 }
@@ -104,7 +107,7 @@ pub trait FeatureWorker<SdkControl, SdkEvent, ToController, ToWorker> {
     fn on_input(&mut self, _ctx: &mut FeatureWorkerContext, _now: u64, input: FeatureWorkerInput<SdkControl, ToWorker>) -> Option<FeatureWorkerOutput<SdkControl, SdkEvent, ToController>> {
         match input {
             FeatureWorkerInput::Control(service, control) => Some(FeatureWorkerOutput::ForwardControlToController(service, control)),
-            FeatureWorkerInput::Network(conn, msg) => Some(FeatureWorkerOutput::ForwardNetworkToController(conn, msg)),
+            FeatureWorkerInput::Network(conn, buf) => Some(FeatureWorkerOutput::ForwardNetworkToController(conn, buf)),
             FeatureWorkerInput::FromController(_event) => {
                 log::warn!("No handler for FromController in {}", self.feature_name());
                 None

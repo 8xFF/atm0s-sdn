@@ -36,6 +36,8 @@ impl Feature<Control, Event, ToController, ToWorker> for NeighboursFeature {
         FEATURE_NAME
     }
 
+    fn on_shared_input(&mut self, _now: u64, _input: crate::base::FeatureSharedInput) {}
+
     fn on_input<'a>(&mut self, _now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
         match input {
             FeatureInput::Control(_service, control) => match control {
@@ -50,7 +52,7 @@ impl Feature<Control, Event, ToController, ToWorker> for NeighboursFeature {
         }
     }
 
-    fn pop_output(&mut self) -> Option<FeatureOutput<Event, ToWorker>> {
+    fn pop_output<'a>(&mut self) -> Option<FeatureOutput<Event, ToWorker>> {
         self.output.pop_front()
     }
 }

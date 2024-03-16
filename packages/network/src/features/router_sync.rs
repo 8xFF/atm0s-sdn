@@ -7,12 +7,9 @@ use atm0s_sdn_identity::{ConnId, NodeId};
 use atm0s_sdn_router::{
     core::{DestDelta, Metric, RegistryDelta, RegistryDestDelta, Router, RouterDelta, RouterSync, TableDelta},
     shadow::ShadowRouterDelta,
-    RouteRule,
 };
 
-use crate::base::{
-    ConnectionEvent, Feature, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, TransportMsg, TransportMsgHeader,
-};
+use crate::base::{ConnectionEvent, Feature, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput};
 
 pub const FEATURE_ID: u8 = 2;
 pub const FEATURE_NAME: &str = "router_sync";
@@ -46,9 +43,7 @@ impl RouterSyncFeature {
 
     fn send_sync_to(router: &Router, queue: &mut VecDeque<FeatureOutput<Event, ToWorker>>, conn: ConnId, node: NodeId) {
         let sync = router.create_sync(node);
-        let header = TransportMsgHeader::build(FEATURE_ID, 0, RouteRule::Direct);
-        let msg = TransportMsg::from_payload_bincode(header, &sync);
-        queue.push_back(FeatureOutput::SendDirect(conn, msg));
+        queue.push_back(FeatureOutput::SendDirect(conn, bincode::serialize(&sync).expect("").into()));
     }
 }
 
@@ -61,14 +56,14 @@ impl Feature<Control, Event, ToController, ToWorker> for RouterSyncFeature {
         FEATURE_NAME
     }
 
-    fn on_input<'a>(&mut self, _now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
+    fn on_shared_input(&mut self, _now: u64, input: FeatureSharedInput) {
         match input {
-            FeatureInput::Shared(FeatureSharedInput::Tick(_)) => {
+            FeatureSharedInput::Tick(_) => {
                 for (conn, (node, _, _)) in self.conns.iter() {
                     Self::send_sync_to(&self.router, &mut self.queue, *conn, *node);
                 }
             }
-            FeatureInput::Shared(FeatureSharedInput::Connection(event)) => match event {
+            FeatureSharedInput::Connection(event) => match event {
                 ConnectionEvent::Connected(ctx, _) => {
                     log::info!("Connection {} connected", ctx.remote);
                     let metric = Metric::new(INIT_RTT_MS, vec![ctx.node], INIT_BW);
@@ -86,9 +81,14 @@ impl Feature<Control, Event, ToController, ToWorker> for RouterSyncFeature {
                     self.router.del_direct(ctx.conn);
                 }
             },
-            FeatureInput::ForwardNetFromWorker(ctx, msg) => {
+        }
+    }
+
+    fn on_input<'a>(&mut self, _now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
+        match input {
+            FeatureInput::ForwardNetFromWorker(ctx, buf) => {
                 if let Some((_node, _remote, metric)) = self.conns.get(&ctx.conn) {
-                    if let Ok(sync) = msg.get_payload_bincode::<RouterSync>() {
+                    if let Ok(sync) = bincode::deserialize::<RouterSync>(&buf) {
                         self.router.apply_sync(ctx.conn, metric.clone(), sync);
                     } else {
                         log::warn!("Receive invalid sync from {}", ctx.remote);
@@ -101,7 +101,7 @@ impl Feature<Control, Event, ToController, ToWorker> for RouterSyncFeature {
         }
     }
 
-    fn pop_output(&mut self) -> Option<FeatureOutput<Event, ToWorker>> {
+    fn pop_output<'a>(&mut self) -> Option<FeatureOutput<Event, ToWorker>> {
         if let Some(rule) = self.router.pop_delta() {
             let rule = match rule {
                 RouterDelta::Table(layer, TableDelta(index, DestDelta::SetBestPath(conn))) => ShadowRouterDelta::SetTable {

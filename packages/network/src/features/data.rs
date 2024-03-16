@@ -33,9 +33,11 @@ impl Feature<Control, Event, ToController, ToWorker> for DataFeature {
         FEATURE_NAME
     }
 
+    fn on_shared_input(&mut self, _now: u64, _input: crate::base::FeatureSharedInput) {}
+
     fn on_input<'a>(&mut self, now_ms: u64, input: FeatureInput<'a, Control, ToController>) {}
 
-    fn pop_output(&mut self) -> Option<FeatureOutput<Event, ToWorker>> {
+    fn pop_output<'a>(&mut self) -> Option<FeatureOutput<Event, ToWorker>> {
         None
     }
 }
