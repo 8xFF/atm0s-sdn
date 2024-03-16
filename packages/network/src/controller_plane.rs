@@ -104,15 +104,15 @@ impl<TC, TW> ControllerPlane<TC, TW> {
         match event {
             Input::Bus(BusIn::ConnectTo(addr)) => {
                 self.last_task = Some(TaskType::Neighbours);
-                self.neighbours.on_input(neighbours::Input::ConnectTo(addr));
+                self.neighbours.on_input(now_ms, neighbours::Input::ConnectTo(addr));
             }
             Input::Bus(BusIn::DisconnectFrom(node)) => {
                 self.last_task = Some(TaskType::Neighbours);
-                self.neighbours.on_input(neighbours::Input::DisconnectFrom(node));
+                self.neighbours.on_input(now_ms, neighbours::Input::DisconnectFrom(node));
             }
             Input::Bus(BusIn::NeigboursControl(remote, control)) => {
                 self.last_task = Some(TaskType::Neighbours);
-                self.neighbours.on_input(neighbours::Input::Control(remote, control));
+                self.neighbours.on_input(now_ms, neighbours::Input::Control(remote, control));
             }
             Input::Bus(BusIn::FromFeatureWorker(to)) => {
                 self.last_task = Some(TaskType::Feature);
@@ -123,8 +123,8 @@ impl<TC, TW> ControllerPlane<TC, TW> {
                 self.services.on_input(now_ms, service, ServiceInput::FromWorker(to));
             }
             Input::Bus(BusIn::ForwardNetFromWorker(conn, msg)) => {
-                self.last_task = Some(TaskType::Feature);
                 if let Some(ctx) = self.neighbours.conn(conn) {
+                    self.last_task = Some(TaskType::Feature);
                     self.features.on_input(now_ms, FeatureInput::ForwardNetFromWorker(ctx, msg));
                 }
             }
@@ -185,7 +185,9 @@ impl<TC, TW> ControllerPlane<TC, TW> {
                 return Some(Output::Bus(BusOut::Single(BusOutSingle::NeigboursControl(remote, control))));
             }
             neighbours::Output::Event(event) => {
-                todo!("Process event here")
+                self.features.on_input(now_ms, FeatureInput::Shared(FeatureSharedInput::Connection(event.clone())));
+                self.services.on_shared_input(now_ms, ServiceSharedInput::Connection(event));
+                None
             }
         }
     }
@@ -203,12 +205,12 @@ impl<TC, TW> ControllerPlane<TC, TW> {
             FeatureOutput::SendRoute(msg) => Some(Output::Bus(BusOut::Single(BusOutSingle::NetRoute(msg)))),
             FeatureOutput::NeighboursConnectTo(addr) => {
                 //TODO may be we need stack style for optimize performance
-                self.neighbours.on_input(neighbours::Input::ConnectTo(addr));
+                self.neighbours.on_input(now_ms, neighbours::Input::ConnectTo(addr));
                 None
             }
             FeatureOutput::NeighboursDisconnectFrom(node) => {
                 //TODO may be we need stack style for optimize performance
-                self.neighbours.on_input(neighbours::Input::DisconnectFrom(node));
+                self.neighbours.on_input(now_ms, neighbours::Input::DisconnectFrom(node));
                 None
             }
         }

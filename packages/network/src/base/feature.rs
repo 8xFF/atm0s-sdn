@@ -3,21 +3,20 @@ use std::net::SocketAddr;
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 use atm0s_sdn_router::shadow::ShadowRouter;
 
-use super::{ConnectionCtx, ConnectionStats, ServiceId, TransportMsg};
+use super::{ConnectionCtx, ConnectionEvent, ServiceId, TransportMsg};
 
 ///
 ///
 
-#[derive(Clone)]
-pub enum FeatureSharedInput<'a> {
+#[derive(Debug, Clone)]
+pub enum FeatureSharedInput {
     Tick(u64),
-    ConnectionConnected(&'a ConnectionCtx),
-    ConnectionStats(&'a ConnectionCtx, &'a ConnectionStats),
-    ConnectionDisconnected(&'a ConnectionCtx),
+    Connection(ConnectionEvent),
 }
 
+#[derive(Debug, Clone)]
 pub enum FeatureInput<'a, Control, ToController> {
-    Shared(FeatureSharedInput<'a>),
+    Shared(FeatureSharedInput),
     FromWorker(ToController),
     Control(ServiceId, Control),
     ForwardNetFromWorker(&'a ConnectionCtx, TransportMsg),

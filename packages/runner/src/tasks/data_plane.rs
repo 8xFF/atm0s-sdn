@@ -65,7 +65,7 @@ impl<TC, TW> DataPlaneTask<TC, TW> {
         }
     }
 
-    fn convert_output<'a>(&mut self, now: Instant, output: DataPlaneOutput<'a, TC>) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut<TC>>> {
+    fn convert_output<'a>(&mut self, _now: Instant, output: DataPlaneOutput<'a, TC>) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut<TC>>> {
         match output {
             DataPlaneOutput::Net(NetOutput::UdpPacket(to, buf)) => Some(TaskOutput::Net(NetOutgoing::UdpPacket {
                 slot: self.backend_udp_slot,

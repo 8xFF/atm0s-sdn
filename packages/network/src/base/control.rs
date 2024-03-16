@@ -1,62 +1,38 @@
+use std::vec;
+
 use atm0s_sdn_identity::NodeId;
 use bincode::Options;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum NeighboursConnectError {
     AlreadyConnected,
     InvalidSignature,
     InvalidData,
+    InvalidState,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum NeighboursDisconnectReason {
     Shutdown,
     Other,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum NeighboursDisconnectError {
-    WrongSession,
-    NotConnected,
-    InvalidSignature,
+pub enum NeigboursControlCmds {
+    ConnectRequest { from: NodeId, to: NodeId, session: u64 },
+    ConnectResponse { session: u64, result: Result<(), NeighboursConnectError> },
+    Ping { session: u64, seq: u64, sent_ms: u64 },
+    Pong { session: u64, seq: u64, sent_ms: u64 },
+    DisconnectRequest { session: u64, reason: NeighboursDisconnectReason },
+    DisconnectResponse { session: u64 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum NeighboursControl {
-    ConnectRequest {
-        from: NodeId,
-        to: NodeId,
-        session: u64,
-        signature: Vec<u8>,
-    },
-    ConnectResponse {
-        from: NodeId,
-        to: NodeId,
-        session: u64,
-        signature: Vec<u8>,
-        result: Result<(), NeighboursConnectError>,
-    },
-    Ping {
-        session: u64,
-        seq: u64,
-        sent_us: u64,
-    },
-    Pong {
-        session: u64,
-        seq: u64,
-        sent_us: u64,
-    },
-    DisconnectRequest {
-        session: u64,
-        signature: Vec<u8>,
-        reason: NeighboursDisconnectReason,
-    },
-    DisconnectResponse {
-        session: u64,
-        signature: Vec<u8>,
-        result: Result<(), NeighboursDisconnectError>,
-    },
+pub struct NeighboursControl {
+    pub ts: u64,
+    pub cmd: NeigboursControlCmds,
+    pub signature: Vec<u8>,
 }
 
 impl TryFrom<&[u8]> for NeighboursControl {
@@ -75,6 +51,9 @@ impl TryInto<Vec<u8>> for &NeighboursControl {
     type Error = ();
 
     fn try_into(self) -> Result<Vec<u8>, Self::Error> {
-        bincode::DefaultOptions::new().with_limit(1500).serialize(&self).map_err(|_| ())
+        let mut buf = Vec::with_capacity(1500);
+        buf.push(255);
+        bincode::DefaultOptions::new().with_limit(1500).serialize_into(&mut buf, &self).map_err(|_| ())?;
+        Ok(buf)
     }
 }

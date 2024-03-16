@@ -1,13 +1,14 @@
+use crate::{
+    base::{Service, ServiceInput, ServiceOutput, ServiceWorker, ServiceWorkerInput, ServiceWorkerOutput},
+    features::{FeaturesControl, FeaturesEvent},
+};
+
 pub const SERVICE_ID: u8 = 0;
-pub const SERVICE_NAME: &str = "router_sync";
+pub const SERVICE_NAME: &str = "manual_discovery";
 
-use super::{Service, ServiceWorker, ServiceWorkerInput, ServiceWorkerOutput};
+pub struct ManualDiscoveryService {}
 
-pub struct ManualDiscoveryService {
-
-}
-
-impl<TC, TW> Service<TC, TW> for ManualDiscoveryService {
+impl<TC, TW> Service<FeaturesControl, FeaturesEvent, TC, TW> for ManualDiscoveryService {
     fn service_id(&self) -> u8 {
         todo!()
     }
@@ -16,20 +17,22 @@ impl<TC, TW> Service<TC, TW> for ManualDiscoveryService {
         todo!()
     }
 
-    fn on_input(&mut self, _now: u64, input: super::ServiceInput<TC>) {
+    fn on_shared_input<'a>(&mut self, _now: u64, _input: crate::base::ServiceSharedInput) {
         todo!()
     }
 
-    fn pop_output(&mut self) -> Option<super::ServiceOutput<TW>> {
+    fn on_input(&mut self, _now: u64, input: ServiceInput<FeaturesEvent, TC>) {
+        todo!()
+    }
+
+    fn pop_output(&mut self) -> Option<ServiceOutput<FeaturesControl, TW>> {
         todo!()
     }
 }
 
-pub struct ManualDiscoveryServiceWorker {
+pub struct ManualDiscoveryServiceWorker {}
 
-}
-
-impl<TC, TW> ServiceWorker<TC, TW> for ManualDiscoveryServiceWorker {
+impl<TC, TW> ServiceWorker<FeaturesControl, FeaturesEvent, TC, TW> for ManualDiscoveryServiceWorker {
     fn service_id(&self) -> u8 {
         todo!()
     }
@@ -38,11 +41,11 @@ impl<TC, TW> ServiceWorker<TC, TW> for ManualDiscoveryServiceWorker {
         todo!()
     }
 
-    fn on_input(&mut self, _now: u64, input: ServiceWorkerInput<TW>) -> Option<ServiceWorkerOutput<TC>> {
+    fn on_input(&mut self, _now: u64, input: ServiceWorkerInput<FeaturesEvent, TW>) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, TC>> {
         todo!()
     }
 
-    fn pop_output(&mut self) -> Option<ServiceWorkerOutput<TC>> {
+    fn pop_output(&mut self) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, TC>> {
         todo!()
     }
 }

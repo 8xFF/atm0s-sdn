@@ -1,18 +1,15 @@
 use atm0s_sdn_utils::simple_pub_type;
 
-use super::{ConnectionCtx, ConnectionStats, TransportMsg};
+use super::ConnectionEvent;
 
 simple_pub_type!(ServiceId, u8);
 
 /// First part is Service, which is running inside the controller.
 
 #[derive(Debug, Clone)]
-pub enum ServiceSharedInput<'a> {
+pub enum ServiceSharedInput {
     Tick(u64),
-    ConnectionConnected(&'a ConnectionCtx),
-    ConnectionStats(&'a ConnectionCtx, &'a ConnectionStats),
-    ConnectionData(&'a ConnectionCtx, TransportMsg),
-    ConnectionDisconnected(&'a ConnectionCtx),
+    Connection(ConnectionEvent),
 }
 
 pub enum ServiceInput<FeaturesEvent, ToController> {
@@ -32,7 +29,7 @@ pub trait Service<FeaturesControl, FeaturesEvent, ToController, ToWorker> {
         true
     }
 
-    fn on_shared_input<'a>(&mut self, _now: u64, _input: ServiceSharedInput<'a>);
+    fn on_shared_input<'a>(&mut self, _now: u64, _input: ServiceSharedInput);
     fn on_input(&mut self, _now: u64, input: ServiceInput<FeaturesEvent, ToController>);
     fn pop_output(&mut self) -> Option<ServiceOutput<FeaturesControl, ToWorker>>;
 }

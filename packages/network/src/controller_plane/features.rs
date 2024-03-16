@@ -15,6 +15,7 @@ use crate::san_io_utils::TasksSwitcher;
 pub struct FeatureManager {
     neighbours: neighbours::NeighboursFeature,
     data: data::DataFeature,
+    router_sync: router_sync::RouterSyncFeature,
     switcher: TasksSwitcher<256>,
     last_input_feature: Option<u8>,
 }
@@ -24,6 +25,7 @@ impl FeatureManager {
         Self {
             neighbours: neighbours::NeighboursFeature::default(),
             data: data::DataFeature::default(),
+            router_sync: router_sync::RouterSyncFeature::default(),
             last_input_feature: None,
             switcher: TasksSwitcher::default(),
         }
@@ -34,6 +36,7 @@ impl FeatureManager {
             FeatureInput::Shared(event) => {
                 self.neighbours.on_input(now_ms, FeatureInput::Shared(event.clone()));
                 self.data.on_input(now_ms, FeatureInput::Shared(event.clone()));
+                self.router_sync.on_input(now_ms, FeatureInput::Shared(event));
                 self.last_input_feature = None;
             }
             FeatureInput::FromWorker(to) => match to {
@@ -45,6 +48,10 @@ impl FeatureManager {
                     self.last_input_feature = Some(neighbours::FEATURE_ID);
                     self.neighbours.on_input(now_ms, FeatureInput::FromWorker(to))
                 }
+                FeaturesToController::RouterSync(to) => {
+                    self.last_input_feature = Some(router_sync::FEATURE_ID);
+                    self.router_sync.on_input(now_ms, FeatureInput::FromWorker(to))
+                }
             },
             FeatureInput::Control(service, control) => match control {
                 FeaturesControl::Data(control) => {
@@ -54,6 +61,10 @@ impl FeatureManager {
                 FeaturesControl::Neighbours(control) => {
                     self.last_input_feature = Some(neighbours::FEATURE_ID);
                     self.neighbours.on_input(now_ms, FeatureInput::Control(service, control))
+                }
+                FeaturesControl::RouterSync(control) => {
+                    self.last_input_feature = Some(router_sync::FEATURE_ID);
+                    self.router_sync.on_input(now_ms, FeatureInput::Control(service, control))
                 }
             },
             FeatureInput::ForwardNetFromWorker(ctx, msg) => match msg.header.feature {
@@ -65,6 +76,10 @@ impl FeatureManager {
                     self.last_input_feature = Some(neighbours::FEATURE_ID);
                     self.neighbours.on_input(now_ms, FeatureInput::ForwardNetFromWorker(ctx, msg))
                 }
+                router_sync::FEATURE_ID => {
+                    self.last_input_feature = Some(router_sync::FEATURE_ID);
+                    self.router_sync.on_input(now_ms, FeatureInput::ForwardNetFromWorker(ctx, msg))
+                }
                 _ => {}
             },
         }
@@ -75,6 +90,7 @@ impl FeatureManager {
             match last_feature {
                 data::FEATURE_ID => self.data.pop_output().map(|a| a.into2()),
                 neighbours::FEATURE_ID => self.neighbours.pop_output().map(|a| a.into2()),
+                router_sync::FEATURE_ID => self.router_sync.pop_output().map(|a| a.into2()),
                 _ => None,
             }
         } else {
@@ -88,6 +104,11 @@ impl FeatureManager {
                     }
                     data::FEATURE_ID => {
                         if let Some(out) = s.process(self.data.pop_output()) {
+                            return Some(out.into2());
+                        }
+                    }
+                    router_sync::FEATURE_ID => {
+                        if let Some(out) = s.process(self.router_sync.pop_output()) {
                             return Some(out.into2());
                         }
                     }

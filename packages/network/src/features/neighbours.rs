@@ -1,9 +1,8 @@
 use std::collections::VecDeque;
 
 use atm0s_sdn_identity::{NodeAddr, NodeId};
-use log::warn;
 
-use crate::base::{Feature, FeatureInput, FeatureOutput, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput};
+use crate::base::{Feature, FeatureInput, FeatureOutput, FeatureWorker};
 
 pub const FEATURE_ID: u8 = 0;
 pub const FEATURE_NAME: &str = "neighbours_api";
@@ -37,9 +36,9 @@ impl Feature<Control, Event, ToController, ToWorker> for NeighboursFeature {
         FEATURE_NAME
     }
 
-    fn on_input<'a>(&mut self, now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
+    fn on_input<'a>(&mut self, _now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
         match input {
-            FeatureInput::Control(service, control) => match control {
+            FeatureInput::Control(_service, control) => match control {
                 Control::ConnectTo(addr) => {
                     self.output.push_back(FeatureOutput::NeighboursConnectTo(addr));
                 }
@@ -47,9 +46,7 @@ impl Feature<Control, Event, ToController, ToWorker> for NeighboursFeature {
                     self.output.push_back(FeatureOutput::NeighboursDisconnectFrom(node));
                 }
             },
-            _ => {
-                log::warn!("Invalid input for NeighboursFeature");
-            }
+            _ => {}
         }
     }
 

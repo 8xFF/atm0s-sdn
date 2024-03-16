@@ -18,7 +18,7 @@ impl<ToController, ToWorker> ServiceManager<ToController, ToWorker> {
         }
     }
 
-    pub fn on_shared_input<'a>(&mut self, now: u64, input: ServiceSharedInput<'a>) {
+    pub fn on_shared_input(&mut self, now: u64, input: ServiceSharedInput) {
         self.last_input_service = None;
         for service in self.services.iter_mut() {
             if let Some(service) = service {

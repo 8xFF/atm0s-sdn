@@ -15,6 +15,7 @@ use crate::san_io_utils::TasksSwitcher;
 pub struct FeatureWorkerManager {
     neighbours: neighbours::NeighboursFeatureWorker,
     data: data::DataFeatureWorker,
+    router_sync: router_sync::RouterSyncFeatureWorker,
     last_input_feature: Option<u8>,
     switcher: TasksSwitcher<256>,
 }
@@ -24,6 +25,7 @@ impl FeatureWorkerManager {
         Self {
             neighbours: neighbours::NeighboursFeatureWorker::default(),
             data: data::DataFeatureWorker::default(),
+            router_sync: router_sync::RouterSyncFeatureWorker::default(),
             last_input_feature: None,
             switcher: TasksSwitcher::default(),
         }
@@ -40,19 +42,23 @@ impl FeatureWorkerManager {
             FeatureWorkerInput::Control(service, control) => match control {
                 FeaturesControl::Data(control) => self.data.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| a.into2()),
                 FeaturesControl::Neighbours(control) => self.neighbours.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| a.into2()),
+                FeaturesControl::RouterSync(control) => self.router_sync.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| a.into2()),
             },
             FeatureWorkerInput::FromController(to) => match to {
                 FeaturesToWorker::Data(to) => self.data.on_input(ctx, now_ms, FeatureWorkerInput::FromController(to)).map(|a| a.into2()),
                 FeaturesToWorker::Neighbours(to) => self.neighbours.on_input(ctx, now_ms, FeatureWorkerInput::FromController(to)).map(|a| a.into2()),
+                FeaturesToWorker::RouterSync(to) => self.router_sync.on_input(ctx, now_ms, FeatureWorkerInput::FromController(to)).map(|a| a.into2()),
             },
             FeatureWorkerInput::Network(conn, msg) => match msg.header.feature {
                 data::FEATURE_ID => self.data.on_input(ctx, now_ms, FeatureWorkerInput::Network(conn, msg)).map(|a| a.into2()),
                 neighbours::FEATURE_ID => self.neighbours.on_input(ctx, now_ms, FeatureWorkerInput::Network(conn, msg)).map(|a| a.into2()),
+                router_sync::FEATURE_ID => self.router_sync.on_input(ctx, now_ms, FeatureWorkerInput::Network(conn, msg)).map(|a| a.into2()),
                 _ => None,
             },
             FeatureWorkerInput::Local(msg) => match msg.header.feature {
                 data::FEATURE_ID => self.data.on_input(ctx, now_ms, FeatureWorkerInput::Local(msg)).map(|a| a.into2()),
                 neighbours::FEATURE_ID => self.neighbours.on_input(ctx, now_ms, FeatureWorkerInput::Local(msg)).map(|a| a.into2()),
+                router_sync::FEATURE_ID => self.router_sync.on_input(ctx, now_ms, FeatureWorkerInput::Local(msg)).map(|a| a.into2()),
                 _ => None,
             },
         }
@@ -63,6 +69,7 @@ impl FeatureWorkerManager {
             match last_feature {
                 data::FEATURE_ID => self.data.pop_output().map(|a| a.into2()),
                 neighbours::FEATURE_ID => self.neighbours.pop_output().map(|a| a.into2()),
+                router_sync::FEATURE_ID => self.router_sync.pop_output().map(|a| a.into2()),
                 _ => None,
             }
         } else {
@@ -76,6 +83,11 @@ impl FeatureWorkerManager {
                     }
                     data::FEATURE_ID => {
                         if let Some(out) = s.process(self.data.pop_output()) {
+                            return Some(out.into2());
+                        }
+                    }
+                    router_sync::FEATURE_ID => {
+                        if let Some(out) = s.process(self.router_sync.pop_output()) {
                             return Some(out.into2());
                         }
                     }
