@@ -73,10 +73,13 @@ impl<TC, TW> DataPlaneTask<TC, TW> {
                 to,
                 data: convert_buf1(buf),
             })),
+            #[cfg(feature = "vpn")]
             DataPlaneOutput::Net(NetOutput::TunPacket(buf)) => Some(TaskOutput::Net(NetOutgoing::TunPacket {
                 slot: self.backend_tun_slot,
                 data: convert_buf1(buf),
             })),
+            #[cfg(not(feature = "vpn"))]
+            DataPlaneOutput::Net(NetOutput::TunPacket(_)) => None,
             DataPlaneOutput::Net(NetOutput::UdpPackets(to, buf)) => Some(TaskOutput::Net(NetOutgoing::UdpPackets {
                 slot: self.backend_udp_slot,
                 to,

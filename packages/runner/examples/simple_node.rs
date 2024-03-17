@@ -1,6 +1,6 @@
 use atm0s_sdn_identity::{NodeAddr, NodeId};
 use clap::{Parser, ValueEnum};
-use sans_io_runtime::backend::{MioBackend, PollBackend};
+use sans_io_runtime::backend::{MioBackend, PollBackend, PollingBackend};
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -14,6 +14,7 @@ use atm0s_sdn::builder::SdnBuilder;
 #[derive(Debug, Clone, ValueEnum)]
 enum BackendType {
     Poll,
+    Polling,
     Mio,
 }
 
@@ -38,7 +39,7 @@ struct Args {
     password: String,
 
     /// Backend type
-    #[arg(short, long, default_value = "poll")]
+    #[arg(short, long, default_value = "polling")]
     backend: BackendType,
 }
 
@@ -60,6 +61,7 @@ fn main() {
     let mut controller = match args.backend {
         BackendType::Mio => builder.build::<MioBackend<128, 128>, TC, TW>(2),
         BackendType::Poll => builder.build::<PollBackend<128, 128>, TC, TW>(2),
+        BackendType::Polling => builder.build::<PollingBackend<128, 128>, TC, TW>(2),
     };
 
     while controller.process().is_some() {
