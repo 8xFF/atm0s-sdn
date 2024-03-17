@@ -10,7 +10,7 @@ license = "MIT"
 
 [dependencies]
 thiserror = { workspace = true }
-sans-io-runtime = { git = "https://github.com/giangndm/sans-io-runtime.git", features = ["poll-backend", "polling-backend", "mio-backend", "udp"], rev = "a26b9539f4f6ddafe4eb1377ab96f3464ceb1e05"}
+sans-io-runtime = { git = "https://github.com/giangndm/sans-io-runtime.git", features = ["poll-backend", "polling-backend", "mio-backend", "udp"], rev = "4c96000a27daf720c14272edc258c21726ba3158"}
 atm0s-sdn-identity = { path = "../core/identity", version = "0.2.0" }
 atm0s-sdn-router = { path = "../core/router", version = "0.1.4" }
 atm0s-sdn-network = { path = "../network", version = "0.3.1" }

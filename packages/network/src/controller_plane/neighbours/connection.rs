@@ -230,9 +230,10 @@ impl NeighbourConnection {
                 if session == self.session {
                     if let State::Connected { last_pong_ms, stats, .. } = &mut self.state {
                         *last_pong_ms = now_ms;
-                        if sent_ms < now_ms {
+                        if sent_ms <= now_ms {
                             stats.rtt_ms = (now_ms - sent_ms) as u32;
                             self.output.push_back(Output::Event(ConnectionEvent::Stats(stats.clone())));
+                            log::trace!("Received pong from {} after {}", self.remote, stats.rtt_ms);
                         } else {
                             log::warn!("Invalid sent_ms in pong from {}", self.remote);
                         }

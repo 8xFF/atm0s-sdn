@@ -52,7 +52,10 @@ impl VpnFeatureWorker {
     }
 
     fn process_tun<'a>(&mut self, ctx: &FeatureWorkerContext, mut pkt: GenericBufferMut<'a>) -> Option<FeatureWorkerOutput<'a, Control, Event, ToController>> {
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         let to_ip = &pkt[20..24];
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        let to_ip = &pkt[16..20];
         let dest = NodeId::build(self.node_id.geo1(), self.node_id.geo2(), self.node_id.group(), to_ip[3]);
         if dest == self.node_id {
             //This is for me, just echo back

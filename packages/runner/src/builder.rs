@@ -64,7 +64,7 @@ impl SdnBuilder {
         let (tun_device, mut queue_fds) = {
             let vpn_ip = self.vpn_ip.unwrap_or((10, 33, 33, self.node_id as u8));
             let vpn_netmask = self.vpn_netmask.unwrap_or((255, 255, 255, 0));
-            let mut tun_device = sans_io_runtime::backend::tun::create_tun(&format!("utun{}", self.node_id as u8), vpn_ip, vpn_netmask, workers);
+            let mut tun_device = sans_io_runtime::backend::tun::create_tun(&format!("utun{}", self.node_id as u8), vpn_ip, vpn_netmask, 1400, workers);
             let mut queue_fds = std::collections::VecDeque::with_capacity(workers);
             for i in 0..workers {
                 queue_fds.push_back(tun_device.get_queue_fd(i).expect("Should have tun queue fd"));
