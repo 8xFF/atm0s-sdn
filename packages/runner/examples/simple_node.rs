@@ -41,6 +41,10 @@ struct Args {
     /// Backend type
     #[arg(short, long, default_value = "polling")]
     backend: BackendType,
+
+    /// Workers
+    #[arg(short, long, default_value_t = 2)]
+    workers: usize,
 }
 
 type TC = ();
@@ -59,9 +63,9 @@ fn main() {
     }
 
     let mut controller = match args.backend {
-        BackendType::Mio => builder.build::<MioBackend<128, 128>, TC, TW>(2),
-        BackendType::Poll => builder.build::<PollBackend<128, 128>, TC, TW>(2),
-        BackendType::Polling => builder.build::<PollingBackend<128, 128>, TC, TW>(2),
+        BackendType::Mio => builder.build::<MioBackend<128, 128>, TC, TW>(args.workers),
+        BackendType::Poll => builder.build::<PollBackend<128, 128>, TC, TW>(args.workers),
+        BackendType::Polling => builder.build::<PollingBackend<128, 128>, TC, TW>(args.workers),
     };
 
     while controller.process().is_some() {
