@@ -159,6 +159,10 @@ impl<TC: Debug, TW: Debug> Task<ChannelIn, ChannelOut, EventIn<TW>, EventOut<TC>
                     let out = self.data_plane.on_event(now_ms, DataPlaneInput::Net(NetInput::TunPacket(data.into())))?;
                     self.try_process_output(now, out)
                 }
+                #[cfg(not(feature = "vpn"))]
+                NetIncoming::TunBindResult { .. } => None,
+                #[cfg(not(feature = "vpn"))]
+                NetIncoming::TunPacket { .. } => None,
             },
             TaskInput::Bus(_, event) => {
                 let output = self.data_plane.on_event(self.timer.timestamp_ms(now), DataPlaneInput::Bus(event))?;
