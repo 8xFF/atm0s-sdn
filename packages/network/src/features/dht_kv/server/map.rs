@@ -223,20 +223,27 @@ impl RemoteMap {
         self.slots.get_mut(&(sub, source))
     }
 
+    /// Because source already has this data, then we only fire to other nodes
     fn fire_event(&mut self, now: u64, sub: SubKey, source: NodeSession, event: ServerMapEvent) {
         if self.subs.is_empty() {
             return;
         }
         let mut remotes = vec![];
         for (remote, _) in &self.subs {
-            remotes.push(*remote);
-            self.queue.push_back((*remote, event.clone()));
+            if *remote != source {
+                remotes.push(*remote);
+                self.queue.push_back((*remote, event.clone()));
+            }
         }
         self.slots_event.insert((sub, source), WaitAcksEvent { event, remotes, last_send_ms: now });
     }
 
+    /// We only send events which not owned by remote
     fn fire_sub_events(&mut self, now: u64, remote: NodeSession) {
         for (sub, slot) in self.slots.iter() {
+            if sub.1 == remote {
+                continue;
+            }
             if let Some((version, data)) = slot.dump() {
                 let event = ServerMapEvent::OnSet {
                     sub: sub.0,
@@ -741,6 +748,35 @@ mod test {
 
     #[test]
     fn map_event_should_not_send_to_source() {
-        todo!()
+        let relay = NodeSession(1, 2);
+        let mut map = RemoteMap::new(relay);
+
+        let source = NodeSession(3, 4);
+
+        assert_eq!(map.on_client(0, source, ClientMapCommand::Sub(1, None)), Some(ServerMapEvent::SubOk(1)));
+        assert_eq!(map.pop_action(), None);
+
+        assert_eq!(
+            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(SubKey(1000), Version(1)))
+        );
+        assert_eq!(map.pop_action(), None);
+    }
+
+    #[test]
+    fn map_event_should_not_send_to_source_after_set() {
+        let relay = NodeSession(1, 2);
+        let mut map = RemoteMap::new(relay);
+
+        let source = NodeSession(3, 4);
+
+        assert_eq!(
+            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(SubKey(1000), Version(1)))
+        );
+        assert_eq!(map.pop_action(), None);
+
+        assert_eq!(map.on_client(0, source, ClientMapCommand::Sub(1, None)), Some(ServerMapEvent::SubOk(1)));
+        assert_eq!(map.pop_action(), None);
     }
 }
