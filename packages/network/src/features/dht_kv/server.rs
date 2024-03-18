@@ -4,43 +4,41 @@ use self::map::RemoteMap;
 
 use super::{
     msg::{ClientCommand, NodeSession, ServerEvent, ServerMapEvent},
-    seq::SeqGenerator,
     Key,
 };
 
 mod map;
 
 pub struct RemoteStorage {
+    session: NodeSession,
     maps: HashMap<Key, RemoteMap>,
-    seq_gen: SeqGenerator,
     queue: VecDeque<(NodeSession, ServerEvent)>,
 }
 
 impl RemoteStorage {
-    pub fn new() -> Self {
+    pub fn new(session: NodeSession) -> Self {
         Self {
+            session,
             maps: HashMap::new(),
-            seq_gen: SeqGenerator::default(),
             queue: VecDeque::new(),
         }
     }
 
     pub fn on_tick(&mut self, now: u64) {
-        // let mut to_remove = vec![];
-        // for (key, map) in self.maps.iter_mut() {
-        //     if let Some(syncs) = map.on_tick(now) {
-        //         for cmd in syncs {
-        //             self.queue.push_back((NodeId::default(), ServerCommand::Map(*key, cmd)));
-        //         }
-        //     }
-        //     if map.should_clean() {
-        //         to_remove.push(*key);
-        //     }
-        // }
+        let mut to_remove = vec![];
+        for (key, map) in self.maps.iter_mut() {
+            map.on_tick(now);
+            while let Some((session, event)) = map.pop_action() {
+                self.queue.push_back((session, ServerEvent::Map(*key, event)));
+            }
+            if map.should_clean() {
+                to_remove.push(*key);
+            }
+        }
 
-        // for key in to_remove {
-        //     self.maps.remove(&key);
-        // }
+        for key in to_remove {
+            self.maps.remove(&key);
+        }
     }
 
     pub fn on_remote(&mut self, now: u64, remote: NodeSession, cmd: ClientCommand) {
@@ -50,7 +48,7 @@ impl RemoteStorage {
                     map
                 } else {
                     if cmd.is_creator() {
-                        self.maps.insert(key, RemoteMap::default());
+                        self.maps.insert(key, RemoteMap::new(self.session));
                         self.maps.get_mut(&key).expect("Must have value with previous insterted")
                     } else {
                         return;
@@ -59,6 +57,9 @@ impl RemoteStorage {
 
                 if let Some(event) = map.on_client(now, remote, cmd) {
                     self.queue.push_back((remote, ServerEvent::Map(key, event)));
+                    while let Some((session, event)) = map.pop_action() {
+                        self.queue.push_back((session, ServerEvent::Map(key, event)));
+                    }
                 }
             }
             ClientCommand::MapGet(key, id) => {

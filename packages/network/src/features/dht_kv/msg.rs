@@ -34,17 +34,17 @@ pub(crate) enum RemoteCommand {
 pub enum ClientMapCommand {
     Set(SubKey, Version, Vec<u8>),
     Del(SubKey, Version),
-    Sub(u64),
+    Sub(u64, Option<NodeSession>), //
     Unsub(u64),
-    OnSetAck(SubKey, Version), //Seq from OnHSet
-    OnDelAck(SubKey, Version), //Seq from OnHDel
+    OnSetAck(SubKey, NodeSession, Version), //Seq from OnHSet
+    OnDelAck(SubKey, NodeSession, Version), //Seq from OnHDel
 }
 
 impl ClientMapCommand {
     pub fn is_creator(&self) -> bool {
         match self {
             ClientMapCommand::Set(_, _, _) => true,
-            ClientMapCommand::Sub(_) => true,
+            ClientMapCommand::Sub(_, _) => true,
             _ => false,
         }
     }
@@ -64,9 +64,9 @@ pub(crate) enum ServerMapEvent {
     DelOk(SubKey, Version),
     SubOk(u64),
     UnsubOk(u64),
-    GetOk(u64, Vec<(SubKey, Version, NodeSession, Vec<u8>)>),
-    OnSet { sub: SubKey, version: Version, source: NodeSession, data: Vec<u8> },
-    OnDel { sub: SubKey, version: Version, source: NodeSession },
+    GetOk(u64, Vec<(SubKey, NodeSession, Version, Vec<u8>)>),
+    OnSet { sub: SubKey, source: NodeSession, version: Version, data: Vec<u8> },
+    OnDel { sub: SubKey, source: NodeSession, version: Version },
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -7,7 +7,7 @@ const TIMEOUT_MS: u64 = 10000; //We will remove sub if we don't get any message 
 
 enum MapSlot {
     Unspecific,
-    Set { data: Vec<u8>, version: Version, locker: NodeSession, live_at: u64 },
+    Set { data: Vec<u8>, version: Version, live_at: u64 },
 }
 
 impl MapSlot {
@@ -15,19 +15,18 @@ impl MapSlot {
         Self::Unspecific
     }
 
-    fn set(&mut self, now: u64, remote: NodeSession, new_version: Version, new_data: Vec<u8>) -> bool {
+    fn set(&mut self, now: u64, new_version: Version, new_data: Vec<u8>) -> bool {
         match self {
             MapSlot::Unspecific => {
                 *self = MapSlot::Set {
                     data: new_data,
                     version: new_version,
-                    locker: remote,
                     live_at: now,
                 };
                 true
             }
-            MapSlot::Set { locker, version, data, live_at } => {
-                if locker.0 == remote.0 && locker.1 == remote.1 && version.0 < new_version.0 {
+            MapSlot::Set { version, data, live_at } => {
+                if version.0 < new_version.0 {
                     *version = new_version;
                     *data = new_data;
                     *live_at = now;
@@ -39,11 +38,11 @@ impl MapSlot {
         }
     }
 
-    fn del(&mut self, _now: u64, remote: NodeSession, version: Version) -> bool {
+    fn del(&mut self, _now: u64, version: Version) -> bool {
         match self {
             MapSlot::Unspecific => false,
-            MapSlot::Set { locker, version: current_version, .. } => {
-                if locker.0 == remote.0 && locker.1 == remote.1 && version.0 >= current_version.0 {
+            MapSlot::Set { version: current_version, .. } => {
+                if version.0 >= current_version.0 {
                     *self = MapSlot::Unspecific;
                     true
                 } else {
@@ -53,10 +52,22 @@ impl MapSlot {
         }
     }
 
-    fn dump(&self) -> Option<(Version, NodeSession, Vec<u8>)> {
+    fn get_event(&self, sub: SubKey, source: NodeSession) -> Option<ServerMapEvent> {
         match self {
             MapSlot::Unspecific => None,
-            MapSlot::Set { version, data, locker, .. } => Some((*version, *locker, data.clone())),
+            MapSlot::Set { version, data, .. } => Some(ServerMapEvent::OnSet {
+                sub,
+                version: *version,
+                source,
+                data: data.clone(),
+            }),
+        }
+    }
+
+    fn dump(&self) -> Option<(Version, Vec<u8>)> {
+        match self {
+            MapSlot::Unspecific => None,
+            MapSlot::Set { version, data, .. } => Some((*version, data.clone())),
         }
     }
 }
@@ -68,19 +79,29 @@ struct WaitAcksEvent {
 }
 
 struct SubSlot {
-    session: u64,
+    id: u64,
     last_ts: u64,
 }
 
-#[derive(Default)]
 pub struct RemoteMap {
-    slots: HashMap<SubKey, MapSlot>,
-    slots_event: HashMap<SubKey, WaitAcksEvent>,
+    session: NodeSession,
+    slots: HashMap<(SubKey, NodeSession), MapSlot>,
+    slots_event: HashMap<(SubKey, NodeSession), WaitAcksEvent>,
     subs: HashMap<NodeSession, SubSlot>,
     queue: VecDeque<(NodeSession, ServerMapEvent)>,
 }
 
 impl RemoteMap {
+    pub fn new(session: NodeSession) -> Self {
+        Self {
+            session,
+            slots: HashMap::new(),
+            slots_event: HashMap::new(),
+            subs: HashMap::new(),
+            queue: VecDeque::new(),
+        }
+    }
+
     pub fn on_tick(&mut self, now: u64) {
         //clean-up timeout subs
         let mut to_remove = vec![];
@@ -112,12 +133,12 @@ impl RemoteMap {
         }
     }
 
-    pub fn dump(&self) -> Vec<(SubKey, Version, NodeSession, Vec<u8>)> {
+    pub fn dump(&self) -> Vec<(SubKey, NodeSession, Version, Vec<u8>)> {
         self.slots
             .iter()
-            .filter_map(|(sub, slot)| {
-                if let Some((version, locker, data)) = slot.dump() {
-                    Some((*sub, version, locker, data))
+            .filter_map(|((sub, session), slot)| {
+                if let Some((version, data)) = slot.dump() {
+                    Some((*sub, *session, version, data))
                 } else {
                     None
                 }
@@ -128,57 +149,60 @@ impl RemoteMap {
     pub fn on_client(&mut self, now: u64, remote: NodeSession, cmd: ClientMapCommand) -> Option<ServerMapEvent> {
         match cmd {
             ClientMapCommand::Set(sub, version, data) => {
-                let slot = self.get_slot(sub, true).expect("must have slot with auto_create");
-                if slot.set(now, remote, version, data.clone()) {
-                    self.fire_event(now, sub, ServerMapEvent::OnSet { sub, version, source: remote, data });
+                let slot = self.get_slot(sub, remote, true).expect("must have slot with auto_create");
+                if slot.set(now, version, data.clone()) {
+                    self.fire_event(now, sub, remote, ServerMapEvent::OnSet { sub, version, source: remote, data });
                     Some(ServerMapEvent::SetOk(sub, version))
                 } else {
                     None
                 }
             }
             ClientMapCommand::Del(sub, version) => {
-                let slot = self.get_slot(sub, false)?;
-                if slot.del(now, remote, version) {
-                    self.fire_event(now, sub, ServerMapEvent::OnDel { sub, version, source: remote });
+                let slot = self.get_slot(sub, remote, false)?;
+                if slot.del(now, version) {
+                    self.fire_event(now, sub, remote, ServerMapEvent::OnDel { sub, version, source: remote });
                     Some(ServerMapEvent::DelOk(sub, version))
                 } else {
                     None
                 }
             }
-            ClientMapCommand::Sub(session) => {
-                self.subs.insert(remote, SubSlot { last_ts: now, session });
-                Some(ServerMapEvent::SubOk(session))
+            ClientMapCommand::Sub(id, locked_session) => {
+                let old = self.subs.insert(remote, SubSlot { last_ts: now, id });
+                if old.is_none() || locked_session != Some(self.session) {
+                    self.fire_sub_events(now, remote);
+                }
+                Some(ServerMapEvent::SubOk(id))
             }
-            ClientMapCommand::Unsub(session) => {
+            ClientMapCommand::Unsub(id) => {
                 let sub = self.subs.get(&remote)?;
-                if sub.session == session {
+                if sub.id == id {
                     self.subs.remove(&remote);
-                    Some(ServerMapEvent::UnsubOk(session))
+                    Some(ServerMapEvent::UnsubOk(id))
                 } else {
                     None
                 }
             }
-            ClientMapCommand::OnSetAck(sub, acked_version) => {
-                let slot = self.slots_event.get_mut(&sub)?;
+            ClientMapCommand::OnSetAck(sub, session, acked_version) => {
+                let slot = self.slots_event.get_mut(&(sub, session))?;
                 if let ServerMapEvent::OnSet { version, .. } = &slot.event {
                     if acked_version == *version {
                         slot.remotes.retain(|r| *r != remote);
                     }
                 }
                 if slot.remotes.is_empty() {
-                    self.slots_event.remove(&sub);
+                    self.slots_event.remove(&(sub, session));
                 }
                 None
             }
-            ClientMapCommand::OnDelAck(sub, acked_version) => {
-                let slot = self.slots_event.get_mut(&sub)?;
+            ClientMapCommand::OnDelAck(sub, session, acked_version) => {
+                let slot = self.slots_event.get_mut(&(sub, session))?;
                 if let ServerMapEvent::OnDel { version, .. } = &slot.event {
                     if acked_version == *version {
                         slot.remotes.retain(|r| *r != remote);
                     }
                 }
                 if slot.remotes.is_empty() {
-                    self.slots_event.remove(&sub);
+                    self.slots_event.remove(&(sub, session));
                 }
                 None
             }
@@ -193,14 +217,14 @@ impl RemoteMap {
         self.slots.is_empty() && self.subs.is_empty() && self.slots_event.is_empty()
     }
 
-    fn get_slot(&mut self, sub: SubKey, auto_create: bool) -> Option<&mut MapSlot> {
-        if !self.slots.contains_key(&sub) {
-            self.slots.insert(sub, MapSlot::new());
+    fn get_slot(&mut self, sub: SubKey, source: NodeSession, auto_create: bool) -> Option<&mut MapSlot> {
+        if !self.slots.contains_key(&(sub, source)) {
+            self.slots.insert((sub, source), MapSlot::new());
         }
-        self.slots.get_mut(&sub)
+        self.slots.get_mut(&(sub, source))
     }
 
-    fn fire_event(&mut self, now: u64, sub: SubKey, event: ServerMapEvent) {
+    fn fire_event(&mut self, now: u64, sub: SubKey, source: NodeSession, event: ServerMapEvent) {
         if self.subs.is_empty() {
             return;
         }
@@ -208,6 +232,22 @@ impl RemoteMap {
         for (remote, _) in &self.subs {
             self.queue.push_back((*remote, event.clone()));
         }
-        self.slots_event.insert(sub, WaitAcksEvent { event, remotes, last_send_ms: now });
+        self.slots_event.insert((sub, source), WaitAcksEvent { event, remotes, last_send_ms: now });
+    }
+
+    fn fire_sub_events(&mut self, now: u64, remote: NodeSession) {
+        for (sub, slot) in self.slots.iter() {
+            if let Some(event) = slot.get_event(sub.0, sub.1) {
+                let entry = self.slots_event.entry(*sub).or_insert_with(|| WaitAcksEvent {
+                    event: event.clone(),
+                    remotes: vec![],
+                    last_send_ms: now,
+                });
+                if !entry.remotes.contains(&remote) {
+                    entry.remotes.push(remote);
+                }
+                self.queue.push_back((remote, event));
+            }
+        }
     }
 }

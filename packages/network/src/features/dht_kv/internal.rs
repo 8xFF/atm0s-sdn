@@ -24,8 +24,8 @@ impl DhtKvInternal {
     pub fn new(session: NodeSession) -> Self {
         Self {
             session,
-            local: LocalStorage::new(),
-            remote: RemoteStorage::new(),
+            local: LocalStorage::new(session),
+            remote: RemoteStorage::new(session),
         }
     }
 

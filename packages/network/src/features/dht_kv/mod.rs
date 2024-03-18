@@ -18,34 +18,53 @@ use self::{
 mod client;
 mod internal;
 mod msg;
-mod seq;
 mod server;
 
 pub const FEATURE_ID: u8 = 4;
 pub const FEATURE_NAME: &str = "dht_kv";
 
 #[derive(Debug, Clone)]
-pub enum Control {
-    HSet(Key, SubKey, Vec<u8>),
-    HGet(Key, SubKey),
-    HDel(Key, SubKey),
-    HSub(Key),
-    HUnsub(Key),
+pub enum MapControl {
+    Set(SubKey, Vec<u8>),
+    Del(SubKey),
+    Get,
+    Sub,
+    Unsub,
+}
+
+impl MapControl {
+    pub fn is_creator(&self) -> bool {
+        match self {
+            MapControl::Set(_, _) => true,
+            MapControl::Sub => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
-pub enum HGetError {
+pub enum Control {
+    Map(Key, MapControl),
+}
+
+#[derive(Debug, Clone)]
+pub enum GetError {
     Timeout,
     NotFound,
 }
 
 #[derive(Debug, Clone)]
+pub enum MapEvent {
+    SetOk(SubKey, NodeId),
+    DelOk(SubKey, NodeId),
+    GetRes(Result<(Vec<(SubKey, Vec<u8>, NodeId, u64)>, NodeId), GetError>),
+    OnSet(SubKey, NodeId, Vec<u8>),
+    OnDel(SubKey, NodeId),
+}
+
+#[derive(Debug, Clone)]
 pub enum Event {
-    HSetOk(Key, SubKey, NodeId),
-    HDelOk(Key, SubKey, NodeId),
-    HGetOk(Key, Result<(Vec<(SubKey, Vec<u8>, NodeId, u64)>, NodeId), HGetError>),
-    OnHSet(Key, SubKey, NodeId, Vec<u8>),
-    OnHDel(Key, SubKey, NodeId),
+    Map(Key, MapEvent),
 }
 
 #[derive(Debug, Clone)]
