@@ -47,12 +47,7 @@ impl LocalStorage {
         let mut to_remove = vec![];
         for (key, map) in self.maps.iter_mut() {
             map.on_tick(now);
-            while let Some(out) = map.pop_action() {
-                self.queue.push_back(match out {
-                    LocalMapOutput::Local(service, event) => LocalStorageOutput::Local(service, Event::MapEvent(*key, event)),
-                    LocalMapOutput::Remote(cmd) => LocalStorageOutput::Remote(route(*key), ClientCommand::MapCmd(*key, cmd)),
-                });
-            }
+            Self::pop_map_actions(*key, map, &mut self.queue);
             if map.should_cleanup() {
                 to_remove.push(*key);
             }
@@ -81,13 +76,8 @@ impl LocalStorage {
                 if let Some(map) = Self::get_map(&mut self.maps, self.session, key, control.is_creator()) {
                     if let Some(event) = map.on_control(now, service, control) {
                         self.queue.push_back(LocalStorageOutput::Remote(route(key), ClientCommand::MapCmd(key, event)));
-                        while let Some(out) = map.pop_action() {
-                            self.queue.push_back(match out {
-                                LocalMapOutput::Local(service, event) => LocalStorageOutput::Local(service, Event::MapEvent(key, event)),
-                                LocalMapOutput::Remote(cmd) => LocalStorageOutput::Remote(route(key), ClientCommand::MapCmd(key, cmd)),
-                            });
-                        }
                     }
+                    Self::pop_map_actions(key, map, &mut self.queue);
                 }
             }
             Control::MapGet(key) => {
@@ -106,12 +96,13 @@ impl LocalStorage {
                     if let Some(cmd) = map.on_server(now, remote, cmd) {
                         self.queue.push_back(LocalStorageOutput::Remote(route(key), ClientCommand::MapCmd(key, cmd)));
                     }
+                    Self::pop_map_actions(key, map, &mut self.queue);
                 } else {
                     log::warn!("Received remote command for unknown map: {:?}", key);
                 }
             }
             ServerEvent::MapGetRes(key, req_id, res) => {
-                if let Some((service, req_id)) = self.map_get_waits.remove(&(key, req_id)) {
+                if let Some((service, _time_ms)) = self.map_get_waits.remove(&(key, req_id)) {
                     self.queue.push_back(LocalStorageOutput::Local(service, Event::MapGetRes(key, Ok(res))));
                 }
             }
@@ -127,5 +118,14 @@ impl LocalStorage {
             maps.insert(key, LocalMap::new(session));
         }
         maps.get_mut(&key)
+    }
+
+    fn pop_map_actions(key: Key, map: &mut LocalMap, queue: &mut VecDeque<LocalStorageOutput>) {
+        while let Some(out) = map.pop_action() {
+            queue.push_back(match out {
+                LocalMapOutput::Local(service, event) => LocalStorageOutput::Local(service, Event::MapEvent(key, event)),
+                LocalMapOutput::Remote(cmd) => LocalStorageOutput::Remote(route(key), ClientCommand::MapCmd(key, cmd)),
+            });
+        }
     }
 }

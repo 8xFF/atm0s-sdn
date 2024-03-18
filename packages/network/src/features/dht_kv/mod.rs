@@ -53,7 +53,7 @@ pub enum GetError {
     NotFound,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MapEvent {
     SetOk(SubKey, NodeId),
     DelOk(SubKey, NodeId),

@@ -738,4 +738,9 @@ mod test {
 
         assert_eq!(map.pop_action(), None);
     }
+
+    #[test]
+    fn map_event_should_not_send_to_source() {
+        todo!()
+    }
 }
