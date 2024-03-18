@@ -217,7 +217,7 @@ impl RemoteMap {
     }
 
     fn get_slot(&mut self, sub: SubKey, source: NodeSession, auto_create: bool) -> Option<&mut MapSlot> {
-        if !self.slots.contains_key(&(sub, source)) {
+        if !self.slots.contains_key(&(sub, source)) && auto_create {
             self.slots.insert((sub, source), MapSlot::new());
         }
         self.slots.get_mut(&(sub, source))
