@@ -38,29 +38,18 @@ impl MapSlot {
         }
     }
 
-    fn del(&mut self, _now: u64, version: Version) -> bool {
-        match self {
-            MapSlot::Unspecific => false,
-            MapSlot::Set { version: current_version, .. } => {
-                if version.0 >= current_version.0 {
-                    *self = MapSlot::Unspecific;
-                    true
-                } else {
-                    false
-                }
-            }
-        }
-    }
-
-    fn get_event(&self, sub: SubKey, source: NodeSession) -> Option<ServerMapEvent> {
+    fn del(&mut self, _now: u64, version: Version) -> Option<Version> {
         match self {
             MapSlot::Unspecific => None,
-            MapSlot::Set { version, data, .. } => Some(ServerMapEvent::OnSet {
-                sub,
-                version: *version,
-                source,
-                data: data.clone(),
-            }),
+            MapSlot::Set { version: current_version, .. } => {
+                if version.0 >= current_version.0 {
+                    let del_version = *current_version;
+                    *self = MapSlot::Unspecific;
+                    Some(del_version)
+                } else {
+                    None
+                }
+            }
         }
     }
 
@@ -159,9 +148,19 @@ impl RemoteMap {
             }
             ClientMapCommand::Del(sub, version) => {
                 let slot = self.get_slot(sub, remote, false)?;
-                if slot.del(now, version) {
-                    self.fire_event(now, sub, remote, ServerMapEvent::OnDel { sub, version, source: remote });
-                    Some(ServerMapEvent::DelOk(sub, version))
+                if let Some(del_version) = slot.del(now, version) {
+                    self.slots.remove(&(sub, remote));
+                    self.fire_event(
+                        now,
+                        sub,
+                        remote,
+                        ServerMapEvent::OnDel {
+                            sub,
+                            version: del_version,
+                            source: remote,
+                        },
+                    );
+                    Some(ServerMapEvent::DelOk(sub, del_version))
                 } else {
                     None
                 }
@@ -230,6 +229,7 @@ impl RemoteMap {
         }
         let mut remotes = vec![];
         for (remote, _) in &self.subs {
+            remotes.push(*remote);
             self.queue.push_back((*remote, event.clone()));
         }
         self.slots_event.insert((sub, source), WaitAcksEvent { event, remotes, last_send_ms: now });
@@ -237,7 +237,13 @@ impl RemoteMap {
 
     fn fire_sub_events(&mut self, now: u64, remote: NodeSession) {
         for (sub, slot) in self.slots.iter() {
-            if let Some(event) = slot.get_event(sub.0, sub.1) {
+            if let Some((version, data)) = slot.dump() {
+                let event = ServerMapEvent::OnSet {
+                    sub: sub.0,
+                    version,
+                    source: sub.1,
+                    data,
+                };
                 let entry = self.slots_event.entry(*sub).or_insert_with(|| WaitAcksEvent {
                     event: event.clone(),
                     remotes: vec![],
@@ -249,5 +255,487 @@ impl RemoteMap {
                 self.queue.push_back((remote, event));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::{MapSlot, RemoteMap};
+    use crate::features::dht_kv::{
+        msg::{ClientMapCommand, NodeSession, ServerMapEvent, SubKey, Version},
+        server::map::RESEND_MS,
+    };
+
+    #[test]
+    fn map_slot_set_del_corect() {
+        let mut slot = MapSlot::new();
+
+        assert_eq!(slot.set(0, Version(0), vec![1, 2, 3]), true);
+        assert_eq!(slot.dump(), Some((Version(0), vec![1, 2, 3])));
+        assert_eq!(slot.set(0, Version(1), vec![1, 2, 4]), true);
+        assert_eq!(slot.dump(), Some((Version(1), vec![1, 2, 4])));
+        assert_eq!(slot.del(0, Version(1)), Some(Version(1)));
+        assert_eq!(slot.dump(), None);
+    }
+
+    #[test]
+    fn map_slot_set_del_newer_version_corect() {
+        let mut slot = MapSlot::new();
+
+        assert_eq!(slot.set(0, Version(0), vec![1, 2, 3]), true);
+        assert_eq!(slot.dump(), Some((Version(0), vec![1, 2, 3])));
+        assert_eq!(slot.del(0, Version(100)), Some(Version(0)));
+        assert_eq!(slot.dump(), None);
+    }
+
+    #[test]
+    fn map_slot_set_del_invalid() {
+        let mut slot = MapSlot::new();
+
+        assert_eq!(slot.set(0, Version(100), vec![1, 2, 3]), true);
+        assert_eq!(slot.dump(), Some((Version(100), vec![1, 2, 3])));
+        assert_eq!(slot.set(0, Version(1), vec![1, 2, 4]), false);
+        assert_eq!(slot.dump(), Some((Version(100), vec![1, 2, 3])));
+        assert_eq!(slot.del(0, Version(1)), None);
+        assert_eq!(slot.dump(), Some((Version(100), vec![1, 2, 3])));
+    }
+
+    #[test]
+    fn map_correct_set_update_del_event() {
+        let relay = NodeSession(1, 2);
+        let mut map = RemoteMap::new(relay);
+
+        let source = NodeSession(3, 4);
+        let consumer = NodeSession(5, 6);
+
+        assert_eq!(map.on_client(0, consumer, ClientMapCommand::Sub(1, None)), Some(ServerMapEvent::SubOk(1)));
+        assert_eq!(
+            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(SubKey(1000), Version(1)))
+        );
+        assert_eq!(
+            map.pop_action(),
+            Some((
+                consumer,
+                ServerMapEvent::OnSet {
+                    sub: SubKey(1000),
+                    version: Version(1),
+                    source,
+                    data: vec![1, 2, 3, 4]
+                }
+            ))
+        );
+
+        assert_eq!(
+            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(2), vec![1, 2, 3, 5])),
+            Some(ServerMapEvent::SetOk(SubKey(1000), Version(2)))
+        );
+        assert_eq!(
+            map.pop_action(),
+            Some((
+                consumer,
+                ServerMapEvent::OnSet {
+                    sub: SubKey(1000),
+                    version: Version(2),
+                    source,
+                    data: vec![1, 2, 3, 5]
+                }
+            ))
+        );
+
+        assert_eq!(
+            map.on_client(0, source, ClientMapCommand::Del(SubKey(1000), Version(2))),
+            Some(ServerMapEvent::DelOk(SubKey(1000), Version(2)))
+        );
+        assert_eq!(
+            map.pop_action(),
+            Some((
+                consumer,
+                ServerMapEvent::OnDel {
+                    sub: SubKey(1000),
+                    version: Version(2),
+                    source
+                }
+            ))
+        );
+    }
+
+    #[test]
+    fn map_correct_sub_after_set_event() {
+        let relay = NodeSession(1, 2);
+        let mut map = RemoteMap::new(relay);
+
+        let source = NodeSession(3, 4);
+        let consumer = NodeSession(5, 6);
+
+        assert_eq!(
+            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(SubKey(1000), Version(1)))
+        );
+        assert_eq!(map.pop_action(), None);
+
+        assert_eq!(map.on_client(1, consumer, ClientMapCommand::Sub(1, None)), Some(ServerMapEvent::SubOk(1)));
+        assert_eq!(
+            map.pop_action(),
+            Some((
+                consumer,
+                ServerMapEvent::OnSet {
+                    sub: SubKey(1000),
+                    version: Version(1),
+                    source,
+                    data: vec![1, 2, 3, 4]
+                }
+            ))
+        );
+
+        //if resub with same session, it should not fire event
+        assert_eq!(map.on_client(2, consumer, ClientMapCommand::Sub(2, Some(relay))), Some(ServerMapEvent::SubOk(2)));
+        assert_eq!(map.pop_action(), None);
+    }
+
+    #[test]
+    fn map_correct_sub_new_relay() {
+        let relay = NodeSession(1, 2);
+        let mut map = RemoteMap::new(relay);
+
+        let source = NodeSession(3, 4);
+        let consumer = NodeSession(5, 6);
+
+        assert_eq!(
+            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(SubKey(1000), Version(1)))
+        );
+        assert_eq!(map.pop_action(), None);
+
+        assert_eq!(map.on_client(1, consumer, ClientMapCommand::Sub(1, None)), Some(ServerMapEvent::SubOk(1)));
+        assert_eq!(
+            map.pop_action(),
+            Some((
+                consumer,
+                ServerMapEvent::OnSet {
+                    sub: SubKey(1000),
+                    version: Version(1),
+                    source,
+                    data: vec![1, 2, 3, 4]
+                }
+            ))
+        );
+
+        //if resub with new session, it should fire event
+        let old_relay = NodeSession(0, 1);
+
+        assert_eq!(map.on_client(2, consumer, ClientMapCommand::Sub(2, Some(old_relay))), Some(ServerMapEvent::SubOk(2)));
+        assert_eq!(
+            map.pop_action(),
+            Some((
+                consumer,
+                ServerMapEvent::OnSet {
+                    sub: SubKey(1000),
+                    version: Version(1),
+                    source,
+                    data: vec![1, 2, 3, 4]
+                }
+            ))
+        );
+        assert_eq!(map.pop_action(), None);
+    }
+
+    #[test]
+    fn map_correct_unsub() {
+        let relay = NodeSession(1, 2);
+        let mut map = RemoteMap::new(relay);
+
+        let source = NodeSession(3, 4);
+        let consumer = NodeSession(5, 6);
+
+        assert_eq!(map.on_client(0, consumer, ClientMapCommand::Sub(1, None)), Some(ServerMapEvent::SubOk(1)));
+        assert_eq!(map.pop_action(), None);
+        assert_eq!(map.on_client(0, consumer, ClientMapCommand::Unsub(1)), Some(ServerMapEvent::UnsubOk(1)));
+        assert_eq!(map.pop_action(), None);
+
+        assert_eq!(
+            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(SubKey(1000), Version(1)))
+        );
+        assert_eq!(map.pop_action(), None);
+    }
+
+    #[test]
+    fn map_invalid_unsub() {
+        let relay = NodeSession(1, 2);
+        let mut map = RemoteMap::new(relay);
+
+        let source = NodeSession(3, 4);
+        let consumer = NodeSession(5, 6);
+
+        assert_eq!(map.on_client(0, consumer, ClientMapCommand::Sub(1, None)), Some(ServerMapEvent::SubOk(1)));
+        assert_eq!(map.pop_action(), None);
+        //unsub with other sub-id with not affected
+        assert_eq!(map.on_client(0, consumer, ClientMapCommand::Unsub(100)), None);
+        assert_eq!(map.pop_action(), None);
+
+        assert_eq!(
+            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(SubKey(1000), Version(1)))
+        );
+        assert_eq!(
+            map.pop_action(),
+            Some((
+                consumer,
+                ServerMapEvent::OnSet {
+                    sub: SubKey(1000),
+                    version: Version(1),
+                    source,
+                    data: vec![1, 2, 3, 4]
+                }
+            ))
+        );
+        assert_eq!(map.pop_action(), None);
+    }
+
+    #[test]
+    fn map_invalid_set() {
+        let relay = NodeSession(1, 2);
+        let mut map = RemoteMap::new(relay);
+
+        let source = NodeSession(3, 4);
+        let consumer = NodeSession(5, 6);
+
+        assert_eq!(map.on_client(0, consumer, ClientMapCommand::Sub(1, None)), Some(ServerMapEvent::SubOk(1)));
+        assert_eq!(map.pop_action(), None);
+
+        assert_eq!(
+            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(SubKey(1000), Version(1)))
+        );
+        assert_eq!(
+            map.pop_action(),
+            Some((
+                consumer,
+                ServerMapEvent::OnSet {
+                    sub: SubKey(1000),
+                    version: Version(1),
+                    source,
+                    data: vec![1, 2, 3, 4]
+                }
+            ))
+        );
+        assert_eq!(map.pop_action(), None);
+
+        //set with same version should not affected
+        assert_eq!(map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])), None);
+        assert_eq!(map.pop_action(), None);
+    }
+
+    #[test]
+    fn map_invalid_del() {
+        let relay = NodeSession(1, 2);
+        let mut map = RemoteMap::new(relay);
+
+        let source = NodeSession(3, 4);
+        let consumer = NodeSession(5, 6);
+
+        assert_eq!(map.on_client(0, consumer, ClientMapCommand::Sub(1, None)), Some(ServerMapEvent::SubOk(1)));
+        assert_eq!(map.pop_action(), None);
+
+        assert_eq!(
+            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(SubKey(1000), Version(1)))
+        );
+        assert_eq!(
+            map.pop_action(),
+            Some((
+                consumer,
+                ServerMapEvent::OnSet {
+                    sub: SubKey(1000),
+                    version: Version(1),
+                    source,
+                    data: vec![1, 2, 3, 4]
+                }
+            ))
+        );
+        assert_eq!(map.pop_action(), None);
+
+        //del with older version should not affected
+        assert_eq!(map.on_client(0, source, ClientMapCommand::Del(SubKey(1000), Version(0))), None);
+        assert_eq!(map.pop_action(), None);
+        assert_eq!(map.slots.len(), 1);
+    }
+
+    #[test]
+    fn map_del_with_newer_version_should_work() {
+        let relay = NodeSession(1, 2);
+        let mut map = RemoteMap::new(relay);
+
+        let source = NodeSession(3, 4);
+        let consumer = NodeSession(5, 6);
+
+        assert_eq!(map.on_client(0, consumer, ClientMapCommand::Sub(1, None)), Some(ServerMapEvent::SubOk(1)));
+        assert_eq!(map.pop_action(), None);
+
+        assert_eq!(
+            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(SubKey(1000), Version(1)))
+        );
+        assert_eq!(
+            map.pop_action(),
+            Some((
+                consumer,
+                ServerMapEvent::OnSet {
+                    sub: SubKey(1000),
+                    version: Version(1),
+                    source,
+                    data: vec![1, 2, 3, 4]
+                }
+            ))
+        );
+        assert_eq!(map.pop_action(), None);
+
+        //del with newer version should affected
+        assert_eq!(
+            map.on_client(0, source, ClientMapCommand::Del(SubKey(1000), Version(2))),
+            Some(ServerMapEvent::DelOk(SubKey(1000), Version(1)))
+        );
+        assert_eq!(
+            map.pop_action(),
+            Some((
+                consumer,
+                ServerMapEvent::OnDel {
+                    sub: SubKey(1000),
+                    version: Version(1),
+                    source
+                }
+            ))
+        );
+        assert_eq!(map.pop_action(), None);
+        assert_eq!(map.slots.len(), 0);
+    }
+
+    #[test]
+    fn map_event_should_resend_before_ack() {
+        let relay = NodeSession(1, 2);
+        let mut map = RemoteMap::new(relay);
+
+        let source = NodeSession(3, 4);
+        let consumer = NodeSession(5, 6);
+
+        assert_eq!(map.on_client(0, consumer, ClientMapCommand::Sub(1, None)), Some(ServerMapEvent::SubOk(1)));
+        assert_eq!(map.pop_action(), None);
+
+        assert_eq!(
+            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(SubKey(1000), Version(1)))
+        );
+        assert_eq!(
+            map.pop_action(),
+            Some((
+                consumer,
+                ServerMapEvent::OnSet {
+                    sub: SubKey(1000),
+                    version: Version(1),
+                    source,
+                    data: vec![1, 2, 3, 4]
+                }
+            ))
+        );
+        assert_eq!(map.pop_action(), None);
+
+        map.on_tick(RESEND_MS);
+
+        assert_eq!(
+            map.pop_action(),
+            Some((
+                consumer,
+                ServerMapEvent::OnSet {
+                    sub: SubKey(1000),
+                    version: Version(1),
+                    source,
+                    data: vec![1, 2, 3, 4]
+                }
+            ))
+        );
+        assert_eq!(map.pop_action(), None);
+    }
+
+    #[test]
+    fn map_event_should_resend_before_ack_with_after_sub() {
+        let relay = NodeSession(1, 2);
+        let mut map = RemoteMap::new(relay);
+
+        let source = NodeSession(3, 4);
+        let consumer = NodeSession(5, 6);
+
+        assert_eq!(
+            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(SubKey(1000), Version(1)))
+        );
+        assert_eq!(map.pop_action(), None);
+
+        assert_eq!(map.on_client(0, consumer, ClientMapCommand::Sub(1, None)), Some(ServerMapEvent::SubOk(1)));
+        assert_eq!(
+            map.pop_action(),
+            Some((
+                consumer,
+                ServerMapEvent::OnSet {
+                    sub: SubKey(1000),
+                    version: Version(1),
+                    source,
+                    data: vec![1, 2, 3, 4]
+                }
+            ))
+        );
+        assert_eq!(map.pop_action(), None);
+
+        map.on_tick(RESEND_MS);
+
+        assert_eq!(
+            map.pop_action(),
+            Some((
+                consumer,
+                ServerMapEvent::OnSet {
+                    sub: SubKey(1000),
+                    version: Version(1),
+                    source,
+                    data: vec![1, 2, 3, 4]
+                }
+            ))
+        );
+        assert_eq!(map.pop_action(), None);
+    }
+
+    #[test]
+    fn map_event_should_not_resend_after_ack() {
+        let relay = NodeSession(1, 2);
+        let mut map = RemoteMap::new(relay);
+
+        let source = NodeSession(3, 4);
+        let consumer = NodeSession(5, 6);
+
+        assert_eq!(map.on_client(0, consumer, ClientMapCommand::Sub(1, None)), Some(ServerMapEvent::SubOk(1)));
+        assert_eq!(map.pop_action(), None);
+
+        assert_eq!(
+            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(SubKey(1000), Version(1)))
+        );
+        assert_eq!(
+            map.pop_action(),
+            Some((
+                consumer,
+                ServerMapEvent::OnSet {
+                    sub: SubKey(1000),
+                    version: Version(1),
+                    source,
+                    data: vec![1, 2, 3, 4]
+                }
+            ))
+        );
+        assert_eq!(map.pop_action(), None);
+
+        assert_eq!(map.on_client(2, consumer, ClientMapCommand::OnSetAck(SubKey(1000), source, Version(1))), None);
+
+        map.on_tick(RESEND_MS);
+
+        assert_eq!(map.pop_action(), None);
     }
 }

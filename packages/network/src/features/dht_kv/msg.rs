@@ -16,13 +16,13 @@ pub struct Seq(pub u64);
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Hash, PartialEq, Eq)]
 pub struct NodeSession(pub NodeId, pub u64);
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum DelReason {
     Timeout,
     Remote,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) enum RemoteCommand {
     Client(NodeSession, ClientCommand),
     Server(NodeSession, ServerEvent),
@@ -30,7 +30,7 @@ pub(crate) enum RemoteCommand {
 
 // This part is for client related messages
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ClientMapCommand {
     Set(SubKey, Version, Vec<u8>),
     Del(SubKey, Version),
@@ -50,7 +50,7 @@ impl ClientMapCommand {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) enum ClientCommand {
     MapCmd(Key, ClientMapCommand),
     MapGet(Key, u64),
@@ -58,7 +58,7 @@ pub(crate) enum ClientCommand {
 
 // This part is for server related messages
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) enum ServerMapEvent {
     SetOk(SubKey, Version),
     DelOk(SubKey, Version),
@@ -68,7 +68,7 @@ pub(crate) enum ServerMapEvent {
     OnDel { sub: SubKey, source: NodeSession, version: Version },
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) enum ServerEvent {
     MapEvent(Key, ServerMapEvent),
     MapGetRes(Key, u64, Vec<(SubKey, NodeSession, Version, Vec<u8>)>),
