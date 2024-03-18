@@ -3,7 +3,7 @@ use std::collections::{HashMap, VecDeque};
 use self::map::RemoteMap;
 
 use super::{
-    msg::{ClientCommand, NodeSession, ServerEvent, ServerMapEvent},
+    msg::{ClientCommand, NodeSession, ServerEvent},
     Key,
 };
 
@@ -29,7 +29,7 @@ impl RemoteStorage {
         for (key, map) in self.maps.iter_mut() {
             map.on_tick(now);
             while let Some((session, event)) = map.pop_action() {
-                self.queue.push_back((session, ServerEvent::Map(*key, event)));
+                self.queue.push_back((session, ServerEvent::MapEvent(*key, event)));
             }
             if map.should_clean() {
                 to_remove.push(*key);
@@ -56,15 +56,15 @@ impl RemoteStorage {
                 };
 
                 if let Some(event) = map.on_client(now, remote, cmd) {
-                    self.queue.push_back((remote, ServerEvent::Map(key, event)));
+                    self.queue.push_back((remote, ServerEvent::MapEvent(key, event)));
                     while let Some((session, event)) = map.pop_action() {
-                        self.queue.push_back((session, ServerEvent::Map(key, event)));
+                        self.queue.push_back((session, ServerEvent::MapEvent(key, event)));
                     }
                 }
             }
             ClientCommand::MapGet(key, id) => {
                 let values = self.maps.get_mut(&key).map(|map| map.dump()).unwrap_or_default();
-                self.queue.push_back((remote, ServerEvent::Map(key, ServerMapEvent::GetOk(id, values))));
+                self.queue.push_back((remote, ServerEvent::MapGetRes(key, id, values)));
             }
         }
     }

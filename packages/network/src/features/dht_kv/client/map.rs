@@ -249,7 +249,6 @@ impl LocalMap {
                 let slot = self.get_slot(sub, self.session, false)?;
                 slot.del(now)
             }
-            MapControl::Get => todo!(),
             MapControl::Sub => {
                 let send_sub = self.subscribers.is_empty();
                 if self.subscribers.contains(&service) {
@@ -307,7 +306,6 @@ impl LocalMap {
                 }
                 None
             }
-            ServerMapEvent::GetOk(_, _) => todo!(),
             ServerMapEvent::OnSet { sub, version, source, data } => {
                 if !self.accept_event(remote) {
                     return None;

@@ -12,7 +12,7 @@ use crate::base::{Feature, FeatureInput, FeatureOutput, FeatureSharedInput, Feat
 
 use self::{
     internal::InternalOutput,
-    msg::{Key, NodeSession, SubKey},
+    msg::{Key, NodeSession, SubKey, Version},
 };
 
 mod client;
@@ -27,7 +27,6 @@ pub const FEATURE_NAME: &str = "dht_kv";
 pub enum MapControl {
     Set(SubKey, Vec<u8>),
     Del(SubKey),
-    Get,
     Sub,
     Unsub,
 }
@@ -44,7 +43,8 @@ impl MapControl {
 
 #[derive(Debug, Clone)]
 pub enum Control {
-    Map(Key, MapControl),
+    MapCmd(Key, MapControl),
+    MapGet(Key),
 }
 
 #[derive(Debug, Clone)]
@@ -57,14 +57,14 @@ pub enum GetError {
 pub enum MapEvent {
     SetOk(SubKey, NodeId),
     DelOk(SubKey, NodeId),
-    GetRes(Result<(Vec<(SubKey, Vec<u8>, NodeId, u64)>, NodeId), GetError>),
     OnSet(SubKey, NodeId, Vec<u8>),
     OnDel(SubKey, NodeId),
 }
 
 #[derive(Debug, Clone)]
 pub enum Event {
-    Map(Key, MapEvent),
+    MapEvent(Key, MapEvent),
+    MapGetRes(Key, Result<Vec<(SubKey, NodeSession, Version, Vec<u8>)>, GetError>),
 }
 
 #[derive(Debug, Clone)]

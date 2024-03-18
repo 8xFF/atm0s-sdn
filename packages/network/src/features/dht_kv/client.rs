@@ -5,6 +5,8 @@ use crate::base::ServiceId;
 
 use self::map::{LocalMap, LocalMapOutput};
 
+const MAP_GET_TIMEOUT_MS: u64 = 5000;
+
 use super::{
     msg::{ClientCommand, NodeSession, ServerEvent},
     Control, Event, Key,
@@ -24,7 +26,9 @@ pub enum LocalStorageOutput {
 pub struct LocalStorage {
     session: NodeSession,
     maps: HashMap<Key, LocalMap>,
+    map_get_waits: HashMap<(Key, u64), (ServiceId, u64)>,
     queue: VecDeque<LocalStorageOutput>,
+    req_id_seed: u64,
 }
 
 impl LocalStorage {
@@ -32,17 +36,20 @@ impl LocalStorage {
         Self {
             session,
             maps: HashMap::new(),
+            map_get_waits: HashMap::new(),
             queue: VecDeque::new(),
+            req_id_seed: 0,
         }
     }
 
     pub fn on_tick(&mut self, now: u64) {
+        // tick all maps and finding out if any of them should be removed
         let mut to_remove = vec![];
         for (key, map) in self.maps.iter_mut() {
             map.on_tick(now);
             while let Some(out) = map.pop_action() {
                 self.queue.push_back(match out {
-                    LocalMapOutput::Local(service, event) => LocalStorageOutput::Local(service, Event::Map(*key, event)),
+                    LocalMapOutput::Local(service, event) => LocalStorageOutput::Local(service, Event::MapEvent(*key, event)),
                     LocalMapOutput::Remote(cmd) => LocalStorageOutput::Remote(route(*key), ClientCommand::MapCmd(*key, cmd)),
                 });
             }
@@ -54,35 +61,58 @@ impl LocalStorage {
         for key in to_remove {
             self.maps.remove(&key);
         }
+
+        // finding timeout map_get requests
+        let mut to_remove = vec![];
+        for (key, info) in self.map_get_waits.iter() {
+            if now >= info.1 + MAP_GET_TIMEOUT_MS {
+                to_remove.push(*key);
+            }
+        }
+
+        for key in to_remove {
+            self.map_get_waits.remove(&key);
+        }
     }
 
     pub fn on_local(&mut self, now: u64, service: ServiceId, control: Control) {
         match control {
-            Control::Map(key, control) => {
+            Control::MapCmd(key, control) => {
                 if let Some(map) = Self::get_map(&mut self.maps, self.session, key, control.is_creator()) {
                     if let Some(event) = map.on_control(now, service, control) {
                         self.queue.push_back(LocalStorageOutput::Remote(route(key), ClientCommand::MapCmd(key, event)));
                         while let Some(out) = map.pop_action() {
                             self.queue.push_back(match out {
-                                LocalMapOutput::Local(service, event) => LocalStorageOutput::Local(service, Event::Map(key, event)),
+                                LocalMapOutput::Local(service, event) => LocalStorageOutput::Local(service, Event::MapEvent(key, event)),
                                 LocalMapOutput::Remote(cmd) => LocalStorageOutput::Remote(route(key), ClientCommand::MapCmd(key, cmd)),
                             });
                         }
                     }
                 }
             }
+            Control::MapGet(key) => {
+                let req_id = self.req_id_seed;
+                self.req_id_seed += 1;
+                self.map_get_waits.insert((key, req_id), (service, req_id));
+                self.queue.push_back(LocalStorageOutput::Remote(route(key), ClientCommand::MapGet(key, req_id)));
+            }
         }
     }
 
     pub fn on_server(&mut self, now: u64, remote: NodeSession, cmd: ServerEvent) {
         match cmd {
-            ServerEvent::Map(key, cmd) => {
+            ServerEvent::MapEvent(key, cmd) => {
                 if let Some(map) = self.maps.get_mut(&key) {
                     if let Some(cmd) = map.on_server(now, remote, cmd) {
                         self.queue.push_back(LocalStorageOutput::Remote(route(key), ClientCommand::MapCmd(key, cmd)));
                     }
                 } else {
                     log::warn!("Received remote command for unknown map: {:?}", key);
+                }
+            }
+            ServerEvent::MapGetRes(key, req_id, res) => {
+                if let Some((service, req_id)) = self.map_get_waits.remove(&(key, req_id)) {
+                    self.queue.push_back(LocalStorageOutput::Local(service, Event::MapGetRes(key, Ok(res))));
                 }
             }
         }

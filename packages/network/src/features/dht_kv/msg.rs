@@ -64,12 +64,12 @@ pub(crate) enum ServerMapEvent {
     DelOk(SubKey, Version),
     SubOk(u64),
     UnsubOk(u64),
-    GetOk(u64, Vec<(SubKey, NodeSession, Version, Vec<u8>)>),
     OnSet { sub: SubKey, source: NodeSession, version: Version, data: Vec<u8> },
     OnDel { sub: SubKey, source: NodeSession, version: Version },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) enum ServerEvent {
-    Map(Key, ServerMapEvent),
+    MapEvent(Key, ServerMapEvent),
+    MapGetRes(Key, u64, Vec<(SubKey, NodeSession, Version, Vec<u8>)>),
 }
