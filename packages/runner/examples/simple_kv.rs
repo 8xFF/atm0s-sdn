@@ -52,6 +52,18 @@ struct Args {
     /// Workers
     #[arg(short, long, default_value_t = 1)]
     workers: usize,
+
+    /// Kv map id
+    #[arg(long, default_value_t = 1)]
+    kv_map: u64,
+
+    /// This side will subscribe
+    #[arg(long)]
+    kv_subscribe: bool,
+
+    /// This side will set
+    #[arg(long)]
+    kv_set: bool,
 }
 
 type TC = ();
@@ -63,7 +75,7 @@ fn main() {
     let mut shutdown_wait = 0;
     let args = Args::parse();
     env_logger::builder().format_timestamp_millis().init();
-    let mut builder = SdnBuilder::<TC, TW>::new(args.node_id, args.udp_port);
+    let mut builder = SdnBuilder::<TC, TW>::new(args.node_id, args.udp_port, vec![]);
 
     for seed in args.seeds {
         builder.add_seed(seed);
@@ -75,7 +87,9 @@ fn main() {
         BackendType::Polling => builder.build::<PollingBackend<128, 128>>(args.workers),
     };
 
-    controller.send_to(Owner::worker(0), SdnExtIn::FeaturesControl(FeaturesControl::DhtKv(Control::MapCmd(Map(1000), MapControl::Sub))));
+    if args.kv_subscribe {
+        controller.send_to(Owner::worker(0), SdnExtIn::FeaturesControl(FeaturesControl::DhtKv(Control::MapCmd(Map(args.kv_map), MapControl::Sub))));
+    }
 
     let mut i: u32 = 0;
     while controller.process().is_some() {
@@ -90,12 +104,12 @@ fn main() {
         std::thread::sleep(Duration::from_millis(1));
         i += 1;
 
-        if i % 1000 == 0 {
+        if i % 1000 == 0 && args.kv_set {
             let data = i.to_be_bytes().to_vec();
             log::info!("Set key: {:?}", data);
             controller.send_to(
                 Owner::worker(0),
-                SdnExtIn::FeaturesControl(FeaturesControl::DhtKv(Control::MapCmd(Map(1000), MapControl::Set(Key(200), data)))),
+                SdnExtIn::FeaturesControl(FeaturesControl::DhtKv(Control::MapCmd(Map(args.kv_map), MapControl::Set(Key(200), data)))),
             );
         }
         while let Some(out) = controller.pop_event() {

@@ -178,8 +178,9 @@ impl NeighboursManager {
     }
 
     fn gen_conn_id(&mut self, direction: ConnDirection) -> ConnId {
+        let id = self.conn_id_seed;
         self.conn_id_seed += 1;
-        ConnId::from_raw(0, direction, self.conn_id_seed)
+        ConnId::from_raw(0, direction, id)
     }
 
     /// Generates a random session ID.

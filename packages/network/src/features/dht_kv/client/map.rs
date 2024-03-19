@@ -413,7 +413,7 @@ impl LocalMap {
                                 log::debug!("[ClientMap] Received SubOk with id {}, in Subscribed from new remote {} with sync_ts {}", id, remote.0, now);
                                 self.fire_event(MapEvent::OnRelaySelected(remote.0));
                             } else {
-                                log::warn!("[ClientMap] Received SubOk with id {} from same remote {} vs {}", id, locked.0, remote.0);
+                                log::debug!("[ClientMap] Received SubOk with id {} from same remote {} vs {}", id, locked.0, remote.0);
                             }
                         } else {
                             log::debug!("[ClientMap] Received SubOk with id {} but current id is {}", id, sub_id);

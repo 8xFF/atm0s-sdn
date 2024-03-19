@@ -150,7 +150,7 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for RouterSyncFeature
             FeatureWorkerInput::Control(service, control) => Some(FeatureWorkerOutput::ForwardControlToController(service, control)),
             FeatureWorkerInput::Network(conn, msg) => Some(FeatureWorkerOutput::ForwardNetworkToController(conn, msg.to_vec())),
             FeatureWorkerInput::FromController(delta) => {
-                log::info!("[RouterSyncWorker] apply router delta {:?}", delta);
+                log::debug!("[RouterSyncWorker] apply router delta {:?}", delta);
                 ctx.router.apply_delta(delta);
                 None
             }

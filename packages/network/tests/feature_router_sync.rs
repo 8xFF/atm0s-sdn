@@ -8,13 +8,13 @@ use crate::simulator::{NetworkSimulator, TestNode};
 mod simulator;
 
 #[test]
-fn router_sync_two_nodes() {
+fn feature_router_sync_two_nodes() {
     let node1 = 1;
     let node2 = 2;
     let mut sim = NetworkSimulator::<(), ()>::new(0);
 
-    let _addr1 = sim.add_node(TestNode::new(node1, 1234));
-    let addr2 = sim.add_node(TestNode::new(node2, 1235));
+    let _addr1 = sim.add_node(TestNode::new(node1, 1234, vec![]));
+    let addr2 = sim.add_node(TestNode::new(node2, 1235, vec![]));
 
     sim.control(node1, ExtIn::ConnectTo(addr2));
 
@@ -29,16 +29,16 @@ fn router_sync_two_nodes() {
 }
 
 #[test]
-fn router_sync_three_nodes() {
+fn feature_router_sync_three_nodes() {
     // node1 <-> node2 <-> node3
     let node1 = 1;
     let node2 = 2;
     let node3 = 2;
     let mut sim = NetworkSimulator::<(), ()>::new(0);
 
-    let _addr1 = sim.add_node(TestNode::new(node1, 1234));
-    let addr2 = sim.add_node(TestNode::new(node2, 1235));
-    let addr3 = sim.add_node(TestNode::new(node2, 1236));
+    let _addr1 = sim.add_node(TestNode::new(node1, 1234, vec![]));
+    let addr2 = sim.add_node(TestNode::new(node2, 1235, vec![]));
+    let addr3 = sim.add_node(TestNode::new(node2, 1236, vec![]));
 
     sim.control(node1, ExtIn::ConnectTo(addr2));
     sim.control(node2, ExtIn::ConnectTo(addr3));

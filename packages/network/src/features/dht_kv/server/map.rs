@@ -26,7 +26,7 @@ impl MapSlot {
                 true
             }
             MapSlot::Set { version, data, live_at } => {
-                if version.0 < new_version.0 {
+                if version.0 <= new_version.0 {
                     *version = new_version;
                     *data = new_data;
                     *live_at = now;
@@ -551,8 +551,8 @@ mod test {
         );
         assert_eq!(map.pop_action(), None);
 
-        //set with same version should not affected
-        assert_eq!(map.on_client(0, source, ClientMapCommand::Set(Key(1000), Version(1), vec![1, 2, 3, 4])), None);
+        //set with older version should not affected
+        assert_eq!(map.on_client(0, source, ClientMapCommand::Set(Key(1000), Version(0), vec![1, 2, 3, 4])), None);
         assert_eq!(map.pop_action(), None);
     }
 

@@ -5,9 +5,12 @@
 
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
+use std::sync::Arc;
 use std::{collections::VecDeque, net::IpAddr};
 
 use atm0s_sdn_identity::{NodeAddr, NodeAddrBuilder, NodeId, Protocol};
+use atm0s_sdn_network::base::ServiceBuilder;
+use atm0s_sdn_network::features::{FeaturesControl, FeaturesEvent};
 use atm0s_sdn_network::{
     base::{GenericBuffer, GenericBufferMut},
     controller_plane::{self, ControllerPlane},
@@ -77,17 +80,24 @@ pub enum TestNodeOut<'a> {
     Tun(GenericBuffer<'a>),
 }
 
+pub fn build_addr(node_id: NodeId) -> NodeAddr {
+    let mut builder = NodeAddrBuilder::new(node_id);
+    builder.add_protocol(Protocol::Ip4(Ipv4Addr::LOCALHOST));
+    builder.add_protocol(Protocol::Udp(node_id as u16));
+    builder.addr()
+}
+
 pub struct TestNode<TC, TW> {
     node_id: NodeId,
     controller: ControllerPlane<TC, TW>,
     worker: DataPlane<TC, TW>,
 }
 
-impl<TC, TW: Clone> TestNode<TC, TW> {
-    pub fn new(node_id: NodeId, session: u64) -> Self {
+impl<TC, TW> TestNode<TC, TW> {
+    pub fn new(node_id: NodeId, session: u64, services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, TC, TW>>>) -> Self {
         let _log = AutoContext::new(node_id);
-        let controller = ControllerPlane::new(node_id, session, vec![]);
-        let worker = DataPlane::new(node_id, vec![]);
+        let controller = ControllerPlane::new(node_id, session, services.clone());
+        let worker = DataPlane::new(node_id, services);
         Self { node_id, controller, worker }
     }
 
@@ -96,10 +106,7 @@ impl<TC, TW: Clone> TestNode<TC, TW> {
     }
 
     pub fn addr(&self) -> NodeAddr {
-        let mut builder = NodeAddrBuilder::new(self.node_id);
-        builder.add_protocol(Protocol::Ip4(Ipv4Addr::LOCALHOST));
-        builder.add_protocol(Protocol::Udp(self.node_id as u16));
-        builder.addr()
+        build_addr(self.node_id)
     }
 
     pub fn tick(&mut self, now: u64) {

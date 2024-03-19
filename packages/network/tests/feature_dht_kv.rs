@@ -19,10 +19,10 @@ fn event(event: Event) -> ExtOut {
 }
 
 #[test]
-fn single_node() {
+fn feature_single_node() {
     let node_id = 1;
     let mut sim = NetworkSimulator::<(), ()>::new(0);
-    sim.add_node(TestNode::new(node_id, 1234));
+    sim.add_node(TestNode::new(node_id, 1234, vec![]));
 
     sim.process(100);
 
@@ -42,10 +42,10 @@ fn single_node() {
 }
 
 #[test]
-fn single_node_sub_after() {
+fn feature_single_node_sub_after() {
     let node_id = 1;
     let mut sim = NetworkSimulator::<(), ()>::new(0);
-    sim.add_node(TestNode::new(node_id, 1234));
+    sim.add_node(TestNode::new(node_id, 1234, vec![]));
 
     sim.process(100);
 
@@ -67,13 +67,13 @@ fn single_node_sub_after() {
 }
 
 #[test]
-fn dht_kv_two_nodes() {
+fn feature_dht_kv_two_nodes() {
     let node1 = 1;
     let node2 = 2;
     let mut sim = NetworkSimulator::<(), ()>::new(0);
 
-    let _addr1 = sim.add_node(TestNode::new(node1, 1234));
-    let addr2 = sim.add_node(TestNode::new(node2, 1235));
+    let _addr1 = sim.add_node(TestNode::new(node1, 1234, vec![]));
+    let addr2 = sim.add_node(TestNode::new(node2, 1235, vec![]));
 
     sim.control(node1, ExtIn::ConnectTo(addr2));
 
@@ -98,13 +98,13 @@ fn dht_kv_two_nodes() {
 }
 
 #[test]
-fn dht_kv_two_nodes_sub_after() {
+fn feature_dht_kv_two_nodes_sub_after() {
     let node1 = 1;
     let node2 = 2;
     let mut sim = NetworkSimulator::<(), ()>::new(0);
 
-    let _addr1 = sim.add_node(TestNode::new(node1, 1234));
-    let addr2 = sim.add_node(TestNode::new(node2, 1235));
+    let _addr1 = sim.add_node(TestNode::new(node1, 1234, vec![]));
+    let addr2 = sim.add_node(TestNode::new(node2, 1235, vec![]));
 
     sim.control(node1, ExtIn::ConnectTo(addr2));
 
@@ -131,14 +131,14 @@ fn dht_kv_two_nodes_sub_after() {
 }
 
 #[test]
-fn dht_kv_move_key_other_relay() {
+fn feature_dht_kv_move_key_other_relay() {
     let node1 = 1;
     let node2 = 2;
     let node3 = 3;
     let mut sim = NetworkSimulator::<(), ()>::new(0);
 
-    let _addr1 = sim.add_node(TestNode::new(node1, 1234));
-    let addr2 = sim.add_node(TestNode::new(node2, 1235));
+    let _addr1 = sim.add_node(TestNode::new(node1, 1234, vec![]));
+    let addr2 = sim.add_node(TestNode::new(node2, 1235, vec![]));
     sim.control(node1, ExtIn::ConnectTo(addr2));
 
     // For sync
@@ -162,7 +162,7 @@ fn dht_kv_move_key_other_relay() {
     assert_eq!(sim.pop_res(), None);
 
     log::info!("add new node3 => data should move to node3");
-    let addr3 = sim.add_node(TestNode::new(node3, 1235));
+    let addr3 = sim.add_node(TestNode::new(node3, 1235, vec![]));
     sim.control(node2, ExtIn::ConnectTo(addr3));
 
     // For sync table
