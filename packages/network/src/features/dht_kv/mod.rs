@@ -59,6 +59,7 @@ pub enum GetError {
 pub enum MapEvent {
     OnSet(Key, NodeId, Vec<u8>),
     OnDel(Key, NodeId),
+    OnRelaySelected(NodeId),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

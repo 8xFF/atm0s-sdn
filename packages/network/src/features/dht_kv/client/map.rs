@@ -1,5 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 
+use log::info;
+
 use crate::{
     base::FeatureControlActor,
     features::dht_kv::{
@@ -152,16 +154,25 @@ impl MapSlot {
         }
     }
 
-    pub fn on_set(&mut self, _now: u64, key: Key, source: NodeSession, version: Version, data: Vec<u8>) -> Option<ClientMapCommand> {
+    /// slot will be updated if the version is newer than the current version
+    /// if verion is same, we still sending back OnSetAck for avoding flooding by server resend
+    /// Return:
+    ///     Option(ClientMapCommand, bool)
+    ///
+    ///    - ClientMapCommand: OnSetAck
+    ///     - bool: true if the slot is updated
+    pub fn on_set(&mut self, _now: u64, key: Key, source: NodeSession, version: Version, data: Vec<u8>) -> Option<(ClientMapCommand, bool)> {
         match self {
             MapSlot::Unspecific { .. } => {
                 *self = MapSlot::Remote { key, version, value: Some(data) };
-                Some(ClientMapCommand::OnSetAck(key, source, version))
+                Some((ClientMapCommand::OnSetAck(key, source, version), true))
             }
             MapSlot::Remote { version: old_version, .. } => {
-                if old_version.0 <= version.0 {
+                if old_version.0 < version.0 {
                     *self = MapSlot::Remote { key, version, value: Some(data) };
-                    Some(ClientMapCommand::OnSetAck(key, source, version))
+                    Some((ClientMapCommand::OnSetAck(key, source, version), true))
+                } else if old_version.0 == version.0 {
+                    Some((ClientMapCommand::OnSetAck(key, source, version), false))
                 } else {
                     None
                 }
@@ -380,14 +391,32 @@ impl LocalMap {
                 None
             }
             ServerMapEvent::SubOk(id) => {
-                match &self.sub_state {
-                    SubState::Subscribing { id: sub_id, .. } | SubState::Subscribed { id: sub_id, .. } => {
+                match &mut self.sub_state {
+                    SubState::Subscribing { id: sub_id, .. } => {
                         if *sub_id == id {
                             log::debug!("[ClientMap] Received SubOk with id {}, switched to Subscribed with sync_ts {}", id, now);
-                            //update to new remote
                             self.sub_state = SubState::Subscribed { id, remote, sync_ts: now };
+                            self.fire_event(MapEvent::OnRelaySelected(remote.0));
                         } else {
                             log::warn!("[ClientMap] Received SubOk with id {} but current id is {}", id, sub_id);
+                        }
+                    }
+                    SubState::Subscribed {
+                        id: sub_id, remote: locked, sync_ts, ..
+                    } => {
+                        if *sub_id == id {
+                            let old_locked = *locked;
+                            *locked = remote;
+                            *sync_ts = now;
+
+                            if old_locked.0 != remote.0 {
+                                log::debug!("[ClientMap] Received SubOk with id {}, in Subscribed from new remote {} with sync_ts {}", id, remote.0, now);
+                                self.fire_event(MapEvent::OnRelaySelected(remote.0));
+                            } else {
+                                log::warn!("[ClientMap] Received SubOk with id {} from same remote {} vs {}", id, locked.0, remote.0);
+                            }
+                        } else {
+                            log::debug!("[ClientMap] Received SubOk with id {} but current id is {}", id, sub_id);
                         }
                     }
                     _ => {
@@ -422,9 +451,11 @@ impl LocalMap {
                     return None;
                 }
                 let slot = self.get_slot(key, self.session, true).expect("Must have slot for set");
-                let event = slot.on_set(now, key, source, version, data.clone())?;
+                let (event, updated) = slot.on_set(now, key, source, version, data.clone())?;
                 log::debug!("[ClientMap] Received OnSet for key {}", key);
-                self.fire_event(MapEvent::OnSet(key, source.0, data));
+                if updated {
+                    self.fire_event(MapEvent::OnSet(key, source.0, data));
+                }
                 Some(event)
             }
             ServerMapEvent::OnDel { key, version, source } => {
@@ -582,7 +613,7 @@ mod test {
         let mut slot = MapSlot::new(key);
 
         let version = Version(100);
-        assert_eq!(slot.on_set(100, key, source, version, vec![1, 2, 3, 4]), Some(ClientMapCommand::OnSetAck(key, source, version)));
+        assert_eq!(slot.on_set(100, key, source, version, vec![1, 2, 3, 4]), Some((ClientMapCommand::OnSetAck(key, source, version), true)));
         assert!(!slot.should_cleanup());
 
         assert_eq!(slot.on_del(200, key, source, version), Some(ClientMapCommand::OnDelAck(key, source, version)));
@@ -611,7 +642,12 @@ mod test {
         let source = NodeSession(1, 2);
         assert_eq!(
             slot.on_set(100, key, source, Version(100), vec![1, 2, 3, 4]),
-            Some(ClientMapCommand::OnSetAck(key, source, Version(100)))
+            Some((ClientMapCommand::OnSetAck(key, source, Version(100)), true))
+        );
+        //same version will only send ack, not update the slot
+        assert_eq!(
+            slot.on_set(100, key, source, Version(100), vec![1, 2, 3, 4]),
+            Some((ClientMapCommand::OnSetAck(key, source, Version(100)), false))
         );
         assert_eq!(slot.on_set(100, key, source, Version(90), vec![1, 2, 3]), None);
         assert_eq!(slot.on_del(200, key, source, Version(90)), None);
@@ -670,6 +706,7 @@ mod test {
 
         assert_eq!(map.on_control(102, actor, MapControl::Sub), Some(ClientMapCommand::Sub(102, None)));
         assert_eq!(map.on_server(103, relay, ServerMapEvent::SubOk(102)), None);
+        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(actor, MapEvent::OnRelaySelected(relay.0))));
 
         map.on_tick(102 + RESEND_MS);
         assert_eq!(map.pop_action(), None);
@@ -704,6 +741,7 @@ mod test {
 
         assert_eq!(map.on_control(102, actor, MapControl::Sub), Some(ClientMapCommand::Sub(102, None)));
         assert_eq!(map.on_server(103, relay, ServerMapEvent::SubOk(102)), None);
+        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(actor, MapEvent::OnRelaySelected(relay.0))));
         map.on_tick(102 + RESEND_MS);
         assert_eq!(map.pop_action(), None);
     }
@@ -745,6 +783,7 @@ mod test {
 
         //We need SubOk for accepting OnSet event
         assert_eq!(map.on_server(103, relay, ServerMapEvent::SubOk(102)), None);
+        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(actor, MapEvent::OnRelaySelected(relay.0))));
 
         assert_eq!(
             map.on_server(
@@ -783,6 +822,7 @@ mod test {
 
         assert_eq!(map.on_control(102, actor, MapControl::Sub), Some(ClientMapCommand::Sub(102, None)));
         assert_eq!(map.on_server(103, relay1, ServerMapEvent::SubOk(102)), None);
+        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(actor, MapEvent::OnRelaySelected(relay1.0))));
 
         assert_eq!(
             map.on_server(
@@ -800,6 +840,10 @@ mod test {
 
         //simulate sub to new relay
         assert_eq!(map.on_server(105, relay2, ServerMapEvent::SubOk(102)), None);
+
+        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(actor, MapEvent::OnSet(key, source.0, vec![1, 2, 3, 4]))));
+        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(actor, MapEvent::OnRelaySelected(relay2.0))));
+        assert_eq!(map.pop_action(), None);
 
         //Reject from relay1
         assert_eq!(map.on_server(106, relay1, ServerMapEvent::OnDel { key, source, version: Version(2000) }), None,);
