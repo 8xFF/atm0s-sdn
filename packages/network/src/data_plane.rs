@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, VecDeque},
     net::SocketAddr,
+    sync::Arc,
 };
 
 use atm0s_sdn_identity::{ConnId, NodeId};
@@ -8,8 +9,8 @@ use atm0s_sdn_router::{shadow::ShadowRouter, RouteAction, RouteRule, RouterTable
 
 use crate::{
     base::{
-        FeatureControlActor, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer, GenericBufferMut, NeighboursControl, ServiceId, ServiceWorkerInput, ServiceWorkerOutput,
-        TransportMsg, TransportMsgHeader,
+        FeatureControlActor, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer, GenericBufferMut, NeighboursControl, ServiceBuilder, ServiceId, ServiceWorkerInput,
+        ServiceWorkerOutput, TransportMsg, TransportMsgHeader,
     },
     features::{Features, FeaturesControl, FeaturesEvent, FeaturesToController},
     san_io_utils::TasksSwitcher,
@@ -76,13 +77,13 @@ pub struct DataPlane<TC, TW> {
 }
 
 impl<TC, TW> DataPlane<TC, TW> {
-    pub fn new(node_id: NodeId) -> Self {
+    pub fn new(node_id: NodeId, services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, TC, TW>>>) -> Self {
         log::info!("Create DataPlane for node: {}", node_id);
 
         Self {
             ctx: FeatureWorkerContext { router: ShadowRouter::new(node_id) },
             features: FeatureWorkerManager::new(node_id),
-            services: ServiceWorkerManager::new(),
+            services: ServiceWorkerManager::new(services),
             conns: HashMap::new(),
             conns_reverse: HashMap::new(),
             queue_output: VecDeque::new(),

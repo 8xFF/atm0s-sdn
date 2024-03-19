@@ -2,10 +2,14 @@ mod controller_plane;
 mod data_plane;
 mod event_convert;
 
-use std::{fmt::Debug, time::Instant};
+use std::{fmt::Debug, sync::Arc, time::Instant};
 
 use atm0s_sdn_identity::NodeId;
-use atm0s_sdn_network::{ExtIn, ExtOut};
+use atm0s_sdn_network::{
+    base::ServiceBuilder,
+    features::{FeaturesControl, FeaturesEvent},
+    ExtIn, ExtOut,
+};
 use sans_io_runtime::{Controller, Task, TaskGroupOutputsState, TaskInput, TaskOutput, WorkerInner, WorkerInnerInput, WorkerInnerOutput};
 
 use self::{
@@ -39,10 +43,11 @@ pub struct ControllerCfg {
     pub vpn_tun_device: sans_io_runtime::backend::tun::TunDevice,
 }
 
-pub struct SdnInnerCfg {
+pub struct SdnInnerCfg<TC, TW> {
     pub node_id: NodeId,
     pub udp_port: u16,
     pub controller: Option<ControllerCfg>,
+    pub services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, TC, TW>>>,
     #[cfg(feature = "vpn")]
     pub vpn_tun_fd: sans_io_runtime::backend::tun::TunFd,
 }
@@ -81,8 +86,8 @@ impl<TC: Debug, TW: Debug> SdnWorkerInner<TC, TW> {
     }
 }
 
-impl<TC: Debug, TW: Debug> WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent<TC, TW>, SdnInnerCfg, SdnSpawnCfg> for SdnWorkerInner<TC, TW> {
-    fn build(worker: u16, cfg: SdnInnerCfg) -> Self {
+impl<TC: Debug, TW: Debug> WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent<TC, TW>, SdnInnerCfg<TC, TW>, SdnSpawnCfg> for SdnWorkerInner<TC, TW> {
+    fn build(worker: u16, cfg: SdnInnerCfg<TC, TW>) -> Self {
         if let Some(controller) = cfg.controller {
             Self {
                 worker,
@@ -90,7 +95,7 @@ impl<TC: Debug, TW: Debug> WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent
                     node_id: cfg.node_id,
                     session: controller.session,
                     tick_ms: controller.tick_ms,
-                    // services: controller.services,
+                    services: cfg.services.clone(),
                     #[cfg(feature = "vpn")]
                     vpn_tun_device: controller.vpn_tun_device,
                 })),
@@ -98,6 +103,7 @@ impl<TC: Debug, TW: Debug> WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent
                     worker,
                     node_id: cfg.node_id,
                     port: cfg.udp_port,
+                    services: cfg.services,
                     #[cfg(feature = "vpn")]
                     vpn_tun_fd: cfg.vpn_tun_fd,
                 }),
@@ -113,6 +119,7 @@ impl<TC: Debug, TW: Debug> WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent
                     worker,
                     node_id: cfg.node_id,
                     port: cfg.udp_port,
+                    services: cfg.services,
                     #[cfg(feature = "vpn")]
                     vpn_tun_fd: cfg.vpn_tun_fd,
                 }),

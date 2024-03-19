@@ -56,16 +56,16 @@ fn main() {
     let mut shutdown_wait = 0;
     let args = Args::parse();
     env_logger::builder().format_timestamp_millis().init();
-    let mut builder = SdnBuilder::new(args.node_id, args.udp_port);
+    let mut builder = SdnBuilder::<TC, TW>::new(args.node_id, args.udp_port);
 
     for seed in args.seeds {
         builder.add_seed(seed);
     }
 
     let mut controller = match args.backend {
-        BackendType::Mio => builder.build::<MioBackend<128, 128>, TC, TW>(args.workers),
-        BackendType::Poll => builder.build::<PollBackend<128, 128>, TC, TW>(args.workers),
-        BackendType::Polling => builder.build::<PollingBackend<128, 128>, TC, TW>(args.workers),
+        BackendType::Mio => builder.build::<MioBackend<128, 128>>(args.workers),
+        BackendType::Poll => builder.build::<PollBackend<128, 128>>(args.workers),
+        BackendType::Polling => builder.build::<PollingBackend<128, 128>>(args.workers),
     };
 
     while controller.process().is_some() {

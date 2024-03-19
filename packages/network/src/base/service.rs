@@ -12,11 +12,13 @@ pub enum ServiceSharedInput {
     Connection(ConnectionEvent),
 }
 
+#[derive(Debug)]
 pub enum ServiceInput<FeaturesEvent, ToController> {
     FromWorker(ToController),
     FeatureEvent(FeaturesEvent),
 }
 
+#[derive(Debug)]
 pub enum ServiceOutput<FeaturesControl, ToWorker> {
     FeatureControl(FeaturesControl),
     BroadcastWorkers(ToWorker),
@@ -25,9 +27,6 @@ pub enum ServiceOutput<FeaturesControl, ToWorker> {
 pub trait Service<FeaturesControl, FeaturesEvent, ToController, ToWorker> {
     fn service_id(&self) -> u8;
     fn service_name(&self) -> &str;
-    fn discoverable(&self) -> bool {
-        true
-    }
 
     fn on_shared_input<'a>(&mut self, _now: u64, _input: ServiceSharedInput);
     fn on_input(&mut self, _now: u64, input: ServiceInput<FeaturesEvent, ToController>);
@@ -63,4 +62,14 @@ pub trait ServiceWorker<FeaturesControl, FeaturesEvent, ToController, ToWorker> 
     fn pop_output(&mut self) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ToController>> {
         None
     }
+}
+
+pub trait ServiceBuilder<FeaturesControl, FeaturesEvent, ToController, ToWorker>: Send + Sync {
+    fn service_id(&self) -> u8;
+    fn service_name(&self) -> &str;
+    fn discoverable(&self) -> bool {
+        true
+    }
+    fn create(&self) -> Box<dyn Service<FeaturesControl, FeaturesEvent, ToController, ToWorker>>;
+    fn create_worker(&self) -> Box<dyn ServiceWorker<FeaturesControl, FeaturesEvent, ToController, ToWorker>>;
 }

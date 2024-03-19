@@ -30,9 +30,12 @@ pub struct RouterSyncFeature {
 }
 
 impl RouterSyncFeature {
-    pub fn new(node: NodeId) -> Self {
+    pub fn new(node: NodeId, services: Vec<u8>) -> Self {
         let mut router = Router::new(node);
-        router.register_service(100);
+
+        for service in services {
+            router.register_service(service);
+        }
 
         Self {
             router,

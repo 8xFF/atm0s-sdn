@@ -25,11 +25,11 @@ pub struct FeatureManager {
 }
 
 impl FeatureManager {
-    pub fn new(node: NodeId, session: u64) -> Self {
+    pub fn new(node: NodeId, session: u64, services: Vec<u8>) -> Self {
         Self {
             neighbours: neighbours::NeighboursFeature::default(),
             data: data::DataFeature::new(node),
-            router_sync: router_sync::RouterSyncFeature::new(node),
+            router_sync: router_sync::RouterSyncFeature::new(node, services),
             vpn: vpn::VpnFeature::default(),
             dht_kv: dht_kv::DhtKvFeature::new(node, session),
             last_input_feature: None,

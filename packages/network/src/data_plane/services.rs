@@ -1,4 +1,6 @@
-use crate::base::{ServiceId, ServiceWorker, ServiceWorkerInput, ServiceWorkerOutput};
+use std::sync::Arc;
+
+use crate::base::{ServiceBuilder, ServiceId, ServiceWorker, ServiceWorkerInput, ServiceWorkerOutput};
 use crate::features::{FeaturesControl, FeaturesEvent};
 use crate::san_io_utils::TasksSwitcher;
 
@@ -10,9 +12,9 @@ pub struct ServiceWorkerManager<ToController, ToWorker> {
 }
 
 impl<ToController, ToWorker> ServiceWorkerManager<ToController, ToWorker> {
-    pub fn new() -> Self {
+    pub fn new(services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, ToController, ToWorker>>>) -> Self {
         Self {
-            services: std::array::from_fn(|_| None),
+            services: std::array::from_fn(|index| services.iter().find(|s| s.service_id() == index as u8).map(|s| s.create_worker())),
             switcher: TasksSwitcher::default(),
             last_input_service: None,
         }

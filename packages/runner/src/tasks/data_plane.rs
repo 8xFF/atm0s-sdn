@@ -2,13 +2,15 @@ use std::{
     collections::VecDeque,
     fmt::Debug,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    sync::Arc,
     time::Instant,
 };
 
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_network::{
-    base::GenericBuffer,
+    base::{GenericBuffer, ServiceBuilder},
     data_plane::{DataPlane, Input as DataPlaneInput, NetInput, NetOutput, Output as DataPlaneOutput},
+    features::{FeaturesControl, FeaturesEvent},
     ExtOut, LogicControl, LogicEvent,
 };
 use sans_io_runtime::{bus::BusEvent, Buffer, NetIncoming, NetOutgoing, Task, TaskInput, TaskOutput};
@@ -26,10 +28,11 @@ pub type ChannelOut = ();
 pub type EventIn<TW> = LogicEvent<TW>;
 pub type EventOut<TC> = LogicControl<TC>;
 
-pub struct DataPlaneCfg {
+pub struct DataPlaneCfg<TC, TW> {
     pub worker: u16,
     pub node_id: NodeId,
     pub port: u16,
+    pub services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, TC, TW>>>,
     #[cfg(feature = "vpn")]
     pub vpn_tun_fd: sans_io_runtime::backend::tun::TunFd,
 }
@@ -47,12 +50,12 @@ pub struct DataPlaneTask<TC, TW> {
 }
 
 impl<TC, TW> DataPlaneTask<TC, TW> {
-    pub fn build(cfg: DataPlaneCfg) -> Self {
+    pub fn build(cfg: DataPlaneCfg<TC, TW>) -> Self {
         let addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), cfg.port));
         Self {
             node_id: cfg.node_id,
             worker: cfg.worker,
-            data_plane: DataPlane::new(cfg.node_id),
+            data_plane: DataPlane::new(cfg.node_id, cfg.services),
             backend_udp_slot: 0,
             timer: TimePivot::build(),
             #[cfg(feature = "vpn")]

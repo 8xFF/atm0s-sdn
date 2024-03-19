@@ -86,8 +86,8 @@ pub struct TestNode<TC, TW> {
 impl<TC, TW: Clone> TestNode<TC, TW> {
     pub fn new(node_id: NodeId, session: u64) -> Self {
         let _log = AutoContext::new(node_id);
-        let controller = ControllerPlane::new(node_id, session);
-        let worker = DataPlane::new(node_id);
+        let controller = ControllerPlane::new(node_id, session, vec![]);
+        let worker = DataPlane::new(node_id, vec![]);
         Self { node_id, controller, worker }
     }
 

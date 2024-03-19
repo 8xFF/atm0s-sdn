@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
 use atm0s_sdn_identity::NodeId;
 
 use crate::{
-    base::{ConnectionEvent, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, ServiceInput, ServiceOutput, ServiceSharedInput},
+    base::{ConnectionEvent, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, ServiceBuilder, ServiceInput, ServiceOutput, ServiceSharedInput},
+    features::{FeaturesControl, FeaturesEvent},
     san_io_utils::TasksSwitcher,
     ExtIn, ExtOut, LogicControl, LogicEvent,
 };
@@ -61,13 +64,14 @@ impl<TC, TW> ControllerPlane<TC, TW> {
     /// # Returns
     ///
     /// A new ControllerPlane
-    pub fn new(node_id: NodeId, session: u64) -> Self {
+    pub fn new(node_id: NodeId, session: u64, services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, TC, TW>>>) -> Self {
         log::info!("Create ControllerPlane for node: {}, running session {}", node_id, session);
+        let service_ids = services.iter().filter(|s| s.discoverable()).map(|s| s.service_id()).collect();
 
         Self {
             neighbours: NeighboursManager::new(node_id),
-            features: FeatureManager::new(node_id, session),
-            services: ServiceManager::new(),
+            features: FeatureManager::new(node_id, session, service_ids),
+            services: ServiceManager::new(services),
             last_task: None,
             switcher: TasksSwitcher::default(),
         }

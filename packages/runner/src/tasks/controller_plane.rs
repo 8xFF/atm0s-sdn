@@ -1,8 +1,10 @@
-use std::{collections::VecDeque, time::Instant};
+use std::{collections::VecDeque, sync::Arc, time::Instant};
 
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_network::{
+    base::ServiceBuilder,
     controller_plane::{ControllerPlane, Input as ControllerInput, Output as ControllerOutput},
+    features::{FeaturesControl, FeaturesEvent},
     ExtIn, ExtOut, LogicControl, LogicEvent,
 };
 use sans_io_runtime::{bus::BusEvent, Task, TaskInput, TaskOutput};
@@ -12,10 +14,11 @@ use crate::time::{TimePivot, TimeTicker};
 pub type ChannelIn = ();
 pub type ChannelOut = ();
 
-pub struct ControllerPlaneCfg {
+pub struct ControllerPlaneCfg<TC, TW> {
     pub node_id: NodeId,
     pub session: u64,
     pub tick_ms: u64,
+    pub services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, TC, TW>>>,
     #[cfg(feature = "vpn")]
     pub vpn_tun_device: sans_io_runtime::backend::tun::TunDevice,
 }
@@ -35,10 +38,10 @@ pub struct ControllerPlaneTask<TC, TW> {
 }
 
 impl<TC, TW> ControllerPlaneTask<TC, TW> {
-    pub fn build(cfg: ControllerPlaneCfg) -> Self {
+    pub fn build(cfg: ControllerPlaneCfg<TC, TW>) -> Self {
         Self {
             node_id: cfg.node_id,
-            controller: ControllerPlane::new(cfg.node_id, cfg.session),
+            controller: ControllerPlane::new(cfg.node_id, cfg.session, cfg.services),
             queue: VecDeque::from([TaskOutput::Bus(BusEvent::ChannelSubscribe(()))]),
             ticker: TimeTicker::build(1000),
             timer: TimePivot::build(),

@@ -1,30 +1,40 @@
-use std::{fmt::Debug, net::Ipv4Addr};
+use std::{fmt::Debug, net::Ipv4Addr, sync::Arc};
 
 use atm0s_sdn_identity::{NodeAddr, NodeAddrBuilder, NodeId, Protocol};
+use atm0s_sdn_network::{
+    base::ServiceBuilder,
+    features::{FeaturesControl, FeaturesEvent},
+    services::manual_discovery,
+};
 use atm0s_sdn_utils::random::{self, Random};
 use sans_io_runtime::{backend::Backend, Owner};
 
 use crate::tasks::{ControllerCfg, SdnController, SdnExtIn, SdnInnerCfg, SdnWorkerInner};
 
-pub struct SdnBuilder {
+pub struct SdnBuilder<TC, TW> {
     node_id: NodeId,
     session: u64,
     udp_port: u16,
     seeds: Vec<NodeAddr>,
-    // services: Vec<Box<dyn atm0s_sdn_network::controller_plane::Service>>,
+    services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, TC, TW>>>,
     #[cfg(feature = "vpn")]
     vpn_ip: Option<(u8, u8, u8, u8)>,
     #[cfg(feature = "vpn")]
     vpn_netmask: Option<(u8, u8, u8, u8)>,
 }
 
-impl SdnBuilder {
+impl<TC: Debug, TW: Debug> SdnBuilder<TC, TW>
+where
+    TC: 'static + Clone + Send + Sync,
+    TW: 'static + Clone + Send + Sync,
+{
     pub fn new(node_id: NodeId, udp_port: u16) -> Self {
         Self {
             node_id,
             session: random::RealRandom().random(),
             udp_port,
             seeds: vec![],
+            services: vec![Arc::new(manual_discovery::ManualDiscoveryServiceBuilder::default())],
             // services: vec![],
             #[cfg(feature = "vpn")]
             vpn_ip: None,
@@ -37,9 +47,13 @@ impl SdnBuilder {
         self.seeds.push(addr);
     }
 
-    // pub fn add_service(&mut self, service: Box<dyn atm0s_sdn_network::controller_plane::Service>) {
-    //     self.services.push(service);
-    // }
+    /// panic if the service already exists
+    pub fn add_service(&mut self, service: Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, TC, TW>>) {
+        for s in self.services.iter() {
+            assert_ne!(s.service_id(), service.service_id(), "Service ({}, {}) already exists", service.service_id(), service.service_name());
+        }
+        self.services.push(service);
+    }
 
     #[cfg(feature = "vpn")]
     pub fn set_vpn_ip(&mut self, ip: (u8, u8, u8, u8)) {
@@ -51,11 +65,7 @@ impl SdnBuilder {
         self.vpn_netmask = Some(netmask);
     }
 
-    pub fn build<B: Backend, TC: Debug, TW: Debug>(self, workers: usize) -> SdnController<TC, TW>
-    where
-        TC: 'static + Clone + Send + Sync,
-        TW: 'static + Clone + Send + Sync,
-    {
+    pub fn build<B: Backend>(self, workers: usize) -> SdnController<TC, TW> {
         assert!(workers > 0);
         let mut addr_builder = NodeAddrBuilder::new(self.node_id);
         addr_builder.add_protocol(Protocol::Ip4(Ipv4Addr::new(127, 0, 0, 1)));
@@ -80,6 +90,7 @@ impl SdnBuilder {
             SdnInnerCfg {
                 node_id: self.node_id,
                 udp_port: self.udp_port,
+                services: self.services.clone(),
                 controller: Some(ControllerCfg {
                     session: self.session,
                     password: "password".to_string(),
@@ -99,6 +110,7 @@ impl SdnBuilder {
                 SdnInnerCfg {
                     node_id: self.node_id,
                     udp_port: self.udp_port,
+                    services: self.services.clone(),
                     controller: None,
                     #[cfg(feature = "vpn")]
                     vpn_tun_fd: queue_fds.pop_front().expect("Should have tun queue fd"),
