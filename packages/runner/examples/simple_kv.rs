@@ -1,6 +1,6 @@
 use atm0s_sdn_identity::{NodeAddr, NodeId};
 use atm0s_sdn_network::features::{
-    dht_kv::{Control, Map, MapControl, Key},
+    dht_kv::{Control, Key, Map, MapControl},
     FeaturesControl,
 };
 use clap::{Parser, ValueEnum};

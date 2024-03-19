@@ -133,11 +133,15 @@ impl<TC, TW> ControllerPlane<TC, TW> {
 
     pub fn pop_output(&mut self, now_ms: u64) -> Option<Output<TW>> {
         if let Some(last_task) = &self.last_task {
-            match last_task {
+            let res = match last_task {
                 TaskType::Neighbours => self.pop_neighbours(now_ms),
                 TaskType::Feature => self.pop_features(now_ms),
                 TaskType::Service => self.pop_services(now_ms),
+            };
+            if res.is_none() {
+                self.last_task = None;
             }
+            res
         } else {
             while let Some(current) = self.switcher.current() {
                 match current as u8 {
@@ -201,11 +205,11 @@ impl<TC, TW> ControllerPlane<TC, TW> {
             FeatureOutput::SendDirect(conn, buf) => {
                 log::debug!("[ControllerPlane] SendDirect to conn: {:?}, len: {}", conn, buf.len());
                 Some(Output::Event(LogicEvent::NetDirect(feature, conn, buf)))
-            },
+            }
             FeatureOutput::SendRoute(rule, buf) => {
                 log::debug!("[ControllerPlane] SendRoute to rule: {:?}, len: {}", rule, buf.len());
                 Some(Output::Event(LogicEvent::NetRoute(feature, rule, buf)))
-            },
+            }
             FeatureOutput::NeighboursConnectTo(addr) => {
                 //TODO may be we need stack style for optimize performance
                 self.neighbours.on_input(now_ms, neighbours::Input::ConnectTo(addr));

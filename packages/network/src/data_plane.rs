@@ -150,17 +150,19 @@ impl<TC, TW> DataPlane<TC, TW> {
     }
 
     pub fn pop_output<'a>(&mut self, now_ms: u64) -> Option<Output<'a, TC>> {
+        if let Some(out) = self.queue_output.pop_front() {
+            return match out {
+                QueueOutput::Feature(feature, out) => Some(self.convert_features(now_ms, feature, out)),
+                QueueOutput::Service(service, out) => Some(self.convert_services(now_ms, service, out)),
+            };
+        };
+
         if let Some(last) = &self.last_task {
-            if let Some(out) = self.pop_last(now_ms, *last) {
-                return Some(out);
-            } else {
+            let res = self.pop_last(now_ms, *last);
+            if res.is_none() {
                 self.last_task = None;
-                //TODO need to continue here
-                match self.queue_output.pop_front()? {
-                    QueueOutput::Feature(feature, out) => Some(self.convert_features(now_ms, feature, out)),
-                    QueueOutput::Service(service, out) => Some(self.convert_services(now_ms, service, out)),
-                }
             }
+            res
         } else {
             while let Some(current) = self.switcher.current() {
                 match current {
@@ -228,7 +230,7 @@ impl<TC, TW> DataPlane<TC, TW> {
             RouteAction::Reject => {
                 log::debug!("[DataPlane] route rule {:?} is rejected", rule);
                 None
-            },
+            }
             RouteAction::Local => {
                 log::debug!("[DataPlane] route rule {:?} is processed localy", rule);
                 let out = self.features.on_input(&mut self.ctx, feature, now_ms, FeatureWorkerInput::Local(buf.into()))?;

@@ -12,3 +12,4 @@ auto-clear = []
 [dependencies]
 rand = { workspace = true }
 log = { workspace = true }
+serde = { workspace = true }

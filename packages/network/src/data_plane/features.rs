@@ -87,13 +87,19 @@ impl FeatureWorkerManager {
 
     pub fn pop_output(&mut self) -> Option<(Features, FeaturesWorkerOutput<'static>)> {
         if let Some(last_feature) = self.last_input_feature {
-            match last_feature {
+            let res = match last_feature {
                 Features::Neighbours => self.neighbours.pop_output().map(|a| (Features::Neighbours, a.owned().into2())),
                 Features::Data => self.data.pop_output().map(|a| (Features::Data, a.owned().into2())),
                 Features::RouterSync => self.router_sync.pop_output().map(|a| (Features::RouterSync, a.owned().into2())),
                 Features::Vpn => self.vpn.pop_output().map(|a| (Features::Vpn, a.owned().into2())),
                 Features::DhtKv => self.dht_kv.pop_output().map(|a| (Features::DhtKv, a.owned().into2())),
+            };
+
+            if res.is_none() {
+                self.last_input_feature = None;
             }
+
+            res
         } else {
             loop {
                 let s = &mut self.switcher;
