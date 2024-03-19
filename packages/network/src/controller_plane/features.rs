@@ -38,9 +38,11 @@ impl FeatureManager {
     }
 
     pub fn on_shared_input<'a>(&mut self, now_ms: u64, input: FeatureSharedInput) {
-        self.neighbours.on_shared_input(now_ms, input.clone());
         self.data.on_shared_input(now_ms, input.clone());
-        self.router_sync.on_shared_input(now_ms, input);
+        self.neighbours.on_shared_input(now_ms, input.clone());
+        self.router_sync.on_shared_input(now_ms, input.clone());
+        self.dht_kv.on_shared_input(now_ms, input.clone());
+        self.vpn.on_shared_input(now_ms, input);
         self.last_input_feature = None;
     }
 

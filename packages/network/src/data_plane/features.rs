@@ -43,6 +43,7 @@ impl FeatureWorkerManager {
         self.data.on_tick(ctx, now_ms);
         self.router_sync.on_tick(ctx, now_ms);
         self.vpn.on_tick(ctx, now_ms);
+        self.dht_kv.on_tick(ctx, now_ms);
     }
 
     pub fn on_network_raw<'a>(&mut self, ctx: &mut FeatureWorkerContext, feature: Features, now_ms: u64, conn: ConnId, header_len: usize, buf: GenericBuffer<'a>) -> Option<FeaturesWorkerOutput<'a>> {
