@@ -1,5 +1,3 @@
-use std::vec;
-
 use atm0s_sdn_identity::NodeId;
 use bincode::Options;
 use serde::{Deserialize, Serialize};

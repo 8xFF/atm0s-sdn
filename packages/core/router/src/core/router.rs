@@ -390,7 +390,7 @@ mod tests {
 
     #[test]
     fn closest_node() {
-        let (node_a, _conn_a, mut router_a) = create_router(NodeId::build(0, 0, 0, 1));
+        let (_node_a, _conn_a, mut router_a) = create_router(NodeId::build(0, 0, 0, 1));
 
         assert_eq!(router_a.closest_node(0x01, &[]), None);
 
@@ -416,7 +416,7 @@ mod tests {
     /// This test ensure closest_node working when we have only small part of key-space
     #[test]
     fn closest_node_out_of_space() {
-        let (node_a, _conn_a, mut router_a) = create_router(NodeId::build(1, 0, 0, 1));
+        let (_node_a, _conn_a, mut router_a) = create_router(NodeId::build(1, 0, 0, 1));
 
         assert_eq!(router_a.closest_node(0x01, &[]), None);
 

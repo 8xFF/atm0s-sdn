@@ -41,6 +41,7 @@ impl Table {
         }
     }
 
+    #[allow(unused)]
     pub fn slots(&self) -> Vec<u8> {
         self.slots.clone()
     }
@@ -212,12 +213,12 @@ mod tests {
         let conn2: ConnId = ConnId::from_out(0, 0x2);
         let conn3: ConnId = ConnId::from_out(0, 0x3);
 
-        table.add_direct(conn1, Metric::new(1, vec![1], 1));
+        table.add_direct(conn1, Metric::new(1, vec![node1], 1));
         assert_eq!(table.pop_delta(), Some(TableDelta(1, DestDelta::SetBestPath(conn1))));
-        table.add_direct(conn2, Metric::new(2, vec![2], 1));
+        table.add_direct(conn2, Metric::new(2, vec![node2], 1));
         assert_eq!(table.pop_delta(), Some(TableDelta(2, DestDelta::SetBestPath(conn2))));
         // fake
-        table.add_direct(conn3, Metric::new(1, vec![3], 1));
+        table.add_direct(conn3, Metric::new(1, vec![node3], 1));
         assert_eq!(table.pop_delta(), Some(TableDelta(3, DestDelta::SetBestPath(conn3))));
 
         assert_eq!(table.slots(), vec![1, 2, 3]);

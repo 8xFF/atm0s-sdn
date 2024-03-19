@@ -1,4 +1,4 @@
-use atm0s_sdn_identity::{ConnId, NodeId};
+use atm0s_sdn_identity::ConnId;
 use std::cmp::Ordering;
 
 use super::Metric;

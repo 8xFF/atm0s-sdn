@@ -1,9 +1,7 @@
 use atm0s_sdn_identity::{NodeId, NodeIdType};
 use atm0s_sdn_router::{RouteAction, RouteRule, RouterTable};
 
-use crate::base::{
-    Feature, FeatureInput, FeatureOutput, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer, GenericBufferMut, TransportMsg, TransportMsgHeader,
-};
+use crate::base::{Feature, FeatureInput, FeatureOutput, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer, GenericBufferMut, TransportMsg};
 
 pub const FEATURE_ID: u8 = 3;
 pub const FEATURE_NAME: &str = "vpn";
@@ -43,12 +41,11 @@ impl Feature<Control, Event, ToController, ToWorker> for VpnFeature {
 
 pub struct VpnFeatureWorker {
     node_id: NodeId,
-    buf: [u8; 1500],
 }
 
 impl VpnFeatureWorker {
     pub fn new(node_id: NodeId) -> Self {
-        Self { node_id, buf: [0; 1500] }
+        Self { node_id }
     }
 
     fn process_tun<'a>(&mut self, ctx: &FeatureWorkerContext, mut pkt: GenericBufferMut<'a>) -> Option<FeatureWorkerOutput<'a, Control, Event, ToController>> {
