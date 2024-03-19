@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use atm0s_sdn_network::{controller_plane::BusOut, ExtIn, ExtOut};
+use atm0s_sdn_network::{ExtIn, ExtOut};
 use sans_io_runtime::{bus::BusEvent, Owner, Task, TaskInput, TaskOutput, WorkerInnerOutput};
 
 use crate::tasks::{
@@ -41,13 +41,15 @@ pub fn convert_output<'a, TC: Debug, TW: Debug>(
             TaskOutput::Bus(BusEvent::ChannelUnsubscribe(SdnChannel::ControllerPlane(channel))),
         ),
         TaskOutput::Bus(BusEvent::ChannelPublish(_, safe, event)) => {
-            let channel = match &event {
-                BusOut::Single(_) => SdnChannel::DataPlane(data_plane::ChannelIn::Worker(0)),
-                BusOut::Multiple(_) => SdnChannel::DataPlane(data_plane::ChannelIn::Broadcast),
+            let channel = if event.is_broadcast() {
+                SdnChannel::DataPlane(data_plane::ChannelIn::Broadcast)
+            } else {
+                SdnChannel::DataPlane(data_plane::ChannelIn::Worker(0))
             };
+
             WorkerInnerOutput::Task(
                 Owner::group(worker, ControllerPlaneTask::<(), ()>::TYPE),
-                TaskOutput::Bus(BusEvent::ChannelPublish(channel, safe, SdnEvent::DataPlane(event.into()))),
+                TaskOutput::Bus(BusEvent::ChannelPublish(channel, safe, SdnEvent::DataPlane(event))),
             )
         }
         _ => panic!("Invalid output type from ControllerPlane"),

@@ -8,8 +8,8 @@ use std::{
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_network::{
     base::GenericBuffer,
-    data_plane::{self, DataPlane, Input as DataPlaneInput, NetInput, NetOutput, Output as DataPlaneOutput},
-    ExtOut,
+    data_plane::{DataPlane, Input as DataPlaneInput, NetInput, NetOutput, Output as DataPlaneOutput},
+    ExtOut, LogicControl, LogicEvent,
 };
 use sans_io_runtime::{bus::BusEvent, Buffer, NetIncoming, NetOutgoing, Task, TaskInput, TaskOutput};
 
@@ -23,8 +23,8 @@ pub enum ChannelIn {
 
 pub type ChannelOut = ();
 
-pub type EventIn<TW> = data_plane::BusInput<TW>;
-pub type EventOut<TC> = data_plane::BusOutput<TC>;
+pub type EventIn<TW> = LogicEvent<TW>;
+pub type EventOut<TC> = LogicControl<TC>;
 
 pub struct DataPlaneCfg {
     pub worker: u16,
@@ -86,7 +86,7 @@ impl<TC, TW> DataPlaneTask<TC, TW> {
                 to,
                 data: convert_buf1(buf),
             })),
-            DataPlaneOutput::Bus(bus) => Some(TaskOutput::Bus(BusEvent::ChannelPublish((), true, bus))),
+            DataPlaneOutput::Control(bus) => Some(TaskOutput::Bus(BusEvent::ChannelPublish((), true, bus))),
             DataPlaneOutput::ShutdownResponse => {
                 self.queue.push_back(TaskOutput::Net(NetOutgoing::UdpUnlisten { slot: self.backend_udp_slot }));
                 self.queue.push_back(TaskOutput::Bus(BusEvent::ChannelUnsubscribe(ChannelIn::Broadcast)));
@@ -168,7 +168,7 @@ impl<TC: Debug, TW: Debug> Task<(), ExtOut, ChannelIn, ChannelOut, EventIn<TW>, 
                 NetIncoming::TunPacket { .. } => None,
             },
             TaskInput::Bus(_, event) => {
-                let output = self.data_plane.on_event(self.timer.timestamp_ms(now), DataPlaneInput::Bus(event))?;
+                let output = self.data_plane.on_event(self.timer.timestamp_ms(now), DataPlaneInput::Event(event))?;
                 self.try_process_output(now, output)
             }
         }

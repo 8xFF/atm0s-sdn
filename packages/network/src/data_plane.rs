@@ -8,12 +8,12 @@ use atm0s_sdn_router::{shadow::ShadowRouter, RouteAction, RouteRule, RouterTable
 
 use crate::{
     base::{
-        FeatureControlActor, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer, GenericBufferMut, NeighboursControl, SecureContext, ServiceId, ServiceWorkerInput,
-        ServiceWorkerOutput, TransportMsg, TransportMsgHeader,
+        FeatureControlActor, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer, GenericBufferMut, NeighboursControl, ServiceId, ServiceWorkerInput, ServiceWorkerOutput,
+        TransportMsg, TransportMsgHeader,
     },
-    features::{Features, FeaturesControl, FeaturesEvent, FeaturesToController, FeaturesToWorker},
+    features::{Features, FeaturesControl, FeaturesEvent, FeaturesToController},
     san_io_utils::TasksSwitcher,
-    ExtOut,
+    ExtOut, LogicControl, LogicEvent,
 };
 
 use self::{connection::DataPlaneConnection, features::FeatureWorkerManager, services::ServiceWorkerManager};
@@ -28,21 +28,10 @@ pub enum NetInput<'a> {
     TunPacket(GenericBufferMut<'a>),
 }
 
-#[derive(Debug, Clone)]
-pub enum BusInput<TW> {
-    FromFeatureController(FeaturesToWorker),
-    FromServiceController(ServiceId, TW),
-    NeigboursControl(SocketAddr, NeighboursControl),
-    NetDirect(Features, ConnId, Vec<u8>),
-    NetRoute(Features, RouteRule, Vec<u8>),
-    Pin(ConnId, SocketAddr, SecureContext),
-    UnPin(ConnId),
-}
-
 #[derive(Debug)]
 pub enum Input<'a, TW> {
     Net(NetInput<'a>),
-    Bus(BusInput<TW>),
+    Event(LogicEvent<TW>),
     ShutdownRequest,
 }
 
@@ -53,22 +42,11 @@ pub enum NetOutput<'a> {
     TunPacket(GenericBuffer<'a>),
 }
 
-#[derive(Debug, Clone)]
-pub enum BusOutput<TC> {
-    ForwardControlToController(FeatureControlActor, FeaturesControl),
-    ForwardEventToController(ServiceId, FeaturesEvent),
-    ForwardNetworkToController(Features, ConnId, Vec<u8>),
-    ForwardLocalToController(Features, Vec<u8>),
-    ToFeatureController(FeaturesToController),
-    ToServiceController(ServiceId, TC),
-    NeigboursControl(SocketAddr, NeighboursControl),
-}
-
 #[derive(convert_enum::From)]
 pub enum Output<'a, TC> {
     Ext(ExtOut),
     Net(NetOutput<'a>),
-    Bus(BusOutput<TC>),
+    Control(LogicControl<TC>),
     #[convert_enum(optout)]
     ShutdownResponse,
     #[convert_enum(optout)]
@@ -125,7 +103,7 @@ impl<TC, TW> DataPlane<TC, TW> {
         match event {
             Input::Net(NetInput::UdpPacket(remote, buf)) => {
                 if let Ok(control) = NeighboursControl::try_from(&*buf) {
-                    Some(BusOutput::NeigboursControl(remote, control).into())
+                    Some(LogicControl::NetNeighbour(remote, control).into())
                 } else {
                     self.incoming_route(now_ms, remote, buf)
                 }
@@ -134,31 +112,31 @@ impl<TC, TW> DataPlane<TC, TW> {
                 let out = self.features.on_input(&mut self.ctx, Features::Vpn, now_ms, FeatureWorkerInput::TunPkt(pkt))?;
                 Some(self.convert_features(now_ms, Features::Vpn, out))
             }
-            Input::Bus(BusInput::FromFeatureController(to)) => {
+            Input::Event(LogicEvent::Feature(to)) => {
                 let feature = to.to_feature();
                 let out = self.features.on_input(&mut self.ctx, feature, now_ms, FeatureWorkerInput::FromController(to))?;
                 Some(self.convert_features(now_ms, feature, out))
             }
-            Input::Bus(BusInput::FromServiceController(service, to)) => {
+            Input::Event(LogicEvent::Service(service, to)) => {
                 let out = self.services.on_input(now_ms, service, ServiceWorkerInput::FromController(to))?;
                 Some(self.convert_services(now_ms, service, out))
             }
-            Input::Bus(BusInput::NeigboursControl(remote, control)) => {
+            Input::Event(LogicEvent::NetNeigbour(remote, control)) => {
                 let buf = (&control).try_into().ok()?;
                 Some(NetOutput::UdpPacket(remote, GenericBuffer::Vec(buf)).into())
             }
-            Input::Bus(BusInput::NetDirect(feature, conn, buf)) => {
+            Input::Event(LogicEvent::NetDirect(feature, conn, buf)) => {
                 let addr = self.conns_reverse.get(&conn)?;
                 let msg = TransportMsg::build(feature as u8, 0, RouteRule::Direct, &buf);
                 Some(NetOutput::UdpPacket(*addr, msg.take().into()).into())
             }
-            Input::Bus(BusInput::NetRoute(feature, rule, buf)) => self.outgoing_route(now_ms, feature, rule, buf),
-            Input::Bus(BusInput::Pin(conn, addr, secure)) => {
+            Input::Event(LogicEvent::NetRoute(feature, rule, buf)) => self.outgoing_route(now_ms, feature, rule, buf),
+            Input::Event(LogicEvent::Pin(conn, addr, secure)) => {
                 self.conns.insert(addr, DataPlaneConnection::new(conn, addr, secure));
                 self.conns_reverse.insert(conn, addr);
                 None
             }
-            Input::Bus(BusInput::UnPin(conn)) => {
+            Input::Event(LogicEvent::UnPin(conn)) => {
                 if let Some(addr) = self.conns_reverse.remove(&conn) {
                     log::info!("UnPin: conn: {} <--> addr: {}", conn, addr);
                     self.conns.remove(&addr);
@@ -269,10 +247,10 @@ impl<TC, TW> DataPlane<TC, TW> {
     fn convert_features<'a>(&mut self, now_ms: u64, feature: Features, out: FeatureWorkerOutput<'a, FeaturesControl, FeaturesEvent, FeaturesToController>) -> Output<'a, TC> {
         self.last_task = Some(TaskType::Feature);
         match out {
-            FeatureWorkerOutput::ForwardControlToController(service, control) => BusOutput::ForwardControlToController(service, control).into(),
-            FeatureWorkerOutput::ForwardNetworkToController(conn, msg) => BusOutput::ForwardNetworkToController(feature, conn, msg).into(),
-            FeatureWorkerOutput::ForwardLocalToController(buf) => BusOutput::ForwardLocalToController(feature, buf).into(),
-            FeatureWorkerOutput::ToController(control) => BusOutput::ToFeatureController(control).into(),
+            FeatureWorkerOutput::ForwardControlToController(service, control) => LogicControl::FeaturesControl(service, control).into(),
+            FeatureWorkerOutput::ForwardNetworkToController(conn, msg) => LogicControl::NetRemote(feature, conn, msg).into(),
+            FeatureWorkerOutput::ForwardLocalToController(buf) => LogicControl::NetLocal(feature, buf).into(),
+            FeatureWorkerOutput::ToController(control) => LogicControl::Feature(control).into(),
             FeatureWorkerOutput::Event(actor, event) => match actor {
                 FeatureControlActor::Controller => Output::Ext(ExtOut::FeaturesEvent(event)),
                 FeatureControlActor::Service(service) => {
@@ -318,8 +296,8 @@ impl<TC, TW> DataPlane<TC, TW> {
     fn convert_services<'a>(&mut self, now_ms: u64, service: ServiceId, out: ServiceWorkerOutput<FeaturesControl, FeaturesEvent, TC>) -> Output<'a, TC> {
         self.last_task = Some(TaskType::Service);
         match out {
-            ServiceWorkerOutput::ForwardFeatureEventToController(event) => BusOutput::ForwardEventToController(service, event).into(),
-            ServiceWorkerOutput::ToController(tc) => BusOutput::ToServiceController(service, tc).into(),
+            ServiceWorkerOutput::ForwardFeatureEventToController(event) => LogicControl::ServiceEvent(service, event).into(),
+            ServiceWorkerOutput::ToController(tc) => LogicControl::Service(service, tc).into(),
             ServiceWorkerOutput::FeatureControl(control) => {
                 let feature = control.to_feature();
                 if let Some(out) = self

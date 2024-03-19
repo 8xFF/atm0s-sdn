@@ -40,7 +40,7 @@ pub fn convert_output<'a, TC, TW>(
         ),
         TaskOutput::Bus(BusEvent::ChannelPublish(_, safe, event)) => WorkerInnerOutput::Task(
             Owner::group(worker, DataPlaneTask::<(), ()>::TYPE),
-            TaskOutput::Bus(BusEvent::ChannelPublish(SdnChannel::ControllerPlane(()), safe, SdnEvent::ControllerPlane(event.into()))),
+            TaskOutput::Bus(BusEvent::ChannelPublish(SdnChannel::ControllerPlane(()), safe, SdnEvent::ControllerPlane(event))),
         ),
         TaskOutput::Net(out) => WorkerInnerOutput::Task(Owner::group(worker, DataPlaneTask::<(), ()>::TYPE), TaskOutput::Net(out)),
         TaskOutput::Destroy => WorkerInnerOutput::Task(Owner::group(worker, DataPlaneTask::<(), ()>::TYPE), TaskOutput::Destroy),

@@ -2,8 +2,8 @@ use std::{collections::VecDeque, time::Instant};
 
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_network::{
-    controller_plane::{self, ControllerPlane, Input as ControllerInput, Output as ControllerOutput},
-    ExtIn, ExtOut,
+    controller_plane::{ControllerPlane, Input as ControllerInput, Output as ControllerOutput},
+    ExtIn, ExtOut, LogicControl, LogicEvent,
 };
 use sans_io_runtime::{bus::BusEvent, Task, TaskInput, TaskOutput};
 
@@ -20,8 +20,8 @@ pub struct ControllerPlaneCfg {
     pub vpn_tun_device: sans_io_runtime::backend::tun::TunDevice,
 }
 
-pub type EventIn<TC> = controller_plane::BusIn<TC>;
-pub type EventOut<TW> = controller_plane::BusOut<TW>;
+pub type EventIn<TC> = LogicControl<TC>;
+pub type EventOut<TW> = LogicEvent<TW>;
 
 pub struct ControllerPlaneTask<TC, TW> {
     #[allow(unused)]
@@ -63,7 +63,7 @@ impl<TC, TW> Task<ExtIn, ExtOut, ChannelIn, ChannelOut, EventIn<TC>, EventOut<TW
         let now_ms = self.timer.timestamp_ms(now);
         match input {
             TaskInput::Bus(_, event) => {
-                self.controller.on_event(now_ms, ControllerInput::Bus(event));
+                self.controller.on_event(now_ms, ControllerInput::Control(event));
             }
             TaskInput::Ext(event) => {
                 self.controller.on_event(now_ms, ControllerInput::Ext(event));
@@ -84,7 +84,7 @@ impl<TC, TW> Task<ExtIn, ExtOut, ChannelIn, ChannelOut, EventIn<TC>, EventOut<TW
         match output {
             ControllerOutput::Ext(event) => Some(TaskOutput::Ext(event)),
             ControllerOutput::ShutdownSuccess => Some(TaskOutput::Destroy),
-            ControllerOutput::Bus(bus) => Some(TaskOutput::Bus(BusEvent::ChannelPublish((), true, bus))),
+            ControllerOutput::Event(bus) => Some(TaskOutput::Bus(BusEvent::ChannelPublish((), true, bus))),
         }
     }
 
