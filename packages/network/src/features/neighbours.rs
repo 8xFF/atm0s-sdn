@@ -7,7 +7,7 @@ use crate::base::{ConnectionEvent, Feature, FeatureControlActor, FeatureInput, F
 pub const FEATURE_ID: u8 = 0;
 pub const FEATURE_NAME: &str = "neighbours_api";
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Control {
     Sub,
     UnSub,

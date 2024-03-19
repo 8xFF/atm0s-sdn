@@ -25,7 +25,7 @@ pub use self::msg::{Key, Map};
 pub const FEATURE_ID: u8 = 4;
 pub const FEATURE_NAME: &str = "dht_kv";
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MapControl {
     Set(Key, Vec<u8>),
     Del(Key),
@@ -43,7 +43,7 @@ impl MapControl {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Control {
     MapCmd(Map, MapControl),
     MapGet(Map),

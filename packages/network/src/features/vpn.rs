@@ -6,7 +6,7 @@ use crate::base::{Feature, FeatureInput, FeatureOutput, FeatureWorker, FeatureWo
 pub const FEATURE_ID: u8 = 3;
 pub const FEATURE_NAME: &str = "vpn";
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Control {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]

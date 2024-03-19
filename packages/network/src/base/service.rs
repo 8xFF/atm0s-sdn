@@ -18,7 +18,7 @@ pub enum ServiceInput<FeaturesEvent, ToController> {
     FeatureEvent(FeaturesEvent),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ServiceOutput<FeaturesControl, ToWorker> {
     FeatureControl(FeaturesControl),
     BroadcastWorkers(ToWorker),

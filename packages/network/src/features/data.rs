@@ -9,7 +9,7 @@ use crate::base::{Feature, FeatureControlActor, FeatureInput, FeatureOutput, Fea
 pub const FEATURE_ID: u8 = 1;
 pub const FEATURE_NAME: &str = "data_transfer";
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Control {
     Ping(NodeId),
 }

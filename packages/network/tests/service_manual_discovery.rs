@@ -3,7 +3,7 @@ use std::sync::Arc;
 use atm0s_sdn_identity::ConnId;
 use atm0s_sdn_network::{
     features::{neighbours, FeaturesControl, FeaturesEvent},
-    services::manual_discovery::{self, ManualDiscoveryServiceBuilder},
+    services::manual_discovery::ManualDiscoveryServiceBuilder,
     ExtIn, ExtOut,
 };
 

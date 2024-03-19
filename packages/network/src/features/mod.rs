@@ -35,7 +35,7 @@ impl TryFrom<u8> for Features {
     }
 }
 
-#[derive(Debug, Clone, convert_enum::From)]
+#[derive(Debug, Clone, PartialEq, Eq, convert_enum::From)]
 pub enum FeaturesControl {
     Neighbours(neighbours::Control),
     Data(data::Control),
