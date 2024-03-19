@@ -76,15 +76,13 @@ pub struct ToWorker;
 pub struct ToController;
 
 pub struct DhtKvFeature {
-    node_id: NodeId,
     internal: internal::DhtKvInternal,
 }
 
 impl DhtKvFeature {
-    pub fn new(node_id: NodeId) -> Self {
+    pub fn new(node_id: NodeId, session: u64) -> Self {
         Self {
-            node_id,
-            internal: internal::DhtKvInternal::new(NodeSession(node_id, 0)), //TODO genereate session
+            internal: internal::DhtKvInternal::new(NodeSession(node_id, session)),
         }
     }
 }

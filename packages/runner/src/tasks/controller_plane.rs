@@ -1,5 +1,6 @@
 use std::{collections::VecDeque, time::Instant};
 
+use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_network::{
     controller_plane::{self, ControllerPlane, Input as ControllerInput, Output as ControllerOutput},
     ExtIn, ExtOut,
@@ -12,7 +13,8 @@ pub type ChannelIn = ();
 pub type ChannelOut = ();
 
 pub struct ControllerPlaneCfg {
-    pub node_id: u32,
+    pub node_id: NodeId,
+    pub session: u64,
     pub tick_ms: u64,
     #[cfg(feature = "vpn")]
     pub vpn_tun_device: sans_io_runtime::backend::tun::TunDevice,
@@ -23,7 +25,7 @@ pub type EventOut<TW> = controller_plane::BusOut<TW>;
 
 pub struct ControllerPlaneTask<TC, TW> {
     #[allow(unused)]
-    node_id: u32,
+    node_id: NodeId,
     controller: ControllerPlane<TC, TW>,
     queue: VecDeque<TaskOutput<'static, ExtOut, ChannelIn, ChannelOut, EventOut<TW>>>,
     ticker: TimeTicker,
@@ -36,7 +38,7 @@ impl<TC, TW> ControllerPlaneTask<TC, TW> {
     pub fn build(cfg: ControllerPlaneCfg) -> Self {
         Self {
             node_id: cfg.node_id,
-            controller: ControllerPlane::new(cfg.node_id),
+            controller: ControllerPlane::new(cfg.node_id, cfg.session),
             queue: VecDeque::from([TaskOutput::Bus(BusEvent::ChannelSubscribe(()))]),
             ticker: TimeTicker::build(1000),
             timer: TimePivot::build(),

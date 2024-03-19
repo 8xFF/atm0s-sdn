@@ -4,6 +4,7 @@ mod event_convert;
 
 use std::{fmt::Debug, time::Instant};
 
+use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_network::{ExtIn, ExtOut};
 use sans_io_runtime::{Controller, Task, TaskGroupOutputsState, TaskInput, TaskOutput, WorkerInner, WorkerInnerInput, WorkerInnerOutput};
 
@@ -30,6 +31,7 @@ pub enum SdnEvent<TC, TW> {
 }
 
 pub struct ControllerCfg {
+    pub session: u64,
     pub password: String,
     pub tick_ms: u64,
     // pub services: Vec<Box<dyn atm0s_sdn_network::controller_plane::Service>>,
@@ -38,7 +40,7 @@ pub struct ControllerCfg {
 }
 
 pub struct SdnInnerCfg {
-    pub node_id: u32,
+    pub node_id: NodeId,
     pub udp_port: u16,
     pub controller: Option<ControllerCfg>,
     #[cfg(feature = "vpn")]
@@ -86,6 +88,7 @@ impl<TC: Debug, TW: Debug> WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent
                 worker,
                 controller: Some(ControllerPlaneTask::build(ControllerPlaneCfg {
                     node_id: cfg.node_id,
+                    session: controller.session,
                     tick_ms: controller.tick_ms,
                     // services: controller.services,
                     #[cfg(feature = "vpn")]

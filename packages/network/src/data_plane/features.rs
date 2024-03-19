@@ -20,8 +20,8 @@ pub struct FeatureWorkerManager {
     router_sync: router_sync::RouterSyncFeatureWorker,
     vpn: vpn::VpnFeatureWorker,
     dht_kv: dht_kv::DhtKvFeatureWorker,
-    last_input_feature: Option<u8>,
-    switcher: TasksSwitcher<4>,
+    last_input_feature: Option<Features>,
+    switcher: TasksSwitcher<5>,
 }
 
 impl FeatureWorkerManager {
@@ -45,102 +45,84 @@ impl FeatureWorkerManager {
         self.vpn.on_tick(ctx, now_ms);
     }
 
-    pub fn on_network_raw<'a>(&mut self, ctx: &mut FeatureWorkerContext, feature: u8, now_ms: u64, conn: ConnId, header_len: usize, buf: GenericBuffer<'a>) -> Option<(u8, FeaturesWorkerOutput<'a>)> {
+    pub fn on_network_raw<'a>(&mut self, ctx: &mut FeatureWorkerContext, feature: Features, now_ms: u64, conn: ConnId, header_len: usize, buf: GenericBuffer<'a>) -> Option<FeaturesWorkerOutput<'a>> {
         match feature {
-            neighbours::FEATURE_ID => self.neighbours.on_network_raw(ctx, now_ms, conn, header_len, buf).map(|a| (neighbours::FEATURE_ID, a.into2())),
-            data::FEATURE_ID => self.data.on_network_raw(ctx, now_ms, conn, header_len, buf).map(|a| (data::FEATURE_ID, a.into2())),
-            router_sync::FEATURE_ID => self.router_sync.on_network_raw(ctx, now_ms, conn, header_len, buf).map(|a| (router_sync::FEATURE_ID, a.into2())),
-            vpn::FEATURE_ID => self.vpn.on_network_raw(ctx, now_ms, conn, header_len, buf).map(|a| (vpn::FEATURE_ID, a.into2())),
-            _ => None,
+            Features::Neighbours => self.neighbours.on_network_raw(ctx, now_ms, conn, header_len, buf).map(|a| a.into2()),
+            Features::Data => self.data.on_network_raw(ctx, now_ms, conn, header_len, buf).map(|a| a.into2()),
+            Features::RouterSync => self.router_sync.on_network_raw(ctx, now_ms, conn, header_len, buf).map(|a| a.into2()),
+            Features::Vpn => self.vpn.on_network_raw(ctx, now_ms, conn, header_len, buf).map(|a| a.into2()),
+            Features::DhtKv => self.dht_kv.on_network_raw(ctx, now_ms, conn, header_len, buf).map(|a| a.into2()),
         }
     }
 
-    pub fn on_input<'a>(&mut self, ctx: &mut FeatureWorkerContext, feature: u8, now_ms: u64, input: FeaturesWorkerInput<'a>) -> Option<(u8, FeaturesWorkerOutput<'a>)> {
+    pub fn on_input<'a>(&mut self, ctx: &mut FeatureWorkerContext, feature: Features, now_ms: u64, input: FeaturesWorkerInput<'a>) -> Option<FeaturesWorkerOutput<'a>> {
         match input {
             FeatureWorkerInput::Control(service, control) => match control {
-                FeaturesControl::Neighbours(control) => self
-                    .neighbours
-                    .on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control))
-                    .map(|a| (neighbours::FEATURE_ID, a.into2())),
-                FeaturesControl::Data(control) => self.data.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| (data::FEATURE_ID, a.into2())),
-                FeaturesControl::RouterSync(control) => self
-                    .router_sync
-                    .on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control))
-                    .map(|a| (router_sync::FEATURE_ID, a.into2())),
-                FeaturesControl::Vpn(control) => self.vpn.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| (vpn::FEATURE_ID, a.into2())),
-                FeaturesControl::DhtKv(control) => self
-                    .dht_kv
-                    .on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control))
-                    .map(|a| (dht_kv::FEATURE_ID, a.into2())),
+                FeaturesControl::Neighbours(control) => self.neighbours.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| a.into2()),
+                FeaturesControl::Data(control) => self.data.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| a.into2()),
+                FeaturesControl::RouterSync(control) => self.router_sync.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| a.into2()),
+                FeaturesControl::Vpn(control) => self.vpn.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| a.into2()),
+                FeaturesControl::DhtKv(control) => self.dht_kv.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| a.into2()),
             },
             FeatureWorkerInput::FromController(to) => match to {
-                FeaturesToWorker::Neighbours(to) => self
-                    .neighbours
-                    .on_input(ctx, now_ms, FeatureWorkerInput::FromController(to))
-                    .map(|a| (neighbours::FEATURE_ID, a.into2())),
-                FeaturesToWorker::Data(to) => self.data.on_input(ctx, now_ms, FeatureWorkerInput::FromController(to)).map(|a| (data::FEATURE_ID, a.into2())),
-                FeaturesToWorker::RouterSync(to) => self
-                    .router_sync
-                    .on_input(ctx, now_ms, FeatureWorkerInput::FromController(to))
-                    .map(|a| (router_sync::FEATURE_ID, a.into2())),
-                FeaturesToWorker::Vpn(to) => self.vpn.on_input(ctx, now_ms, FeatureWorkerInput::FromController(to)).map(|a| (vpn::FEATURE_ID, a.into2())),
-                FeaturesToWorker::DhtKv(to) => self.dht_kv.on_input(ctx, now_ms, FeatureWorkerInput::FromController(to)).map(|a| (dht_kv::FEATURE_ID, a.into2())),
+                FeaturesToWorker::Neighbours(to) => self.neighbours.on_input(ctx, now_ms, FeatureWorkerInput::FromController(to)).map(|a| a.into2()),
+                FeaturesToWorker::Data(to) => self.data.on_input(ctx, now_ms, FeatureWorkerInput::FromController(to)).map(|a| a.into2()),
+                FeaturesToWorker::RouterSync(to) => self.router_sync.on_input(ctx, now_ms, FeatureWorkerInput::FromController(to)).map(|a| a.into2()),
+                FeaturesToWorker::Vpn(to) => self.vpn.on_input(ctx, now_ms, FeatureWorkerInput::FromController(to)).map(|a| a.into2()),
+                FeaturesToWorker::DhtKv(to) => self.dht_kv.on_input(ctx, now_ms, FeatureWorkerInput::FromController(to)).map(|a| a.into2()),
             },
             FeatureWorkerInput::Network(_conn, _buf) => {
                 panic!("should call above on_network_raw")
             }
-            FeatureWorkerInput::TunPkt(pkt) => self.vpn.on_input(ctx, now_ms, FeatureWorkerInput::TunPkt(pkt)).map(|a| (vpn::FEATURE_ID, a.into2())),
+            FeatureWorkerInput::TunPkt(pkt) => self.vpn.on_input(ctx, now_ms, FeatureWorkerInput::TunPkt(pkt)).map(|a| a.into2()),
             FeatureWorkerInput::Local(buf) => match feature {
-                neighbours::FEATURE_ID => self.neighbours.on_input(ctx, now_ms, FeatureWorkerInput::Local(buf)).map(|a| (neighbours::FEATURE_ID, a.into2())),
-                data::FEATURE_ID => self.data.on_input(ctx, now_ms, FeatureWorkerInput::Local(buf)).map(|a| (data::FEATURE_ID, a.into2())),
-                router_sync::FEATURE_ID => self.router_sync.on_input(ctx, now_ms, FeatureWorkerInput::Local(buf)).map(|a| (router_sync::FEATURE_ID, a.into2())),
-                vpn::FEATURE_ID => self.vpn.on_input(ctx, now_ms, FeatureWorkerInput::Local(buf)).map(|a| (vpn::FEATURE_ID, a.into2())),
-                dht_kv::FEATURE_ID => self.dht_kv.on_input(ctx, now_ms, FeatureWorkerInput::Local(buf)).map(|a| (dht_kv::FEATURE_ID, a.into2())),
-                _ => None,
+                Features::Neighbours => self.neighbours.on_input(ctx, now_ms, FeatureWorkerInput::Local(buf)).map(|a| a.into2()),
+                Features::Data => self.data.on_input(ctx, now_ms, FeatureWorkerInput::Local(buf)).map(|a| a.into2()),
+                Features::RouterSync => self.router_sync.on_input(ctx, now_ms, FeatureWorkerInput::Local(buf)).map(|a| a.into2()),
+                Features::Vpn => self.vpn.on_input(ctx, now_ms, FeatureWorkerInput::Local(buf)).map(|a| a.into2()),
+                Features::DhtKv => self.dht_kv.on_input(ctx, now_ms, FeatureWorkerInput::Local(buf)).map(|a| a.into2()),
             },
         }
     }
 
-    pub fn pop_output(&mut self) -> Option<(u8, FeaturesWorkerOutput<'static>)> {
+    pub fn pop_output(&mut self) -> Option<(Features, FeaturesWorkerOutput<'static>)> {
         if let Some(last_feature) = self.last_input_feature {
             match last_feature {
-                neighbours::FEATURE_ID => self.neighbours.pop_output().map(|a| (neighbours::FEATURE_ID, a.owned().into2())),
-                data::FEATURE_ID => self.data.pop_output().map(|a| (data::FEATURE_ID, a.owned().into2())),
-                router_sync::FEATURE_ID => self.router_sync.pop_output().map(|a| (router_sync::FEATURE_ID, a.owned().into2())),
-                vpn::FEATURE_ID => self.vpn.pop_output().map(|a| (vpn::FEATURE_ID, a.owned().into2())),
-                dht_kv::FEATURE_ID => self.dht_kv.pop_output().map(|a| (dht_kv::FEATURE_ID, a.owned().into2())),
-                _ => None,
+                Features::Neighbours => self.neighbours.pop_output().map(|a| (Features::Neighbours, a.owned().into2())),
+                Features::Data => self.data.pop_output().map(|a| (Features::Data, a.owned().into2())),
+                Features::RouterSync => self.router_sync.pop_output().map(|a| (Features::RouterSync, a.owned().into2())),
+                Features::Vpn => self.vpn.pop_output().map(|a| (Features::Vpn, a.owned().into2())),
+                Features::DhtKv => self.dht_kv.pop_output().map(|a| (Features::DhtKv, a.owned().into2())),
             }
         } else {
             loop {
                 let s = &mut self.switcher;
-                match s.current()? as u8 {
-                    neighbours::FEATURE_ID => {
+                match (s.current()? as u8).try_into().ok()? {
+                    Features::Neighbours => {
                         if let Some(out) = s.process(self.neighbours.pop_output()) {
-                            return Some((neighbours::FEATURE_ID, out.owned().into2()));
+                            return Some((Features::Neighbours, out.owned().into2()));
                         }
                     }
-                    data::FEATURE_ID => {
+                    Features::Data => {
                         if let Some(out) = s.process(self.data.pop_output()) {
-                            return Some((data::FEATURE_ID, out.owned().into2()));
+                            return Some((Features::Data, out.owned().into2()));
                         }
                     }
-                    router_sync::FEATURE_ID => {
+                    Features::RouterSync => {
                         if let Some(out) = s.process(self.router_sync.pop_output()) {
-                            return Some((router_sync::FEATURE_ID, out.owned().into2()));
+                            return Some((Features::RouterSync, out.owned().into2()));
                         }
                     }
-                    vpn::FEATURE_ID => {
+                    Features::Vpn => {
                         if let Some(out) = s.process(self.vpn.pop_output()) {
-                            return Some((vpn::FEATURE_ID, out.owned().into2()));
+                            return Some((Features::Vpn, out.owned().into2()));
                         }
                     }
-                    dht_kv::FEATURE_ID => {
+                    Features::DhtKv => {
                         if let Some(out) = s.process(self.dht_kv.pop_output()) {
-                            return Some((dht_kv::FEATURE_ID, out.owned().into2()));
+                            return Some((Features::DhtKv, out.owned().into2()));
                         }
                     }
-                    _ => return None,
                 }
             }
         }

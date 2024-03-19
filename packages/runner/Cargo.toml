@@ -13,6 +13,7 @@ thiserror = { workspace = true }
 sans-io-runtime = { git = "https://github.com/giangndm/sans-io-runtime.git", features = ["poll-backend", "polling-backend", "mio-backend", "udp"], rev = "29dd7661cfb10544743f795b7ce55be3886e7ca1"}
 atm0s-sdn-identity = { path = "../core/identity", version = "0.2.0" }
 atm0s-sdn-router = { path = "../core/router", version = "0.1.4" }
+atm0s-sdn-utils = { path = "../core/utils", version = "0.1.1" }
 atm0s-sdn-network = { path = "../network", version = "0.3.1" }
 
 paste = "1.0"

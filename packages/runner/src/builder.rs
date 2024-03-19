@@ -1,12 +1,14 @@
 use std::{fmt::Debug, net::Ipv4Addr};
 
 use atm0s_sdn_identity::{NodeAddr, NodeAddrBuilder, NodeId, Protocol};
+use atm0s_sdn_utils::random::{self, Random};
 use sans_io_runtime::{backend::Backend, Owner};
 
 use crate::tasks::{ControllerCfg, SdnController, SdnExtIn, SdnInnerCfg, SdnWorkerInner};
 
 pub struct SdnBuilder {
     node_id: NodeId,
+    session: u64,
     udp_port: u16,
     seeds: Vec<NodeAddr>,
     // services: Vec<Box<dyn atm0s_sdn_network::controller_plane::Service>>,
@@ -20,6 +22,7 @@ impl SdnBuilder {
     pub fn new(node_id: NodeId, udp_port: u16) -> Self {
         Self {
             node_id,
+            session: random::RealRandom().random(),
             udp_port,
             seeds: vec![],
             // services: vec![],
@@ -78,6 +81,7 @@ impl SdnBuilder {
                 node_id: self.node_id,
                 udp_port: self.udp_port,
                 controller: Some(ControllerCfg {
+                    session: self.session,
                     password: "password".to_string(),
                     tick_ms: 1000,
                     // services: self.services,

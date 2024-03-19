@@ -44,6 +44,5 @@ pub fn convert_output<'a, TC, TW>(
         ),
         TaskOutput::Net(out) => WorkerInnerOutput::Task(Owner::group(worker, DataPlaneTask::<(), ()>::TYPE), TaskOutput::Net(out)),
         TaskOutput::Destroy => WorkerInnerOutput::Task(Owner::group(worker, DataPlaneTask::<(), ()>::TYPE), TaskOutput::Destroy),
-        _ => panic!("Invalid output type from DataPlane"),
     }
 }
