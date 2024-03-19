@@ -13,7 +13,7 @@ pub enum Control {
     DisconnectFrom(NodeId),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {}
 
 #[derive(Debug, Clone)]

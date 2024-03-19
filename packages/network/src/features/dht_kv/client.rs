@@ -9,12 +9,12 @@ const MAP_GET_TIMEOUT_MS: u64 = 5000;
 
 use super::{
     msg::{ClientCommand, NodeSession, ServerEvent},
-    Control, Event, Key,
+    Control, Event, Map,
 };
 
 mod map;
 
-fn route(key: Key) -> RouteRule {
+fn route(key: Map) -> RouteRule {
     RouteRule::ToKey(key.0 as u32)
 }
 
@@ -25,8 +25,8 @@ pub enum LocalStorageOutput {
 
 pub struct LocalStorage {
     session: NodeSession,
-    maps: HashMap<Key, LocalMap>,
-    map_get_waits: HashMap<(Key, u64), (FeatureControlActor, u64)>,
+    maps: HashMap<Map, LocalMap>,
+    map_get_waits: HashMap<(Map, u64), (FeatureControlActor, u64)>,
     queue: VecDeque<LocalStorageOutput>,
     req_id_seed: u64,
 }
@@ -113,14 +113,14 @@ impl LocalStorage {
         self.queue.pop_front()
     }
 
-    fn get_map(maps: &mut HashMap<Key, LocalMap>, session: NodeSession, key: Key, auto_create: bool) -> Option<&mut LocalMap> {
+    fn get_map(maps: &mut HashMap<Map, LocalMap>, session: NodeSession, key: Map, auto_create: bool) -> Option<&mut LocalMap> {
         if !maps.contains_key(&key) && auto_create {
             maps.insert(key, LocalMap::new(session));
         }
         maps.get_mut(&key)
     }
 
-    fn pop_map_actions(key: Key, map: &mut LocalMap, queue: &mut VecDeque<LocalStorageOutput>) {
+    fn pop_map_actions(key: Map, map: &mut LocalMap, queue: &mut VecDeque<LocalStorageOutput>) {
         while let Some(out) = map.pop_action() {
             queue.push_back(match out {
                 LocalMapOutput::Local(actor, event) => LocalStorageOutput::Local(actor, Event::MapEvent(key, event)),

@@ -4,7 +4,7 @@ use crate::{
     base::FeatureControlActor,
     features::dht_kv::{
         msg::{ClientMapCommand, NodeSession, ServerMapEvent, Version},
-        MapControl, MapEvent, SubKey,
+        MapControl, MapEvent, Key,
     },
 };
 
@@ -15,15 +15,15 @@ const UNSUB_TIMEOUT_MS: u64 = 10000; //We will remove the slot if it's not synce
 /// MapSlot manage state of single sub-key inside a map.
 enum MapSlot {
     Unspecific {
-        sub: SubKey,
+        key: Key,
     },
     Remote {
-        sub: SubKey,
+        key: Key,
         version: Version,
         value: Option<Vec<u8>>,
     },
     Local {
-        sub: SubKey,
+        key: Key,
         value: Option<Vec<u8>>,
         version: Version,
         syncing: bool,
@@ -32,8 +32,8 @@ enum MapSlot {
 }
 
 impl MapSlot {
-    pub fn new(sub: SubKey) -> Self {
-        Self::Unspecific { sub }
+    pub fn new(key: Key) -> Self {
+        Self::Unspecific { key }
     }
 
     pub fn data(&self) -> Option<&[u8]> {
@@ -47,20 +47,20 @@ impl MapSlot {
     /// This method is called when a new value is set to the map, this will overwrite the old value even if it's not synced or from remote.
     pub fn set(&mut self, now: u64, new_data: Vec<u8>) -> Option<ClientMapCommand> {
         match self {
-            MapSlot::Unspecific { sub } | MapSlot::Remote { sub, .. } => {
+            MapSlot::Unspecific { key } | MapSlot::Remote { key, .. } => {
                 let version = Version(now); //TODO use real version
-                let sub = *sub;
+                let key = *key;
                 *self = MapSlot::Local {
-                    sub,
+                    key,
                     value: Some(new_data.clone()),
                     version,
                     syncing: true,
                     last_sync: now,
                 };
-                Some(ClientMapCommand::Set(sub, version, new_data))
+                Some(ClientMapCommand::Set(key, version, new_data))
             }
             MapSlot::Local {
-                sub,
+                key,
                 value,
                 version,
                 syncing,
@@ -70,7 +70,7 @@ impl MapSlot {
                 *version = Version(now); //TODO use real version
                 *syncing = true;
                 *last_sync = now;
-                Some(ClientMapCommand::Set(*sub, *version, new_data))
+                Some(ClientMapCommand::Set(*key, *version, new_data))
             }
         }
     }
@@ -80,7 +80,7 @@ impl MapSlot {
         match self {
             MapSlot::Unspecific { .. } | MapSlot::Remote { .. } => None,
             MapSlot::Local {
-                sub,
+                key,
                 value,
                 version,
                 syncing,
@@ -90,7 +90,7 @@ impl MapSlot {
                 *value = None;
                 *syncing = true;
                 *last_sync = now;
-                Some(ClientMapCommand::Del(*sub, *version))
+                Some(ClientMapCommand::Del(*key, *version))
             }
         }
     }
@@ -100,7 +100,7 @@ impl MapSlot {
         match self {
             MapSlot::Unspecific { .. } | MapSlot::Remote { .. } => None,
             MapSlot::Local {
-                sub,
+                key,
                 value,
                 version,
                 syncing,
@@ -109,9 +109,9 @@ impl MapSlot {
                 if (*syncing && now >= *last_sync + RESEND_MS) || now >= *last_sync + SYNC_MS {
                     *last_sync = now;
                     if let Some(value) = value {
-                        Some(ClientMapCommand::Set(*sub, *version, value.clone()))
+                        Some(ClientMapCommand::Set(*key, *version, value.clone()))
                     } else {
-                        Some(ClientMapCommand::Del(*sub, *version))
+                        Some(ClientMapCommand::Del(*key, *version))
                     }
                 } else {
                     None
@@ -152,16 +152,16 @@ impl MapSlot {
         }
     }
 
-    pub fn on_set(&mut self, _now: u64, sub: SubKey, source: NodeSession, version: Version, data: Vec<u8>) -> Option<ClientMapCommand> {
+    pub fn on_set(&mut self, _now: u64, key: Key, source: NodeSession, version: Version, data: Vec<u8>) -> Option<ClientMapCommand> {
         match self {
             MapSlot::Unspecific { .. } => {
-                *self = MapSlot::Remote { sub, version, value: Some(data) };
-                Some(ClientMapCommand::OnSetAck(sub, source, version))
+                *self = MapSlot::Remote { key, version, value: Some(data) };
+                Some(ClientMapCommand::OnSetAck(key, source, version))
             }
             MapSlot::Remote { version: old_version, .. } => {
                 if old_version.0 <= version.0 {
-                    *self = MapSlot::Remote { sub, version, value: Some(data) };
-                    Some(ClientMapCommand::OnSetAck(sub, source, version))
+                    *self = MapSlot::Remote { key, version, value: Some(data) };
+                    Some(ClientMapCommand::OnSetAck(key, source, version))
                 } else {
                     None
                 }
@@ -170,12 +170,12 @@ impl MapSlot {
         }
     }
 
-    pub fn on_del(&mut self, _now: u64, sub: SubKey, source: NodeSession, version: Version) -> Option<ClientMapCommand> {
+    pub fn on_del(&mut self, _now: u64, key: Key, source: NodeSession, version: Version) -> Option<ClientMapCommand> {
         match self {
             MapSlot::Remote { version: old_version, .. } => {
                 if old_version.0 <= version.0 {
-                    *self = MapSlot::Unspecific { sub };
-                    Some(ClientMapCommand::OnDelAck(sub, source, version))
+                    *self = MapSlot::Unspecific { key };
+                    Some(ClientMapCommand::OnDelAck(key, source, version))
                 } else {
                     None
                 }
@@ -210,7 +210,7 @@ enum SubState {
 /// We allow multi-source for a single sub-key with reason for solving conflict between nodes.
 pub struct LocalMap {
     session: NodeSession,
-    slots: HashMap<(SubKey, NodeSession), MapSlot>,
+    slots: HashMap<(Key, NodeSession), MapSlot>,
     subscribers: Vec<FeatureControlActor>,
     sub_state: SubState,
     queue: VecDeque<LocalMapOutput>,
@@ -260,32 +260,32 @@ impl LocalMap {
 
         // remove all empty slots
         let mut to_remove = vec![];
-        for (sub, slot) in self.slots.iter_mut() {
+        for (key, slot) in self.slots.iter_mut() {
             if slot.should_cleanup() {
-                to_remove.push(*sub);
+                to_remove.push(*key);
             }
         }
 
-        for sub in to_remove {
-            self.slots.remove(&sub);
+        for key in to_remove {
+            self.slots.remove(&key);
         }
     }
 
     pub fn on_control(&mut self, now: u64, actor: FeatureControlActor, control: MapControl) -> Option<ClientMapCommand> {
         match control {
-            MapControl::Set(sub, data) => {
-                let slot = self.get_slot(sub, self.session, true).expect("Must have slot for set");
+            MapControl::Set(key, data) => {
+                let slot = self.get_slot(key, self.session, true).expect("Must have slot for set");
                 if let Some(out) = slot.set(now, data.clone()) {
-                    self.fire_event(MapEvent::OnSet(sub, self.session.0, data));
+                    self.fire_event(MapEvent::OnSet(key, self.session.0, data));
                     Some(out)
                 } else {
                     None
                 }
             }
-            MapControl::Del(sub) => {
-                let slot = self.get_slot(sub, self.session, false)?;
+            MapControl::Del(key) => {
+                let slot = self.get_slot(key, self.session, false)?;
                 if let Some(out) = slot.del(now) {
-                    self.fire_event(MapEvent::OnDel(sub, self.session.0));
+                    self.fire_event(MapEvent::OnDel(key, self.session.0));
                     Some(out)
                 } else {
                     None
@@ -349,13 +349,13 @@ impl LocalMap {
     /// In case 1 key moved to other server:
     pub fn on_server(&mut self, now: u64, remote: NodeSession, cmd: ServerMapEvent) -> Option<ClientMapCommand> {
         match cmd {
-            ServerMapEvent::SetOk(sub, version) => {
-                let slot = self.get_slot(sub, self.session, false)?;
+            ServerMapEvent::SetOk(key, version) => {
+                let slot = self.get_slot(key, self.session, false)?;
                 slot.set_ok(version);
                 None
             }
-            ServerMapEvent::DelOk(sub, version) => {
-                let slot = self.get_slot(sub, self.session, false)?;
+            ServerMapEvent::DelOk(key, version) => {
+                let slot = self.get_slot(key, self.session, false)?;
                 slot.del_ok(version);
                 None
             }
@@ -379,23 +379,23 @@ impl LocalMap {
                 }
                 None
             }
-            ServerMapEvent::OnSet { sub, version, source, data } => {
+            ServerMapEvent::OnSet { key, version, source, data } => {
                 if !self.accept_event(remote) {
                     return None;
                 }
-                let slot = self.get_slot(sub, self.session, true).expect("Must have slot for set");
-                let event = slot.on_set(now, sub, source, version, data.clone())?;
-                self.fire_event(MapEvent::OnSet(sub, source.0, data));
+                let slot = self.get_slot(key, self.session, true).expect("Must have slot for set");
+                let event = slot.on_set(now, key, source, version, data.clone())?;
+                self.fire_event(MapEvent::OnSet(key, source.0, data));
                 Some(event)
             }
-            ServerMapEvent::OnDel { sub, version, source } => {
+            ServerMapEvent::OnDel { key, version, source } => {
                 if !self.accept_event(remote) {
                     return None;
                 }
 
-                let slot = self.get_slot(sub, self.session, true).expect("Must have slot for set");
-                let event = slot.on_del(now, sub, source, version)?;
-                self.fire_event(MapEvent::OnDel(sub, source.0));
+                let slot = self.get_slot(key, self.session, true).expect("Must have slot for set");
+                let event = slot.on_del(now, key, source, version)?;
+                self.fire_event(MapEvent::OnDel(key, source.0));
                 Some(event)
             }
         }
@@ -409,11 +409,11 @@ impl LocalMap {
         self.slots.is_empty() && self.subscribers.is_empty() && matches!(self.sub_state, SubState::NotSub)
     }
 
-    fn get_slot(&mut self, sub: SubKey, source: NodeSession, auto_create: bool) -> Option<&mut MapSlot> {
-        if !self.slots.contains_key(&(sub, source)) && auto_create {
-            self.slots.insert((sub, source), MapSlot::new(sub));
+    fn get_slot(&mut self, key: Key, source: NodeSession, auto_create: bool) -> Option<&mut MapSlot> {
+        if !self.slots.contains_key(&(key, source)) && auto_create {
+            self.slots.insert((key, source), MapSlot::new(key));
         }
-        self.slots.get_mut(&(sub, source))
+        self.slots.get_mut(&(key, source))
     }
 
     /// only accept event from locked remote in Subscribed state, otherwise, we will ignore the event.
@@ -431,12 +431,12 @@ impl LocalMap {
     }
 
     fn restore_events(&mut self, actor: FeatureControlActor, only_local: bool) {
-        for ((sub, source), slot) in self.slots.iter() {
+        for ((key, source), slot) in self.slots.iter() {
             if only_local && self.session != *source {
                 continue;
             }
             if let Some(data) = slot.data() {
-                self.queue.push_back(LocalMapOutput::Local(actor, MapEvent::OnSet(*sub, source.0, data.to_vec())));
+                self.queue.push_back(LocalMapOutput::Local(actor, MapEvent::OnSet(*key, source.0, data.to_vec())));
             }
         }
     }
@@ -448,7 +448,7 @@ mod test {
         base::FeatureControlActor,
         features::dht_kv::{
             client::map::{LocalMapOutput, RESEND_MS, SYNC_MS},
-            msg::{ClientMapCommand, NodeSession, ServerMapEvent, SubKey, Version},
+            msg::{ClientMapCommand, NodeSession, ServerMapEvent, Key, Version},
             MapControl, MapEvent,
         },
     };
@@ -457,76 +457,76 @@ mod test {
 
     #[test]
     fn map_slot_set_local() {
-        let sub = SubKey(1);
-        let mut slot = MapSlot::new(sub);
+        let key = Key(1);
+        let mut slot = MapSlot::new(key);
 
         //we must output set command with new slot, with Version is now_ms
-        assert_eq!(slot.set(100, vec![1, 2, 3, 4]), Some(ClientMapCommand::Set(sub, Version(100), vec![1, 2, 3, 4])));
+        assert_eq!(slot.set(100, vec![1, 2, 3, 4]), Some(ClientMapCommand::Set(key, Version(100), vec![1, 2, 3, 4])));
 
         //we can delete the slot
-        assert_eq!(slot.del(200), Some(ClientMapCommand::Del(sub, Version(100))));
+        assert_eq!(slot.del(200), Some(ClientMapCommand::Del(key, Version(100))));
     }
 
     #[test]
     fn map_slot_sync_local() {
-        let sub = SubKey(1);
-        let mut slot = MapSlot::new(sub);
+        let key = Key(1);
+        let mut slot = MapSlot::new(key);
 
         //we must output set command with new slot, with Version is now_ms
-        assert_eq!(slot.set(100, vec![1, 2, 3, 4]), Some(ClientMapCommand::Set(sub, Version(100), vec![1, 2, 3, 4])));
+        assert_eq!(slot.set(100, vec![1, 2, 3, 4]), Some(ClientMapCommand::Set(key, Version(100), vec![1, 2, 3, 4])));
 
         assert_eq!(slot.sync(101), None);
-        assert_eq!(slot.sync(100 + RESEND_MS), Some(ClientMapCommand::Set(sub, Version(100), vec![1, 2, 3, 4])));
+        assert_eq!(slot.sync(100 + RESEND_MS), Some(ClientMapCommand::Set(key, Version(100), vec![1, 2, 3, 4])));
 
         slot.set_ok(Version(100));
         assert_eq!(slot.sync(100 + RESEND_MS * 2), None);
 
         //after set_ok we only resend with SYNC_MS
-        assert_eq!(slot.sync(100 + RESEND_MS + SYNC_MS), Some(ClientMapCommand::Set(sub, Version(100), vec![1, 2, 3, 4])));
+        assert_eq!(slot.sync(100 + RESEND_MS + SYNC_MS), Some(ClientMapCommand::Set(key, Version(100), vec![1, 2, 3, 4])));
     }
 
     #[test]
     fn map_slot_full_ack() {
-        let sub = SubKey(1);
-        let mut slot = MapSlot::new(sub);
+        let key = Key(1);
+        let mut slot = MapSlot::new(key);
 
         //we must output set command with new slot, with Version is now_ms
-        assert_eq!(slot.set(100, vec![1, 2, 3, 4]), Some(ClientMapCommand::Set(sub, Version(100), vec![1, 2, 3, 4])));
+        assert_eq!(slot.set(100, vec![1, 2, 3, 4]), Some(ClientMapCommand::Set(key, Version(100), vec![1, 2, 3, 4])));
         slot.set_ok(Version(100));
         assert_eq!(slot.sync(100 + RESEND_MS), None);
 
         //we must output del command with new slot, with Version is now_ms
-        assert_eq!(slot.del(200), Some(ClientMapCommand::Del(sub, Version(100))));
+        assert_eq!(slot.del(200), Some(ClientMapCommand::Del(key, Version(100))));
         slot.del_ok(Version(100));
         assert_eq!(slot.sync(200 + RESEND_MS), None);
     }
 
     #[test]
     fn map_slot_disconnect_ack() {
-        let sub = SubKey(1);
-        let mut slot = MapSlot::new(sub);
+        let key = Key(1);
+        let mut slot = MapSlot::new(key);
 
         //we must output set command with new slot, with Version is now_ms
-        assert_eq!(slot.set(100, vec![1, 2, 3, 4]), Some(ClientMapCommand::Set(sub, Version(100), vec![1, 2, 3, 4])));
+        assert_eq!(slot.set(100, vec![1, 2, 3, 4]), Some(ClientMapCommand::Set(key, Version(100), vec![1, 2, 3, 4])));
 
         //we missing set_ok, but we delete now
         //we must output del command with new slot, with Version is now_ms
-        assert_eq!(slot.del(200), Some(ClientMapCommand::Del(sub, Version(100))));
+        assert_eq!(slot.del(200), Some(ClientMapCommand::Del(key, Version(100))));
         slot.del_ok(Version(100));
         assert_eq!(slot.sync(200 + RESEND_MS), None);
     }
 
     #[test]
     fn map_slot_wrong_ack() {
-        let sub = SubKey(1);
-        let mut slot = MapSlot::new(sub);
+        let key = Key(1);
+        let mut slot = MapSlot::new(key);
 
         //we must output set command with new slot, with Version is now_ms
-        assert_eq!(slot.set(100, vec![1, 2, 3, 4]), Some(ClientMapCommand::Set(sub, Version(100), vec![1, 2, 3, 4])));
+        assert_eq!(slot.set(100, vec![1, 2, 3, 4]), Some(ClientMapCommand::Set(key, Version(100), vec![1, 2, 3, 4])));
         slot.set_ok(Version(101));
         assert_ne!(slot.sync(100 + RESEND_MS), None);
 
-        assert_eq!(slot.del(200 + RESEND_MS), Some(ClientMapCommand::Del(sub, Version(100))));
+        assert_eq!(slot.del(200 + RESEND_MS), Some(ClientMapCommand::Del(key, Version(100))));
         slot.del_ok(Version(101));
         assert_ne!(slot.sync(200 + RESEND_MS + RESEND_MS), None);
     }
@@ -534,43 +534,43 @@ mod test {
     #[test]
     fn map_slot_handle_server_event() {
         let source = NodeSession(1, 2);
-        let sub = SubKey(1);
-        let mut slot = MapSlot::new(sub);
+        let key = Key(1);
+        let mut slot = MapSlot::new(key);
 
         let version = Version(100);
-        assert_eq!(slot.on_set(100, sub, source, version, vec![1, 2, 3, 4]), Some(ClientMapCommand::OnSetAck(sub, source, version)));
+        assert_eq!(slot.on_set(100, key, source, version, vec![1, 2, 3, 4]), Some(ClientMapCommand::OnSetAck(key, source, version)));
         assert!(!slot.should_cleanup());
 
-        assert_eq!(slot.on_del(200, sub, source, version), Some(ClientMapCommand::OnDelAck(sub, source, version)));
+        assert_eq!(slot.on_del(200, key, source, version), Some(ClientMapCommand::OnDelAck(key, source, version)));
         assert!(slot.should_cleanup());
     }
 
     #[test]
     fn map_slot_should_reject_server_event_with_local() {
-        let sub = SubKey(1);
-        let mut slot = MapSlot::new(sub);
+        let key = Key(1);
+        let mut slot = MapSlot::new(key);
 
         let version = Version(100);
-        assert_eq!(slot.set(100, vec![1, 2, 3, 4]), Some(ClientMapCommand::Set(sub, version, vec![1, 2, 3, 4])));
+        assert_eq!(slot.set(100, vec![1, 2, 3, 4]), Some(ClientMapCommand::Set(key, version, vec![1, 2, 3, 4])));
 
         let source = NodeSession(1, 2);
-        assert_eq!(slot.on_set(100, sub, source, version, vec![1, 2, 3, 4]), None);
-        assert_eq!(slot.on_del(200, sub, source, version), None);
+        assert_eq!(slot.on_set(100, key, source, version, vec![1, 2, 3, 4]), None);
+        assert_eq!(slot.on_del(200, key, source, version), None);
         assert!(!slot.should_cleanup());
     }
 
     #[test]
     fn map_slot_should_reject_server_event_without_newer_version() {
-        let sub = SubKey(1);
-        let mut slot = MapSlot::new(sub);
+        let key = Key(1);
+        let mut slot = MapSlot::new(key);
 
         let source = NodeSession(1, 2);
         assert_eq!(
-            slot.on_set(100, sub, source, Version(100), vec![1, 2, 3, 4]),
-            Some(ClientMapCommand::OnSetAck(sub, source, Version(100)))
+            slot.on_set(100, key, source, Version(100), vec![1, 2, 3, 4]),
+            Some(ClientMapCommand::OnSetAck(key, source, Version(100)))
         );
-        assert_eq!(slot.on_set(100, sub, source, Version(90), vec![1, 2, 3]), None);
-        assert_eq!(slot.on_del(200, sub, source, Version(90)), None);
+        assert_eq!(slot.on_set(100, key, source, Version(90), vec![1, 2, 3]), None);
+        assert_eq!(slot.on_del(200, key, source, Version(90)), None);
         assert!(!slot.should_cleanup());
     }
 
@@ -580,18 +580,18 @@ mod test {
         let actor = FeatureControlActor::Controller;
         let mut map = LocalMap::new(session);
 
-        let sub = SubKey(1);
+        let key = Key(1);
 
         assert_eq!(
-            map.on_control(100, actor, MapControl::Set(sub, vec![1, 2, 3, 4])),
-            Some(ClientMapCommand::Set(sub, Version(100), vec![1, 2, 3, 4]))
+            map.on_control(100, actor, MapControl::Set(key, vec![1, 2, 3, 4])),
+            Some(ClientMapCommand::Set(key, Version(100), vec![1, 2, 3, 4]))
         );
         assert_eq!(map.on_control(102, actor, MapControl::Sub), Some(ClientMapCommand::Sub(102, None))); //Sub will be sent include time ms
-        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(actor, MapEvent::OnSet(sub, session.0, vec![1, 2, 3, 4]))));
+        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(actor, MapEvent::OnSet(key, session.0, vec![1, 2, 3, 4]))));
         assert_eq!(map.pop_action(), None);
 
-        assert_eq!(map.on_control(101, actor, MapControl::Del(sub)), Some(ClientMapCommand::Del(sub, Version(100))));
-        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(actor, MapEvent::OnDel(sub, session.0))));
+        assert_eq!(map.on_control(101, actor, MapControl::Del(key)), Some(ClientMapCommand::Del(key, Version(100))));
+        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(actor, MapEvent::OnDel(key, session.0))));
         assert_eq!(map.pop_action(), None);
     }
 
@@ -601,18 +601,18 @@ mod test {
         let actor = FeatureControlActor::Controller;
         let mut map = LocalMap::new(session);
 
-        let sub = SubKey(1);
+        let key = Key(1);
 
         assert_eq!(map.on_control(102, actor, MapControl::Sub), Some(ClientMapCommand::Sub(102, None)));
         assert_eq!(
-            map.on_control(103, actor, MapControl::Set(sub, vec![1, 2, 3, 4])),
-            Some(ClientMapCommand::Set(sub, Version(103), vec![1, 2, 3, 4]))
+            map.on_control(103, actor, MapControl::Set(key, vec![1, 2, 3, 4])),
+            Some(ClientMapCommand::Set(key, Version(103), vec![1, 2, 3, 4]))
         );
-        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(actor, MapEvent::OnSet(sub, session.0, vec![1, 2, 3, 4]))));
+        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(actor, MapEvent::OnSet(key, session.0, vec![1, 2, 3, 4]))));
         assert_eq!(map.pop_action(), None);
 
         assert_eq!(map.on_control(103, actor, MapControl::Unsub), Some(ClientMapCommand::Unsub(102)));
-        assert_eq!(map.on_control(104, actor, MapControl::Del(sub)), Some(ClientMapCommand::Del(sub, Version(103))));
+        assert_eq!(map.on_control(104, actor, MapControl::Del(key)), Some(ClientMapCommand::Del(key, Version(103))));
         assert_eq!(map.pop_action(), None); //should not output local event after unsub
     }
 
@@ -669,7 +669,7 @@ mod test {
         let session = NodeSession(1, 2);
         let mut map = LocalMap::new(session);
 
-        let sub = SubKey(1);
+        let key = Key(1);
         let source = NodeSession(3, 4);
         let relay = NodeSession(3, 4);
         assert_eq!(
@@ -677,7 +677,7 @@ mod test {
                 103,
                 relay,
                 ServerMapEvent::OnSet {
-                    sub,
+                    key,
                     source,
                     version: Version(2000),
                     data: vec![1, 2, 3, 4]
@@ -693,7 +693,7 @@ mod test {
         let actor = FeatureControlActor::Controller;
         let mut map = LocalMap::new(session);
 
-        let sub = SubKey(1);
+        let key = Key(1);
 
         let source = NodeSession(3, 4);
         let relay = NodeSession(5, 6);
@@ -707,22 +707,22 @@ mod test {
                 103,
                 relay,
                 ServerMapEvent::OnSet {
-                    sub,
+                    key,
                     source,
                     version: Version(2000),
                     data: vec![1, 2, 3, 4]
                 }
             ),
-            Some(ClientMapCommand::OnSetAck(sub, source, Version(2000)))
+            Some(ClientMapCommand::OnSetAck(key, source, Version(2000)))
         );
-        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(actor, MapEvent::OnSet(sub, source.0, vec![1, 2, 3, 4]))));
+        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(actor, MapEvent::OnSet(key, source.0, vec![1, 2, 3, 4]))));
         assert_eq!(map.pop_action(), None);
 
         assert_eq!(
-            map.on_server(103, relay, ServerMapEvent::OnDel { sub, source, version: Version(2000) }),
-            Some(ClientMapCommand::OnDelAck(sub, source, Version(2000)))
+            map.on_server(103, relay, ServerMapEvent::OnDel { key, source, version: Version(2000) }),
+            Some(ClientMapCommand::OnDelAck(key, source, Version(2000)))
         );
-        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(actor, MapEvent::OnDel(sub, source.0))));
+        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(actor, MapEvent::OnDel(key, source.0))));
         assert_eq!(map.pop_action(), None);
     }
 
@@ -732,7 +732,7 @@ mod test {
         let actor = FeatureControlActor::Controller;
         let mut map = LocalMap::new(session);
 
-        let sub = SubKey(1);
+        let key = Key(1);
         let source = NodeSession(3, 4);
         let relay1 = NodeSession(5, 6);
         let relay2 = NodeSession(7, 8);
@@ -745,20 +745,20 @@ mod test {
                 103,
                 relay1,
                 ServerMapEvent::OnSet {
-                    sub,
+                    key,
                     source,
                     version: Version(2000),
                     data: vec![1, 2, 3, 4]
                 }
             ),
-            Some(ClientMapCommand::OnSetAck(sub, source, Version(2000)))
+            Some(ClientMapCommand::OnSetAck(key, source, Version(2000)))
         );
 
         //simulate sub to new relay
         assert_eq!(map.on_server(105, relay2, ServerMapEvent::SubOk(102)), None);
 
         //Reject from relay1
-        assert_eq!(map.on_server(106, relay1, ServerMapEvent::OnDel { sub, source, version: Version(2000) }), None,);
+        assert_eq!(map.on_server(106, relay1, ServerMapEvent::OnDel { key, source, version: Version(2000) }), None,);
 
         //from relay2
         assert_eq!(
@@ -766,13 +766,13 @@ mod test {
                 107,
                 relay2,
                 ServerMapEvent::OnSet {
-                    sub,
+                    key,
                     source,
                     version: Version(2000),
                     data: vec![1, 2, 3, 4]
                 }
             ),
-            Some(ClientMapCommand::OnSetAck(sub, source, Version(2000)))
+            Some(ClientMapCommand::OnSetAck(key, source, Version(2000)))
         );
     }
 }

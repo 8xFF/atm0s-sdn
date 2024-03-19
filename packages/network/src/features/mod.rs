@@ -56,7 +56,7 @@ impl FeaturesControl {
     }
 }
 
-#[derive(Debug, Clone, convert_enum::From)]
+#[derive(Debug, Clone, PartialEq, Eq, convert_enum::From)]
 pub enum FeaturesEvent {
     Neighbours(neighbours::Event),
     Data(data::Event),

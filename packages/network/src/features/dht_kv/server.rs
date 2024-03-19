@@ -4,14 +4,14 @@ use self::map::RemoteMap;
 
 use super::{
     msg::{ClientCommand, NodeSession, ServerEvent},
-    Key,
+    Map,
 };
 
 mod map;
 
 pub struct RemoteStorage {
     session: NodeSession,
-    maps: HashMap<Key, RemoteMap>,
+    maps: HashMap<Map, RemoteMap>,
     queue: VecDeque<(NodeSession, ServerEvent)>,
 }
 

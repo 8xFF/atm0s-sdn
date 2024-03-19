@@ -21,7 +21,7 @@ pub enum ExtIn {
     FeaturesControl(FeaturesControl),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExtOut {
     FeaturesEvent(FeaturesEvent),
 }

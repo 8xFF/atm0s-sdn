@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 
-use crate::features::dht_kv::msg::{ClientMapCommand, NodeSession, ServerMapEvent, SubKey, Version};
+use crate::features::dht_kv::msg::{ClientMapCommand, NodeSession, ServerMapEvent, Key, Version};
 
 const RESEND_MS: u64 = 200; //We will resend set or del command if we don't get ack in this time
 const TIMEOUT_MS: u64 = 10000; //We will remove sub if we don't get any message from it in this time
@@ -74,8 +74,8 @@ struct SubSlot {
 
 pub struct RemoteMap {
     session: NodeSession,
-    slots: HashMap<(SubKey, NodeSession), MapSlot>,
-    slots_event: HashMap<(SubKey, NodeSession), WaitAcksEvent>,
+    slots: HashMap<(Key, NodeSession), MapSlot>,
+    slots_event: HashMap<(Key, NodeSession), WaitAcksEvent>,
     subs: HashMap<NodeSession, SubSlot>,
     queue: VecDeque<(NodeSession, ServerMapEvent)>,
 }
@@ -106,9 +106,9 @@ impl RemoteMap {
 
         //resend events
         let mut to_remove = vec![];
-        for (sub, slot) in self.slots_event.iter_mut() {
+        for (key, slot) in self.slots_event.iter_mut() {
             if now >= TIMEOUT_MS + slot.last_send_ms {
-                to_remove.push(*sub);
+                to_remove.push(*key);
             } else if now >= RESEND_MS + slot.last_send_ms {
                 for remote in &slot.remotes {
                     self.queue.push_back((*remote, slot.event.clone()));
@@ -117,17 +117,17 @@ impl RemoteMap {
             }
         }
 
-        for sub in to_remove {
-            self.slots_event.remove(&sub);
+        for key in to_remove {
+            self.slots_event.remove(&key);
         }
     }
 
-    pub fn dump(&self) -> Vec<(SubKey, NodeSession, Version, Vec<u8>)> {
+    pub fn dump(&self) -> Vec<(Key, NodeSession, Version, Vec<u8>)> {
         self.slots
             .iter()
-            .filter_map(|((sub, session), slot)| {
+            .filter_map(|((key, session), slot)| {
                 if let Some((version, data)) = slot.dump() {
-                    Some((*sub, *session, version, data))
+                    Some((*key, *session, version, data))
                 } else {
                     None
                 }
@@ -137,30 +137,30 @@ impl RemoteMap {
 
     pub fn on_client(&mut self, now: u64, remote: NodeSession, cmd: ClientMapCommand) -> Option<ServerMapEvent> {
         match cmd {
-            ClientMapCommand::Set(sub, version, data) => {
-                let slot = self.get_slot(sub, remote, true).expect("must have slot with auto_create");
+            ClientMapCommand::Set(key, version, data) => {
+                let slot = self.get_slot(key, remote, true).expect("must have slot with auto_create");
                 if slot.set(now, version, data.clone()) {
-                    self.fire_event(now, sub, remote, ServerMapEvent::OnSet { sub, version, source: remote, data });
-                    Some(ServerMapEvent::SetOk(sub, version))
+                    self.fire_event(now, key, remote, ServerMapEvent::OnSet { key, version, source: remote, data });
+                    Some(ServerMapEvent::SetOk(key, version))
                 } else {
                     None
                 }
             }
-            ClientMapCommand::Del(sub, version) => {
-                let slot = self.get_slot(sub, remote, false)?;
+            ClientMapCommand::Del(key, version) => {
+                let slot = self.get_slot(key, remote, false)?;
                 if let Some(del_version) = slot.del(now, version) {
-                    self.slots.remove(&(sub, remote));
+                    self.slots.remove(&(key, remote));
                     self.fire_event(
                         now,
-                        sub,
+                        key,
                         remote,
                         ServerMapEvent::OnDel {
-                            sub,
+                            key,
                             version: del_version,
                             source: remote,
                         },
                     );
-                    Some(ServerMapEvent::DelOk(sub, del_version))
+                    Some(ServerMapEvent::DelOk(key, del_version))
                 } else {
                     None
                 }
@@ -181,27 +181,27 @@ impl RemoteMap {
                     None
                 }
             }
-            ClientMapCommand::OnSetAck(sub, session, acked_version) => {
-                let slot = self.slots_event.get_mut(&(sub, session))?;
+            ClientMapCommand::OnSetAck(key, session, acked_version) => {
+                let slot = self.slots_event.get_mut(&(key, session))?;
                 if let ServerMapEvent::OnSet { version, .. } = &slot.event {
                     if acked_version == *version {
                         slot.remotes.retain(|r| *r != remote);
                     }
                 }
                 if slot.remotes.is_empty() {
-                    self.slots_event.remove(&(sub, session));
+                    self.slots_event.remove(&(key, session));
                 }
                 None
             }
-            ClientMapCommand::OnDelAck(sub, session, acked_version) => {
-                let slot = self.slots_event.get_mut(&(sub, session))?;
+            ClientMapCommand::OnDelAck(key, session, acked_version) => {
+                let slot = self.slots_event.get_mut(&(key, session))?;
                 if let ServerMapEvent::OnDel { version, .. } = &slot.event {
                     if acked_version == *version {
                         slot.remotes.retain(|r| *r != remote);
                     }
                 }
                 if slot.remotes.is_empty() {
-                    self.slots_event.remove(&(sub, session));
+                    self.slots_event.remove(&(key, session));
                 }
                 None
             }
@@ -216,15 +216,15 @@ impl RemoteMap {
         self.slots.is_empty() && self.subs.is_empty() && self.slots_event.is_empty()
     }
 
-    fn get_slot(&mut self, sub: SubKey, source: NodeSession, auto_create: bool) -> Option<&mut MapSlot> {
-        if !self.slots.contains_key(&(sub, source)) && auto_create {
-            self.slots.insert((sub, source), MapSlot::new());
+    fn get_slot(&mut self, key: Key, source: NodeSession, auto_create: bool) -> Option<&mut MapSlot> {
+        if !self.slots.contains_key(&(key, source)) && auto_create {
+            self.slots.insert((key, source), MapSlot::new());
         }
-        self.slots.get_mut(&(sub, source))
+        self.slots.get_mut(&(key, source))
     }
 
     /// Because source already has this data, then we only fire to other nodes
-    fn fire_event(&mut self, now: u64, sub: SubKey, source: NodeSession, event: ServerMapEvent) {
+    fn fire_event(&mut self, now: u64, key: Key, source: NodeSession, event: ServerMapEvent) {
         if self.subs.is_empty() {
             return;
         }
@@ -235,23 +235,23 @@ impl RemoteMap {
                 self.queue.push_back((*remote, event.clone()));
             }
         }
-        self.slots_event.insert((sub, source), WaitAcksEvent { event, remotes, last_send_ms: now });
+        self.slots_event.insert((key, source), WaitAcksEvent { event, remotes, last_send_ms: now });
     }
 
     /// We only send events which not owned by remote
     fn fire_sub_events(&mut self, now: u64, remote: NodeSession) {
-        for (sub, slot) in self.slots.iter() {
-            if sub.1 == remote {
+        for (key, slot) in self.slots.iter() {
+            if key.1 == remote {
                 continue;
             }
             if let Some((version, data)) = slot.dump() {
                 let event = ServerMapEvent::OnSet {
-                    sub: sub.0,
+                    key: key.0,
                     version,
-                    source: sub.1,
+                    source: key.1,
                     data,
                 };
-                let entry = self.slots_event.entry(*sub).or_insert_with(|| WaitAcksEvent {
+                let entry = self.slots_event.entry(*key).or_insert_with(|| WaitAcksEvent {
                     event: event.clone(),
                     remotes: vec![],
                     last_send_ms: now,
@@ -269,7 +269,7 @@ impl RemoteMap {
 mod test {
     use super::{MapSlot, RemoteMap};
     use crate::features::dht_kv::{
-        msg::{ClientMapCommand, NodeSession, ServerMapEvent, SubKey, Version},
+        msg::{ClientMapCommand, NodeSession, ServerMapEvent, Key, Version},
         server::map::RESEND_MS,
     };
 
@@ -317,15 +317,15 @@ mod test {
 
         assert_eq!(map.on_client(0, consumer, ClientMapCommand::Sub(1, None)), Some(ServerMapEvent::SubOk(1)));
         assert_eq!(
-            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])),
-            Some(ServerMapEvent::SetOk(SubKey(1000), Version(1)))
+            map.on_client(0, source, ClientMapCommand::Set(Key(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(Key(1000), Version(1)))
         );
         assert_eq!(
             map.pop_action(),
             Some((
                 consumer,
                 ServerMapEvent::OnSet {
-                    sub: SubKey(1000),
+                    key: Key(1000),
                     version: Version(1),
                     source,
                     data: vec![1, 2, 3, 4]
@@ -334,15 +334,15 @@ mod test {
         );
 
         assert_eq!(
-            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(2), vec![1, 2, 3, 5])),
-            Some(ServerMapEvent::SetOk(SubKey(1000), Version(2)))
+            map.on_client(0, source, ClientMapCommand::Set(Key(1000), Version(2), vec![1, 2, 3, 5])),
+            Some(ServerMapEvent::SetOk(Key(1000), Version(2)))
         );
         assert_eq!(
             map.pop_action(),
             Some((
                 consumer,
                 ServerMapEvent::OnSet {
-                    sub: SubKey(1000),
+                    key: Key(1000),
                     version: Version(2),
                     source,
                     data: vec![1, 2, 3, 5]
@@ -351,15 +351,15 @@ mod test {
         );
 
         assert_eq!(
-            map.on_client(0, source, ClientMapCommand::Del(SubKey(1000), Version(2))),
-            Some(ServerMapEvent::DelOk(SubKey(1000), Version(2)))
+            map.on_client(0, source, ClientMapCommand::Del(Key(1000), Version(2))),
+            Some(ServerMapEvent::DelOk(Key(1000), Version(2)))
         );
         assert_eq!(
             map.pop_action(),
             Some((
                 consumer,
                 ServerMapEvent::OnDel {
-                    sub: SubKey(1000),
+                    key: Key(1000),
                     version: Version(2),
                     source
                 }
@@ -376,8 +376,8 @@ mod test {
         let consumer = NodeSession(5, 6);
 
         assert_eq!(
-            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])),
-            Some(ServerMapEvent::SetOk(SubKey(1000), Version(1)))
+            map.on_client(0, source, ClientMapCommand::Set(Key(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(Key(1000), Version(1)))
         );
         assert_eq!(map.pop_action(), None);
 
@@ -387,7 +387,7 @@ mod test {
             Some((
                 consumer,
                 ServerMapEvent::OnSet {
-                    sub: SubKey(1000),
+                    key: Key(1000),
                     version: Version(1),
                     source,
                     data: vec![1, 2, 3, 4]
@@ -409,8 +409,8 @@ mod test {
         let consumer = NodeSession(5, 6);
 
         assert_eq!(
-            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])),
-            Some(ServerMapEvent::SetOk(SubKey(1000), Version(1)))
+            map.on_client(0, source, ClientMapCommand::Set(Key(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(Key(1000), Version(1)))
         );
         assert_eq!(map.pop_action(), None);
 
@@ -420,7 +420,7 @@ mod test {
             Some((
                 consumer,
                 ServerMapEvent::OnSet {
-                    sub: SubKey(1000),
+                    key: Key(1000),
                     version: Version(1),
                     source,
                     data: vec![1, 2, 3, 4]
@@ -437,7 +437,7 @@ mod test {
             Some((
                 consumer,
                 ServerMapEvent::OnSet {
-                    sub: SubKey(1000),
+                    key: Key(1000),
                     version: Version(1),
                     source,
                     data: vec![1, 2, 3, 4]
@@ -461,8 +461,8 @@ mod test {
         assert_eq!(map.pop_action(), None);
 
         assert_eq!(
-            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])),
-            Some(ServerMapEvent::SetOk(SubKey(1000), Version(1)))
+            map.on_client(0, source, ClientMapCommand::Set(Key(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(Key(1000), Version(1)))
         );
         assert_eq!(map.pop_action(), None);
     }
@@ -482,15 +482,15 @@ mod test {
         assert_eq!(map.pop_action(), None);
 
         assert_eq!(
-            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])),
-            Some(ServerMapEvent::SetOk(SubKey(1000), Version(1)))
+            map.on_client(0, source, ClientMapCommand::Set(Key(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(Key(1000), Version(1)))
         );
         assert_eq!(
             map.pop_action(),
             Some((
                 consumer,
                 ServerMapEvent::OnSet {
-                    sub: SubKey(1000),
+                    key: Key(1000),
                     version: Version(1),
                     source,
                     data: vec![1, 2, 3, 4]
@@ -512,15 +512,15 @@ mod test {
         assert_eq!(map.pop_action(), None);
 
         assert_eq!(
-            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])),
-            Some(ServerMapEvent::SetOk(SubKey(1000), Version(1)))
+            map.on_client(0, source, ClientMapCommand::Set(Key(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(Key(1000), Version(1)))
         );
         assert_eq!(
             map.pop_action(),
             Some((
                 consumer,
                 ServerMapEvent::OnSet {
-                    sub: SubKey(1000),
+                    key: Key(1000),
                     version: Version(1),
                     source,
                     data: vec![1, 2, 3, 4]
@@ -530,7 +530,7 @@ mod test {
         assert_eq!(map.pop_action(), None);
 
         //set with same version should not affected
-        assert_eq!(map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])), None);
+        assert_eq!(map.on_client(0, source, ClientMapCommand::Set(Key(1000), Version(1), vec![1, 2, 3, 4])), None);
         assert_eq!(map.pop_action(), None);
     }
 
@@ -546,15 +546,15 @@ mod test {
         assert_eq!(map.pop_action(), None);
 
         assert_eq!(
-            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])),
-            Some(ServerMapEvent::SetOk(SubKey(1000), Version(1)))
+            map.on_client(0, source, ClientMapCommand::Set(Key(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(Key(1000), Version(1)))
         );
         assert_eq!(
             map.pop_action(),
             Some((
                 consumer,
                 ServerMapEvent::OnSet {
-                    sub: SubKey(1000),
+                    key: Key(1000),
                     version: Version(1),
                     source,
                     data: vec![1, 2, 3, 4]
@@ -564,7 +564,7 @@ mod test {
         assert_eq!(map.pop_action(), None);
 
         //del with older version should not affected
-        assert_eq!(map.on_client(0, source, ClientMapCommand::Del(SubKey(1000), Version(0))), None);
+        assert_eq!(map.on_client(0, source, ClientMapCommand::Del(Key(1000), Version(0))), None);
         assert_eq!(map.pop_action(), None);
         assert_eq!(map.slots.len(), 1);
     }
@@ -581,15 +581,15 @@ mod test {
         assert_eq!(map.pop_action(), None);
 
         assert_eq!(
-            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])),
-            Some(ServerMapEvent::SetOk(SubKey(1000), Version(1)))
+            map.on_client(0, source, ClientMapCommand::Set(Key(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(Key(1000), Version(1)))
         );
         assert_eq!(
             map.pop_action(),
             Some((
                 consumer,
                 ServerMapEvent::OnSet {
-                    sub: SubKey(1000),
+                    key: Key(1000),
                     version: Version(1),
                     source,
                     data: vec![1, 2, 3, 4]
@@ -600,15 +600,15 @@ mod test {
 
         //del with newer version should affected
         assert_eq!(
-            map.on_client(0, source, ClientMapCommand::Del(SubKey(1000), Version(2))),
-            Some(ServerMapEvent::DelOk(SubKey(1000), Version(1)))
+            map.on_client(0, source, ClientMapCommand::Del(Key(1000), Version(2))),
+            Some(ServerMapEvent::DelOk(Key(1000), Version(1)))
         );
         assert_eq!(
             map.pop_action(),
             Some((
                 consumer,
                 ServerMapEvent::OnDel {
-                    sub: SubKey(1000),
+                    key: Key(1000),
                     version: Version(1),
                     source
                 }
@@ -630,15 +630,15 @@ mod test {
         assert_eq!(map.pop_action(), None);
 
         assert_eq!(
-            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])),
-            Some(ServerMapEvent::SetOk(SubKey(1000), Version(1)))
+            map.on_client(0, source, ClientMapCommand::Set(Key(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(Key(1000), Version(1)))
         );
         assert_eq!(
             map.pop_action(),
             Some((
                 consumer,
                 ServerMapEvent::OnSet {
-                    sub: SubKey(1000),
+                    key: Key(1000),
                     version: Version(1),
                     source,
                     data: vec![1, 2, 3, 4]
@@ -654,7 +654,7 @@ mod test {
             Some((
                 consumer,
                 ServerMapEvent::OnSet {
-                    sub: SubKey(1000),
+                    key: Key(1000),
                     version: Version(1),
                     source,
                     data: vec![1, 2, 3, 4]
@@ -673,8 +673,8 @@ mod test {
         let consumer = NodeSession(5, 6);
 
         assert_eq!(
-            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])),
-            Some(ServerMapEvent::SetOk(SubKey(1000), Version(1)))
+            map.on_client(0, source, ClientMapCommand::Set(Key(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(Key(1000), Version(1)))
         );
         assert_eq!(map.pop_action(), None);
 
@@ -684,7 +684,7 @@ mod test {
             Some((
                 consumer,
                 ServerMapEvent::OnSet {
-                    sub: SubKey(1000),
+                    key: Key(1000),
                     version: Version(1),
                     source,
                     data: vec![1, 2, 3, 4]
@@ -700,7 +700,7 @@ mod test {
             Some((
                 consumer,
                 ServerMapEvent::OnSet {
-                    sub: SubKey(1000),
+                    key: Key(1000),
                     version: Version(1),
                     source,
                     data: vec![1, 2, 3, 4]
@@ -722,15 +722,15 @@ mod test {
         assert_eq!(map.pop_action(), None);
 
         assert_eq!(
-            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])),
-            Some(ServerMapEvent::SetOk(SubKey(1000), Version(1)))
+            map.on_client(0, source, ClientMapCommand::Set(Key(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(Key(1000), Version(1)))
         );
         assert_eq!(
             map.pop_action(),
             Some((
                 consumer,
                 ServerMapEvent::OnSet {
-                    sub: SubKey(1000),
+                    key: Key(1000),
                     version: Version(1),
                     source,
                     data: vec![1, 2, 3, 4]
@@ -739,7 +739,7 @@ mod test {
         );
         assert_eq!(map.pop_action(), None);
 
-        assert_eq!(map.on_client(2, consumer, ClientMapCommand::OnSetAck(SubKey(1000), source, Version(1))), None);
+        assert_eq!(map.on_client(2, consumer, ClientMapCommand::OnSetAck(Key(1000), source, Version(1))), None);
 
         map.on_tick(RESEND_MS);
 
@@ -757,8 +757,8 @@ mod test {
         assert_eq!(map.pop_action(), None);
 
         assert_eq!(
-            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])),
-            Some(ServerMapEvent::SetOk(SubKey(1000), Version(1)))
+            map.on_client(0, source, ClientMapCommand::Set(Key(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(Key(1000), Version(1)))
         );
         assert_eq!(map.pop_action(), None);
     }
@@ -771,8 +771,8 @@ mod test {
         let source = NodeSession(3, 4);
 
         assert_eq!(
-            map.on_client(0, source, ClientMapCommand::Set(SubKey(1000), Version(1), vec![1, 2, 3, 4])),
-            Some(ServerMapEvent::SetOk(SubKey(1000), Version(1)))
+            map.on_client(0, source, ClientMapCommand::Set(Key(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(Key(1000), Version(1)))
         );
         assert_eq!(map.pop_action(), None);
 

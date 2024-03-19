@@ -1,6 +1,6 @@
 use atm0s_sdn_identity::{NodeAddr, NodeId};
 use atm0s_sdn_network::features::{
-    dht_kv::{Control, Key, MapControl, SubKey},
+    dht_kv::{Control, Map, MapControl, Key},
     FeaturesControl,
 };
 use clap::{Parser, ValueEnum};
@@ -75,7 +75,7 @@ fn main() {
         BackendType::Polling => builder.build::<PollingBackend<128, 128>, TC, TW>(args.workers),
     };
 
-    controller.send_to(Owner::worker(0), SdnExtIn::FeaturesControl(FeaturesControl::DhtKv(Control::MapCmd(Key(1000), MapControl::Sub))));
+    controller.send_to(Owner::worker(0), SdnExtIn::FeaturesControl(FeaturesControl::DhtKv(Control::MapCmd(Map(1000), MapControl::Sub))));
 
     let mut i: u32 = 0;
     while controller.process().is_some() {
@@ -95,7 +95,7 @@ fn main() {
             log::info!("Set key: {:?}", data);
             controller.send_to(
                 Owner::worker(0),
-                SdnExtIn::FeaturesControl(FeaturesControl::DhtKv(Control::MapCmd(Key(1000), MapControl::Set(SubKey(200), data)))),
+                SdnExtIn::FeaturesControl(FeaturesControl::DhtKv(Control::MapCmd(Map(1000), MapControl::Set(Key(200), data)))),
             );
         }
         while let Some(out) = controller.pop_event() {

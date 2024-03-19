@@ -20,15 +20,15 @@ mod internal;
 mod msg;
 mod server;
 
-pub use self::msg::{Key, SubKey};
+pub use self::msg::{Map, Key};
 
 pub const FEATURE_ID: u8 = 4;
 pub const FEATURE_NAME: &str = "dht_kv";
 
 #[derive(Debug, Clone)]
 pub enum MapControl {
-    Set(SubKey, Vec<u8>),
-    Del(SubKey),
+    Set(Key, Vec<u8>),
+    Del(Key),
     Sub,
     Unsub,
 }
@@ -45,11 +45,11 @@ impl MapControl {
 
 #[derive(Debug, Clone)]
 pub enum Control {
-    MapCmd(Key, MapControl),
-    MapGet(Key),
+    MapCmd(Map, MapControl),
+    MapGet(Map),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GetError {
     Timeout,
     NotFound,
@@ -57,16 +57,14 @@ pub enum GetError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MapEvent {
-    SetOk(SubKey, NodeId),
-    DelOk(SubKey, NodeId),
-    OnSet(SubKey, NodeId, Vec<u8>),
-    OnDel(SubKey, NodeId),
+    OnSet(Key, NodeId, Vec<u8>),
+    OnDel(Key, NodeId),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
-    MapEvent(Key, MapEvent),
-    MapGetRes(Key, Result<Vec<(SubKey, NodeSession, Version, Vec<u8>)>, GetError>),
+    MapEvent(Map, MapEvent),
+    MapGetRes(Map, Result<Vec<(Key, NodeSession, Version, Vec<u8>)>, GetError>),
 }
 
 #[derive(Debug, Clone)]

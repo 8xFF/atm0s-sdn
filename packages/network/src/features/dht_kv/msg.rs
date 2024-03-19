@@ -2,10 +2,10 @@ use atm0s_sdn_identity::NodeId;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Hash, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Key(pub u64);
+pub struct Map(pub u64);
 
 #[derive(Debug, Hash, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub struct SubKey(pub u64);
+pub struct Key(pub u64);
 
 #[derive(Debug, Hash, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Version(pub u64);
@@ -32,12 +32,12 @@ pub(crate) enum RemoteCommand {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ClientMapCommand {
-    Set(SubKey, Version, Vec<u8>),
-    Del(SubKey, Version),
+    Set(Key, Version, Vec<u8>),
+    Del(Key, Version),
     Sub(u64, Option<NodeSession>), //
     Unsub(u64),
-    OnSetAck(SubKey, NodeSession, Version), //Seq from OnHSet
-    OnDelAck(SubKey, NodeSession, Version), //Seq from OnHDel
+    OnSetAck(Key, NodeSession, Version), //Seq from OnHSet
+    OnDelAck(Key, NodeSession, Version), //Seq from OnHDel
 }
 
 impl ClientMapCommand {
@@ -52,24 +52,24 @@ impl ClientMapCommand {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) enum ClientCommand {
-    MapCmd(Key, ClientMapCommand),
-    MapGet(Key, u64),
+    MapCmd(Map, ClientMapCommand),
+    MapGet(Map, u64),
 }
 
 // This part is for server related messages
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) enum ServerMapEvent {
-    SetOk(SubKey, Version),
-    DelOk(SubKey, Version),
+    SetOk(Key, Version),
+    DelOk(Key, Version),
     SubOk(u64),
     UnsubOk(u64),
-    OnSet { sub: SubKey, source: NodeSession, version: Version, data: Vec<u8> },
-    OnDel { sub: SubKey, source: NodeSession, version: Version },
+    OnSet { key: Key, source: NodeSession, version: Version, data: Vec<u8> },
+    OnDel { key: Key, source: NodeSession, version: Version },
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) enum ServerEvent {
-    MapEvent(Key, ServerMapEvent),
-    MapGetRes(Key, u64, Vec<(SubKey, NodeSession, Version, Vec<u8>)>),
+    MapEvent(Map, ServerMapEvent),
+    MapGetRes(Map, u64, Vec<(Key, NodeSession, Version, Vec<u8>)>),
 }

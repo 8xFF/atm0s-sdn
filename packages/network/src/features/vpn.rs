@@ -9,7 +9,7 @@ pub const FEATURE_NAME: &str = "vpn";
 #[derive(Debug, Clone)]
 pub enum Control {}
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {}
 
 #[derive(Debug, Clone)]

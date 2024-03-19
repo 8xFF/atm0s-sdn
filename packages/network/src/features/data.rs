@@ -10,7 +10,7 @@ pub enum Control {
     Send(RouteRule, Vec<u8>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     Data(Vec<u8>),
 }
