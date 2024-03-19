@@ -65,18 +65,18 @@ impl Feature<Control, Event, ToController, ToWorker> for RouterSyncFeature {
             }
             FeatureSharedInput::Connection(event) => match event {
                 ConnectionEvent::Connected(ctx, _) => {
-                    log::info!("Connection {} connected", ctx.remote);
+                    log::info!("[RouterSync] Connection {} connected", ctx.remote);
                     let metric = Metric::new(INIT_RTT_MS, vec![ctx.node], INIT_BW);
                     self.conns.insert(ctx.conn, (ctx.node, ctx.remote, metric.clone()));
                     self.router.set_direct(ctx.conn, metric);
                     Self::send_sync_to(&self.router, &mut self.queue, ctx.conn, ctx.node);
                 }
                 ConnectionEvent::Stats(ctx, stats) => {
-                    log::debug!("Connection {} stats rtt_ms {}", ctx.remote, stats.rtt_ms);
+                    log::debug!("[RouterSync] Connection {} stats rtt_ms {}", ctx.remote, stats.rtt_ms);
                     self.router.set_direct(ctx.conn, Metric::new(stats.rtt_ms as u16, vec![ctx.node], INIT_BW));
                 }
                 ConnectionEvent::Disconnected(ctx) => {
-                    log::info!("Connection {} disconnected", ctx.remote);
+                    log::info!("[RouterSync] Connection {} disconnected", ctx.remote);
                     self.conns.remove(&ctx.conn);
                     self.router.del_direct(ctx.conn);
                 }
@@ -86,15 +86,15 @@ impl Feature<Control, Event, ToController, ToWorker> for RouterSyncFeature {
 
     fn on_input<'a>(&mut self, _now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
         match input {
-            FeatureInput::ForwardNetFromWorker(ctx, buf) => {
+            FeatureInput::Net(ctx, buf) => {
                 if let Some((_node, _remote, metric)) = self.conns.get(&ctx.conn) {
                     if let Ok(sync) = bincode::deserialize::<RouterSync>(&buf) {
                         self.router.apply_sync(ctx.conn, metric.clone(), sync);
                     } else {
-                        log::warn!("Receive invalid sync from {}", ctx.remote);
+                        log::warn!("[RouterSync] Receive invalid sync from {}", ctx.remote);
                     }
                 } else {
-                    log::warn!("Receive sync from unknown connection {}", ctx.remote);
+                    log::warn!("[RouterSync] Receive sync from unknown connection {}", ctx.remote);
                 }
             }
             _ => {}
@@ -103,6 +103,7 @@ impl Feature<Control, Event, ToController, ToWorker> for RouterSyncFeature {
 
     fn pop_output<'a>(&mut self) -> Option<FeatureOutput<Event, ToWorker>> {
         if let Some(rule) = self.router.pop_delta() {
+            log::debug!("[RouterSync] broadcast to all workers {:?}", rule);
             let rule = match rule {
                 RouterDelta::Table(layer, TableDelta(index, DestDelta::SetBestPath(conn))) => ShadowRouterDelta::SetTable {
                     layer,
@@ -123,7 +124,7 @@ impl Feature<Control, Event, ToController, ToWorker> for RouterSyncFeature {
                     next: self.conns.get(&conn)?.1,
                 },
             };
-            return Some(FeatureOutput::BroadcastToWorkers(rule));
+            return Some(FeatureOutput::ToWorkers(rule));
         }
         self.queue.pop_front()
     }
@@ -146,6 +147,7 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for RouterSyncFeature
             FeatureWorkerInput::Control(service, control) => Some(FeatureWorkerOutput::ForwardControlToController(service, control)),
             FeatureWorkerInput::Network(conn, msg) => Some(FeatureWorkerOutput::ForwardNetworkToController(conn, msg.to_vec())),
             FeatureWorkerInput::FromController(delta) => {
+                log::info!("[RouterSyncWorker] apply router delta {:?}", delta);
                 ctx.router.apply_delta(delta);
                 None
             }

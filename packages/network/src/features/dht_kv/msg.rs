@@ -1,17 +1,11 @@
 use atm0s_sdn_identity::NodeId;
+use atm0s_sdn_utils::simple_pub_type;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Hash, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Map(pub u64);
-
-#[derive(Debug, Hash, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Key(pub u64);
-
-#[derive(Debug, Hash, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Version(pub u64);
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Seq(pub u64);
+simple_pub_type!(Map, u64);
+simple_pub_type!(Key, u64);
+simple_pub_type!(Version, u64);
+simple_pub_type!(Seq, u64);
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Hash, PartialEq, Eq)]
 pub struct NodeSession(pub NodeId, pub u64);

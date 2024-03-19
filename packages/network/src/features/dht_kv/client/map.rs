@@ -4,7 +4,7 @@ use crate::{
     base::FeatureControlActor,
     features::dht_kv::{
         msg::{ClientMapCommand, NodeSession, ServerMapEvent, Version},
-        MapControl, MapEvent, Key,
+        Key, MapControl, MapEvent,
     },
 };
 
@@ -232,20 +232,24 @@ impl LocalMap {
             SubState::NotSub => {}
             SubState::Subscribing { id, sent_ts } => {
                 if now >= *sent_ts + RESEND_MS {
+                    log::debug!("[ClientMap] Resend sub command in Subscribing state after {RESEND_MS} ms");
                     self.queue.push_back(LocalMapOutput::Remote(ClientMapCommand::Sub(*id, None)));
                     *sent_ts = now;
                 }
             }
             SubState::Subscribed { id, remote, sync_ts } => {
                 if now >= *sync_ts + SYNC_MS {
+                    log::debug!("[ClientMap] Resend sub command in Subscribed state after {SYNC_MS} ms");
                     self.queue.push_back(LocalMapOutput::Remote(ClientMapCommand::Sub(*id, Some(*remote))));
                     *sync_ts = now;
                 }
             }
             SubState::Unsubscribing { id, started_at, sent_ts, .. } => {
                 if now >= *started_at + UNSUB_TIMEOUT_MS {
+                    log::warn!("[ClientMap] Unsubscribing timeout after {UNSUB_TIMEOUT_MS} ms, switch to NotSub");
                     self.sub_state = SubState::NotSub;
                 } else if now >= *sent_ts + RESEND_MS {
+                    log::debug!("[ClientMap] Resend unsub command in Unsubscribing state after {RESEND_MS} ms");
                     self.queue.push_back(LocalMapOutput::Remote(ClientMapCommand::Unsub(*id)));
                     *sent_ts = now;
                 }
@@ -254,6 +258,7 @@ impl LocalMap {
 
         for slot in self.slots.values_mut() {
             if let Some(cmd) = slot.sync(now) {
+                log::debug!("[ClientMap] Sync slot with command {:?}", cmd);
                 self.queue.push_back(LocalMapOutput::Remote(cmd));
             }
         }
@@ -262,6 +267,7 @@ impl LocalMap {
         let mut to_remove = vec![];
         for (key, slot) in self.slots.iter_mut() {
             if slot.should_cleanup() {
+                log::info!("[ClientMap] Remove empty slot for key {}", key.0);
                 to_remove.push(*key);
             }
         }
@@ -276,28 +282,36 @@ impl LocalMap {
             MapControl::Set(key, data) => {
                 let slot = self.get_slot(key, self.session, true).expect("Must have slot for set");
                 if let Some(out) = slot.set(now, data.clone()) {
+                    log::debug!("[ClientMap] Set key {} with data len {}", key, data.len());
                     self.fire_event(MapEvent::OnSet(key, self.session.0, data));
                     Some(out)
                 } else {
+                    log::warn!("[ClientMap] Set key {} failed", key);
                     None
                 }
             }
             MapControl::Del(key) => {
                 let slot = self.get_slot(key, self.session, false)?;
                 if let Some(out) = slot.del(now) {
+                    log::debug!("[ClientMap] Del key {}", key);
                     self.fire_event(MapEvent::OnDel(key, self.session.0));
                     Some(out)
                 } else {
+                    log::warn!("[ClientMap] Del key {} failed", key);
                     None
                 }
             }
             MapControl::Sub => {
                 let send_sub = self.subscribers.is_empty();
                 if self.subscribers.contains(&actor) {
+                    log::warn!("[ClientMap] Actor {:?} already subscribed, Sub failed", actor);
                     return None;
                 }
+
+                log::debug!("[ClientMap] Actor {:?} subscribe", actor);
                 self.subscribers.push(actor);
                 if send_sub {
+                    log::debug!("[ClientMap] Send sub command");
                     self.sub_state = SubState::Subscribing { sent_ts: now, id: now };
 
                     //We need to send all current local data to the new subscriber, because RELAY will not send it to source node.
@@ -311,12 +325,14 @@ impl LocalMap {
             }
             MapControl::Unsub => {
                 if !self.subscribers.contains(&actor) || self.subscribers.is_empty() {
+                    log::warn!("[ClientMap] Actor {:?} not subscribed, Unsub failed", actor);
                     return None;
                 }
                 self.subscribers.retain(|&x| x != actor);
                 if self.subscribers.is_empty() {
                     match &self.sub_state {
                         SubState::Subscribed { id, remote, .. } => {
+                            log::debug!("[ClientMap] Send unsub command, switch to Unsubscribing state from Subscribed");
                             let id = *id;
                             self.sub_state = SubState::Unsubscribing {
                                 id,
@@ -328,6 +344,7 @@ impl LocalMap {
                         }
                         SubState::Subscribing { id, .. } => {
                             let id = *id;
+                            log::debug!("[ClientMap] Send unsub command, switch to Unsubscribing state from Subscribing");
                             self.sub_state = SubState::Unsubscribing {
                                 id,
                                 remote: None,
@@ -339,6 +356,7 @@ impl LocalMap {
                         _ => panic!("Should in Subscribed or Subscribing state when do unsub"),
                     }
                 } else {
+                    log::debug!("[ClientMap] Actor {:?} unsubscribed, after that remain {} actors", actor, self.subscribers.len());
                     None
                 }
             }
@@ -351,11 +369,13 @@ impl LocalMap {
         match cmd {
             ServerMapEvent::SetOk(key, version) => {
                 let slot = self.get_slot(key, self.session, false)?;
+                log::debug!("[ClientMap] SetOk for key {}", key);
                 slot.set_ok(version);
                 None
             }
             ServerMapEvent::DelOk(key, version) => {
                 let slot = self.get_slot(key, self.session, false)?;
+                log::debug!("[ClientMap] DelOk for key {}", key);
                 slot.del_ok(version);
                 None
             }
@@ -363,38 +383,59 @@ impl LocalMap {
                 match &self.sub_state {
                     SubState::Subscribing { id: sub_id, .. } | SubState::Subscribed { id: sub_id, .. } => {
                         if *sub_id == id {
+                            log::debug!("[ClientMap] Received SubOk with id {}, switched to Subscribed with sync_ts {}", id, now);
                             //update to new remote
                             self.sub_state = SubState::Subscribed { id, remote, sync_ts: now };
+                        } else {
+                            log::warn!("[ClientMap] Received SubOk with id {} but current id is {}", id, sub_id);
                         }
                     }
-                    _ => {}
+                    _ => {
+                        log::warn!("[ClientMap] Received SubOk but not in Subscribing or Subscribed state");
+                    }
                 }
                 None
             }
             ServerMapEvent::UnsubOk(id) => {
                 if let SubState::Unsubscribing { id: sub_id, remote: locked, .. } = &self.sub_state {
                     if *sub_id == id && (*locked).unwrap_or(remote) == remote {
+                        log::debug!("[ClientMap] Received UnsubOk with id {}, switched to NotSub", id);
                         self.sub_state = SubState::NotSub;
+                    } else {
+                        log::warn!(
+                            "[ClientMap] Received UnsubOk with id {} but current id is {} vs {}, remote is {:?} vs {:?}",
+                            id,
+                            sub_id,
+                            id,
+                            locked,
+                            remote
+                        );
                     }
+                } else {
+                    log::warn!("[ClientMap] Received UnsubOk but not in Unsubscribing state");
                 }
                 None
             }
             ServerMapEvent::OnSet { key, version, source, data } => {
                 if !self.accept_event(remote) {
+                    log::warn!("[ClientMap] Received OnSet {key} but state or remote is not correct");
                     return None;
                 }
                 let slot = self.get_slot(key, self.session, true).expect("Must have slot for set");
                 let event = slot.on_set(now, key, source, version, data.clone())?;
+                log::debug!("[ClientMap] Received OnSet for key {}", key);
                 self.fire_event(MapEvent::OnSet(key, source.0, data));
                 Some(event)
             }
             ServerMapEvent::OnDel { key, version, source } => {
                 if !self.accept_event(remote) {
+                    log::warn!("[ClientMap] Received OnDel {key} but state or remote is not correct");
                     return None;
                 }
 
                 let slot = self.get_slot(key, self.session, true).expect("Must have slot for set");
                 let event = slot.on_del(now, key, source, version)?;
+                log::debug!("[ClientMap] Received OnDel for key {}", key);
                 self.fire_event(MapEvent::OnDel(key, source.0));
                 Some(event)
             }
@@ -426,6 +467,7 @@ impl LocalMap {
 
     fn fire_event(&mut self, event: MapEvent) {
         for sub in self.subscribers.iter() {
+            log::debug!("[ClientMap] Fire to {:?}, event {:?}", sub, event);
             self.queue.push_back(LocalMapOutput::Local(*sub, event.clone()));
         }
     }
@@ -436,7 +478,9 @@ impl LocalMap {
                 continue;
             }
             if let Some(data) = slot.data() {
-                self.queue.push_back(LocalMapOutput::Local(actor, MapEvent::OnSet(*key, source.0, data.to_vec())));
+                let event = MapEvent::OnSet(*key, source.0, data.to_vec());
+                log::debug!("[ClientMap] Fire to {:?}, key: {key}, event {:?}", actor, event);
+                self.queue.push_back(LocalMapOutput::Local(actor, event));
             }
         }
     }
@@ -448,7 +492,7 @@ mod test {
         base::FeatureControlActor,
         features::dht_kv::{
             client::map::{LocalMapOutput, RESEND_MS, SYNC_MS},
-            msg::{ClientMapCommand, NodeSession, ServerMapEvent, Key, Version},
+            msg::{ClientMapCommand, Key, NodeSession, ServerMapEvent, Version},
             MapControl, MapEvent,
         },
     };

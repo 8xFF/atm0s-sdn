@@ -33,6 +33,7 @@ const FEATURES_ID: u8 = 1;
 const SERVICES_ID: u8 = 2;
 
 #[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TaskType {
     Neighbours = NEIGHBOURS_ID,
     Feature = FEATURES_ID,
@@ -61,6 +62,8 @@ impl<TC, TW> ControllerPlane<TC, TW> {
     ///
     /// A new ControllerPlane
     pub fn new(node_id: NodeId, session: u64) -> Self {
+        log::info!("Create ControllerPlane for node: {}, running session {}", node_id, session);
+
         Self {
             neighbours: NeighboursManager::new(node_id),
             features: FeatureManager::new(node_id, session),
@@ -106,12 +109,12 @@ impl<TC, TW> ControllerPlane<TC, TW> {
             Input::Control(LogicControl::NetRemote(feature, conn, msg)) => {
                 if let Some(ctx) = self.neighbours.conn(conn) {
                     self.last_task = Some(TaskType::Feature);
-                    self.features.on_input(now_ms, feature, FeatureInput::ForwardNetFromWorker(ctx, msg));
+                    self.features.on_input(now_ms, feature, FeatureInput::Net(ctx, msg));
                 }
             }
             Input::Control(LogicControl::NetLocal(feature, msg)) => {
                 self.last_task = Some(TaskType::Feature);
-                self.features.on_input(now_ms, feature, FeatureInput::ForwardLocalFromWorker(msg));
+                self.features.on_input(now_ms, feature, FeatureInput::Local(msg));
             }
             Input::Control(LogicControl::ServiceEvent(service, event)) => {
                 self.last_task = Some(TaskType::Service);
@@ -184,7 +187,7 @@ impl<TC, TW> ControllerPlane<TC, TW> {
     fn pop_features(&mut self, now_ms: u64) -> Option<Output<TW>> {
         let (feature, out) = self.features.pop_output()?;
         match out {
-            FeatureOutput::BroadcastToWorkers(to) => Some(Output::Event(LogicEvent::Feature(to))),
+            FeatureOutput::ToWorkers(to) => Some(Output::Event(LogicEvent::Feature(to))),
             FeatureOutput::Event(actor, event) => {
                 //TODO may be we need stack style for optimize performance
                 match actor {
@@ -195,8 +198,14 @@ impl<TC, TW> ControllerPlane<TC, TW> {
                     }
                 }
             }
-            FeatureOutput::SendDirect(conn, buf) => Some(Output::Event(LogicEvent::NetDirect(feature, conn, buf))),
-            FeatureOutput::SendRoute(rule, buf) => Some(Output::Event(LogicEvent::NetRoute(feature, rule, buf))),
+            FeatureOutput::SendDirect(conn, buf) => {
+                log::debug!("[ControllerPlane] SendDirect to conn: {:?}, len: {}", conn, buf.len());
+                Some(Output::Event(LogicEvent::NetDirect(feature, conn, buf)))
+            },
+            FeatureOutput::SendRoute(rule, buf) => {
+                log::debug!("[ControllerPlane] SendRoute to rule: {:?}, len: {}", rule, buf.len());
+                Some(Output::Event(LogicEvent::NetRoute(feature, rule, buf)))
+            },
             FeatureOutput::NeighboursConnectTo(addr) => {
                 //TODO may be we need stack style for optimize performance
                 self.neighbours.on_input(now_ms, neighbours::Input::ConnectTo(addr));

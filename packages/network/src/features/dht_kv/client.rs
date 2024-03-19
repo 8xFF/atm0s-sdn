@@ -115,6 +115,7 @@ impl LocalStorage {
 
     fn get_map(maps: &mut HashMap<Map, LocalMap>, session: NodeSession, key: Map, auto_create: bool) -> Option<&mut LocalMap> {
         if !maps.contains_key(&key) && auto_create {
+            log::info!("[DhtKvClient] Creating new map: {}", key);
             maps.insert(key, LocalMap::new(session));
         }
         maps.get_mut(&key)

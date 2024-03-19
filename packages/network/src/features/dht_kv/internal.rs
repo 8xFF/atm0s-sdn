@@ -39,6 +39,7 @@ impl DhtKvInternal {
     }
 
     pub fn on_remote(&mut self, now: u64, cmd: RemoteCommand) {
+        log::debug!("[DhtKvInternal] on_remote: {:?}", cmd);
         match cmd {
             RemoteCommand::Client(remote, cmd) => self.remote.on_remote(now, remote, cmd),
             RemoteCommand::Server(remote, cmd) => {
@@ -50,10 +51,17 @@ impl DhtKvInternal {
     pub fn pop_action(&mut self) -> Option<InternalOutput> {
         if let Some(out) = self.local.pop_action() {
             match out {
-                LocalStorageOutput::Remote(rule, cmd) => Some(InternalOutput::Remote(rule, RemoteCommand::Client(self.session, cmd))),
-                LocalStorageOutput::Local(service, event) => Some(InternalOutput::Local(service, event)),
+                LocalStorageOutput::Remote(rule, cmd) => {
+                    log::debug!("[DhtKvInternal] Sending to {:?} cmd {:?}", rule, cmd);
+                    Some(InternalOutput::Remote(rule, RemoteCommand::Client(self.session, cmd)))
+                }
+                LocalStorageOutput::Local(actor, event) => {
+                    log::debug!("[DhtKvInternal] Send to actor {:?} event: {:?}", actor, event);
+                    Some(InternalOutput::Local(actor, event))
+                }
             }
         } else if let Some((session, cmd)) = self.remote.pop_action() {
+            log::debug!("[DhtKvInternal] Sending to node {} cmd {:?}", session.0, cmd);
             Some(InternalOutput::Remote(RouteRule::ToNode(session.0), RemoteCommand::Server(self.session, cmd)))
         } else {
             None

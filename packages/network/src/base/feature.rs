@@ -24,13 +24,13 @@ pub enum FeatureSharedInput {
 pub enum FeatureInput<'a, Control, ToController> {
     FromWorker(ToController),
     Control(FeatureControlActor, Control),
-    ForwardNetFromWorker(&'a ConnectionCtx, Vec<u8>),
-    ForwardLocalFromWorker(Vec<u8>),
+    Net(&'a ConnectionCtx, Vec<u8>),
+    Local(Vec<u8>),
 }
 
 #[derive(Debug)]
 pub enum FeatureOutput<Event, ToWorker> {
-    BroadcastToWorkers(ToWorker),
+    ToWorkers(ToWorker),
     Event(FeatureControlActor, Event),
     SendDirect(ConnId, Vec<u8>),
     SendRoute(RouteRule, Vec<u8>),
@@ -45,7 +45,7 @@ impl<'a, Event, ToWorker> FeatureOutput<Event, ToWorker> {
         ToWorker2: From<ToWorker>,
     {
         match self {
-            FeatureOutput::BroadcastToWorkers(to) => FeatureOutput::BroadcastToWorkers(to.into()),
+            FeatureOutput::ToWorkers(to) => FeatureOutput::ToWorkers(to.into()),
             FeatureOutput::Event(actor, event) => FeatureOutput::Event(actor, event.into()),
             FeatureOutput::SendDirect(conn, msg) => FeatureOutput::SendDirect(conn, msg),
             FeatureOutput::SendRoute(rule, buf) => FeatureOutput::SendRoute(rule, buf),

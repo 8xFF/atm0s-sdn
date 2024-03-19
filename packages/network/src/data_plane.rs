@@ -77,6 +77,8 @@ pub struct DataPlane<TC, TW> {
 
 impl<TC, TW> DataPlane<TC, TW> {
     pub fn new(node_id: NodeId) -> Self {
+        log::info!("Create DataPlane for node: {}", node_id);
+
         Self {
             ctx: FeatureWorkerContext { router: ShadowRouter::new(node_id) },
             features: FeatureWorkerManager::new(node_id),
@@ -153,6 +155,7 @@ impl<TC, TW> DataPlane<TC, TW> {
                 return Some(out);
             } else {
                 self.last_task = None;
+                //TODO need to continue here
                 match self.queue_output.pop_front()? {
                     QueueOutput::Feature(feature, out) => Some(self.convert_features(now_ms, feature, out)),
                     QueueOutput::Service(service, out) => Some(self.convert_services(now_ms, service, out)),
@@ -222,16 +225,23 @@ impl<TC, TW> DataPlane<TC, TW> {
 
     fn outgoing_route<'a>(&mut self, now_ms: u64, feature: Features, rule: RouteRule, buf: Vec<u8>) -> Option<Output<'a, TC>> {
         match self.ctx.router.derive_action(&rule) {
-            RouteAction::Reject => None,
+            RouteAction::Reject => {
+                log::debug!("[DataPlane] route rule {:?} is rejected", rule);
+                None
+            },
             RouteAction::Local => {
+                log::debug!("[DataPlane] route rule {:?} is processed localy", rule);
                 let out = self.features.on_input(&mut self.ctx, feature, now_ms, FeatureWorkerInput::Local(buf.into()))?;
                 Some(self.convert_features(now_ms, feature, out.owned()))
             }
             RouteAction::Next(remote) => {
+                log::debug!("[DataPlane] route rule {:?} is go with remote {remote}", rule);
                 let msg = TransportMsg::build(feature as u8, 0, rule, &buf);
                 Some(NetOutput::UdpPacket(remote, msg.take().into()).into())
             }
             RouteAction::Broadcast(local, remotes) => {
+                log::debug!("[DataPlane] route rule {:?} is go with loca {local} and remotes {:?}", rule, remotes);
+
                 let msg = TransportMsg::build(feature as u8, 0, rule, &buf);
                 if local {
                     if let Some(out) = self.features.on_input(&mut self.ctx, feature, now_ms, FeatureWorkerInput::Local(buf.into())) {

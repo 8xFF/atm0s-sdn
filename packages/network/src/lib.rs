@@ -14,7 +14,7 @@ pub mod services;
 
 pub mod san_io_utils;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, convert_enum::From)]
 pub enum ExtIn {
     ConnectTo(NodeAddr),
     DisconnectFrom(NodeId),

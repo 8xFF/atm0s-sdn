@@ -20,7 +20,7 @@ mod internal;
 mod msg;
 mod server;
 
-pub use self::msg::{Map, Key};
+pub use self::msg::{Key, Map};
 
 pub const FEATURE_ID: u8 = 4;
 pub const FEATURE_NAME: &str = "dht_kv";
@@ -106,14 +106,15 @@ impl Feature<Control, Event, ToController, ToWorker> for DhtKvFeature {
     fn on_input<'a>(&mut self, now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
         match input {
             FeatureInput::Control(actor, control) => {
+                log::debug!("[DhtKv] on ext input: actor={:?}, control={:?}", actor, control);
                 self.internal.on_local(now_ms, actor, control);
             }
-            FeatureInput::ForwardLocalFromWorker(buf) => {
+            FeatureInput::Local(buf) => {
                 if let Ok(cmd) = bincode::deserialize(&buf) {
                     self.internal.on_remote(now_ms, cmd)
                 }
             }
-            FeatureInput::ForwardNetFromWorker(_conn, buf) => {
+            FeatureInput::Net(_conn, buf) => {
                 if let Ok(cmd) = bincode::deserialize(&buf) {
                     self.internal.on_remote(now_ms, cmd)
                 }

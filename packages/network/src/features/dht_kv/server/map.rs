@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 
-use crate::features::dht_kv::msg::{ClientMapCommand, NodeSession, ServerMapEvent, Key, Version};
+use crate::features::dht_kv::msg::{ClientMapCommand, Key, NodeSession, ServerMapEvent, Version};
 
 const RESEND_MS: u64 = 200; //We will resend set or del command if we don't get ack in this time
 const TIMEOUT_MS: u64 = 10000; //We will remove sub if we don't get any message from it in this time
@@ -96,6 +96,7 @@ impl RemoteMap {
         let mut to_remove = vec![];
         for (node, slot) in self.subs.iter() {
             if now >= slot.last_ts + TIMEOUT_MS {
+                log::debug!("[ServerMap] Remove sub from {} after timeout {TIMEOUT_MS}", node.0);
                 to_remove.push(*node);
             }
         }
@@ -108,9 +109,11 @@ impl RemoteMap {
         let mut to_remove = vec![];
         for (key, slot) in self.slots_event.iter_mut() {
             if now >= TIMEOUT_MS + slot.last_send_ms {
+                log::warn!("[ServerMap] Remove wait event {:?} for key {} to node {} after timeout {TIMEOUT_MS}", slot.event, key.0, key.1 .0);
                 to_remove.push(*key);
             } else if now >= RESEND_MS + slot.last_send_ms {
                 for remote in &slot.remotes {
+                    log::debug!("[ServerMap] Resend event {:?} for key {} to node {} after timeout {RESEND_MS}", slot.event, key.0, remote.0);
                     self.queue.push_back((*remote, slot.event.clone()));
                     slot.last_send_ms = now;
                 }
@@ -140,34 +143,30 @@ impl RemoteMap {
             ClientMapCommand::Set(key, version, data) => {
                 let slot = self.get_slot(key, remote, true).expect("must have slot with auto_create");
                 if slot.set(now, version, data.clone()) {
+                    log::debug!("[ServerMap] Set key {} from {} with version {}", key, remote.0, version.0);
                     self.fire_event(now, key, remote, ServerMapEvent::OnSet { key, version, source: remote, data });
                     Some(ServerMapEvent::SetOk(key, version))
                 } else {
+                    log::warn!("[ServerMap] Set key {} from {} with version {} failed", key, remote.0, version.0);
                     None
                 }
             }
-            ClientMapCommand::Del(key, version) => {
+            ClientMapCommand::Del(key, req_version) => {
                 let slot = self.get_slot(key, remote, false)?;
-                if let Some(del_version) = slot.del(now, version) {
+                if let Some(version) = slot.del(now, req_version) {
+                    log::debug!("[ServerMap] Del key {} from {} with req_ver {req_version}, in_store {version}", key, remote.0);
                     self.slots.remove(&(key, remote));
-                    self.fire_event(
-                        now,
-                        key,
-                        remote,
-                        ServerMapEvent::OnDel {
-                            key,
-                            version: del_version,
-                            source: remote,
-                        },
-                    );
-                    Some(ServerMapEvent::DelOk(key, del_version))
+                    self.fire_event(now, key, remote, ServerMapEvent::OnDel { key, version, source: remote });
+                    Some(ServerMapEvent::DelOk(key, version))
                 } else {
+                    log::warn!("[ServerMap] Del key {} from {} with req_ver {req_version} failed", key, remote.0);
                     None
                 }
             }
             ClientMapCommand::Sub(id, locked_session) => {
                 let old = self.subs.insert(remote, SubSlot { last_ts: now, id });
                 if old.is_none() || locked_session != Some(self.session) {
+                    log::debug!("[ServerMap] New sub from {} with id {}", remote.0, id);
                     self.fire_sub_events(now, remote);
                 }
                 Some(ServerMapEvent::SubOk(id))
@@ -175,9 +174,11 @@ impl RemoteMap {
             ClientMapCommand::Unsub(id) => {
                 let sub = self.subs.get(&remote)?;
                 if sub.id == id {
+                    log::debug!("[ServerMap] Unsub from {} with id {}", remote.0, id);
                     self.subs.remove(&remote);
                     Some(ServerMapEvent::UnsubOk(id))
                 } else {
+                    log::warn!("[ServerMap] Unsub from {} failed, wrong id {} vs instore id {}", remote.0, id, sub.id);
                     None
                 }
             }
@@ -185,11 +186,20 @@ impl RemoteMap {
                 let slot = self.slots_event.get_mut(&(key, session))?;
                 if let ServerMapEvent::OnSet { version, .. } = &slot.event {
                     if acked_version == *version {
+                        log::debug!("[ServerMap] Acked set key {key} from {} with version {acked_version}", remote.0);
                         slot.remotes.retain(|r| *r != remote);
+                        if slot.remotes.is_empty() {
+                            log::debug!("[ServerMap] Remove wait event OnSet for key {key} after all remotes acked");
+                            self.slots_event.remove(&(key, session));
+                        }
+                    } else {
+                        log::warn!(
+                            "[ServerMap] Acked set key {key} from {} with version {acked_version} not match with in-store version {version}",
+                            remote.0
+                        );
                     }
-                }
-                if slot.remotes.is_empty() {
-                    self.slots_event.remove(&(key, session));
+                } else {
+                    log::warn!("[ServerMap] Acked set key {key} from {} not match with in-store event type", remote.0);
                 }
                 None
             }
@@ -197,11 +207,20 @@ impl RemoteMap {
                 let slot = self.slots_event.get_mut(&(key, session))?;
                 if let ServerMapEvent::OnDel { version, .. } = &slot.event {
                     if acked_version == *version {
+                        log::debug!("[ServerMap] Acked del key {key} from {} with version {acked_version}", remote.0);
                         slot.remotes.retain(|r| *r != remote);
+                        if slot.remotes.is_empty() {
+                            log::debug!("[ServerMap] Remove wait event OnDel for key {key} after all remotes acked");
+                            self.slots_event.remove(&(key, session));
+                        }
+                    } else {
+                        log::warn!(
+                            "[ServerMap] Acked del key {key} from {} with version {acked_version} not match with in-store version {version}",
+                            remote.0
+                        );
                     }
-                }
-                if slot.remotes.is_empty() {
-                    self.slots_event.remove(&(key, session));
+                } else {
+                    log::warn!("[ServerMap] Acked del key {key} from {} not match with in-store event type", remote.0);
                 }
                 None
             }
@@ -218,6 +237,7 @@ impl RemoteMap {
 
     fn get_slot(&mut self, key: Key, source: NodeSession, auto_create: bool) -> Option<&mut MapSlot> {
         if !self.slots.contains_key(&(key, source)) && auto_create {
+            log::debug!("[ServerMap] Create new slot for key {key} from node {}", source.0);
             self.slots.insert((key, source), MapSlot::new());
         }
         self.slots.get_mut(&(key, source))
@@ -231,6 +251,7 @@ impl RemoteMap {
         let mut remotes = vec![];
         for (remote, _) in &self.subs {
             if *remote != source {
+                log::debug!("[ServerMap] Fire event {:?} for key {key} to {}", event, remote.0);
                 remotes.push(*remote);
                 self.queue.push_back((*remote, event.clone()));
             }
@@ -245,6 +266,7 @@ impl RemoteMap {
                 continue;
             }
             if let Some((version, data)) = slot.dump() {
+                log::debug!("[ServerMap] Fire event OnSet for key {} to {}", key.0, remote.0);
                 let event = ServerMapEvent::OnSet {
                     key: key.0,
                     version,
@@ -269,7 +291,7 @@ impl RemoteMap {
 mod test {
     use super::{MapSlot, RemoteMap};
     use crate::features::dht_kv::{
-        msg::{ClientMapCommand, NodeSession, ServerMapEvent, Key, Version},
+        msg::{ClientMapCommand, Key, NodeSession, ServerMapEvent, Version},
         server::map::RESEND_MS,
     };
 

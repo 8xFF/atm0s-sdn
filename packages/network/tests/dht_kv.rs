@@ -1,6 +1,6 @@
 use atm0s_sdn_network::{
     features::{
-        dht_kv::{Control, Event, Map, MapControl, MapEvent, Key},
+        dht_kv::{Control, Event, Key, Map, MapControl, MapEvent},
         FeaturesControl, FeaturesEvent,
     },
     ExtIn, ExtOut,
@@ -37,4 +37,33 @@ fn single_node() {
     sim.process(100);
 
     assert_eq!(sim.pop_res(), Some((node_id, event(Event::MapEvent(key, MapEvent::OnSet(sub_key, node_id, value))))));
+}
+
+#[test]
+fn dht_kv_two_nodes() {
+    let node1 = 1;
+    let node2 = 2;
+    let mut sim = NetworkSimulator::<(), ()>::new(0);
+
+    let _addr1 = sim.add_node(TestNode::new(node1, 1234));
+    let addr2 = sim.add_node(TestNode::new(node2, 1235));
+
+    sim.control(node1, ExtIn::ConnectTo(addr2));
+
+    // For sync
+    for _i in 0..4 {
+        sim.process(500);
+    }
+
+    let key = Map(1);
+    let sub_key = Key(2000);
+    let value = vec![1, 2, 3, 4];
+
+    sim.control(node1, control(Control::MapCmd(key, MapControl::Sub)));
+    sim.process(100);
+
+    sim.control(node2, control(Control::MapCmd(key, MapControl::Set(sub_key, value.clone()))));
+    sim.process(100);
+
+    assert_eq!(sim.pop_res(), Some((node1, event(Event::MapEvent(key, MapEvent::OnSet(sub_key, node2, value))))));
 }

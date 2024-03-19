@@ -20,7 +20,7 @@ pub struct FeatureManager {
     router_sync: router_sync::RouterSyncFeature,
     vpn: vpn::VpnFeature,
     dht_kv: dht_kv::DhtKvFeature,
-    switcher: TasksSwitcher<4>,
+    switcher: TasksSwitcher<5>,
     last_input_feature: Option<Features>,
 }
 
@@ -28,7 +28,7 @@ impl FeatureManager {
     pub fn new(node: NodeId, session: u64) -> Self {
         Self {
             neighbours: neighbours::NeighboursFeature::default(),
-            data: data::DataFeature::default(),
+            data: data::DataFeature::new(node),
             router_sync: router_sync::RouterSyncFeature::new(node),
             vpn: vpn::VpnFeature::default(),
             dht_kv: dht_kv::DhtKvFeature::new(node, session),
@@ -90,48 +90,48 @@ impl FeatureManager {
                     self.dht_kv.on_input(now_ms, FeatureInput::Control(service, control))
                 }
             },
-            FeatureInput::ForwardNetFromWorker(ctx, buf) => match feature {
+            FeatureInput::Net(ctx, buf) => match feature {
                 Features::Data => {
                     self.last_input_feature = Some(Features::Data);
-                    self.data.on_input(now_ms, FeatureInput::ForwardNetFromWorker(ctx, buf))
+                    self.data.on_input(now_ms, FeatureInput::Net(ctx, buf))
                 }
                 Features::Neighbours => {
                     self.last_input_feature = Some(Features::Neighbours);
-                    self.neighbours.on_input(now_ms, FeatureInput::ForwardNetFromWorker(ctx, buf))
+                    self.neighbours.on_input(now_ms, FeatureInput::Net(ctx, buf))
                 }
                 Features::RouterSync => {
                     self.last_input_feature = Some(Features::RouterSync);
-                    self.router_sync.on_input(now_ms, FeatureInput::ForwardNetFromWorker(ctx, buf))
+                    self.router_sync.on_input(now_ms, FeatureInput::Net(ctx, buf))
                 }
                 Features::Vpn => {
                     self.last_input_feature = Some(Features::Vpn);
-                    self.vpn.on_input(now_ms, FeatureInput::ForwardNetFromWorker(ctx, buf))
+                    self.vpn.on_input(now_ms, FeatureInput::Net(ctx, buf))
                 }
                 Features::DhtKv => {
                     self.last_input_feature = Some(Features::DhtKv);
-                    self.dht_kv.on_input(now_ms, FeatureInput::ForwardNetFromWorker(ctx, buf))
+                    self.dht_kv.on_input(now_ms, FeatureInput::Net(ctx, buf))
                 }
             },
-            FeatureInput::ForwardLocalFromWorker(buf) => match feature {
+            FeatureInput::Local(buf) => match feature {
                 Features::Data => {
                     self.last_input_feature = Some(Features::Data);
-                    self.data.on_input(now_ms, FeatureInput::ForwardLocalFromWorker(buf))
+                    self.data.on_input(now_ms, FeatureInput::Local(buf))
                 }
                 Features::Neighbours => {
                     self.last_input_feature = Some(Features::Neighbours);
-                    self.neighbours.on_input(now_ms, FeatureInput::ForwardLocalFromWorker(buf))
+                    self.neighbours.on_input(now_ms, FeatureInput::Local(buf))
                 }
                 Features::RouterSync => {
                     self.last_input_feature = Some(Features::RouterSync);
-                    self.router_sync.on_input(now_ms, FeatureInput::ForwardLocalFromWorker(buf))
+                    self.router_sync.on_input(now_ms, FeatureInput::Local(buf))
                 }
                 Features::Vpn => {
                     self.last_input_feature = Some(Features::Vpn);
-                    self.vpn.on_input(now_ms, FeatureInput::ForwardLocalFromWorker(buf))
+                    self.vpn.on_input(now_ms, FeatureInput::Local(buf))
                 }
                 Features::DhtKv => {
                     self.last_input_feature = Some(Features::DhtKv);
-                    self.dht_kv.on_input(now_ms, FeatureInput::ForwardLocalFromWorker(buf))
+                    self.dht_kv.on_input(now_ms, FeatureInput::Local(buf))
                 }
             },
         }
@@ -151,8 +151,8 @@ impl FeatureManager {
             }
             res
         } else {
+            let s = &mut self.switcher;
             loop {
-                let s = &mut self.switcher;
                 match (s.current()? as u8).try_into().ok()? {
                     Features::Neighbours => {
                         if let Some(out) = s.process(self.neighbours.pop_output()) {

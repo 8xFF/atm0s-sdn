@@ -48,6 +48,7 @@ impl RemoteStorage {
                     map
                 } else {
                     if cmd.is_creator() {
+                        log::info!("[DhtKvServer] Creating new map: {}", key);
                         self.maps.insert(key, RemoteMap::new(self.session));
                         self.maps.get_mut(&key).expect("Must have value with previous insterted")
                     } else {
