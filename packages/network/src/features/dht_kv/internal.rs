@@ -1,6 +1,6 @@
 use atm0s_sdn_router::RouteRule;
 
-use crate::base::ServiceId;
+use crate::base::FeatureControlActor;
 
 use super::{
     client::{LocalStorage, LocalStorageOutput},
@@ -10,7 +10,7 @@ use super::{
 };
 
 pub enum InternalOutput {
-    Local(ServiceId, Event),
+    Local(FeatureControlActor, Event),
     Remote(RouteRule, RemoteCommand),
 }
 
@@ -34,8 +34,8 @@ impl DhtKvInternal {
         self.remote.on_tick(now);
     }
 
-    pub fn on_local(&mut self, now: u64, service: ServiceId, control: Control) {
-        self.local.on_local(now, service, control);
+    pub fn on_local(&mut self, now: u64, actor: FeatureControlActor, control: Control) {
+        self.local.on_local(now, actor, control);
     }
 
     pub fn on_remote(&mut self, now: u64, cmd: RemoteCommand) {

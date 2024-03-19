@@ -1,4 +1,6 @@
 pub mod data;
+pub mod dht_kv;
+pub mod lazy_kv;
 pub mod neighbours;
 pub mod router_sync;
 pub mod vpn;
@@ -14,6 +16,7 @@ pub enum FeaturesControl {
     Data(data::Control),
     RouterSync(router_sync::Control),
     Vpn(vpn::Control),
+    DhtKv(dht_kv::Control),
 }
 
 #[derive(Debug, Clone, convert_enum::From)]
@@ -22,6 +25,7 @@ pub enum FeaturesEvent {
     Data(data::Event),
     RouterSync(router_sync::Event),
     Vpn(vpn::Event),
+    DhtKv(dht_kv::Event),
 }
 
 #[derive(Debug, Clone, convert_enum::From)]
@@ -30,6 +34,7 @@ pub enum FeaturesToController {
     Data(data::ToController),
     RouterSync(router_sync::ToController),
     Vpn(vpn::ToController),
+    DhtKv(dht_kv::ToController),
 }
 
 #[derive(Debug, Clone, convert_enum::From)]
@@ -38,4 +43,5 @@ pub enum FeaturesToWorker {
     Data(data::ToWorker),
     RouterSync(router_sync::ToWorker),
     Vpn(vpn::ToWorker),
+    DhtKv(dht_kv::ToWorker),
 }

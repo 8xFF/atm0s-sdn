@@ -1,6 +1,9 @@
 use std::{collections::VecDeque, time::Instant};
 
-use atm0s_sdn_network::controller_plane::{self, ControllerPlane, Input as ControllerInput, Output as ControllerOutput};
+use atm0s_sdn_network::{
+    controller_plane::{self, ControllerPlane, Input as ControllerInput, Output as ControllerOutput},
+    ExtIn, ExtOut,
+};
 use sans_io_runtime::{bus::BusEvent, Task, TaskInput, TaskOutput};
 
 use crate::time::{TimePivot, TimeTicker};
@@ -22,7 +25,7 @@ pub struct ControllerPlaneTask<TC, TW> {
     #[allow(unused)]
     node_id: u32,
     controller: ControllerPlane<TC, TW>,
-    queue: VecDeque<TaskOutput<'static, ChannelIn, ChannelOut, EventOut<TW>>>,
+    queue: VecDeque<TaskOutput<'static, ExtOut, ChannelIn, ChannelOut, EventOut<TW>>>,
     ticker: TimeTicker,
     timer: TimePivot,
     #[cfg(feature = "vpn")]
@@ -43,22 +46,25 @@ impl<TC, TW> ControllerPlaneTask<TC, TW> {
     }
 }
 
-impl<TC, TW> Task<ChannelIn, ChannelOut, EventIn<TC>, EventOut<TW>> for ControllerPlaneTask<TC, TW> {
+impl<TC, TW> Task<ExtIn, ExtOut, ChannelIn, ChannelOut, EventIn<TC>, EventOut<TW>> for ControllerPlaneTask<TC, TW> {
     /// The type identifier for the task.
     const TYPE: u16 = 0;
 
-    fn on_tick<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut<TW>>> {
+    fn on_tick<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ExtOut, ChannelIn, ChannelOut, EventOut<TW>>> {
         if self.ticker.tick(now) {
             self.controller.on_tick(self.timer.timestamp_ms(now));
         }
         self.pop_output(now)
     }
 
-    fn on_event<'a>(&mut self, now: Instant, input: TaskInput<'a, ChannelIn, EventIn<TC>>) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut<TW>>> {
+    fn on_event<'a>(&mut self, now: Instant, input: TaskInput<'a, ExtIn, ChannelIn, EventIn<TC>>) -> Option<TaskOutput<'a, ExtOut, ChannelIn, ChannelOut, EventOut<TW>>> {
         let now_ms = self.timer.timestamp_ms(now);
         match input {
             TaskInput::Bus(_, event) => {
                 self.controller.on_event(now_ms, ControllerInput::Bus(event));
+            }
+            TaskInput::Ext(event) => {
+                self.controller.on_event(now_ms, ControllerInput::Ext(event));
             }
             _ => {
                 panic!("Invalid input type for ControllerPlane")
@@ -67,19 +73,20 @@ impl<TC, TW> Task<ChannelIn, ChannelOut, EventIn<TC>, EventOut<TW>> for Controll
         self.pop_output(now)
     }
 
-    fn pop_output<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut<TW>>> {
+    fn pop_output<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ExtOut, ChannelIn, ChannelOut, EventOut<TW>>> {
         let now_ms = self.timer.timestamp_ms(now);
         if let Some(output) = self.queue.pop_front() {
             return Some(output);
         }
         let output = self.controller.pop_output(now_ms)?;
         match output {
+            ControllerOutput::Ext(event) => Some(TaskOutput::Ext(event)),
             ControllerOutput::ShutdownSuccess => Some(TaskOutput::Destroy),
             ControllerOutput::Bus(bus) => Some(TaskOutput::Bus(BusEvent::ChannelPublish((), true, bus))),
         }
     }
 
-    fn shutdown<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut<TW>>> {
+    fn shutdown<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ExtOut, ChannelIn, ChannelOut, EventOut<TW>>> {
         self.controller.on_event(self.timer.timestamp_ms(now), ControllerInput::ShutdownRequest);
         self.pop_output(now)
     }

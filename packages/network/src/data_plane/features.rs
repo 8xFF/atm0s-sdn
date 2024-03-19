@@ -19,8 +19,9 @@ pub struct FeatureWorkerManager {
     data: data::DataFeatureWorker,
     router_sync: router_sync::RouterSyncFeatureWorker,
     vpn: vpn::VpnFeatureWorker,
+    dht_kv: dht_kv::DhtKvFeatureWorker,
     last_input_feature: Option<u8>,
-    switcher: TasksSwitcher<256>,
+    switcher: TasksSwitcher<4>,
 }
 
 impl FeatureWorkerManager {
@@ -30,6 +31,7 @@ impl FeatureWorkerManager {
             data: data::DataFeatureWorker::default(),
             router_sync: router_sync::RouterSyncFeatureWorker::default(),
             vpn: vpn::VpnFeatureWorker::new(node),
+            dht_kv: dht_kv::DhtKvFeatureWorker::default(),
             last_input_feature: None,
             switcher: TasksSwitcher::default(),
         }
@@ -66,6 +68,10 @@ impl FeatureWorkerManager {
                     .on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control))
                     .map(|a| (router_sync::FEATURE_ID, a.into2())),
                 FeaturesControl::Vpn(control) => self.vpn.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| (vpn::FEATURE_ID, a.into2())),
+                FeaturesControl::DhtKv(control) => self
+                    .dht_kv
+                    .on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control))
+                    .map(|a| (dht_kv::FEATURE_ID, a.into2())),
             },
             FeatureWorkerInput::FromController(to) => match to {
                 FeaturesToWorker::Neighbours(to) => self
@@ -78,6 +84,7 @@ impl FeatureWorkerManager {
                     .on_input(ctx, now_ms, FeatureWorkerInput::FromController(to))
                     .map(|a| (router_sync::FEATURE_ID, a.into2())),
                 FeaturesToWorker::Vpn(to) => self.vpn.on_input(ctx, now_ms, FeatureWorkerInput::FromController(to)).map(|a| (vpn::FEATURE_ID, a.into2())),
+                FeaturesToWorker::DhtKv(to) => self.dht_kv.on_input(ctx, now_ms, FeatureWorkerInput::FromController(to)).map(|a| (dht_kv::FEATURE_ID, a.into2())),
             },
             FeatureWorkerInput::Network(_conn, _buf) => {
                 panic!("should call above on_network_raw")
@@ -88,6 +95,7 @@ impl FeatureWorkerManager {
                 data::FEATURE_ID => self.data.on_input(ctx, now_ms, FeatureWorkerInput::Local(buf)).map(|a| (data::FEATURE_ID, a.into2())),
                 router_sync::FEATURE_ID => self.router_sync.on_input(ctx, now_ms, FeatureWorkerInput::Local(buf)).map(|a| (router_sync::FEATURE_ID, a.into2())),
                 vpn::FEATURE_ID => self.vpn.on_input(ctx, now_ms, FeatureWorkerInput::Local(buf)).map(|a| (vpn::FEATURE_ID, a.into2())),
+                dht_kv::FEATURE_ID => self.dht_kv.on_input(ctx, now_ms, FeatureWorkerInput::Local(buf)).map(|a| (dht_kv::FEATURE_ID, a.into2())),
                 _ => None,
             },
         }
@@ -100,6 +108,7 @@ impl FeatureWorkerManager {
                 data::FEATURE_ID => self.data.pop_output().map(|a| (data::FEATURE_ID, a.owned().into2())),
                 router_sync::FEATURE_ID => self.router_sync.pop_output().map(|a| (router_sync::FEATURE_ID, a.owned().into2())),
                 vpn::FEATURE_ID => self.vpn.pop_output().map(|a| (vpn::FEATURE_ID, a.owned().into2())),
+                dht_kv::FEATURE_ID => self.dht_kv.pop_output().map(|a| (dht_kv::FEATURE_ID, a.owned().into2())),
                 _ => None,
             }
         } else {
@@ -124,6 +133,11 @@ impl FeatureWorkerManager {
                     vpn::FEATURE_ID => {
                         if let Some(out) = s.process(self.vpn.pop_output()) {
                             return Some((vpn::FEATURE_ID, out.owned().into2()));
+                        }
+                    }
+                    dht_kv::FEATURE_ID => {
+                        if let Some(out) = s.process(self.dht_kv.pop_output()) {
+                            return Some((dht_kv::FEATURE_ID, out.owned().into2()));
                         }
                     }
                     _ => return None,

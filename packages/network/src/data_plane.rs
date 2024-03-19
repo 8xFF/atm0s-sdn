@@ -8,11 +8,12 @@ use atm0s_sdn_router::{shadow::ShadowRouter, RouteAction, RouteRule, RouterTable
 
 use crate::{
     base::{
-        FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer, GenericBufferMut, NeighboursControl, SecureContext, ServiceId, ServiceWorkerInput, ServiceWorkerOutput,
-        TransportMsg, TransportMsgHeader,
+        FeatureControlActor, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer, GenericBufferMut, NeighboursControl, SecureContext, ServiceId, ServiceWorkerInput,
+        ServiceWorkerOutput, TransportMsg, TransportMsgHeader,
     },
     features::{vpn, FeaturesControl, FeaturesEvent, FeaturesToController, FeaturesToWorker},
     san_io_utils::TasksSwitcher,
+    ExtOut,
 };
 
 use self::{connection::DataPlaneConnection, features::FeatureWorkerManager, services::ServiceWorkerManager};
@@ -54,7 +55,7 @@ pub enum NetOutput<'a> {
 
 #[derive(Debug, Clone)]
 pub enum BusOutput<TC> {
-    ForwardControlToController(ServiceId, FeaturesControl),
+    ForwardControlToController(FeatureControlActor, FeaturesControl),
     ForwardEventToController(ServiceId, FeaturesEvent),
     ForwardNetworkToController(u8, ConnId, Vec<u8>),
     ForwardLocalToController(u8, Vec<u8>),
@@ -65,6 +66,7 @@ pub enum BusOutput<TC> {
 
 #[derive(convert_enum::From)]
 pub enum Output<'a, TC> {
+    Ext(ExtOut),
     Net(NetOutput<'a>),
     Bus(BusOutput<TC>),
     #[convert_enum(optout)]
@@ -267,12 +269,15 @@ impl<TC, TW> DataPlane<TC, TW> {
             FeatureWorkerOutput::ForwardNetworkToController(conn, msg) => BusOutput::ForwardNetworkToController(feature, conn, msg).into(),
             FeatureWorkerOutput::ForwardLocalToController(buf) => BusOutput::ForwardLocalToController(feature, buf).into(),
             FeatureWorkerOutput::ToController(control) => BusOutput::ToFeatureController(control).into(),
-            FeatureWorkerOutput::Event(service, event) => {
-                if let Some(out) = self.services.on_input(now_ms, service, ServiceWorkerInput::FeatureEvent(event)) {
-                    self.queue_output.push_back(QueueOutput::Service(service, out));
+            FeatureWorkerOutput::Event(actor, event) => match actor {
+                FeatureControlActor::Controller => Output::Ext(ExtOut::FeaturesEvent(event)),
+                FeatureControlActor::Service(service) => {
+                    if let Some(out) = self.services.on_input(now_ms, service, ServiceWorkerInput::FeatureEvent(event)) {
+                        self.queue_output.push_back(QueueOutput::Service(service, out));
+                    }
+                    Output::Continue
                 }
-                Output::Continue
-            }
+            },
             FeatureWorkerOutput::SendDirect(conn, buf) => {
                 if let Some(addr) = self.conns_reverse.get(&conn) {
                     let msg = TransportMsg::build(feature, 0, RouteRule::Direct, &buf);
@@ -312,7 +317,10 @@ impl<TC, TW> DataPlane<TC, TW> {
             ServiceWorkerOutput::ForwardFeatureEventToController(event) => BusOutput::ForwardEventToController(service, event).into(),
             ServiceWorkerOutput::ToController(tc) => BusOutput::ToServiceController(service, tc).into(),
             ServiceWorkerOutput::FeatureControl(control) => {
-                if let Some((feature, out)) = self.features.on_input(&mut self.ctx, 0, now_ms, FeatureWorkerInput::Control(service, control)) {
+                if let Some((feature, out)) = self
+                    .features
+                    .on_input(&mut self.ctx, 0, now_ms, FeatureWorkerInput::Control(FeatureControlActor::Service(service), control))
+                {
                     self.queue_output.push_back(QueueOutput::Feature(feature, out));
                 }
                 Output::Continue

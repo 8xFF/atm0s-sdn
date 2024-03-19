@@ -12,13 +12,15 @@ use crate::base::{Feature, FeatureInput, FeatureOutput, FeatureSharedInput, Feat
 
 use self::{
     internal::InternalOutput,
-    msg::{Key, NodeSession, SubKey, Version},
+    msg::{NodeSession, Version},
 };
 
 mod client;
 mod internal;
 mod msg;
 mod server;
+
+pub use self::msg::{Key, SubKey};
 
 pub const FEATURE_ID: u8 = 4;
 pub const FEATURE_NAME: &str = "dht_kv";
@@ -82,7 +84,7 @@ impl DhtKvFeature {
     pub fn new(node_id: NodeId) -> Self {
         Self {
             node_id,
-            internal: internal::DhtKvInternal::new(NodeSession(node_id, 0)),
+            internal: internal::DhtKvInternal::new(NodeSession(node_id, 0)), //TODO genereate session
         }
     }
 }
@@ -107,8 +109,8 @@ impl Feature<Control, Event, ToController, ToWorker> for DhtKvFeature {
 
     fn on_input<'a>(&mut self, now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
         match input {
-            FeatureInput::Control(service, control) => {
-                self.internal.on_local(now_ms, service, control);
+            FeatureInput::Control(actor, control) => {
+                self.internal.on_local(now_ms, actor, control);
             }
             FeatureInput::ForwardLocalFromWorker(buf) => {
                 if let Ok(cmd) = bincode::deserialize(&buf) {

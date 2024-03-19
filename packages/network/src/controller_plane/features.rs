@@ -19,6 +19,7 @@ pub struct FeatureManager {
     data: data::DataFeature,
     router_sync: router_sync::RouterSyncFeature,
     vpn: vpn::VpnFeature,
+    dht_kv: dht_kv::DhtKvFeature,
     switcher: TasksSwitcher<4>,
     last_input_feature: Option<u8>,
 }
@@ -30,6 +31,7 @@ impl FeatureManager {
             data: data::DataFeature::default(),
             router_sync: router_sync::RouterSyncFeature::new(node),
             vpn: vpn::VpnFeature::default(),
+            dht_kv: dht_kv::DhtKvFeature::new(node),
             last_input_feature: None,
             switcher: TasksSwitcher::default(),
         }
@@ -61,6 +63,10 @@ impl FeatureManager {
                     self.last_input_feature = Some(vpn::FEATURE_ID);
                     self.vpn.on_input(now_ms, FeatureInput::FromWorker(to))
                 }
+                FeaturesToController::DhtKv(to) => {
+                    self.last_input_feature = Some(dht_kv::FEATURE_ID);
+                    self.dht_kv.on_input(now_ms, FeatureInput::FromWorker(to))
+                }
             },
             FeatureInput::Control(service, control) => match control {
                 FeaturesControl::Data(control) => {
@@ -79,6 +85,10 @@ impl FeatureManager {
                     self.last_input_feature = Some(vpn::FEATURE_ID);
                     self.vpn.on_input(now_ms, FeatureInput::Control(service, control))
                 }
+                FeaturesControl::DhtKv(control) => {
+                    self.last_input_feature = Some(dht_kv::FEATURE_ID);
+                    self.dht_kv.on_input(now_ms, FeatureInput::Control(service, control))
+                }
             },
             FeatureInput::ForwardNetFromWorker(ctx, buf) => match feature {
                 data::FEATURE_ID => {
@@ -96,6 +106,10 @@ impl FeatureManager {
                 vpn::FEATURE_ID => {
                     self.last_input_feature = Some(vpn::FEATURE_ID);
                     self.vpn.on_input(now_ms, FeatureInput::ForwardNetFromWorker(ctx, buf))
+                }
+                dht_kv::FEATURE_ID => {
+                    self.last_input_feature = Some(dht_kv::FEATURE_ID);
+                    self.dht_kv.on_input(now_ms, FeatureInput::ForwardNetFromWorker(ctx, buf))
                 }
                 _ => {}
             },
@@ -116,6 +130,10 @@ impl FeatureManager {
                     self.last_input_feature = Some(vpn::FEATURE_ID);
                     self.vpn.on_input(now_ms, FeatureInput::ForwardLocalFromWorker(buf))
                 }
+                dht_kv::FEATURE_ID => {
+                    self.last_input_feature = Some(dht_kv::FEATURE_ID);
+                    self.dht_kv.on_input(now_ms, FeatureInput::ForwardLocalFromWorker(buf))
+                }
                 _ => {}
             },
         }
@@ -128,6 +146,7 @@ impl FeatureManager {
                 neighbours::FEATURE_ID => self.neighbours.pop_output().map(|a| (neighbours::FEATURE_ID, a.into2())),
                 router_sync::FEATURE_ID => self.router_sync.pop_output().map(|a| (router_sync::FEATURE_ID, a.into2())),
                 vpn::FEATURE_ID => self.vpn.pop_output().map(|a| (vpn::FEATURE_ID, a.into2())),
+                dht_kv::FEATURE_ID => self.dht_kv.pop_output().map(|a| (dht_kv::FEATURE_ID, a.into2())),
                 _ => None,
             };
             if res.is_none() {
@@ -156,6 +175,11 @@ impl FeatureManager {
                     vpn::FEATURE_ID => {
                         if let Some(out) = s.process(self.vpn.pop_output()) {
                             return Some((vpn::FEATURE_ID, out.into2()));
+                        }
+                    }
+                    dht_kv::FEATURE_ID => {
+                        if let Some(out) = s.process(self.dht_kv.pop_output()) {
+                            return Some((dht_kv::FEATURE_ID, out.into2()));
                         }
                     }
                     _ => return None,

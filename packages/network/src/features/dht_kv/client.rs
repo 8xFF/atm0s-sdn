@@ -1,7 +1,7 @@
 use atm0s_sdn_router::RouteRule;
 use std::collections::{HashMap, VecDeque};
 
-use crate::base::ServiceId;
+use crate::base::FeatureControlActor;
 
 use self::map::{LocalMap, LocalMapOutput};
 
@@ -19,14 +19,14 @@ fn route(key: Key) -> RouteRule {
 }
 
 pub enum LocalStorageOutput {
-    Local(ServiceId, Event),
+    Local(FeatureControlActor, Event),
     Remote(RouteRule, ClientCommand),
 }
 
 pub struct LocalStorage {
     session: NodeSession,
     maps: HashMap<Key, LocalMap>,
-    map_get_waits: HashMap<(Key, u64), (ServiceId, u64)>,
+    map_get_waits: HashMap<(Key, u64), (FeatureControlActor, u64)>,
     queue: VecDeque<LocalStorageOutput>,
     req_id_seed: u64,
 }
@@ -70,11 +70,11 @@ impl LocalStorage {
         }
     }
 
-    pub fn on_local(&mut self, now: u64, service: ServiceId, control: Control) {
+    pub fn on_local(&mut self, now: u64, actor: FeatureControlActor, control: Control) {
         match control {
             Control::MapCmd(key, control) => {
                 if let Some(map) = Self::get_map(&mut self.maps, self.session, key, control.is_creator()) {
-                    if let Some(event) = map.on_control(now, service, control) {
+                    if let Some(event) = map.on_control(now, actor, control) {
                         self.queue.push_back(LocalStorageOutput::Remote(route(key), ClientCommand::MapCmd(key, event)));
                     }
                     Self::pop_map_actions(key, map, &mut self.queue);
@@ -83,7 +83,7 @@ impl LocalStorage {
             Control::MapGet(key) => {
                 let req_id = self.req_id_seed;
                 self.req_id_seed += 1;
-                self.map_get_waits.insert((key, req_id), (service, req_id));
+                self.map_get_waits.insert((key, req_id), (actor, req_id));
                 self.queue.push_back(LocalStorageOutput::Remote(route(key), ClientCommand::MapGet(key, req_id)));
             }
         }
@@ -102,8 +102,8 @@ impl LocalStorage {
                 }
             }
             ServerEvent::MapGetRes(key, req_id, res) => {
-                if let Some((service, _time_ms)) = self.map_get_waits.remove(&(key, req_id)) {
-                    self.queue.push_back(LocalStorageOutput::Local(service, Event::MapGetRes(key, Ok(res))));
+                if let Some((actor, _time_ms)) = self.map_get_waits.remove(&(key, req_id)) {
+                    self.queue.push_back(LocalStorageOutput::Local(actor, Event::MapGetRes(key, Ok(res))));
                 }
             }
         }
@@ -123,7 +123,7 @@ impl LocalStorage {
     fn pop_map_actions(key: Key, map: &mut LocalMap, queue: &mut VecDeque<LocalStorageOutput>) {
         while let Some(out) = map.pop_action() {
             queue.push_back(match out {
-                LocalMapOutput::Local(service, event) => LocalStorageOutput::Local(service, Event::MapEvent(key, event)),
+                LocalMapOutput::Local(actor, event) => LocalStorageOutput::Local(actor, Event::MapEvent(key, event)),
                 LocalMapOutput::Remote(cmd) => LocalStorageOutput::Remote(route(key), ClientCommand::MapCmd(key, cmd)),
             });
         }

@@ -1,11 +1,11 @@
 use std::fmt::Debug;
 
-use atm0s_sdn_network::controller_plane::BusOut;
+use atm0s_sdn_network::{controller_plane::BusOut, ExtIn, ExtOut};
 use sans_io_runtime::{bus::BusEvent, Owner, Task, TaskInput, TaskOutput, WorkerInnerOutput};
 
 use crate::tasks::{
     controller_plane::{self, ControllerPlaneTask},
-    data_plane, SdnChannel, SdnEvent, SdnExtOut, SdnSpawnCfg,
+    data_plane, SdnChannel, SdnEvent, SdnExtIn, SdnExtOut, SdnSpawnCfg,
 };
 
 ///
@@ -13,11 +13,11 @@ use crate::tasks::{
 /// This function will convert the input from SDN into Plane task input.
 /// It only accept bus events from the SDN task.
 ///
-pub fn convert_input<'a, TC, TW>(event: TaskInput<'a, SdnChannel, SdnEvent<TC, TW>>) -> TaskInput<'a, controller_plane::ChannelIn, controller_plane::EventIn<TC>> {
-    if let TaskInput::Bus(_, SdnEvent::ControllerPlane(event)) = event {
-        TaskInput::Bus((), event)
-    } else {
-        panic!("Invalid input type for ControllerPlane")
+pub fn convert_input<'a, TC, TW>(event: TaskInput<'a, SdnExtIn, SdnChannel, SdnEvent<TC, TW>>) -> TaskInput<'a, ExtIn, controller_plane::ChannelIn, controller_plane::EventIn<TC>> {
+    match event {
+        TaskInput::Bus(_, SdnEvent::ControllerPlane(event)) => TaskInput::Bus((), event),
+        TaskInput::Ext(ext) => TaskInput::Ext(ext),
+        _ => panic!("Invalid input type for ControllerPlane"),
     }
 }
 
@@ -28,9 +28,10 @@ pub fn convert_input<'a, TC, TW>(event: TaskInput<'a, SdnChannel, SdnEvent<TC, T
 ///
 pub fn convert_output<'a, TC: Debug, TW: Debug>(
     worker: u16,
-    event: TaskOutput<controller_plane::ChannelIn, controller_plane::ChannelOut, controller_plane::EventOut<TW>>,
+    event: TaskOutput<ExtOut, controller_plane::ChannelIn, controller_plane::ChannelOut, controller_plane::EventOut<TW>>,
 ) -> WorkerInnerOutput<'a, SdnExtOut, SdnChannel, SdnEvent<TC, TW>, SdnSpawnCfg> {
     match event {
+        TaskOutput::Ext(ext) => WorkerInnerOutput::Ext(true, ext),
         TaskOutput::Bus(BusEvent::ChannelSubscribe(channel)) => WorkerInnerOutput::Task(
             Owner::group(worker, ControllerPlaneTask::<(), ()>::TYPE),
             TaskOutput::Bus(BusEvent::ChannelSubscribe(SdnChannel::ControllerPlane(channel))),

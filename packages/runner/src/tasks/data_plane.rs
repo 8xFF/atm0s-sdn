@@ -9,6 +9,7 @@ use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_network::{
     base::GenericBuffer,
     data_plane::{self, DataPlane, Input as DataPlaneInput, NetInput, NetOutput, Output as DataPlaneOutput},
+    ExtOut,
 };
 use sans_io_runtime::{bus::BusEvent, Buffer, NetIncoming, NetOutgoing, Task, TaskInput, TaskOutput};
 
@@ -42,7 +43,7 @@ pub struct DataPlaneTask<TC, TW> {
     timer: TimePivot,
     #[cfg(feature = "vpn")]
     backend_tun_slot: usize,
-    queue: VecDeque<TaskOutput<'static, ChannelIn, ChannelOut, EventOut<TC>>>,
+    queue: VecDeque<TaskOutput<'static, ExtOut, ChannelIn, ChannelOut, EventOut<TC>>>,
 }
 
 impl<TC, TW> DataPlaneTask<TC, TW> {
@@ -66,7 +67,7 @@ impl<TC, TW> DataPlaneTask<TC, TW> {
         }
     }
 
-    fn convert_output<'a>(&mut self, _now: Instant, output: DataPlaneOutput<'a, TC>) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut<TC>>> {
+    fn convert_output<'a>(&mut self, _now: Instant, output: DataPlaneOutput<'a, TC>) -> Option<TaskOutput<'a, ExtOut, ChannelIn, ChannelOut, EventOut<TC>>> {
         match output {
             DataPlaneOutput::Net(NetOutput::UdpPacket(to, buf)) => Some(TaskOutput::Net(NetOutgoing::UdpPacket {
                 slot: self.backend_udp_slot,
@@ -93,11 +94,12 @@ impl<TC, TW> DataPlaneTask<TC, TW> {
                 self.queue.push_back(TaskOutput::Destroy);
                 self.queue.pop_front()
             }
+            DataPlaneOutput::Ext(ext) => Some(TaskOutput::Ext(ext)),
             DataPlaneOutput::Continue => None,
         }
     }
 
-    fn try_process_output<'a>(&mut self, now: Instant, output: DataPlaneOutput<'a, TC>) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut<TC>>> {
+    fn try_process_output<'a>(&mut self, now: Instant, output: DataPlaneOutput<'a, TC>) -> Option<TaskOutput<'a, ExtOut, ChannelIn, ChannelOut, EventOut<TC>>> {
         let out = self.convert_output(now, output);
         if out.is_some() {
             return out;
@@ -105,7 +107,7 @@ impl<TC, TW> DataPlaneTask<TC, TW> {
         self.pop_output_direct(now)
     }
 
-    fn pop_output_direct<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut<TC>>> {
+    fn pop_output_direct<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ExtOut, ChannelIn, ChannelOut, EventOut<TC>>> {
         // self.pop_output_direct(now)
         let now_ms = self.timer.timestamp_ms(now);
         loop {
@@ -118,11 +120,11 @@ impl<TC, TW> DataPlaneTask<TC, TW> {
     }
 }
 
-impl<TC: Debug, TW: Debug> Task<ChannelIn, ChannelOut, EventIn<TW>, EventOut<TC>> for DataPlaneTask<TC, TW> {
+impl<TC: Debug, TW: Debug> Task<(), ExtOut, ChannelIn, ChannelOut, EventIn<TW>, EventOut<TC>> for DataPlaneTask<TC, TW> {
     /// The type identifier for the task.
     const TYPE: u16 = 1;
 
-    fn on_tick<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut<TC>>> {
+    fn on_tick<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ExtOut, ChannelIn, ChannelOut, EventOut<TC>>> {
         if let Some(out) = self.queue.pop_front() {
             return Some(out);
         }
@@ -132,8 +134,9 @@ impl<TC: Debug, TW: Debug> Task<ChannelIn, ChannelOut, EventIn<TW>, EventOut<TC>
         self.pop_output(now)
     }
 
-    fn on_event<'a>(&mut self, now: Instant, input: TaskInput<'a, ChannelIn, EventIn<TW>>) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut<TC>>> {
+    fn on_event<'a>(&mut self, now: Instant, input: TaskInput<'a, (), ChannelIn, EventIn<TW>>) -> Option<TaskOutput<'a, ExtOut, ChannelIn, ChannelOut, EventOut<TC>>> {
         match input {
+            TaskInput::Ext(_) => None,
             TaskInput::Net(net) => match net {
                 NetIncoming::UdpListenResult { bind, result } => {
                     let res = result.expect("Should to bind UDP socket");
@@ -171,7 +174,7 @@ impl<TC: Debug, TW: Debug> Task<ChannelIn, ChannelOut, EventIn<TW>, EventOut<TC>
         }
     }
 
-    fn pop_output<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut<TC>>> {
+    fn pop_output<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ExtOut, ChannelIn, ChannelOut, EventOut<TC>>> {
         if let Some(output) = self.queue.pop_front() {
             return Some(output);
         }
@@ -179,7 +182,7 @@ impl<TC: Debug, TW: Debug> Task<ChannelIn, ChannelOut, EventIn<TW>, EventOut<TC>
         self.pop_output_direct(now)
     }
 
-    fn shutdown<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ChannelIn, ChannelOut, EventOut<TC>>> {
+    fn shutdown<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ExtOut, ChannelIn, ChannelOut, EventOut<TC>>> {
         let output = self.data_plane.on_event(self.timer.timestamp_ms(now), DataPlaneInput::ShutdownRequest)?;
         self.try_process_output(now, output)
     }

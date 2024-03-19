@@ -4,7 +4,7 @@ mod event_convert;
 
 use std::{fmt::Debug, time::Instant};
 
-use atm0s_sdn_identity::NodeAddr;
+use atm0s_sdn_network::{ExtIn, ExtOut};
 use sans_io_runtime::{Controller, Task, TaskGroupOutputsState, TaskInput, TaskOutput, WorkerInner, WorkerInnerInput, WorkerInnerOutput};
 
 use self::{
@@ -12,14 +12,10 @@ use self::{
     data_plane::{DataPlaneCfg, DataPlaneTask},
 };
 
-pub type SdnController<TC, TW> = Controller<SdnExtIn, SdnExtOut, SdnSpawnCfg, SdnChannel, SdnEvent<TC, TW>, 128>;
+pub type SdnController<TC, TW> = Controller<SdnExtIn, SdnExtOut, SdnSpawnCfg, SdnChannel, SdnEvent<TC, TW>, 1024>;
 
-#[derive(Debug, Clone)]
-pub enum SdnExtIn {
-    ConnectTo(NodeAddr),
-}
-
-pub type SdnExtOut = ();
+pub type SdnExtIn = ExtIn;
+pub type SdnExtOut = ExtOut;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SdnChannel {
@@ -70,7 +66,7 @@ impl<TC: Debug, TW: Debug> SdnWorkerInner<TC, TW> {
     fn convert_controller_output<'a>(
         &mut self,
         now: Instant,
-        event: TaskOutput<controller_plane::ChannelIn, controller_plane::ChannelOut, controller_plane::EventOut<TW>>,
+        event: TaskOutput<'a, ExtOut, controller_plane::ChannelIn, controller_plane::ChannelOut, controller_plane::EventOut<TW>>,
     ) -> Option<WorkerInnerOutput<'a, SdnExtOut, SdnChannel, SdnEvent<TC, TW>, SdnSpawnCfg>> {
         match event {
             TaskOutput::Destroy => {
@@ -189,15 +185,11 @@ impl<TC: Debug, TW: Debug> WorkerInner<SdnExtIn, SdnExtOut, SdnChannel, SdnEvent
                 }
                 _ => panic!("unknown task type"),
             },
-            WorkerInnerInput::Ext(ext) => match ext {
-                SdnExtIn::ConnectTo(addr) => {
-                    log::info!("Connect to {}", addr);
-                    let event = TaskInput::Bus((), controller_plane::EventIn::ConnectTo(addr));
-                    let out = self.controller.as_mut().map(|c| c.on_event(now, event)).flatten()?;
-                    self.last_input_group = Some(ControllerPlaneTask::<(), ()>::TYPE);
-                    Some(event_convert::controller_plane::convert_output(self.worker, out))
-                }
-            },
+            WorkerInnerInput::Ext(ext) => {
+                let out = self.controller.as_mut().map(|c| c.on_event(now, TaskInput::Ext(ext))).flatten()?;
+                self.last_input_group = Some(ControllerPlaneTask::<(), ()>::TYPE);
+                Some(event_convert::controller_plane::convert_output(self.worker, out))
+            }
         }
     }
 

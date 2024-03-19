@@ -1,7 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 
 use crate::{
-    base::ServiceId,
+    base::FeatureControlActor,
     features::dht_kv::{
         msg::{ClientMapCommand, NodeSession, ServerMapEvent, Version},
         MapControl, MapEvent, SubKey,
@@ -196,7 +196,7 @@ impl MapSlot {
 #[derive(Debug, PartialEq, Eq)]
 pub enum LocalMapOutput {
     Remote(ClientMapCommand),
-    Local(ServiceId, MapEvent),
+    Local(FeatureControlActor, MapEvent),
 }
 
 enum SubState {
@@ -211,7 +211,7 @@ enum SubState {
 pub struct LocalMap {
     session: NodeSession,
     slots: HashMap<(SubKey, NodeSession), MapSlot>,
-    subscribers: Vec<ServiceId>,
+    subscribers: Vec<FeatureControlActor>,
     sub_state: SubState,
     queue: VecDeque<LocalMapOutput>,
 }
@@ -271,7 +271,7 @@ impl LocalMap {
         }
     }
 
-    pub fn on_control(&mut self, now: u64, service: ServiceId, control: MapControl) -> Option<ClientMapCommand> {
+    pub fn on_control(&mut self, now: u64, actor: FeatureControlActor, control: MapControl) -> Option<ClientMapCommand> {
         match control {
             MapControl::Set(sub, data) => {
                 let slot = self.get_slot(sub, self.session, true).expect("Must have slot for set");
@@ -293,27 +293,27 @@ impl LocalMap {
             }
             MapControl::Sub => {
                 let send_sub = self.subscribers.is_empty();
-                if self.subscribers.contains(&service) {
+                if self.subscribers.contains(&actor) {
                     return None;
                 }
-                self.subscribers.push(service);
+                self.subscribers.push(actor);
                 if send_sub {
                     self.sub_state = SubState::Subscribing { sent_ts: now, id: now };
 
                     //We need to send all current local data to the new subscriber, because RELAY will not send it to source node.
-                    self.restore_events(service, true);
+                    self.restore_events(actor, true);
 
                     Some(ClientMapCommand::Sub(now, None))
                 } else {
-                    self.restore_events(service, false);
+                    self.restore_events(actor, false);
                     None
                 }
             }
             MapControl::Unsub => {
-                if !self.subscribers.contains(&service) || self.subscribers.is_empty() {
+                if !self.subscribers.contains(&actor) || self.subscribers.is_empty() {
                     return None;
                 }
-                self.subscribers.retain(|&x| x != service);
+                self.subscribers.retain(|&x| x != actor);
                 if self.subscribers.is_empty() {
                     match &self.sub_state {
                         SubState::Subscribed { id, remote, .. } => {
@@ -430,13 +430,13 @@ impl LocalMap {
         }
     }
 
-    fn restore_events(&mut self, service: ServiceId, only_local: bool) {
+    fn restore_events(&mut self, actor: FeatureControlActor, only_local: bool) {
         for ((sub, source), slot) in self.slots.iter() {
             if only_local && self.session != *source {
                 continue;
             }
             if let Some(data) = slot.data() {
-                self.queue.push_back(LocalMapOutput::Local(service, MapEvent::OnSet(*sub, source.0, data.to_vec())));
+                self.queue.push_back(LocalMapOutput::Local(actor, MapEvent::OnSet(*sub, source.0, data.to_vec())));
             }
         }
     }
@@ -445,7 +445,7 @@ impl LocalMap {
 #[cfg(test)]
 mod test {
     use crate::{
-        base::ServiceId,
+        base::FeatureControlActor,
         features::dht_kv::{
             client::map::{LocalMapOutput, RESEND_MS, SYNC_MS},
             msg::{ClientMapCommand, NodeSession, ServerMapEvent, SubKey, Version},
@@ -577,60 +577,60 @@ mod test {
     #[test]
     fn map_handle_control_set_del_correct() {
         let session = NodeSession(1, 2);
-        let service: ServiceId = 1.into();
+        let actor = FeatureControlActor::Controller;
         let mut map = LocalMap::new(session);
 
         let sub = SubKey(1);
 
         assert_eq!(
-            map.on_control(100, service, MapControl::Set(sub, vec![1, 2, 3, 4])),
+            map.on_control(100, actor, MapControl::Set(sub, vec![1, 2, 3, 4])),
             Some(ClientMapCommand::Set(sub, Version(100), vec![1, 2, 3, 4]))
         );
-        assert_eq!(map.on_control(102, service, MapControl::Sub), Some(ClientMapCommand::Sub(102, None))); //Sub will be sent include time ms
-        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(service, MapEvent::OnSet(sub, session.0, vec![1, 2, 3, 4]))));
+        assert_eq!(map.on_control(102, actor, MapControl::Sub), Some(ClientMapCommand::Sub(102, None))); //Sub will be sent include time ms
+        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(actor, MapEvent::OnSet(sub, session.0, vec![1, 2, 3, 4]))));
         assert_eq!(map.pop_action(), None);
 
-        assert_eq!(map.on_control(101, service, MapControl::Del(sub)), Some(ClientMapCommand::Del(sub, Version(100))));
-        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(service, MapEvent::OnDel(sub, session.0))));
+        assert_eq!(map.on_control(101, actor, MapControl::Del(sub)), Some(ClientMapCommand::Del(sub, Version(100))));
+        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(actor, MapEvent::OnDel(sub, session.0))));
         assert_eq!(map.pop_action(), None);
     }
 
     #[test]
     fn map_handle_sub_with_local_data_correct() {
         let session = NodeSession(1, 2);
-        let service: ServiceId = 1.into();
+        let actor = FeatureControlActor::Controller;
         let mut map = LocalMap::new(session);
 
         let sub = SubKey(1);
 
-        assert_eq!(map.on_control(102, service, MapControl::Sub), Some(ClientMapCommand::Sub(102, None)));
+        assert_eq!(map.on_control(102, actor, MapControl::Sub), Some(ClientMapCommand::Sub(102, None)));
         assert_eq!(
-            map.on_control(103, service, MapControl::Set(sub, vec![1, 2, 3, 4])),
+            map.on_control(103, actor, MapControl::Set(sub, vec![1, 2, 3, 4])),
             Some(ClientMapCommand::Set(sub, Version(103), vec![1, 2, 3, 4]))
         );
-        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(service, MapEvent::OnSet(sub, session.0, vec![1, 2, 3, 4]))));
+        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(actor, MapEvent::OnSet(sub, session.0, vec![1, 2, 3, 4]))));
         assert_eq!(map.pop_action(), None);
 
-        assert_eq!(map.on_control(103, service, MapControl::Unsub), Some(ClientMapCommand::Unsub(102)));
-        assert_eq!(map.on_control(104, service, MapControl::Del(sub)), Some(ClientMapCommand::Del(sub, Version(103))));
+        assert_eq!(map.on_control(103, actor, MapControl::Unsub), Some(ClientMapCommand::Unsub(102)));
+        assert_eq!(map.on_control(104, actor, MapControl::Del(sub)), Some(ClientMapCommand::Del(sub, Version(103))));
         assert_eq!(map.pop_action(), None); //should not output local event after unsub
     }
 
     #[test]
     fn map_unsub_ok() {
         let session = NodeSession(1, 2);
-        let service: ServiceId = 1.into();
+        let actor = FeatureControlActor::Controller;
         let mut map = LocalMap::new(session);
 
         let relay = NodeSession(5, 6);
 
-        assert_eq!(map.on_control(102, service, MapControl::Sub), Some(ClientMapCommand::Sub(102, None)));
+        assert_eq!(map.on_control(102, actor, MapControl::Sub), Some(ClientMapCommand::Sub(102, None)));
         assert_eq!(map.on_server(103, relay, ServerMapEvent::SubOk(102)), None);
 
         map.on_tick(102 + RESEND_MS);
         assert_eq!(map.pop_action(), None);
 
-        assert_eq!(map.on_control(103, service, MapControl::Unsub), Some(ClientMapCommand::Unsub(102)));
+        assert_eq!(map.on_control(103, actor, MapControl::Unsub), Some(ClientMapCommand::Unsub(102)));
         assert_eq!(map.on_server(104, relay, ServerMapEvent::UnsubOk(102)), None);
         map.on_tick(103 + RESEND_MS);
         assert_eq!(map.pop_action(), None);
@@ -641,10 +641,10 @@ mod test {
     #[test]
     fn map_handle_auto_resend_sub_unsub() {
         let session = NodeSession(1, 2);
-        let service: ServiceId = 1.into();
+        let actor = FeatureControlActor::Controller;
         let mut map = LocalMap::new(session);
 
-        assert_eq!(map.on_control(102, service, MapControl::Sub), Some(ClientMapCommand::Sub(102, None)));
+        assert_eq!(map.on_control(102, actor, MapControl::Sub), Some(ClientMapCommand::Sub(102, None)));
         map.on_tick(102 + RESEND_MS);
         assert_eq!(map.pop_action(), Some(LocalMapOutput::Remote(ClientMapCommand::Sub(102, None))));
         assert_eq!(map.pop_action(), None);
@@ -653,12 +653,12 @@ mod test {
     #[test]
     fn map_handle_set_del_ack() {
         let session = NodeSession(1, 2);
-        let service: ServiceId = 1.into();
+        let actor = FeatureControlActor::Controller;
         let mut map = LocalMap::new(session);
 
         let relay = NodeSession(3, 4);
 
-        assert_eq!(map.on_control(102, service, MapControl::Sub), Some(ClientMapCommand::Sub(102, None)));
+        assert_eq!(map.on_control(102, actor, MapControl::Sub), Some(ClientMapCommand::Sub(102, None)));
         assert_eq!(map.on_server(103, relay, ServerMapEvent::SubOk(102)), None);
         map.on_tick(102 + RESEND_MS);
         assert_eq!(map.pop_action(), None);
@@ -690,14 +690,14 @@ mod test {
     #[test]
     fn map_handle_sub_with_remote_data_correct() {
         let session = NodeSession(1, 2);
-        let service: ServiceId = 1.into();
+        let actor = FeatureControlActor::Controller;
         let mut map = LocalMap::new(session);
 
         let sub = SubKey(1);
 
         let source = NodeSession(3, 4);
         let relay = NodeSession(5, 6);
-        assert_eq!(map.on_control(102, service, MapControl::Sub), Some(ClientMapCommand::Sub(102, None)));
+        assert_eq!(map.on_control(102, actor, MapControl::Sub), Some(ClientMapCommand::Sub(102, None)));
 
         //We need SubOk for accepting OnSet event
         assert_eq!(map.on_server(103, relay, ServerMapEvent::SubOk(102)), None);
@@ -715,21 +715,21 @@ mod test {
             ),
             Some(ClientMapCommand::OnSetAck(sub, source, Version(2000)))
         );
-        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(service, MapEvent::OnSet(sub, source.0, vec![1, 2, 3, 4]))));
+        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(actor, MapEvent::OnSet(sub, source.0, vec![1, 2, 3, 4]))));
         assert_eq!(map.pop_action(), None);
 
         assert_eq!(
             map.on_server(103, relay, ServerMapEvent::OnDel { sub, source, version: Version(2000) }),
             Some(ClientMapCommand::OnDelAck(sub, source, Version(2000)))
         );
-        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(service, MapEvent::OnDel(sub, source.0))));
+        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(actor, MapEvent::OnDel(sub, source.0))));
         assert_eq!(map.pop_action(), None);
     }
 
     #[test]
     fn map_handle_switch_new_relay() {
         let session = NodeSession(1, 2);
-        let service: ServiceId = 1.into();
+        let actor = FeatureControlActor::Controller;
         let mut map = LocalMap::new(session);
 
         let sub = SubKey(1);
@@ -737,7 +737,7 @@ mod test {
         let relay1 = NodeSession(5, 6);
         let relay2 = NodeSession(7, 8);
 
-        assert_eq!(map.on_control(102, service, MapControl::Sub), Some(ClientMapCommand::Sub(102, None)));
+        assert_eq!(map.on_control(102, actor, MapControl::Sub), Some(ClientMapCommand::Sub(102, None)));
         assert_eq!(map.on_server(103, relay1, ServerMapEvent::SubOk(102)), None);
 
         assert_eq!(

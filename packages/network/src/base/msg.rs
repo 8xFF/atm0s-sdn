@@ -1,6 +1,5 @@
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_router::{RouteRule, ServiceBroadcastLevel};
-use bincode::Options;
 use bytes::BufMut;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -624,7 +623,7 @@ mod tests {
             from_node: Some(5),
         };
         let size = header.to_bytes(&mut buf).expect("should serialize");
-        assert_eq!(header.serialize_size(), 13);
+        assert_eq!(header.serialize_size(), 12);
         let (header, _) = TransportMsgHeader::from_bytes(&buf[0..size]).unwrap();
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 1);
