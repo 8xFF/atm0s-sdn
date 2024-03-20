@@ -13,7 +13,7 @@ use crate::tasks::{
 /// This function will convert the input from SDN into Plane task input.
 /// It only accept bus events from the SDN task.
 ///
-pub fn convert_input<'a, TC, TW>(event: TaskInput<'a, SdnExtIn, SdnChannel, SdnEvent<TC, TW>>) -> TaskInput<'a, ExtIn, controller_plane::ChannelIn, controller_plane::EventIn<TC>> {
+pub fn convert_input<'a, SC, TC, TW>(event: TaskInput<'a, SdnExtIn<SC>, SdnChannel, SdnEvent<TC, TW>>) -> TaskInput<'a, ExtIn<SC>, controller_plane::ChannelIn, controller_plane::EventIn<TC>> {
     match event {
         TaskInput::Bus(_, SdnEvent::ControllerPlane(event)) => TaskInput::Bus((), event),
         TaskInput::Ext(ext) => TaskInput::Ext(ext),
@@ -26,18 +26,18 @@ pub fn convert_input<'a, TC, TW>(event: TaskInput<'a, SdnExtIn, SdnChannel, SdnE
 /// This function will convert the output from the Plane task into the output for the SDN task.
 /// It only accept bus events from the Plane task.
 ///
-pub fn convert_output<'a, TC: Debug, TW: Debug>(
+pub fn convert_output<'a, SE, TC: Debug, TW: Debug>(
     worker: u16,
-    event: TaskOutput<ExtOut, controller_plane::ChannelIn, controller_plane::ChannelOut, controller_plane::EventOut<TW>>,
-) -> WorkerInnerOutput<'a, SdnExtOut, SdnChannel, SdnEvent<TC, TW>, SdnSpawnCfg> {
+    event: TaskOutput<ExtOut<SE>, controller_plane::ChannelIn, controller_plane::ChannelOut, controller_plane::EventOut<TW>>,
+) -> WorkerInnerOutput<'a, SdnExtOut<SE>, SdnChannel, SdnEvent<TC, TW>, SdnSpawnCfg> {
     match event {
         TaskOutput::Ext(ext) => WorkerInnerOutput::Ext(true, ext),
         TaskOutput::Bus(BusEvent::ChannelSubscribe(channel)) => WorkerInnerOutput::Task(
-            Owner::group(worker, ControllerPlaneTask::<(), ()>::TYPE),
+            Owner::group(worker, ControllerPlaneTask::<(), (), (), ()>::TYPE),
             TaskOutput::Bus(BusEvent::ChannelSubscribe(SdnChannel::ControllerPlane(channel))),
         ),
         TaskOutput::Bus(BusEvent::ChannelUnsubscribe(channel)) => WorkerInnerOutput::Task(
-            Owner::group(worker, ControllerPlaneTask::<(), ()>::TYPE),
+            Owner::group(worker, ControllerPlaneTask::<(), (), (), ()>::TYPE),
             TaskOutput::Bus(BusEvent::ChannelUnsubscribe(SdnChannel::ControllerPlane(channel))),
         ),
         TaskOutput::Bus(BusEvent::ChannelPublish(_, safe, event)) => {
@@ -48,7 +48,7 @@ pub fn convert_output<'a, TC: Debug, TW: Debug>(
             };
 
             WorkerInnerOutput::Task(
-                Owner::group(worker, ControllerPlaneTask::<(), ()>::TYPE),
+                Owner::group(worker, ControllerPlaneTask::<(), (), (), ()>::TYPE),
                 TaskOutput::Bus(BusEvent::ChannelPublish(channel, safe, SdnEvent::DataPlane(event))),
             )
         }

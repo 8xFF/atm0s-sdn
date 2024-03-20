@@ -14,11 +14,11 @@ use crate::time::{TimePivot, TimeTicker};
 pub type ChannelIn = ();
 pub type ChannelOut = ();
 
-pub struct ControllerPlaneCfg<TC, TW> {
+pub struct ControllerPlaneCfg<SC, SE, TC, TW> {
     pub node_id: NodeId,
     pub session: u64,
     pub tick_ms: u64,
-    pub services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, TC, TW>>>,
+    pub services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
     #[cfg(feature = "vpn")]
     pub vpn_tun_device: sans_io_runtime::backend::tun::TunDevice,
 }
@@ -26,19 +26,19 @@ pub struct ControllerPlaneCfg<TC, TW> {
 pub type EventIn<TC> = LogicControl<TC>;
 pub type EventOut<TW> = LogicEvent<TW>;
 
-pub struct ControllerPlaneTask<TC, TW> {
+pub struct ControllerPlaneTask<SC, SE, TC, TW> {
     #[allow(unused)]
     node_id: NodeId,
-    controller: ControllerPlane<TC, TW>,
-    queue: VecDeque<TaskOutput<'static, ExtOut, ChannelIn, ChannelOut, EventOut<TW>>>,
+    controller: ControllerPlane<SC, SE, TC, TW>,
+    queue: VecDeque<TaskOutput<'static, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<TW>>>,
     ticker: TimeTicker,
     timer: TimePivot,
     #[cfg(feature = "vpn")]
     vpn_tun_device: sans_io_runtime::backend::tun::TunDevice,
 }
 
-impl<TC, TW> ControllerPlaneTask<TC, TW> {
-    pub fn build(cfg: ControllerPlaneCfg<TC, TW>) -> Self {
+impl<SC, SE, TC, TW> ControllerPlaneTask<SC, SE, TC, TW> {
+    pub fn build(cfg: ControllerPlaneCfg<SC, SE, TC, TW>) -> Self {
         Self {
             node_id: cfg.node_id,
             controller: ControllerPlane::new(cfg.node_id, cfg.session, cfg.services),
@@ -51,18 +51,18 @@ impl<TC, TW> ControllerPlaneTask<TC, TW> {
     }
 }
 
-impl<TC, TW> Task<ExtIn, ExtOut, ChannelIn, ChannelOut, EventIn<TC>, EventOut<TW>> for ControllerPlaneTask<TC, TW> {
+impl<SC, SE, TC, TW> Task<ExtIn<SC>, ExtOut<SE>, ChannelIn, ChannelOut, EventIn<TC>, EventOut<TW>> for ControllerPlaneTask<SC, SE, TC, TW> {
     /// The type identifier for the task.
     const TYPE: u16 = 0;
 
-    fn on_tick<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ExtOut, ChannelIn, ChannelOut, EventOut<TW>>> {
+    fn on_tick<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<TW>>> {
         if self.ticker.tick(now) {
             self.controller.on_tick(self.timer.timestamp_ms(now));
         }
         self.pop_output(now)
     }
 
-    fn on_event<'a>(&mut self, now: Instant, input: TaskInput<'a, ExtIn, ChannelIn, EventIn<TC>>) -> Option<TaskOutput<'a, ExtOut, ChannelIn, ChannelOut, EventOut<TW>>> {
+    fn on_event<'a>(&mut self, now: Instant, input: TaskInput<'a, ExtIn<SC>, ChannelIn, EventIn<TC>>) -> Option<TaskOutput<'a, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<TW>>> {
         let now_ms = self.timer.timestamp_ms(now);
         match input {
             TaskInput::Bus(_, event) => {
@@ -78,7 +78,7 @@ impl<TC, TW> Task<ExtIn, ExtOut, ChannelIn, ChannelOut, EventIn<TC>, EventOut<TW
         self.pop_output(now)
     }
 
-    fn pop_output<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ExtOut, ChannelIn, ChannelOut, EventOut<TW>>> {
+    fn pop_output<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<TW>>> {
         let now_ms = self.timer.timestamp_ms(now);
         if let Some(output) = self.queue.pop_front() {
             return Some(output);
@@ -91,7 +91,7 @@ impl<TC, TW> Task<ExtIn, ExtOut, ChannelIn, ChannelOut, EventIn<TC>, EventOut<TW
         }
     }
 
-    fn shutdown<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ExtOut, ChannelIn, ChannelOut, EventOut<TW>>> {
+    fn shutdown<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<TW>>> {
         self.controller.on_event(self.timer.timestamp_ms(now), ControllerInput::ShutdownRequest);
         self.pop_output(now)
     }

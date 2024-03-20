@@ -1,6 +1,6 @@
 use std::{
     fmt::Debug,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
+    net::{IpAddr, SocketAddr},
     sync::Arc,
 };
 
@@ -15,21 +15,23 @@ use sans_io_runtime::{backend::Backend, Owner};
 
 use crate::tasks::{ControllerCfg, SdnController, SdnExtIn, SdnInnerCfg, SdnWorkerInner};
 
-pub struct SdnBuilder<TC, TW> {
+pub struct SdnBuilder<SC, SE, TC, TW> {
     node_addr: NodeAddr,
     node_id: NodeId,
     session: u64,
     udp_port: u16,
     seeds: Vec<NodeAddr>,
-    services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, TC, TW>>>,
+    services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
     #[cfg(feature = "vpn")]
     vpn_ip: Option<(u8, u8, u8, u8)>,
     #[cfg(feature = "vpn")]
     vpn_netmask: Option<(u8, u8, u8, u8)>,
 }
 
-impl<TC: Debug, TW: Debug> SdnBuilder<TC, TW>
+impl<SC, SE, TC: Debug, TW: Debug> SdnBuilder<SC, SE, TC, TW>
 where
+    SC: 'static + Debug + Clone + Send + Sync,
+    SE: 'static + Debug + Clone + Send + Sync,
     TC: 'static + Clone + Send + Sync,
     TW: 'static + Clone + Send + Sync,
 {
@@ -92,7 +94,7 @@ where
     }
 
     /// panic if the service already exists
-    pub fn add_service(&mut self, service: Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, TC, TW>>) {
+    pub fn add_service(&mut self, service: Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>) {
         for s in self.services.iter() {
             assert_ne!(s.service_id(), service.service_id(), "Service ({}, {}) already exists", service.service_id(), service.service_name());
         }
@@ -109,7 +111,7 @@ where
         self.vpn_netmask = Some(netmask);
     }
 
-    pub fn build<B: Backend>(self, workers: usize) -> SdnController<TC, TW> {
+    pub fn build<B: Backend>(self, workers: usize) -> SdnController<SC, SE, TC, TW> {
         assert!(workers > 0);
         #[cfg(feature = "vpn")]
         let (tun_device, mut queue_fds) = {
@@ -124,7 +126,7 @@ where
         };
 
         let mut controler = SdnController::default();
-        controler.add_worker::<_, SdnWorkerInner<TC, TW>, B>(
+        controler.add_worker::<_, SdnWorkerInner<SC, SE, TC, TW>, B>(
             SdnInnerCfg {
                 node_id: self.node_id,
                 udp_port: self.udp_port,
@@ -144,7 +146,7 @@ where
         );
 
         for _ in 1..workers {
-            controler.add_worker::<_, SdnWorkerInner<TC, TW>, B>(
+            controler.add_worker::<_, SdnWorkerInner<SC, SE, TC, TW>, B>(
                 SdnInnerCfg {
                     node_id: self.node_id,
                     udp_port: self.udp_port,

@@ -15,15 +15,18 @@ pub mod services;
 pub mod san_io_utils;
 
 #[derive(Debug, Clone, convert_enum::From)]
-pub enum ExtIn {
+pub enum ExtIn<ServicesControl> {
     ConnectTo(NodeAddr),
     DisconnectFrom(NodeId),
     FeaturesControl(FeaturesControl),
+    #[convert_enum(optout)]
+    ServicesControl(ServiceId, ServicesControl),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ExtOut {
+pub enum ExtOut<ServicesEvent> {
     FeaturesEvent(FeaturesEvent),
+    ServicesEvent(ServicesEvent),
 }
 
 #[derive(Debug, Clone)]

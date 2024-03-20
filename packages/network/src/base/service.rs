@@ -6,6 +6,11 @@ simple_pub_type!(ServiceId, u8);
 
 /// First part is Service, which is running inside the controller.
 
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
+pub enum ServiceControlActor {
+    Controller,
+}
+
 #[derive(Debug, Clone)]
 pub enum ServiceSharedInput {
     Tick(u64),
@@ -13,24 +18,26 @@ pub enum ServiceSharedInput {
 }
 
 #[derive(Debug)]
-pub enum ServiceInput<FeaturesEvent, ToController> {
+pub enum ServiceInput<FeaturesEvent, ServiceControl, ToController> {
+    Control(ServiceControlActor, ServiceControl),
     FromWorker(ToController),
     FeatureEvent(FeaturesEvent),
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum ServiceOutput<FeaturesControl, ToWorker> {
+pub enum ServiceOutput<FeaturesControl, ServiceEvent, ToWorker> {
+    Event(ServiceControlActor, ServiceEvent),
     FeatureControl(FeaturesControl),
     BroadcastWorkers(ToWorker),
 }
 
-pub trait Service<FeaturesControl, FeaturesEvent, ToController, ToWorker> {
+pub trait Service<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker> {
     fn service_id(&self) -> u8;
     fn service_name(&self) -> &str;
 
     fn on_shared_input<'a>(&mut self, _now: u64, _input: ServiceSharedInput);
-    fn on_input(&mut self, _now: u64, input: ServiceInput<FeaturesEvent, ToController>);
-    fn pop_output(&mut self) -> Option<ServiceOutput<FeaturesControl, ToWorker>>;
+    fn on_input(&mut self, _now: u64, input: ServiceInput<FeaturesEvent, ServiceControl, ToController>);
+    fn pop_output(&mut self) -> Option<ServiceOutput<FeaturesControl, ServiceEvent, ToWorker>>;
 }
 
 /// Second part is Worker, which is running inside each data plane workers.
@@ -40,17 +47,18 @@ pub enum ServiceWorkerInput<FeaturesEvent, ToWorker> {
     FeatureEvent(FeaturesEvent),
 }
 
-pub enum ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ToController> {
+pub enum ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceEvent, ToController> {
     ForwardFeatureEventToController(FeaturesEvent),
     ToController(ToController),
     FeatureControl(FeaturesControl),
+    Event(ServiceControlActor, ServiceEvent),
 }
 
-pub trait ServiceWorker<FeaturesControl, FeaturesEvent, ToController, ToWorker> {
+pub trait ServiceWorker<FeaturesControl, FeaturesEvent, ServiceEvent, ToController, ToWorker> {
     fn service_id(&self) -> u8;
     fn service_name(&self) -> &str;
     fn on_tick(&mut self, _now: u64) {}
-    fn on_input(&mut self, _now: u64, input: ServiceWorkerInput<FeaturesEvent, ToWorker>) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ToController>> {
+    fn on_input(&mut self, _now: u64, input: ServiceWorkerInput<FeaturesEvent, ToWorker>) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceEvent, ToController>> {
         match input {
             ServiceWorkerInput::FeatureEvent(event) => Some(ServiceWorkerOutput::ForwardFeatureEventToController(event)),
             ServiceWorkerInput::FromController(_) => {
@@ -59,17 +67,17 @@ pub trait ServiceWorker<FeaturesControl, FeaturesEvent, ToController, ToWorker> 
             }
         }
     }
-    fn pop_output(&mut self) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ToController>> {
+    fn pop_output(&mut self) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceEvent, ToController>> {
         None
     }
 }
 
-pub trait ServiceBuilder<FeaturesControl, FeaturesEvent, ToController, ToWorker>: Send + Sync {
+pub trait ServiceBuilder<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>: Send + Sync {
     fn service_id(&self) -> u8;
     fn service_name(&self) -> &str;
     fn discoverable(&self) -> bool {
         true
     }
-    fn create(&self) -> Box<dyn Service<FeaturesControl, FeaturesEvent, ToController, ToWorker>>;
-    fn create_worker(&self) -> Box<dyn ServiceWorker<FeaturesControl, FeaturesEvent, ToController, ToWorker>>;
+    fn create(&self) -> Box<dyn Service<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>;
+    fn create_worker(&self) -> Box<dyn ServiceWorker<FeaturesControl, FeaturesEvent, ServiceEvent, ToController, ToWorker>>;
 }

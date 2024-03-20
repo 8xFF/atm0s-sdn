@@ -5,14 +5,14 @@ use crate::features::{FeaturesControl, FeaturesEvent};
 use crate::{base::Service, san_io_utils::TasksSwitcher};
 
 /// To manage the services we need to create an object that will hold the services
-pub struct ServiceManager<ToController, ToWorker> {
-    services: [Option<Box<dyn Service<FeaturesControl, FeaturesEvent, ToController, ToWorker>>>; 256],
+pub struct ServiceManager<ServiceControl, ServiceEvent, ToController, ToWorker> {
+    services: [Option<Box<dyn Service<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>>; 256],
     switcher: TasksSwitcher<256>,
     last_input_service: Option<ServiceId>,
 }
 
-impl<ToController, ToWorker> ServiceManager<ToController, ToWorker> {
-    pub fn new(services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, ToController, ToWorker>>>) -> Self {
+impl<ServiceControl, ServiceEvent, ToController, ToWorker> ServiceManager<ServiceControl, ServiceEvent, ToController, ToWorker> {
+    pub fn new(services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>>) -> Self {
         Self {
             services: std::array::from_fn(|index| services.iter().find(|s| s.service_id() == index as u8).map(|s| s.create())),
             switcher: TasksSwitcher::default(),
@@ -29,7 +29,7 @@ impl<ToController, ToWorker> ServiceManager<ToController, ToWorker> {
         }
     }
 
-    pub fn on_input(&mut self, now: u64, id: ServiceId, input: ServiceInput<FeaturesEvent, ToController>) {
+    pub fn on_input(&mut self, now: u64, id: ServiceId, input: ServiceInput<FeaturesEvent, ServiceControl, ToController>) {
         if let Some(service) = self.services.get_mut(*id as usize) {
             if let Some(service) = service {
                 self.last_input_service = Some(id);
@@ -38,7 +38,7 @@ impl<ToController, ToWorker> ServiceManager<ToController, ToWorker> {
         }
     }
 
-    pub fn pop_output(&mut self) -> Option<(ServiceId, ServiceOutput<FeaturesControl, ToWorker>)> {
+    pub fn pop_output(&mut self) -> Option<(ServiceId, ServiceOutput<FeaturesControl, ServiceEvent, ToWorker>)> {
         if let Some(last_service) = self.last_input_service {
             let out = self.services[*last_service as usize].as_mut().map(|s| s.pop_output()).flatten();
             if out.is_none() {

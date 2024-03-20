@@ -60,6 +60,8 @@ struct Args {
     connect_tags: Vec<String>,
 }
 
+type SC = ();
+type SE = ();
 type TC = ();
 type TW = ();
 
@@ -69,7 +71,7 @@ fn main() {
     let mut shutdown_wait = 0;
     let args = Args::parse();
     env_logger::builder().format_timestamp_millis().init();
-    let mut builder = SdnBuilder::<TC, TW>::new(args.node_id, args.udp_port, args.custom_addrs);
+    let mut builder = SdnBuilder::<SC, SE, TC, TW>::new(args.node_id, args.udp_port, args.custom_addrs);
 
     builder.set_manual_discovery(args.local_tags, args.connect_tags);
 

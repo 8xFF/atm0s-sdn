@@ -9,8 +9,8 @@ use atm0s_sdn_router::{shadow::ShadowRouter, RouteAction, RouteRule, RouterTable
 
 use crate::{
     base::{
-        FeatureControlActor, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer, GenericBufferMut, NeighboursControl, ServiceBuilder, ServiceId, ServiceWorkerInput,
-        ServiceWorkerOutput, TransportMsg, TransportMsgHeader,
+        FeatureControlActor, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer, GenericBufferMut, NeighboursControl, ServiceBuilder, ServiceControlActor, ServiceId,
+        ServiceWorkerInput, ServiceWorkerOutput, TransportMsg, TransportMsgHeader,
     },
     features::{Features, FeaturesControl, FeaturesEvent, FeaturesToController},
     san_io_utils::TasksSwitcher,
@@ -44,8 +44,8 @@ pub enum NetOutput<'a> {
 }
 
 #[derive(convert_enum::From)]
-pub enum Output<'a, TC> {
-    Ext(ExtOut),
+pub enum Output<'a, SE, TC> {
+    Ext(ExtOut<SE>),
     Net(NetOutput<'a>),
     Control(LogicControl<TC>),
     #[convert_enum(optout)]
@@ -60,24 +60,24 @@ enum TaskType {
     Service,
 }
 
-enum QueueOutput<TC> {
+enum QueueOutput<SE, TC> {
     Feature(Features, FeatureWorkerOutput<'static, FeaturesControl, FeaturesEvent, FeaturesToController>),
-    Service(ServiceId, ServiceWorkerOutput<FeaturesControl, FeaturesEvent, TC>),
+    Service(ServiceId, ServiceWorkerOutput<FeaturesControl, FeaturesEvent, SE, TC>),
 }
 
-pub struct DataPlane<TC, TW> {
+pub struct DataPlane<SC, SE, TC, TW> {
     ctx: FeatureWorkerContext,
     features: FeatureWorkerManager,
-    services: ServiceWorkerManager<TC, TW>,
+    services: ServiceWorkerManager<SC, SE, TC, TW>,
     conns: HashMap<SocketAddr, DataPlaneConnection>,
     conns_reverse: HashMap<ConnId, SocketAddr>,
-    queue_output: VecDeque<QueueOutput<TC>>,
+    queue_output: VecDeque<QueueOutput<SE, TC>>,
     last_task: Option<TaskType>,
     switcher: TasksSwitcher<2>,
 }
 
-impl<TC, TW> DataPlane<TC, TW> {
-    pub fn new(node_id: NodeId, services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, TC, TW>>>) -> Self {
+impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
+    pub fn new(node_id: NodeId, services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>) -> Self {
         log::info!("Create DataPlane for node: {}", node_id);
 
         Self {
@@ -102,7 +102,7 @@ impl<TC, TW> DataPlane<TC, TW> {
         self.services.on_tick(now_ms);
     }
 
-    pub fn on_event<'a>(&mut self, now_ms: u64, event: Input<'a, TW>) -> Option<Output<'a, TC>> {
+    pub fn on_event<'a>(&mut self, now_ms: u64, event: Input<'a, TW>) -> Option<Output<'a, SE, TC>> {
         match event {
             Input::Net(NetInput::UdpPacket(remote, buf)) => {
                 if let Ok(control) = NeighboursControl::try_from(&*buf) {
@@ -150,7 +150,7 @@ impl<TC, TW> DataPlane<TC, TW> {
         }
     }
 
-    pub fn pop_output<'a>(&mut self, now_ms: u64) -> Option<Output<'a, TC>> {
+    pub fn pop_output<'a>(&mut self, now_ms: u64) -> Option<Output<'a, SE, TC>> {
         if let Some(out) = self.queue_output.pop_front() {
             return match out {
                 QueueOutput::Feature(feature, out) => Some(self.convert_features(now_ms, feature, out)),
@@ -187,7 +187,7 @@ impl<TC, TW> DataPlane<TC, TW> {
         }
     }
 
-    fn pop_last<'a>(&mut self, now_ms: u64, last_task: TaskType) -> Option<Output<'a, TC>> {
+    fn pop_last<'a>(&mut self, now_ms: u64, last_task: TaskType) -> Option<Output<'a, SE, TC>> {
         match last_task {
             TaskType::Feature => {
                 let (feature, out) = self.features.pop_output()?;
@@ -200,7 +200,7 @@ impl<TC, TW> DataPlane<TC, TW> {
         }
     }
 
-    fn incoming_route<'a>(&mut self, now_ms: u64, remote: SocketAddr, buf: GenericBuffer<'a>) -> Option<Output<'a, TC>> {
+    fn incoming_route<'a>(&mut self, now_ms: u64, remote: SocketAddr, buf: GenericBuffer<'a>) -> Option<Output<'a, SE, TC>> {
         let (header, header_len) = TransportMsgHeader::from_bytes(&buf).ok()?;
         match self.ctx.router.derive_action(&header.route) {
             RouteAction::Reject => None,
@@ -226,7 +226,7 @@ impl<TC, TW> DataPlane<TC, TW> {
         }
     }
 
-    fn outgoing_route<'a>(&mut self, now_ms: u64, feature: Features, rule: RouteRule, buf: Vec<u8>) -> Option<Output<'a, TC>> {
+    fn outgoing_route<'a>(&mut self, now_ms: u64, feature: Features, rule: RouteRule, buf: Vec<u8>) -> Option<Output<'a, SE, TC>> {
         match self.ctx.router.derive_action(&rule) {
             RouteAction::Reject => {
                 log::debug!("[DataPlane] route rule {:?} is rejected", rule);
@@ -257,7 +257,7 @@ impl<TC, TW> DataPlane<TC, TW> {
         }
     }
 
-    fn convert_features<'a>(&mut self, now_ms: u64, feature: Features, out: FeatureWorkerOutput<'a, FeaturesControl, FeaturesEvent, FeaturesToController>) -> Output<'a, TC> {
+    fn convert_features<'a>(&mut self, now_ms: u64, feature: Features, out: FeatureWorkerOutput<'a, FeaturesControl, FeaturesEvent, FeaturesToController>) -> Output<'a, SE, TC> {
         self.last_task = Some(TaskType::Feature);
         match out {
             FeatureWorkerOutput::ForwardControlToController(service, control) => LogicControl::FeaturesControl(service, control).into(),
@@ -306,7 +306,7 @@ impl<TC, TW> DataPlane<TC, TW> {
         }
     }
 
-    fn convert_services<'a>(&mut self, now_ms: u64, service: ServiceId, out: ServiceWorkerOutput<FeaturesControl, FeaturesEvent, TC>) -> Output<'a, TC> {
+    fn convert_services<'a>(&mut self, now_ms: u64, service: ServiceId, out: ServiceWorkerOutput<FeaturesControl, FeaturesEvent, SE, TC>) -> Output<'a, SE, TC> {
         self.last_task = Some(TaskType::Service);
         match out {
             ServiceWorkerOutput::ForwardFeatureEventToController(event) => LogicControl::ServiceEvent(service, event).into(),
@@ -321,6 +321,9 @@ impl<TC, TW> DataPlane<TC, TW> {
                 }
                 Output::Continue
             }
+            ServiceWorkerOutput::Event(actor, event) => match actor {
+                ServiceControlActor::Controller => Output::Ext(ExtOut::ServicesEvent(event)),
+            },
         }
     }
 }

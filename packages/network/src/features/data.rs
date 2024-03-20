@@ -12,11 +12,13 @@ pub const FEATURE_NAME: &str = "data_transfer";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Control {
     Ping(NodeId),
+    SendRule(RouteRule, Vec<u8>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     Pong(NodeId, Option<u16>),
+    Recv(Vec<u8>),
 }
 
 #[derive(Debug, Clone)]
@@ -29,6 +31,8 @@ pub struct ToController;
 enum DataMsg {
     Ping { id: u64, ts: u64, from: NodeId },
     Pong { id: u64, ts: u64 },
+    DataController { data: Vec<u8> },
+    DataService { service: u8, data: Vec<u8> },
 }
 
 pub struct DataFeature {
@@ -95,6 +99,14 @@ impl Feature<Control, Event, ToController, ToWorker> for DataFeature {
                     let rule = RouteRule::ToNode(dest);
                     self.queue.push_back(FeatureOutput::SendRoute(rule, msg.into()));
                 }
+                Control::SendRule(rule, data) => {
+                    let data = match actor {
+                        FeatureControlActor::Controller => DataMsg::DataController { data },
+                        FeatureControlActor::Service(service) => DataMsg::DataService { service: *service, data },
+                    };
+                    let msg = bincode::serialize(&data).expect("should work");
+                    self.queue.push_back(FeatureOutput::SendRoute(rule, msg.into()));
+                }
             },
             FeatureInput::Net(_, buf) | FeatureInput::Local(buf) => {
                 if let Ok(msg) = bincode::deserialize::<DataMsg>(&buf) {
@@ -111,6 +123,12 @@ impl Feature<Control, Event, ToController, ToWorker> for DataFeature {
                             let msg = bincode::serialize(&DataMsg::Pong { id, ts }).expect("should work");
                             let rule = RouteRule::ToNode(from);
                             self.queue.push_back(FeatureOutput::SendRoute(rule, msg.into()));
+                        }
+                        DataMsg::DataController { data } => {
+                            self.queue.push_back(FeatureOutput::Event(FeatureControlActor::Controller, Event::Recv(data)));
+                        }
+                        DataMsg::DataService { service, data } => {
+                            self.queue.push_back(FeatureOutput::Event(FeatureControlActor::Service(service.into()), Event::Recv(data)));
                         }
                     }
                 }

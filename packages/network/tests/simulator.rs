@@ -67,15 +67,15 @@ impl Drop for AutoContext {
     }
 }
 
-pub enum TestNodeIn<'a> {
-    Ext(ExtIn),
+pub enum TestNodeIn<'a, SC> {
+    Ext(ExtIn<SC>),
     Udp(SocketAddr, GenericBuffer<'a>),
     #[allow(unused)]
     Tun(GenericBufferMut<'a>),
 }
 
-pub enum TestNodeOut<'a> {
-    Ext(ExtOut),
+pub enum TestNodeOut<'a, SE> {
+    Ext(ExtOut<SE>),
     Udp(Vec<SocketAddr>, GenericBuffer<'a>),
     Tun(GenericBuffer<'a>),
 }
@@ -87,14 +87,14 @@ pub fn build_addr(node_id: NodeId) -> NodeAddr {
     builder.addr()
 }
 
-pub struct TestNode<TC, TW> {
+pub struct TestNode<SC, SE, TC, TW> {
     node_id: NodeId,
-    controller: ControllerPlane<TC, TW>,
-    worker: DataPlane<TC, TW>,
+    controller: ControllerPlane<SC, SE, TC, TW>,
+    worker: DataPlane<SC, SE, TC, TW>,
 }
 
-impl<TC, TW> TestNode<TC, TW> {
-    pub fn new(node_id: NodeId, session: u64, services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, TC, TW>>>) -> Self {
+impl<SC, SE, TC, TW> TestNode<SC, SE, TC, TW> {
+    pub fn new(node_id: NodeId, session: u64, services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>) -> Self {
         let _log = AutoContext::new(node_id);
         let controller = ControllerPlane::new(node_id, session, services.clone());
         let worker = DataPlane::new(node_id, services);
@@ -115,7 +115,7 @@ impl<TC, TW> TestNode<TC, TW> {
         self.worker.on_tick(now);
     }
 
-    pub fn on_input<'a>(&mut self, now: u64, input: TestNodeIn<'a>) -> Option<TestNodeOut<'a>> {
+    pub fn on_input<'a>(&mut self, now: u64, input: TestNodeIn<'a, SC>) -> Option<TestNodeOut<'a, SE>> {
         let _log = AutoContext::new(self.node_id);
         match input {
             TestNodeIn::Ext(ext_in) => {
@@ -134,7 +134,7 @@ impl<TC, TW> TestNode<TC, TW> {
         }
     }
 
-    pub fn pop_output<'a>(&mut self, now: u64) -> Option<TestNodeOut<'a>> {
+    pub fn pop_output<'a>(&mut self, now: u64) -> Option<TestNodeOut<'a, SE>> {
         let _log = AutoContext::new(self.node_id);
         let mut keep_running = true;
         while keep_running {
@@ -157,7 +157,7 @@ impl<TC, TW> TestNode<TC, TW> {
         None
     }
 
-    fn process_controller_output<'a>(&mut self, now: u64, output: controller_plane::Output<TW>) -> Option<TestNodeOut<'a>> {
+    fn process_controller_output<'a>(&mut self, now: u64, output: controller_plane::Output<SE, TW>) -> Option<TestNodeOut<'a, SE>> {
         match output {
             controller_plane::Output::Event(e) => {
                 let output = self.worker.on_event(now, data_plane::Input::Event(e))?;
@@ -168,7 +168,7 @@ impl<TC, TW> TestNode<TC, TW> {
         }
     }
 
-    fn process_worker_output<'a>(&mut self, now: u64, output: data_plane::Output<'a, TC>) -> Option<TestNodeOut<'a>> {
+    fn process_worker_output<'a>(&mut self, now: u64, output: data_plane::Output<'a, SE, TC>) -> Option<TestNodeOut<'a, SE>> {
         match output {
             data_plane::Output::Ext(out) => Some(TestNodeOut::Ext(out)),
             data_plane::Output::Control(control) => {
@@ -195,15 +195,15 @@ fn node_to_addr(node: NodeId) -> SocketAddr {
     SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), node as u16)
 }
 
-pub struct NetworkSimulator<TC: Clone, TW: Clone> {
+pub struct NetworkSimulator<SC, SE, TC: Clone, TW: Clone> {
     clock_ms: u64,
-    intput: VecDeque<(NodeId, ExtIn)>,
-    output: VecDeque<(NodeId, ExtOut)>,
-    nodes: Vec<TestNode<TC, TW>>,
+    intput: VecDeque<(NodeId, ExtIn<SC>)>,
+    output: VecDeque<(NodeId, ExtOut<SE>)>,
+    nodes: Vec<TestNode<SC, SE, TC, TW>>,
     nodes_index: HashMap<NodeId, usize>,
 }
 
-impl<TC: Clone, TW: Clone> NetworkSimulator<TC, TW> {
+impl<SC, SE, TC: Clone, TW: Clone> NetworkSimulator<SC, SE, TC, TW> {
     pub fn new(started_ms: u64) -> Self {
         Self {
             clock_ms: started_ms,
@@ -220,15 +220,15 @@ impl<TC: Clone, TW: Clone> NetworkSimulator<TC, TW> {
         log::set_max_level(level);
     }
 
-    pub fn control(&mut self, node: NodeId, control: ExtIn) {
+    pub fn control(&mut self, node: NodeId, control: ExtIn<SC>) {
         self.intput.push_back((node, control));
     }
 
-    pub fn pop_res(&mut self) -> Option<(NodeId, ExtOut)> {
+    pub fn pop_res(&mut self) -> Option<(NodeId, ExtOut<SE>)> {
         self.output.pop_front()
     }
 
-    pub fn add_node(&mut self, node: TestNode<TC, TW>) -> NodeAddr {
+    pub fn add_node(&mut self, node: TestNode<SC, SE, TC, TW>) -> NodeAddr {
         let index = self.nodes.len();
         self.nodes_index.insert(node.node_id(), index);
         let addr = node.addr();
@@ -254,7 +254,7 @@ impl<TC: Clone, TW: Clone> NetworkSimulator<TC, TW> {
         }
     }
 
-    fn process_input<'a>(&mut self, node: NodeId, input: TestNodeIn<'a>) -> Option<()> {
+    fn process_input<'a>(&mut self, node: NodeId, input: TestNodeIn<'a, SC>) -> Option<()> {
         let index = self.nodes_index.get(&node).expect("Node not found");
         let output = self.nodes[*index].on_input(self.clock_ms, input)?;
         match output {

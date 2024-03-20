@@ -66,6 +66,8 @@ struct Args {
     kv_set: bool,
 }
 
+type SC = ();
+type SE = ();
 type TC = ();
 type TW = ();
 
@@ -75,7 +77,7 @@ fn main() {
     let mut shutdown_wait = 0;
     let args = Args::parse();
     env_logger::builder().format_timestamp_millis().init();
-    let mut builder = SdnBuilder::<TC, TW>::new(args.node_id, args.udp_port, vec![]);
+    let mut builder = SdnBuilder::<SC, SE, TC, TW>::new(args.node_id, args.udp_port, vec![]);
 
     for seed in args.seeds {
         builder.add_seed(seed);

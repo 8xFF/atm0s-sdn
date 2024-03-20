@@ -11,7 +11,7 @@ use crate::tasks::{
 /// This function will convert the input from SDN into Plane task input.
 /// It only accept bus events from the SDN task.
 ///
-pub fn convert_input<'a, TC, TW>(event: TaskInput<'a, SdnExtIn, SdnChannel, SdnEvent<TC, TW>>) -> TaskInput<'a, (), data_plane::ChannelIn, data_plane::EventIn<TW>> {
+pub fn convert_input<'a, SC, TC, TW>(event: TaskInput<'a, SdnExtIn<SC>, SdnChannel, SdnEvent<TC, TW>>) -> TaskInput<'a, (), data_plane::ChannelIn, data_plane::EventIn<TW>> {
     match event {
         TaskInput::Bus(SdnChannel::DataPlane(channel), SdnEvent::DataPlane(event)) => TaskInput::Bus(channel, event),
         TaskInput::Net(event) => TaskInput::Net(event),
@@ -24,25 +24,25 @@ pub fn convert_input<'a, TC, TW>(event: TaskInput<'a, SdnExtIn, SdnChannel, SdnE
 /// This function will convert the output from the Plane task into the output for the SDN task.
 /// It only accept bus events from the Plane task.
 ///
-pub fn convert_output<'a, TC, TW>(
+pub fn convert_output<'a, SE, TC, TW>(
     worker: u16,
-    event: TaskOutput<'a, ExtOut, data_plane::ChannelIn, data_plane::ChannelOut, data_plane::EventOut<TC>>,
-) -> WorkerInnerOutput<'a, SdnExtOut, SdnChannel, SdnEvent<TC, TW>, SdnSpawnCfg> {
+    event: TaskOutput<'a, ExtOut<SE>, data_plane::ChannelIn, data_plane::ChannelOut, data_plane::EventOut<TC>>,
+) -> WorkerInnerOutput<'a, SdnExtOut<SE>, SdnChannel, SdnEvent<TC, TW>, SdnSpawnCfg> {
     match event {
         TaskOutput::Ext(ext) => WorkerInnerOutput::Ext(true, ext),
         TaskOutput::Bus(BusEvent::ChannelSubscribe(channel)) => WorkerInnerOutput::Task(
-            Owner::group(worker, DataPlaneTask::<(), ()>::TYPE),
+            Owner::group(worker, DataPlaneTask::<(), (), (), ()>::TYPE),
             TaskOutput::Bus(BusEvent::ChannelSubscribe(SdnChannel::DataPlane(channel))),
         ),
         TaskOutput::Bus(BusEvent::ChannelUnsubscribe(channel)) => WorkerInnerOutput::Task(
-            Owner::group(worker, DataPlaneTask::<(), ()>::TYPE),
+            Owner::group(worker, DataPlaneTask::<(), (), (), ()>::TYPE),
             TaskOutput::Bus(BusEvent::ChannelUnsubscribe(SdnChannel::DataPlane(channel))),
         ),
         TaskOutput::Bus(BusEvent::ChannelPublish(_, safe, event)) => WorkerInnerOutput::Task(
-            Owner::group(worker, DataPlaneTask::<(), ()>::TYPE),
+            Owner::group(worker, DataPlaneTask::<(), (), (), ()>::TYPE),
             TaskOutput::Bus(BusEvent::ChannelPublish(SdnChannel::ControllerPlane(()), safe, SdnEvent::ControllerPlane(event))),
         ),
-        TaskOutput::Net(out) => WorkerInnerOutput::Task(Owner::group(worker, DataPlaneTask::<(), ()>::TYPE), TaskOutput::Net(out)),
-        TaskOutput::Destroy => WorkerInnerOutput::Task(Owner::group(worker, DataPlaneTask::<(), ()>::TYPE), TaskOutput::Destroy),
+        TaskOutput::Net(out) => WorkerInnerOutput::Task(Owner::group(worker, DataPlaneTask::<(), (), (), ()>::TYPE), TaskOutput::Net(out)),
+        TaskOutput::Destroy => WorkerInnerOutput::Task(Owner::group(worker, DataPlaneTask::<(), (), (), ()>::TYPE), TaskOutput::Destroy),
     }
 }

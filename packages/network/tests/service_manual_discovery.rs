@@ -16,7 +16,7 @@ fn service_manual_discovery_three_nodes() {
     let node1 = 1;
     let node2 = 2;
     let node3 = 3;
-    let mut sim = NetworkSimulator::<(), ()>::new(0);
+    let mut sim = NetworkSimulator::<(), (), (), ()>::new(0);
 
     let _addr1 = sim.add_node(TestNode::new(
         node1,

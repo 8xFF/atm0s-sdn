@@ -12,7 +12,7 @@ mod simulator;
 fn feature_neighbours_two_nodes() {
     let node1 = 1;
     let node2 = 2;
-    let mut sim = NetworkSimulator::<(), ()>::new(0);
+    let mut sim = NetworkSimulator::<(), (), (), ()>::new(0);
 
     let _addr1 = sim.add_node(TestNode::new(node1, 1234, vec![]));
     let addr2 = sim.add_node(TestNode::new(node2, 1235, vec![]));

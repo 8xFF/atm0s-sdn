@@ -3,7 +3,7 @@ use std::sync::Arc;
 use atm0s_sdn_identity::NodeId;
 
 use crate::{
-    base::{ConnectionEvent, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, ServiceBuilder, ServiceInput, ServiceOutput, ServiceSharedInput},
+    base::{ConnectionEvent, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, ServiceBuilder, ServiceControlActor, ServiceInput, ServiceOutput, ServiceSharedInput},
     features::{FeaturesControl, FeaturesEvent},
     san_io_utils::TasksSwitcher,
     ExtIn, ExtOut, LogicControl, LogicEvent,
@@ -16,16 +16,16 @@ mod neighbours;
 mod services;
 
 #[derive(Debug, Clone, convert_enum::From)]
-pub enum Input<TC> {
-    Ext(ExtIn),
+pub enum Input<SC, TC> {
+    Ext(ExtIn<SC>),
     Control(LogicControl<TC>),
     #[convert_enum(optout)]
     ShutdownRequest,
 }
 
 #[derive(Debug, Clone, convert_enum::From)]
-pub enum Output<TW> {
-    Ext(ExtOut),
+pub enum Output<SE, TW> {
+    Ext(ExtOut<SE>),
     Event(LogicEvent<TW>),
     #[convert_enum(optout)]
     ShutdownSuccess,
@@ -43,17 +43,29 @@ enum TaskType {
     Service = SERVICES_ID,
 }
 
-pub struct ControllerPlane<TC, TW> {
+impl TryFrom<usize> for TaskType {
+    type Error = ();
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        match value as u8 {
+            NEIGHBOURS_ID => Ok(Self::Neighbours),
+            FEATURES_ID => Ok(Self::Feature),
+            SERVICES_ID => Ok(Self::Service),
+            _ => Err(()),
+        }
+    }
+}
+
+pub struct ControllerPlane<SC, SE, TC, TW> {
     neighbours: NeighboursManager,
     features: FeatureManager,
-    services: ServiceManager<TC, TW>,
+    services: ServiceManager<SC, SE, TC, TW>,
     // TODO may be we need stack style for optimize performance
     // and support some case task output call other task
     last_task: Option<TaskType>,
     switcher: TasksSwitcher<3>,
 }
 
-impl<TC, TW> ControllerPlane<TC, TW> {
+impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
     /// Create a new ControllerPlane
     ///
     /// # Arguments
@@ -64,7 +76,7 @@ impl<TC, TW> ControllerPlane<TC, TW> {
     /// # Returns
     ///
     /// A new ControllerPlane
-    pub fn new(node_id: NodeId, session: u64, services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, TC, TW>>>) -> Self {
+    pub fn new(node_id: NodeId, session: u64, services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>) -> Self {
         log::info!("Create ControllerPlane for node: {}, running session {}", node_id, session);
         let service_ids = services.iter().filter(|s| s.discoverable()).map(|s| s.service_id()).collect();
 
@@ -84,7 +96,7 @@ impl<TC, TW> ControllerPlane<TC, TW> {
         self.services.on_shared_input(now_ms, ServiceSharedInput::Tick(now_ms));
     }
 
-    pub fn on_event(&mut self, now_ms: u64, event: Input<TC>) {
+    pub fn on_event(&mut self, now_ms: u64, event: Input<SC, TC>) {
         match event {
             Input::Ext(ExtIn::ConnectTo(addr)) => {
                 self.last_task = Some(TaskType::Neighbours);
@@ -97,6 +109,10 @@ impl<TC, TW> ControllerPlane<TC, TW> {
             Input::Ext(ExtIn::FeaturesControl(control)) => {
                 self.last_task = Some(TaskType::Feature);
                 self.features.on_input(now_ms, control.to_feature(), FeatureInput::Control(FeatureControlActor::Controller, control));
+            }
+            Input::Ext(ExtIn::ServicesControl(service, control)) => {
+                self.last_task = Some(TaskType::Service);
+                self.services.on_input(now_ms, service, ServiceInput::Control(ServiceControlActor::Controller, control));
             }
             Input::Control(LogicControl::NetNeighbour(remote, control)) => {
                 self.last_task = Some(TaskType::Neighbours);
@@ -135,7 +151,7 @@ impl<TC, TW> ControllerPlane<TC, TW> {
         }
     }
 
-    pub fn pop_output(&mut self, now_ms: u64) -> Option<Output<TW>> {
+    pub fn pop_output(&mut self, now_ms: u64) -> Option<Output<SE, TW>> {
         if let Some(last_task) = &self.last_task {
             let res = match last_task {
                 TaskType::Neighbours => self.pop_neighbours(now_ms),
@@ -148,26 +164,25 @@ impl<TC, TW> ControllerPlane<TC, TW> {
             res
         } else {
             while let Some(current) = self.switcher.current() {
-                match current as u8 {
-                    NEIGHBOURS_ID => {
+                match current.try_into().expect("Should convert to TaskType") {
+                    TaskType::Neighbours => {
                         let out = self.pop_neighbours(now_ms);
                         if let Some(out) = self.switcher.process(out) {
                             return Some(out);
                         }
                     }
-                    FEATURES_ID => {
+                    TaskType::Feature => {
                         let out = self.pop_features(now_ms);
                         if let Some(out) = self.switcher.process(out) {
                             return Some(out);
                         }
                     }
-                    SERVICES_ID => {
+                    TaskType::Service => {
                         let out = self.pop_services(now_ms);
                         if let Some(out) = self.switcher.process(out) {
                             return Some(out);
                         }
                     }
-                    _ => panic!("Should not happend!"),
                 }
             }
 
@@ -175,7 +190,7 @@ impl<TC, TW> ControllerPlane<TC, TW> {
         }
     }
 
-    fn pop_neighbours(&mut self, now_ms: u64) -> Option<Output<TW>> {
+    fn pop_neighbours(&mut self, now_ms: u64) -> Option<Output<SE, TW>> {
         let out = self.neighbours.pop_output()?;
         match out {
             neighbours::Output::Control(remote, control) => Some(Output::Event(LogicEvent::NetNeigbour(remote, control))),
@@ -192,7 +207,7 @@ impl<TC, TW> ControllerPlane<TC, TW> {
         }
     }
 
-    fn pop_features(&mut self, now_ms: u64) -> Option<Output<TW>> {
+    fn pop_features(&mut self, now_ms: u64) -> Option<Output<SE, TW>> {
         let (feature, out) = self.features.pop_output()?;
         match out {
             FeatureOutput::ToWorkers(to) => Some(Output::Event(LogicEvent::Feature(to))),
@@ -227,7 +242,7 @@ impl<TC, TW> ControllerPlane<TC, TW> {
         }
     }
 
-    fn pop_services(&mut self, now_ms: u64) -> Option<Output<TW>> {
+    fn pop_services(&mut self, now_ms: u64) -> Option<Output<SE, TW>> {
         let (service, out) = self.services.pop_output()?;
         match out {
             ServiceOutput::FeatureControl(control) => {
@@ -235,6 +250,9 @@ impl<TC, TW> ControllerPlane<TC, TW> {
                     .on_input(now_ms, control.to_feature(), FeatureInput::Control(FeatureControlActor::Service(service), control));
                 None
             }
+            ServiceOutput::Event(actor, event) => match actor {
+                ServiceControlActor::Controller => Some(Output::Ext(ExtOut::ServicesEvent(event))),
+            },
             ServiceOutput::BroadcastWorkers(to) => Some(Output::Event(LogicEvent::Service(service, to))),
         }
     }

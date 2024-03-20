@@ -21,24 +21,24 @@ const WAIT_DISCONNECT_MS: u64 = 60_000; //60 seconds
 pub const SERVICE_ID: u8 = 0;
 pub const SERVICE_NAME: &str = "manual_discovery";
 
-fn kv_control<TW>(c: KvControl) -> ServiceOutput<FeaturesControl, TW> {
+fn kv_control<SE, TW>(c: KvControl) -> ServiceOutput<FeaturesControl, SE, TW> {
     ServiceOutput::FeatureControl(FeaturesControl::DhtKv(c))
 }
 
-fn neighbour_control<TW>(c: NeighbourControl) -> ServiceOutput<FeaturesControl, TW> {
+fn neighbour_control<SE, TW>(c: NeighbourControl) -> ServiceOutput<FeaturesControl, SE, TW> {
     ServiceOutput::FeatureControl(FeaturesControl::Neighbours(c))
 }
 
-pub struct ManualDiscoveryService<TC, TW> {
-    queue: VecDeque<ServiceOutput<FeaturesControl, TW>>,
+pub struct ManualDiscoveryService<SC, SE, TC, TW> {
+    queue: VecDeque<ServiceOutput<FeaturesControl, SE, TW>>,
     nodes: HashMap<NodeId, NodeAddr>,
     conns: HashMap<NodeId, Vec<ConnId>>,
     removing_list: HashMap<NodeId, u64>,
     last_retry_ms: u64,
-    _tmp: std::marker::PhantomData<(TC, TW)>,
+    _tmp: std::marker::PhantomData<(SC, TC, TW)>,
 }
 
-impl<TC, TW> ManualDiscoveryService<TC, TW> {
+impl<SC, SE, TC, TW> ManualDiscoveryService<SC, SE, TC, TW> {
     pub fn new(node_addr: NodeAddr, local_tags: Vec<String>, connect_tags: Vec<String>) -> Self {
         log::info!("Creating ManualDiscoveryService for node {node_addr} with local tags {local_tags:?} and connect tags {connect_tags:?}");
 
@@ -92,7 +92,7 @@ impl<TC, TW> ManualDiscoveryService<TC, TW> {
     }
 }
 
-impl<TC: Debug, TW: Debug> Service<FeaturesControl, FeaturesEvent, TC, TW> for ManualDiscoveryService<TC, TW> {
+impl<SC, SE, TC: Debug, TW: Debug> Service<FeaturesControl, FeaturesEvent, SC, SE, TC, TW> for ManualDiscoveryService<SC, SE, TC, TW> {
     fn service_id(&self) -> u8 {
         SERVICE_ID
     }
@@ -121,7 +121,7 @@ impl<TC: Debug, TW: Debug> Service<FeaturesControl, FeaturesEvent, TC, TW> for M
         }
     }
 
-    fn on_input(&mut self, now: u64, input: ServiceInput<FeaturesEvent, TC>) {
+    fn on_input(&mut self, now: u64, input: ServiceInput<FeaturesEvent, SC, TC>) {
         match input {
             ServiceInput::FeatureEvent(FeaturesEvent::DhtKv(KvEvent::MapEvent(map, event))) => match event {
                 MapEvent::OnSet(_, source, value) => {
@@ -147,14 +147,14 @@ impl<TC: Debug, TW: Debug> Service<FeaturesControl, FeaturesEvent, TC, TW> for M
         }
     }
 
-    fn pop_output(&mut self) -> Option<ServiceOutput<FeaturesControl, TW>> {
+    fn pop_output(&mut self) -> Option<ServiceOutput<FeaturesControl, SE, TW>> {
         self.queue.pop_front()
     }
 }
 
 pub struct ManualDiscoveryServiceWorker {}
 
-impl<TC, TW> ServiceWorker<FeaturesControl, FeaturesEvent, TC, TW> for ManualDiscoveryServiceWorker {
+impl<SE, TC, TW> ServiceWorker<FeaturesControl, FeaturesEvent, SE, TC, TW> for ManualDiscoveryServiceWorker {
     fn service_id(&self) -> u8 {
         SERVICE_ID
     }
@@ -164,14 +164,14 @@ impl<TC, TW> ServiceWorker<FeaturesControl, FeaturesEvent, TC, TW> for ManualDis
     }
 }
 
-pub struct ManualDiscoveryServiceBuilder<TC, TW> {
-    _tmp: std::marker::PhantomData<(TC, TW)>,
+pub struct ManualDiscoveryServiceBuilder<SC, SE, TC, TW> {
+    _tmp: std::marker::PhantomData<(SC, SE, TC, TW)>,
     node_addr: NodeAddr,
     local_tags: Vec<String>,
     connect_tags: Vec<String>,
 }
 
-impl<TC, TW> ManualDiscoveryServiceBuilder<TC, TW> {
+impl<SC, SE, TC, TW> ManualDiscoveryServiceBuilder<SC, SE, TC, TW> {
     pub fn new(node_addr: NodeAddr, local_tags: Vec<String>, connect_tags: Vec<String>) -> Self {
         Self {
             _tmp: std::marker::PhantomData,
@@ -182,7 +182,13 @@ impl<TC, TW> ManualDiscoveryServiceBuilder<TC, TW> {
     }
 }
 
-impl<TC: 'static + Debug + Send + Sync, TW: 'static + Debug + Send + Sync> ServiceBuilder<FeaturesControl, FeaturesEvent, TC, TW> for ManualDiscoveryServiceBuilder<TC, TW> {
+impl<SC, SE, TC, TW> ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW> for ManualDiscoveryServiceBuilder<SC, SE, TC, TW>
+where
+    SC: 'static + Debug + Send + Sync,
+    SE: 'static + Debug + Send + Sync,
+    TC: 'static + Debug + Send + Sync,
+    TW: 'static + Debug + Send + Sync,
+{
     fn service_id(&self) -> u8 {
         SERVICE_ID
     }
@@ -191,11 +197,11 @@ impl<TC: 'static + Debug + Send + Sync, TW: 'static + Debug + Send + Sync> Servi
         SERVICE_NAME
     }
 
-    fn create(&self) -> Box<dyn Service<FeaturesControl, FeaturesEvent, TC, TW>> {
+    fn create(&self) -> Box<dyn Service<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>> {
         Box::new(ManualDiscoveryService::new(self.node_addr.clone(), self.local_tags.clone(), self.connect_tags.clone()))
     }
 
-    fn create_worker(&self) -> Box<dyn ServiceWorker<FeaturesControl, FeaturesEvent, TC, TW>> {
+    fn create_worker(&self) -> Box<dyn ServiceWorker<FeaturesControl, FeaturesEvent, SE, TC, TW>> {
         Box::new(ManualDiscoveryServiceWorker {})
     }
 }
@@ -223,19 +229,19 @@ mod test {
         builder.addr()
     }
 
-    fn map_cmd<TC>(map: Map, control: MapControl) -> ServiceOutput<FeaturesControl, TC> {
+    fn map_cmd<SE, TC>(map: Map, control: MapControl) -> ServiceOutput<FeaturesControl, SE, TC> {
         ServiceOutput::FeatureControl(FeaturesControl::DhtKv(dht_kv::Control::MapCmd(map, control)))
     }
 
-    fn map_event<TC>(map: Map, event: dht_kv::MapEvent) -> ServiceInput<FeaturesEvent, TC> {
+    fn map_event<SC, TC>(map: Map, event: dht_kv::MapEvent) -> ServiceInput<FeaturesEvent, SC, TC> {
         ServiceInput::FeatureEvent(FeaturesEvent::DhtKv(dht_kv::Event::MapEvent(map, event)))
     }
 
-    fn neighbour_cmd<TC>(control: neighbours::Control) -> ServiceOutput<FeaturesControl, TC> {
+    fn neighbour_cmd<SE, TC>(control: neighbours::Control) -> ServiceOutput<FeaturesControl, SE, TC> {
         ServiceOutput::FeatureControl(FeaturesControl::Neighbours(control))
     }
 
-    fn neighbour_event<TC>(event: neighbours::Event) -> ServiceInput<FeaturesEvent, TC> {
+    fn neighbour_event<SC, TC>(event: neighbours::Event) -> ServiceInput<FeaturesEvent, SC, TC> {
         ServiceInput::FeatureEvent(FeaturesEvent::Neighbours(event))
     }
 
@@ -244,7 +250,7 @@ mod test {
         let addr1 = node_addr(100);
         let addr2 = node_addr(101);
 
-        let mut service = ManualDiscoveryService::<(), ()>::new(addr1.clone(), vec!["local".into()], vec!["connect".into()]);
+        let mut service = ManualDiscoveryService::<(), (), (), ()>::new(addr1.clone(), vec!["local".into()], vec!["connect".into()]);
         let local_map = Map(hash_str("local"));
         let connect_map = Map(hash_str("connect"));
 
@@ -260,7 +266,7 @@ mod test {
         let addr1 = node_addr(100);
         let addr2 = node_addr(101);
 
-        let mut service = ManualDiscoveryService::<(), ()>::new(addr1.clone(), vec!["local".into()], vec!["connect".into()]);
+        let mut service = ManualDiscoveryService::<(), (), (), ()>::new(addr1.clone(), vec!["local".into()], vec!["connect".into()]);
         let local_map = Map(hash_str("local"));
         let connect_map = Map(hash_str("connect"));
 
@@ -293,7 +299,7 @@ mod test {
         let addr1 = node_addr(100);
         let addr2 = node_addr(101);
 
-        let mut service = ManualDiscoveryService::<(), ()>::new(addr1.clone(), vec!["local".into()], vec!["connect".into()]);
+        let mut service = ManualDiscoveryService::<(), (), (), ()>::new(addr1.clone(), vec!["local".into()], vec!["connect".into()]);
         let local_map = Map(hash_str("local"));
         let connect_map = Map(hash_str("connect"));
 
