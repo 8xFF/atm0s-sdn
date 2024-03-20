@@ -116,15 +116,19 @@ impl Feature<Control, Event, ToController, ToWorker> for RouterSyncFeature {
                 RouterDelta::Table(layer, TableDelta(index, DestDelta::DelBestPath)) => ShadowRouterDelta::DelTable { layer, index },
                 RouterDelta::Registry(RegistryDelta::SetServiceLocal(service)) => ShadowRouterDelta::SetServiceLocal { service },
                 RouterDelta::Registry(RegistryDelta::DelServiceLocal(service)) => ShadowRouterDelta::DelServiceLocal { service },
-                RouterDelta::Registry(RegistryDelta::ServiceRemote(service, RegistryDestDelta::SetServicePath(conn, dest, score))) => ShadowRouterDelta::SetServiceRemote {
-                    service,
-                    next: self.conns.get(&conn)?.1,
-                    dest,
-                    score,
-                },
+                RouterDelta::Registry(RegistryDelta::ServiceRemote(service, RegistryDestDelta::SetServicePath(conn, dest, score))) => {
+                    let conn = self.conns.get(&conn)?;
+                    ShadowRouterDelta::SetServiceRemote {
+                        service,
+                        conn: conn.1,
+                        next: conn.0,
+                        dest,
+                        score,
+                    }
+                }
                 RouterDelta::Registry(RegistryDelta::ServiceRemote(service, RegistryDestDelta::DelServicePath(conn))) => ShadowRouterDelta::DelServiceRemote {
                     service,
-                    next: self.conns.get(&conn)?.1,
+                    conn: self.conns.get(&conn)?.1,
                 },
             };
             return Some(FeatureOutput::ToWorkers(rule));

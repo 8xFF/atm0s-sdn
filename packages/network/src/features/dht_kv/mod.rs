@@ -8,7 +8,7 @@
 
 use atm0s_sdn_identity::NodeId;
 
-use crate::base::{Feature, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker};
+use crate::base::{Feature, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker, Ttl};
 
 use self::{
     internal::InternalOutput,
@@ -127,7 +127,7 @@ impl Feature<Control, Event, ToController, ToWorker> for DhtKvFeature {
     fn pop_output<'a>(&mut self) -> Option<FeatureOutput<Event, ToWorker>> {
         match self.internal.pop_action()? {
             InternalOutput::Local(service, event) => Some(FeatureOutput::Event(service, event)),
-            InternalOutput::Remote(rule, cmd) => Some(FeatureOutput::SendRoute(rule, bincode::serialize(&cmd).expect("Should to bytes"))),
+            InternalOutput::Remote(rule, cmd) => Some(FeatureOutput::SendRoute(rule, Ttl::default(), bincode::serialize(&cmd).expect("Should to bytes"))),
         }
     }
 }

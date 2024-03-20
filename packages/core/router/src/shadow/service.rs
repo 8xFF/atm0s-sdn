@@ -5,17 +5,22 @@ use atm0s_sdn_identity::NodeId;
 use crate::ServiceBroadcastLevel;
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct ServiceConn<Remote>(pub(crate) Remote, pub(crate) NodeId, pub(crate) u32);
+pub struct ServiceConn<Remote> {
+    pub(crate) conn: Remote,
+    pub(crate) next: NodeId,
+    pub(crate) dest: NodeId,
+    pub(crate) score: u32,
+}
 
 impl<Remote: Eq + PartialEq> Ord for ServiceConn<Remote> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.2.cmp(&other.2)
+        self.score.cmp(&other.score)
     }
 }
 
 impl<Remote: Eq + PartialEq> PartialOrd for ServiceConn<Remote> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.2.cmp(&other.2))
+        Some(self.score.cmp(&other.score))
     }
 }
 
@@ -29,38 +34,44 @@ impl<Remote: Debug + Hash + Copy + Eq + PartialEq> Service<Remote> {
     }
 
     /// Add a new destination to the service, if Remote allready exists, it will be replaced
-    pub fn set_conn(&mut self, conn: Remote, dest: NodeId, score: u32) {
-        let index = self.dests.iter().position(|x| x.0 == conn);
+    pub fn set_conn(&mut self, conn: Remote, next: NodeId, dest: NodeId, score: u32) {
+        let index = self.dests.iter().position(|x| x.conn == conn);
         if let Some(index) = index {
-            self.dests[index] = ServiceConn(conn, dest, score);
+            self.dests[index] = ServiceConn { conn, next, dest, score };
         } else {
-            self.dests.push(ServiceConn(conn, dest, score));
+            self.dests.push(ServiceConn { conn, next, dest, score });
         }
         self.dests.sort();
     }
 
     /// Remove a destination from the service
     pub fn del_conn(&mut self, conn: Remote) {
-        self.dests.retain(|x| x.0 != conn);
+        self.dests.retain(|x| x.conn != conn);
     }
 
     pub fn best_conn(&self) -> Option<Remote> {
-        self.dests.first().map(|x| x.0)
+        self.dests.first().map(|x| x.conn)
     }
 
     /// Get all unique destinations
-    pub fn broadcast_dests(&self, node_id: NodeId, level: ServiceBroadcastLevel) -> Option<Vec<Remote>> {
+    /// If relay_from is Some, it will not return the relay_from node connection
+    pub fn broadcast_dests(&self, node_id: NodeId, level: ServiceBroadcastLevel, relay_from: Option<NodeId>) -> Option<Vec<Remote>> {
         if self.dests.is_empty() {
             return None;
         }
         let mut remotes = vec![];
         let mut dests = HashMap::new();
         for dest in &self.dests {
-            if dests.contains_key(&dest.1) || !level.same_level(node_id, dest.2) {
+            if dests.contains_key(&dest.dest) || !level.same_level(node_id, dest.dest) {
                 continue;
             }
-            dests.insert(dest.1, ());
-            remotes.push(dest.0);
+            if let Some(relay_from) = &relay_from {
+                if dest.next == *relay_from {
+                    continue;
+                }
+            }
+            dests.insert(dest.dest, ());
+            remotes.push(dest.conn);
         }
         Some(remotes)
     }

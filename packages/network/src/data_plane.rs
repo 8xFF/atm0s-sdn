@@ -10,7 +10,7 @@ use atm0s_sdn_router::{shadow::ShadowRouter, RouteAction, RouteRule, RouterTable
 use crate::{
     base::{
         FeatureControlActor, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer, GenericBufferMut, NeighboursControl, ServiceBuilder, ServiceControlActor, ServiceId,
-        ServiceWorkerInput, ServiceWorkerOutput, TransportMsg, TransportMsgHeader,
+        ServiceWorkerInput, ServiceWorkerOutput, TransportMsg, TransportMsgHeader, Ttl,
     },
     features::{Features, FeaturesControl, FeaturesEvent, FeaturesToController},
     san_io_utils::TasksSwitcher,
@@ -25,7 +25,7 @@ mod services;
 
 #[derive(Debug)]
 pub enum NetInput<'a> {
-    UdpPacket(SocketAddr, GenericBuffer<'a>),
+    UdpPacket(SocketAddr, GenericBufferMut<'a>),
     TunPacket(GenericBufferMut<'a>),
 }
 
@@ -92,8 +92,8 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
         }
     }
 
-    pub fn route(&self, rule: RouteRule) -> RouteAction<SocketAddr> {
-        self.ctx.router.derive_action(&rule)
+    pub fn route(&self, rule: RouteRule, relay_from: Option<NodeId>) -> RouteAction<SocketAddr> {
+        self.ctx.router.derive_action(&rule, relay_from)
     }
 
     pub fn on_tick<'a>(&mut self, now_ms: u64) {
@@ -133,9 +133,9 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 let msg = TransportMsg::build(feature as u8, 0, RouteRule::Direct, &buf);
                 Some(NetOutput::UdpPacket(*addr, msg.take().into()).into())
             }
-            Input::Event(LogicEvent::NetRoute(feature, rule, buf)) => self.outgoing_route(now_ms, feature, rule, buf),
-            Input::Event(LogicEvent::Pin(conn, addr, secure)) => {
-                self.conns.insert(addr, DataPlaneConnection::new(conn, addr, secure));
+            Input::Event(LogicEvent::NetRoute(feature, rule, ttl, buf)) => self.outgoing_route(now_ms, feature, rule, ttl, buf),
+            Input::Event(LogicEvent::Pin(conn, node, addr, secure)) => {
+                self.conns.insert(addr, DataPlaneConnection::new(node, conn, addr, secure));
                 self.conns_reverse.insert(conn, addr);
                 None
             }
@@ -200,24 +200,34 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
         }
     }
 
-    fn incoming_route<'a>(&mut self, now_ms: u64, remote: SocketAddr, buf: GenericBuffer<'a>) -> Option<Output<'a, SE, TC>> {
+    fn incoming_route<'a>(&mut self, now_ms: u64, remote: SocketAddr, mut buf: GenericBufferMut<'a>) -> Option<Output<'a, SE, TC>> {
+        let conn = self.conns.get(&remote)?;
         let (header, header_len) = TransportMsgHeader::from_bytes(&buf).ok()?;
-        match self.ctx.router.derive_action(&header.route) {
+        let action = self.ctx.router.derive_action(&header.route, Some(conn.node()));
+        log::debug!("Incoming rule: {:?} from: {remote} => action {:?}", header.route, action);
+        match action {
             RouteAction::Reject => None,
             RouteAction::Local => {
-                let conn = self.conns.get(&remote)?;
                 let feature = header.feature.try_into().ok()?;
-                let out = self.features.on_network_raw(&mut self.ctx, feature, now_ms, conn.conn(), header_len, buf)?;
+                let out = self.features.on_network_raw(&mut self.ctx, feature, now_ms, conn.conn(), header_len, buf.to_readonly())?;
                 Some(self.convert_features(now_ms, feature, out))
             }
-            RouteAction::Next(remote) => Some(NetOutput::UdpPacket(remote, buf).into()),
+            RouteAction::Next(remote) => {
+                if !TransportMsgHeader::decrease_ttl(&mut buf) {
+                    log::debug!("TTL is 0, drop packet");
+                }
+                Some(NetOutput::UdpPacket(remote, buf.to_readonly()).into())
+            }
             RouteAction::Broadcast(local, remotes) => {
+                if !TransportMsgHeader::decrease_ttl(&mut buf) {
+                    log::debug!("TTL is 0, drop packet");
+                    return None;
+                }
+                let buf = buf.to_readonly();
                 if local {
-                    if let Some(conn) = self.conns.get(&remote) {
-                        if let Ok(feature) = header.feature.try_into() {
-                            if let Some(out) = self.features.on_network_raw(&mut self.ctx, feature, now_ms, conn.conn(), header_len, buf.clone()) {
-                                self.queue_output.push_back(QueueOutput::Feature(feature, out.owned()));
-                            }
+                    if let Ok(feature) = header.feature.try_into() {
+                        if let Some(out) = self.features.on_network_raw(&mut self.ctx, feature, now_ms, conn.conn(), header_len, buf.clone()) {
+                            self.queue_output.push_back(QueueOutput::Feature(feature, out.owned()));
                         }
                     }
                 }
@@ -226,8 +236,8 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
         }
     }
 
-    fn outgoing_route<'a>(&mut self, now_ms: u64, feature: Features, rule: RouteRule, buf: Vec<u8>) -> Option<Output<'a, SE, TC>> {
-        match self.ctx.router.derive_action(&rule) {
+    fn outgoing_route<'a>(&mut self, now_ms: u64, feature: Features, rule: RouteRule, ttl: Ttl, buf: Vec<u8>) -> Option<Output<'a, SE, TC>> {
+        match self.ctx.router.derive_action(&rule, None) {
             RouteAction::Reject => {
                 log::debug!("[DataPlane] route rule {:?} is rejected", rule);
                 None
@@ -239,13 +249,15 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
             }
             RouteAction::Next(remote) => {
                 log::debug!("[DataPlane] route rule {:?} is go with remote {remote}", rule);
-                let msg = TransportMsg::build(feature as u8, 0, rule, &buf);
+                let header = TransportMsgHeader::build(feature as u8, 0, rule).set_ttl(*ttl);
+                let msg = TransportMsg::build_raw(header, &buf);
                 Some(NetOutput::UdpPacket(remote, msg.take().into()).into())
             }
             RouteAction::Broadcast(local, remotes) => {
-                log::debug!("[DataPlane] route rule {:?} is go with loca {local} and remotes {:?}", rule, remotes);
+                log::debug!("[DataPlane] route rule {:?} is go with local {local} and remotes {:?}", rule, remotes);
 
-                let msg = TransportMsg::build(feature as u8, 0, rule, &buf);
+                let header = TransportMsgHeader::build(feature as u8, 0, rule).set_ttl(*ttl);
+                let msg = TransportMsg::build_raw(header, &buf);
                 if local {
                     if let Some(out) = self.features.on_input(&mut self.ctx, feature, now_ms, FeatureWorkerInput::Local(buf.into())) {
                         self.queue_output.push_back(QueueOutput::Feature(feature, out.owned()));
@@ -281,9 +293,9 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                     Output::Continue
                 }
             }
-            FeatureWorkerOutput::SendRoute(rule, buf) => {
+            FeatureWorkerOutput::SendRoute(rule, ttl, buf) => {
                 log::info!("SendRoute: {:?}", rule);
-                if let Some(out) = self.outgoing_route(now_ms, feature, rule, buf) {
+                if let Some(out) = self.outgoing_route(now_ms, feature, rule, ttl, buf) {
                     out
                 } else {
                     Output::Continue

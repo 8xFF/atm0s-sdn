@@ -4,7 +4,7 @@ use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_router::RouteRule;
 use serde::{Deserialize, Serialize};
 
-use crate::base::{Feature, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker};
+use crate::base::{Feature, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker, Ttl};
 
 pub const FEATURE_ID: u8 = 1;
 pub const FEATURE_NAME: &str = "data_transfer";
@@ -12,7 +12,7 @@ pub const FEATURE_NAME: &str = "data_transfer";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Control {
     Ping(NodeId),
-    SendRule(RouteRule, Vec<u8>),
+    SendRule(RouteRule, Ttl, Vec<u8>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,15 +97,15 @@ impl Feature<Control, Event, ToController, ToWorker> for DataFeature {
                     })
                     .expect("should work");
                     let rule = RouteRule::ToNode(dest);
-                    self.queue.push_back(FeatureOutput::SendRoute(rule, msg.into()));
+                    self.queue.push_back(FeatureOutput::SendRoute(rule, Ttl::default(), msg.into()));
                 }
-                Control::SendRule(rule, data) => {
+                Control::SendRule(rule, ttl, data) => {
                     let data = match actor {
                         FeatureControlActor::Controller => DataMsg::DataController { data },
                         FeatureControlActor::Service(service) => DataMsg::DataService { service: *service, data },
                     };
                     let msg = bincode::serialize(&data).expect("should work");
-                    self.queue.push_back(FeatureOutput::SendRoute(rule, msg.into()));
+                    self.queue.push_back(FeatureOutput::SendRoute(rule, ttl, msg.into()));
                 }
             },
             FeatureInput::Net(_, buf) | FeatureInput::Local(buf) => {
@@ -122,7 +122,7 @@ impl Feature<Control, Event, ToController, ToWorker> for DataFeature {
                             log::info!("[DataFeature] Got ping from: {}", from);
                             let msg = bincode::serialize(&DataMsg::Pong { id, ts }).expect("should work");
                             let rule = RouteRule::ToNode(from);
-                            self.queue.push_back(FeatureOutput::SendRoute(rule, msg.into()));
+                            self.queue.push_back(FeatureOutput::SendRoute(rule, Ttl::default(), msg.into()));
                         }
                         DataMsg::DataController { data } => {
                             self.queue.push_back(FeatureOutput::Event(FeatureControlActor::Controller, Event::Recv(data)));

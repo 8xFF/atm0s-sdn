@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 use atm0s_sdn_router::{shadow::ShadowRouter, RouteRule};
 
-use super::{ConnectionCtx, ConnectionEvent, GenericBuffer, GenericBufferMut, ServiceId};
+use super::{ConnectionCtx, ConnectionEvent, GenericBuffer, GenericBufferMut, ServiceId, Ttl};
 
 ///
 ///
@@ -33,7 +33,7 @@ pub enum FeatureOutput<Event, ToWorker> {
     ToWorkers(ToWorker),
     Event(FeatureControlActor, Event),
     SendDirect(ConnId, Vec<u8>),
-    SendRoute(RouteRule, Vec<u8>),
+    SendRoute(RouteRule, Ttl, Vec<u8>),
     NeighboursConnectTo(NodeAddr),
     NeighboursDisconnectFrom(NodeId),
 }
@@ -48,7 +48,7 @@ impl<'a, Event, ToWorker> FeatureOutput<Event, ToWorker> {
             FeatureOutput::ToWorkers(to) => FeatureOutput::ToWorkers(to.into()),
             FeatureOutput::Event(actor, event) => FeatureOutput::Event(actor, event.into()),
             FeatureOutput::SendDirect(conn, msg) => FeatureOutput::SendDirect(conn, msg),
-            FeatureOutput::SendRoute(rule, buf) => FeatureOutput::SendRoute(rule, buf),
+            FeatureOutput::SendRoute(rule, ttl, buf) => FeatureOutput::SendRoute(rule, ttl, buf),
             FeatureOutput::NeighboursConnectTo(addr) => FeatureOutput::NeighboursConnectTo(addr),
             FeatureOutput::NeighboursDisconnectFrom(id) => FeatureOutput::NeighboursDisconnectFrom(id),
         }
@@ -82,7 +82,7 @@ pub enum FeatureWorkerOutput<'a, Control, Event, ToController> {
     ToController(ToController),
     Event(FeatureControlActor, Event),
     SendDirect(ConnId, Vec<u8>),
-    SendRoute(RouteRule, Vec<u8>),
+    SendRoute(RouteRule, Ttl, Vec<u8>),
     RawDirect(ConnId, GenericBuffer<'a>),
     RawBroadcast(Vec<ConnId>, GenericBuffer<'a>),
     RawDirect2(SocketAddr, GenericBuffer<'a>),
@@ -104,7 +104,7 @@ impl<'a, Control, Event, ToController> FeatureWorkerOutput<'a, Control, Event, T
             FeatureWorkerOutput::ToController(to) => FeatureWorkerOutput::ToController(to.into()),
             FeatureWorkerOutput::Event(actor, event) => FeatureWorkerOutput::Event(actor, event.into()),
             FeatureWorkerOutput::SendDirect(conn, buf) => FeatureWorkerOutput::SendDirect(conn, buf),
-            FeatureWorkerOutput::SendRoute(route, buf) => FeatureWorkerOutput::SendRoute(route, buf),
+            FeatureWorkerOutput::SendRoute(route, ttl, buf) => FeatureWorkerOutput::SendRoute(route, ttl, buf),
             FeatureWorkerOutput::RawDirect(conn, buf) => FeatureWorkerOutput::RawDirect(conn, buf),
             FeatureWorkerOutput::RawBroadcast(conns, buf) => FeatureWorkerOutput::RawBroadcast(conns, buf),
             FeatureWorkerOutput::RawDirect2(conn, buf) => FeatureWorkerOutput::RawDirect2(conn, buf),
@@ -121,7 +121,7 @@ impl<'a, Control, Event, ToController> FeatureWorkerOutput<'a, Control, Event, T
             FeatureWorkerOutput::ToController(to) => FeatureWorkerOutput::ToController(to),
             FeatureWorkerOutput::Event(actor, event) => FeatureWorkerOutput::Event(actor, event),
             FeatureWorkerOutput::SendDirect(conn, buf) => FeatureWorkerOutput::SendDirect(conn, buf),
-            FeatureWorkerOutput::SendRoute(route, buf) => FeatureWorkerOutput::SendRoute(route, buf),
+            FeatureWorkerOutput::SendRoute(route, ttl, buf) => FeatureWorkerOutput::SendRoute(route, ttl, buf),
             FeatureWorkerOutput::RawDirect(conn, buf) => FeatureWorkerOutput::RawDirect(conn, buf.owned()),
             FeatureWorkerOutput::RawBroadcast(conns, buf) => FeatureWorkerOutput::RawBroadcast(conns, buf.owned()),
             FeatureWorkerOutput::RawDirect2(conn, buf) => FeatureWorkerOutput::RawDirect2(conn, buf.owned()),

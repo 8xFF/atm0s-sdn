@@ -4,6 +4,7 @@
 //!
 
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::{collections::VecDeque, net::IpAddr};
@@ -67,13 +68,15 @@ impl Drop for AutoContext {
     }
 }
 
+#[derive(Debug)]
 pub enum TestNodeIn<'a, SC> {
     Ext(ExtIn<SC>),
-    Udp(SocketAddr, GenericBuffer<'a>),
+    Udp(SocketAddr, GenericBufferMut<'a>),
     #[allow(unused)]
     Tun(GenericBufferMut<'a>),
 }
 
+#[derive(Debug)]
 pub enum TestNodeOut<'a, SE> {
     Ext(ExtOut<SE>),
     Udp(Vec<SocketAddr>, GenericBuffer<'a>),
@@ -187,11 +190,11 @@ impl<SC, SE, TC, TW> TestNode<SC, SE, TC, TW> {
     }
 }
 
-fn addr_to_node(addr: SocketAddr) -> NodeId {
+pub fn addr_to_node(addr: SocketAddr) -> NodeId {
     addr.port() as u32
 }
 
-fn node_to_addr(node: NodeId) -> SocketAddr {
+pub fn node_to_addr(node: NodeId) -> SocketAddr {
     SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), node as u16)
 }
 
@@ -203,7 +206,7 @@ pub struct NetworkSimulator<SC, SE, TC: Clone, TW: Clone> {
     nodes_index: HashMap<NodeId, usize>,
 }
 
-impl<SC, SE, TC: Clone, TW: Clone> NetworkSimulator<SC, SE, TC, TW> {
+impl<SC: Debug, SE, TC: Clone, TW: Clone> NetworkSimulator<SC, SE, TC, TW> {
     pub fn new(started_ms: u64) -> Self {
         Self {
             clock_ms: started_ms,
@@ -266,7 +269,7 @@ impl<SC, SE, TC: Clone, TW: Clone> NetworkSimulator<SC, SE, TC, TW> {
                 let source_addr = node_to_addr(node);
                 for dest in dests {
                     let dest_node = addr_to_node(dest);
-                    self.process_input(dest_node, TestNodeIn::Udp(source_addr, data.clone()));
+                    self.process_input(dest_node, TestNodeIn::Udp(source_addr, data.clone_mut()));
                 }
                 Some(())
             }
@@ -300,7 +303,7 @@ impl<SC, SE, TC: Clone, TW: Clone> NetworkSimulator<SC, SE, TC, TW> {
                 for dest in dests {
                     log::debug!("Send UDP packet from {} to {}, buf len {}", source_addr, dest, data.len());
                     let dest_node = addr_to_node(dest);
-                    self.process_input(dest_node, TestNodeIn::Udp(source_addr, data.clone()));
+                    self.process_input(dest_node, TestNodeIn::Udp(source_addr, data.clone_mut()));
                 }
                 Some(())
             }

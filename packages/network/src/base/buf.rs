@@ -14,6 +14,20 @@ impl<'a> GenericBuffer<'a> {
         }
     }
 
+    pub fn owned_mut(self) -> GenericBufferMut<'static> {
+        match self {
+            GenericBuffer::Ref(r) => r.to_vec().into(),
+            GenericBuffer::Vec(v) => v.into(),
+        }
+    }
+
+    pub fn clone_mut(&self) -> GenericBufferMut<'static> {
+        match self {
+            GenericBuffer::Ref(r) => r.to_vec().into(),
+            GenericBuffer::Vec(v) => v.clone().into(),
+        }
+    }
+
     pub fn sub_view(&self, range: std::ops::Range<usize>) -> GenericBuffer<'a> {
         match self {
             GenericBuffer::Ref(r) => GenericBuffer::Ref(&r[range]),

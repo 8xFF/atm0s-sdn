@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{BTreeMap, VecDeque},
     fmt::Debug,
     net::SocketAddr,
 };
@@ -9,7 +9,7 @@ use atm0s_sdn_router::{RouteRule, ServiceBroadcastLevel};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    base::{ConnectionEvent, Service, ServiceBuilder, ServiceControlActor, ServiceInput, ServiceOutput, ServiceSharedInput, ServiceWorker},
+    base::{ConnectionEvent, Service, ServiceBuilder, ServiceControlActor, ServiceInput, ServiceOutput, ServiceSharedInput, ServiceWorker, Ttl},
     features::{data, FeaturesControl, FeaturesEvent},
 };
 
@@ -18,6 +18,7 @@ pub const SERVICE_NAME: &str = "manual_discovery";
 
 const NODE_TIMEOUT_MS: u64 = 10000; // after 10 seconds of no ping, node is considered dead
 const NODE_PING_MS: u64 = 5000;
+const NODE_PING_TTL: u8 = 5;
 
 fn data_cmd<SE, TW>(cmd: data::Control) -> ServiceOutput<FeaturesControl, SE, TW> {
     ServiceOutput::FeatureControl(FeaturesControl::Data(cmd))
@@ -25,10 +26,10 @@ fn data_cmd<SE, TW>(cmd: data::Control) -> ServiceOutput<FeaturesControl, SE, TW
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConnectionInfo {
-    conn: ConnId,
-    dest: NodeId,
-    remote: SocketAddr,
-    rtt_ms: u32,
+    pub conn: ConnId,
+    pub dest: NodeId,
+    pub remote: SocketAddr,
+    pub rtt_ms: u32,
 }
 
 struct NodeInfo {
@@ -36,6 +37,7 @@ struct NodeInfo {
     conns: Vec<ConnectionInfo>,
 }
 
+#[derive(Debug)]
 pub enum Control {
     Subscribe,
     GetAll,
@@ -57,8 +59,8 @@ pub struct VisualizationService<SC, SE, TC, TW> {
     broadcast_rule: RouteRule,
     last_ping: u64,
     queue: VecDeque<ServiceOutput<FeaturesControl, SE, TW>>,
-    conns: HashMap<ConnId, ConnectionInfo>,
-    network_nodes: HashMap<NodeId, NodeInfo>,
+    conns: BTreeMap<ConnId, ConnectionInfo>,
+    network_nodes: BTreeMap<NodeId, NodeInfo>,
     subscribers: Vec<ServiceControlActor>,
     _tmp: std::marker::PhantomData<(SC, TC, TW)>,
 }
@@ -69,8 +71,8 @@ impl<SC, SE, TC, TW> VisualizationService<SC, SE, TC, TW> {
             node_id,
             broadcast_rule: RouteRule::ToServices(SERVICE_ID, ServiceBroadcastLevel::Global),
             last_ping: 0,
-            conns: HashMap::new(),
-            network_nodes: HashMap::new(),
+            conns: BTreeMap::new(),
+            network_nodes: BTreeMap::new(),
             queue: VecDeque::new(),
             subscribers: Vec::new(),
             _tmp: std::marker::PhantomData,
@@ -97,6 +99,7 @@ where
                 let mut to_remove = Vec::new();
                 for (node, info) in self.network_nodes.iter() {
                     if now >= NODE_TIMEOUT_MS + info.last_ping_ms {
+                        log::debug!("[Visualization] Node {} is dead after timeout {NODE_TIMEOUT_MS} ms", node);
                         to_remove.push(*node);
                     }
                 }
@@ -105,13 +108,18 @@ where
                 }
 
                 if now >= self.last_ping + NODE_PING_MS {
+                    log::debug!("[Visualization] Sending Snapshot to master with interval {NODE_PING_MS} ms with {} conns", self.conns.len());
                     self.last_ping = now;
                     let msg = Message::Snapshot(self.node_id, self.conns.values().cloned().collect::<Vec<_>>());
-                    self.queue
-                        .push_back(data_cmd(data::Control::SendRule(self.broadcast_rule.clone(), bincode::serialize(&msg).expect("Should to bytes"))));
+                    self.queue.push_back(data_cmd(data::Control::SendRule(
+                        self.broadcast_rule.clone(),
+                        Ttl(NODE_PING_TTL),
+                        bincode::serialize(&msg).expect("Should to bytes"),
+                    )));
                 }
             }
             ServiceSharedInput::Connection(ConnectionEvent::Connected(ctx, _)) => {
+                log::info!("[Visualization] New connection from {} to {}, set default rtt_ms to 1000ms", ctx.remote, ctx.node);
                 self.conns.insert(
                     ctx.conn,
                     ConnectionInfo {
@@ -123,6 +131,7 @@ where
                 );
             }
             ServiceSharedInput::Connection(ConnectionEvent::Stats(ctx, stats)) => {
+                log::debug!("[Visualization] Update rtt_ms for connection from {} to {} to {}ms", ctx.remote, ctx.node, stats.rtt_ms);
                 let entry = self.conns.entry(ctx.conn).or_insert(ConnectionInfo {
                     conn: ctx.conn,
                     dest: ctx.node,
@@ -132,6 +141,7 @@ where
                 entry.rtt_ms = stats.rtt_ms;
             }
             ServiceSharedInput::Connection(ConnectionEvent::Disconnected(ctx)) => {
+                log::info!("[Visualization] Connection from {} to {} is disconnected", ctx.remote, ctx.node);
                 self.conns.remove(&ctx.conn);
             }
         }
@@ -143,6 +153,7 @@ where
                 if let Ok(msg) = bincode::deserialize::<Message>(&buf) {
                     match msg {
                         Message::Snapshot(from, conns) => {
+                            log::debug!("[Visualization] Got snapshot from {} with {} connections", from, conns.len());
                             for sub in self.subscribers.iter() {
                                 self.queue.push_back(ServiceOutput::Event(*sub, Event::NodeChanged(from, conns.clone()).into()));
                             }
@@ -152,15 +163,20 @@ where
                 }
             }
             ServiceInput::Control(actor, control) => {
+                let mut push_all = || {
+                    let all = self.network_nodes.iter().map(|(k, v)| (*k, v.conns.clone())).collect();
+                    self.queue.push_back(ServiceOutput::Event(actor, Event::GotAll(all).into()));
+                };
                 if let Ok(control) = control.try_into() {
                     match control {
                         Control::GetAll => {
-                            let all = self.network_nodes.iter().map(|(k, v)| (*k, v.conns.clone())).collect();
-                            self.queue.push_back(ServiceOutput::Event(actor, Event::GotAll(all).into()));
+                            push_all();
                         }
                         Control::Subscribe => {
                             if !self.subscribers.contains(&actor) {
                                 self.subscribers.push(actor);
+                                log::info!("[Visualization] New subscriber, sending snapshot with {} nodes", self.network_nodes.len());
+                                push_all();
                             }
                         }
                     }
@@ -239,12 +255,12 @@ mod test {
     use atm0s_sdn_router::{RouteRule, ServiceBroadcastLevel};
 
     use crate::{
-        base::{ConnectionCtx, ConnectionEvent, SecureContext, Service, ServiceInput, ServiceSharedInput},
+        base::{ConnectionCtx, ConnectionEvent, SecureContext, Service, ServiceInput, ServiceSharedInput, Ttl},
         features::{
             data::{Control as DataControl, Event as DataEvent},
             FeaturesEvent,
         },
-        services::visualization::{data_cmd, Message, NODE_PING_MS, NODE_TIMEOUT_MS},
+        services::visualization::{data_cmd, Message, NODE_PING_MS, NODE_PING_TTL, NODE_TIMEOUT_MS},
     };
 
     use super::{Control, Event, VisualizationService, SERVICE_ID};
@@ -286,6 +302,7 @@ mod test {
             service.pop_output(),
             Some(data_cmd(DataControl::SendRule(
                 RouteRule::ToServices(SERVICE_ID, ServiceBroadcastLevel::Global),
+                Ttl(NODE_PING_TTL),
                 bincode::serialize(&Message::Snapshot(node_id, vec![])).expect("Should to bytes")
             )))
         );

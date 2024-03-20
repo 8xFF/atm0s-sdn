@@ -198,7 +198,7 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
                 self.features.on_shared_input(now_ms, FeatureSharedInput::Connection(event.clone()));
                 self.services.on_shared_input(now_ms, ServiceSharedInput::Connection(event.clone()));
                 match event {
-                    ConnectionEvent::Connected(ctx, secure) => Some(Output::Event(LogicEvent::Pin(ctx.conn, ctx.remote, secure))),
+                    ConnectionEvent::Connected(ctx, secure) => Some(Output::Event(LogicEvent::Pin(ctx.conn, ctx.node, ctx.remote, secure))),
                     ConnectionEvent::Stats(_ctx, _stats) => None,
                     ConnectionEvent::Disconnected(ctx) => Some(Output::Event(LogicEvent::UnPin(ctx.conn))),
                 }
@@ -225,9 +225,9 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
                 log::debug!("[ControllerPlane] SendDirect to conn: {:?}, len: {}", conn, buf.len());
                 Some(Output::Event(LogicEvent::NetDirect(feature, conn, buf)))
             }
-            FeatureOutput::SendRoute(rule, buf) => {
+            FeatureOutput::SendRoute(rule, ttl, buf) => {
                 log::debug!("[ControllerPlane] SendRoute to rule: {:?}, len: {}", rule, buf.len());
-                Some(Output::Event(LogicEvent::NetRoute(feature, rule, buf)))
+                Some(Output::Event(LogicEvent::NetRoute(feature, rule, ttl, buf)))
             }
             FeatureOutput::NeighboursConnectTo(addr) => {
                 //TODO may be we need stack style for optimize performance

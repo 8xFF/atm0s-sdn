@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 
-#[derive(Deserialize, Serialize, Copy, Clone)]
+#[derive(Deserialize, Serialize, Copy, Clone, Ord)]
 pub struct ConnId {
     value: u64,
 }
@@ -111,6 +111,12 @@ impl Debug for ConnId {
 impl PartialEq<Self> for ConnId {
     fn eq(&self, other: &Self) -> bool {
         self.value.eq(&other.value)
+    }
+}
+
+impl PartialOrd<Self> for ConnId {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.value.partial_cmp(&other.value)
     }
 }
 

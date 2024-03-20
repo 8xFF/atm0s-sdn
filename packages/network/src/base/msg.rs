@@ -1,5 +1,6 @@
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_router::{RouteRule, ServiceBroadcastLevel};
+use atm0s_sdn_utils::simple_pub_type;
 use bytes::BufMut;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -11,6 +12,14 @@ const ROUTE_RULE_TO_NODE: u8 = 1;
 const ROUTE_RULE_TO_SERVICE: u8 = 2;
 const ROUTE_RULE_TO_SERVICES: u8 = 3;
 const ROUTE_RULE_TO_KEY: u8 = 4;
+
+simple_pub_type!(Ttl, u8);
+
+impl Default for Ttl {
+    fn default() -> Self {
+        Ttl(DEFAULT_MSG_TTL)
+    }
+}
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum MsgHeaderError {
@@ -346,15 +355,15 @@ impl TransportMsgHeader {
     ///
     /// An `Option` containing `()` if the ttl was successfully decreased,
     /// or `None` if the buffer is too small to hold the new ttl or ttl too small.
-    pub fn decrease_ttl(buf: &mut [u8]) -> Option<()> {
+    pub fn decrease_ttl(buf: &mut [u8]) -> bool {
         if buf.len() < 2 {
-            return None;
+            return false;
         }
         if buf[1] == 0 {
-            return None;
+            return false;
         }
         buf[1] = buf[1].saturating_sub(1);
-        Some(())
+        true
     }
 
     /// Returns the size of the serialized message.

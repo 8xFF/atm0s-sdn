@@ -149,7 +149,7 @@ impl<SC, SE, TC: Debug, TW: Debug> Task<(), ExtOut<SE>, ChannelIn, ChannelOut, E
                 }
                 NetIncoming::UdpPacket { slot: _, from, data } => {
                     let now_ms = self.timer.timestamp_ms(now);
-                    let out = self.data_plane.on_event(now_ms, DataPlaneInput::Net(NetInput::UdpPacket(from, (data as &[u8]).into())))?;
+                    let out = self.data_plane.on_event(now_ms, DataPlaneInput::Net(NetInput::UdpPacket(from, data.into())))?;
                     self.try_process_output(now, out)
                 }
                 #[cfg(feature = "vpn")]
