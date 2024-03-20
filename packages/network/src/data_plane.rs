@@ -124,7 +124,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 let out = self.services.on_input(now_ms, service, ServiceWorkerInput::FromController(to))?;
                 Some(self.convert_services(now_ms, service, out))
             }
-            Input::Event(LogicEvent::NetNeigbour(remote, control)) => {
+            Input::Event(LogicEvent::NetNeighbour(remote, control)) => {
                 let buf = (&control).try_into().ok()?;
                 Some(NetOutput::UdpPacket(remote, GenericBuffer::Vec(buf)).into())
             }
@@ -243,7 +243,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 None
             }
             RouteAction::Local => {
-                log::debug!("[DataPlane] route rule {:?} is processed localy", rule);
+                log::debug!("[DataPlane] route rule {:?} is processed locally", rule);
                 let out = self.features.on_input(&mut self.ctx, feature, now_ms, FeatureWorkerInput::Local(buf.into()))?;
                 Some(self.convert_features(now_ms, feature, out.owned()))
             }

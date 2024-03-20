@@ -193,7 +193,7 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
     fn pop_neighbours(&mut self, now_ms: u64) -> Option<Output<SE, TW>> {
         let out = self.neighbours.pop_output()?;
         match out {
-            neighbours::Output::Control(remote, control) => Some(Output::Event(LogicEvent::NetNeigbour(remote, control))),
+            neighbours::Output::Control(remote, control) => Some(Output::Event(LogicEvent::NetNeighbour(remote, control))),
             neighbours::Output::Event(event) => {
                 self.features.on_shared_input(now_ms, FeatureSharedInput::Connection(event.clone()));
                 self.services.on_shared_input(now_ms, ServiceSharedInput::Connection(event.clone()));

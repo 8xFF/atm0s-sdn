@@ -4,7 +4,7 @@ use atm0s_sdn_identity::NodeId;
 use serde::{Deserialize, Serialize};
 
 pub const BANDWIDTH_LIMIT: u32 = 10000; //10Mbps
-const BANDWIDTH_SCORE_PENATLY: u32 = 1000; //1s
+const BANDWIDTH_SCORE_PENALTY: u32 = 1000; //1s
 const HOP_PLUS_RTT: u16 = 10; //10ms each hops
 
 /// Concatenate two hops array, with condition that the last hop of `a` is the first hop of `b`, if not return None
@@ -49,7 +49,7 @@ impl Metric {
         if self.bandwidth >= BANDWIDTH_LIMIT {
             return based_score;
         } else {
-            return based_score + BANDWIDTH_SCORE_PENATLY;
+            return based_score + BANDWIDTH_SCORE_PENALTY;
         }
     }
 

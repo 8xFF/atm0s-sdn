@@ -33,7 +33,7 @@ impl<Remote: Debug + Hash + Copy + Eq + PartialEq> Service<Remote> {
         Self { dests: Vec::new() }
     }
 
-    /// Add a new destination to the service, if Remote allready exists, it will be replaced
+    /// Add a new destination to the service, if Remote already exists, it will be replaced
     pub fn set_conn(&mut self, conn: Remote, next: NodeId, dest: NodeId, score: u32) {
         let index = self.dests.iter().position(|x| x.conn == conn);
         if let Some(index) = index {

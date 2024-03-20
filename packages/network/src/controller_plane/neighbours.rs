@@ -6,7 +6,7 @@ use std::{
 use atm0s_sdn_identity::{ConnDirection, ConnId, NodeAddr, NodeId, Protocol};
 use atm0s_sdn_utils::random::{self, Random};
 
-use crate::base::{self, ConnectionCtx, NeigboursControlCmds, NeighboursControl, SecureContext};
+use crate::base::{self, ConnectionCtx, NeighboursControl, NeighboursControlCmds, SecureContext};
 
 use self::connection::{ConnectionEvent, NeighbourConnection};
 
@@ -96,7 +96,7 @@ impl NeighboursManager {
                     conn.on_input(now_ms, control);
                 } else {
                     match &control.cmd {
-                        NeigboursControlCmds::ConnectRequest { from, to: _, session } => {
+                        NeighboursControlCmds::ConnectRequest { from, to: _, session } => {
                             let conn_id = self.gen_conn_id(ConnDirection::Incoming);
                             let mut conn = NeighbourConnection::new_incoming(conn_id, self.node_id, *from, *session, addr, now_ms);
                             conn.on_input(now_ms, control);

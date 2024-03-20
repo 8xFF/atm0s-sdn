@@ -19,17 +19,13 @@ pub struct RegistryDest {
 impl RegistryDest {
     pub fn set_path(&mut self, over: ConnId, metric: Metric) {
         match self.index_of(over) {
-            Some(index) => match self.paths.get_mut(index) {
-                Some(slot) => {
-                    if slot.1.score() != metric.score() || slot.1.dest_node() != metric.dest_node() {
-                        self.deltas.push_back(RegistryDestDelta::SetServicePath(over, metric.dest_node(), metric.score()));
-                    }
-                    slot.1 = metric;
+            Some(index) => {
+                let slot = &mut self.paths[index];
+                if slot.1.score() != metric.score() || slot.1.dest_node() != metric.dest_node() {
+                    self.deltas.push_back(RegistryDestDelta::SetServicePath(over, metric.dest_node(), metric.score()));
                 }
-                None => {
-                    debug_assert!(false, "CANNOT_HAPPEND");
-                }
-            },
+                slot.1 = metric;
+            }
             None => {
                 self.deltas.push_back(RegistryDestDelta::SetServicePath(over, metric.dest_node(), metric.score()));
                 self.paths.push(Path(over, metric));
@@ -76,6 +72,7 @@ impl RegistryDest {
         None
     }
 
+    #[allow(unused)]
     pub fn next_path(&self, excepts: &[NodeId]) -> Option<Path> {
         for path in self.paths.iter() {
             if !excepts.contains(&path.1.over_node()) {
@@ -89,16 +86,9 @@ impl RegistryDest {
         if self.paths.is_empty() {
             return None;
         }
-        for index in 0..self.paths.len() {
-            match self.paths.get(index) {
-                Some(path) => {
-                    if path.0 == goal {
-                        return Some(index);
-                    }
-                }
-                None => {
-                    debug_assert!(false, "CANNOT_HAPPEND");
-                }
+        for (index, path) in self.paths.iter().enumerate() {
+            if path.0 == goal {
+                return Some(index);
             }
         }
 

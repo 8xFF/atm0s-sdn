@@ -74,8 +74,8 @@ impl<Remote: Debug + Hash + Eq + Clone + Copy> ShadowRouter<Remote> {
             let key_index = key.layer(i);
             if let Some((remote, _next_index, next_distance)) = self.tables[i as usize].closest_for(key_index) {
                 let current_index = self.node_id.layer(i);
-                let curent_distance = key_index ^ current_index;
-                if curent_distance > next_distance {
+                let current_distance = key_index ^ current_index;
+                if current_distance > next_distance {
                     return Some(remote);
                 }
             } else {

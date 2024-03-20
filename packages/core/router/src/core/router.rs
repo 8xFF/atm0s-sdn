@@ -102,8 +102,8 @@ impl Router {
             if let Some((next_index, next_conn, next_node)) = self.tables[i as usize].closest_for(index, excepts) {
                 let next_distance = next_index ^ index;
                 let current_index = self.node_id.layer(i);
-                let curent_distance = index ^ current_index;
-                if curent_distance > next_distance {
+                let current_distance = index ^ current_index;
+                if current_distance > next_distance {
                     return Some((next_conn, next_node, i, next_index));
                 }
             } else {
@@ -445,7 +445,7 @@ mod tests {
     }
 
     #[test]
-    fn to_key_consistance() {
+    fn to_key_consistency() {
         for _ in 0..100 {
             let (node_a, _conn_a, mut router_a) = create_router(rand::random());
             let (node_b, _conn_b, mut router_b) = create_router(rand::random());

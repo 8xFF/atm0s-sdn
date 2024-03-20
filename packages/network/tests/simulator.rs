@@ -200,7 +200,7 @@ pub fn node_to_addr(node: NodeId) -> SocketAddr {
 
 pub struct NetworkSimulator<SC, SE, TC: Clone, TW: Clone> {
     clock_ms: u64,
-    intput: VecDeque<(NodeId, ExtIn<SC>)>,
+    input: VecDeque<(NodeId, ExtIn<SC>)>,
     output: VecDeque<(NodeId, ExtOut<SE>)>,
     nodes: Vec<TestNode<SC, SE, TC, TW>>,
     nodes_index: HashMap<NodeId, usize>,
@@ -210,7 +210,7 @@ impl<SC: Debug, SE, TC: Clone, TW: Clone> NetworkSimulator<SC, SE, TC, TW> {
     pub fn new(started_ms: u64) -> Self {
         Self {
             clock_ms: started_ms,
-            intput: VecDeque::new(),
+            input: VecDeque::new(),
             output: VecDeque::new(),
             nodes: Vec::new(),
             nodes_index: HashMap::new(),
@@ -224,7 +224,7 @@ impl<SC: Debug, SE, TC: Clone, TW: Clone> NetworkSimulator<SC, SE, TC, TW> {
     }
 
     pub fn control(&mut self, node: NodeId, control: ExtIn<SC>) {
-        self.intput.push_back((node, control));
+        self.input.push_back((node, control));
     }
 
     pub fn pop_res(&mut self) -> Option<(NodeId, ExtOut<SE>)> {
@@ -248,8 +248,8 @@ impl<SC: Debug, SE, TC: Clone, TW: Clone> NetworkSimulator<SC, SE, TC, TW> {
 
         self.pop_outputs();
 
-        if !self.intput.is_empty() {
-            while let Some((node, input)) = self.intput.pop_front() {
+        if !self.input.is_empty() {
+            while let Some((node, input)) = self.input.pop_front() {
                 self.process_input(node, TestNodeIn::Ext(input));
             }
 

@@ -49,7 +49,7 @@ pub enum MsgHeaderError {
 /// - From Node (N)    : 1 bits, If this bit is set, from node_id will occupy 32 bits in header
 /// - Route Type (R): 4 bits
 ///
-///     - 0: Direct : which node received this msg will handle it, no route destionation
+///     - 0: Direct : which node received this msg will handle it, no route destination
 ///     - 1: ToNode : which node received this msg will route it to node_id
 ///     - 2: ToService : which node received this msg will route it to service meta
 ///     - 3: ToKey : which node received this msg will route it to key

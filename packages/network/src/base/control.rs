@@ -17,7 +17,7 @@ pub enum NeighboursDisconnectReason {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum NeigboursControlCmds {
+pub enum NeighboursControlCmds {
     ConnectRequest { from: NodeId, to: NodeId, session: u64 },
     ConnectResponse { session: u64, result: Result<(), NeighboursConnectError> },
     Ping { session: u64, seq: u64, sent_ms: u64 },
@@ -29,7 +29,7 @@ pub enum NeigboursControlCmds {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NeighboursControl {
     pub ts: u64,
-    pub cmd: NeigboursControlCmds,
+    pub cmd: NeighboursControlCmds,
     pub signature: Vec<u8>,
 }
 

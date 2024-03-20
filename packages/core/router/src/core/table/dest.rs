@@ -20,14 +20,10 @@ impl Dest {
     pub fn set_path(&mut self, over: ConnId, metric: Metric) {
         let pre_best_conn = self.paths.first().map(|p| p.0);
         match self.index_of(over) {
-            Some(index) => match self.paths.get_mut(index) {
-                Some(slot) => {
-                    slot.1 = metric;
-                }
-                None => {
-                    debug_assert!(false, "CANNOT_HAPPEND");
-                }
-            },
+            Some(index) => {
+                let slot = &mut self.paths[index];
+                slot.1 = metric;
+            }
             None => {
                 self.paths.push(Path(over, metric));
             }
@@ -101,16 +97,9 @@ impl Dest {
         if self.paths.is_empty() {
             return None;
         }
-        for index in 0..self.paths.len() {
-            match self.paths.get(index) {
-                Some(path) => {
-                    if path.0 == goal {
-                        return Some(index);
-                    }
-                }
-                None => {
-                    debug_assert!(false, "CANNOT_HAPPEND");
-                }
+        for (index, path) in self.paths.iter().enumerate() {
+            if path.0 == goal {
+                return Some(index);
             }
         }
 

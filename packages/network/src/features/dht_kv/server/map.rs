@@ -296,7 +296,7 @@ mod test {
     };
 
     #[test]
-    fn map_slot_set_del_corect() {
+    fn map_slot_set_del_correct() {
         let mut slot = MapSlot::new();
 
         assert_eq!(slot.set(0, Version(0), vec![1, 2, 3]), true);
@@ -308,7 +308,7 @@ mod test {
     }
 
     #[test]
-    fn map_slot_set_del_newer_version_corect() {
+    fn map_slot_set_del_newer_version_correct() {
         let mut slot = MapSlot::new();
 
         assert_eq!(slot.set(0, Version(0), vec![1, 2, 3]), true);

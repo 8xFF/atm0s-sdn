@@ -155,7 +155,7 @@ impl MapSlot {
     }
 
     /// slot will be updated if the version is newer than the current version
-    /// if verion is same, we still sending back OnSetAck for avoding flooding by server resend
+    /// if version is same, we still sending back OnSetAck for avoiding flooding by server resend
     /// Return:
     ///     Option(ClientMapCommand, bool)
     ///

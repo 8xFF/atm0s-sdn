@@ -137,8 +137,8 @@ where
             }
         };
 
-        let mut controler = SdnController::default();
-        controler.add_worker::<_, SdnWorkerInner<SC, SE, TC, TW>, B>(
+        let mut controller = SdnController::default();
+        controller.add_worker::<_, SdnWorkerInner<SC, SE, TC, TW>, B>(
             SdnInnerCfg {
                 node_id: self.node_id,
                 udp_port: self.udp_port,
@@ -157,7 +157,7 @@ where
         );
 
         for _ in 1..workers {
-            controler.add_worker::<_, SdnWorkerInner<SC, SE, TC, TW>, B>(
+            controller.add_worker::<_, SdnWorkerInner<SC, SE, TC, TW>, B>(
                 SdnInnerCfg {
                     node_id: self.node_id,
                     udp_port: self.udp_port,
@@ -173,9 +173,9 @@ where
         std::thread::sleep(std::time::Duration::from_millis(100));
 
         for seed in self.seeds {
-            controler.send_to(Owner::worker(0), SdnExtIn::ConnectTo(seed));
+            controller.send_to(Owner::worker(0), SdnExtIn::ConnectTo(seed));
         }
 
-        controler
+        controller
     }
 }

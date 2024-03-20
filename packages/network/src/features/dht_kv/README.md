@@ -47,4 +47,4 @@ We will have some edge cases:
 
 - SubOk is derivered after OnSet, then we will ignore previous and wait Relay resend OnSet after SubOk
 - SubOk is not derivered, then we will send Sub again
-- OnDel(Timeout) is derivered before SubOk: this case is very rarely, because Timeout is larger than resend Sub alot, if it happend, the consumers will have need to the key added after we send Sub, but in the end, we still have correct state.
+- OnDel(Timeout) is derivered before SubOk: this case is very rarely, because Timeout is larger than resend Sub alot, if it happened, the consumers will have need to the key added after we send Sub, but in the end, we still have correct state.

@@ -42,7 +42,7 @@ pub enum LogicControl<TC> {
 
 #[derive(Debug, Clone)]
 pub enum LogicEvent<TW> {
-    NetNeigbour(SocketAddr, NeighboursControl),
+    NetNeighbour(SocketAddr, NeighboursControl),
     NetDirect(Features, ConnId, Vec<u8>),
     NetRoute(Features, RouteRule, Ttl, Vec<u8>),
 
