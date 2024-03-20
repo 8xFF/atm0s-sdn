@@ -15,7 +15,8 @@ use crate::{
     },
 };
 
-const RETRY_CONNECT_MS: u64 = 60_000; //10 seconds
+const RETRY_CONNECT_MS: u64 = 60_000; //60 seconds
+const WAIT_DISCONNECT_MS: u64 = 60_000; //60 seconds
 
 pub const SERVICE_ID: u8 = 0;
 pub const SERVICE_NAME: &str = "manual_discovery";
@@ -32,7 +33,7 @@ pub struct ManualDiscoveryService<TC, TW> {
     queue: VecDeque<ServiceOutput<FeaturesControl, TW>>,
     nodes: HashMap<NodeId, NodeAddr>,
     conns: HashMap<NodeId, Vec<ConnId>>,
-    removing_list: Vec<NodeId>,
+    removing_list: HashMap<NodeId, u64>,
     last_retry_ms: u64,
     _tmp: std::marker::PhantomData<(TC, TW)>,
 }
@@ -59,7 +60,7 @@ impl<TC, TW> ManualDiscoveryService<TC, TW> {
             nodes: HashMap::new(),
             conns: HashMap::new(),
             queue,
-            removing_list: vec![],
+            removing_list: HashMap::new(),
             last_retry_ms: 0,
             _tmp: std::marker::PhantomData,
         }
@@ -76,11 +77,17 @@ impl<TC, TW> ManualDiscoveryService<TC, TW> {
             }
         }
 
-        while let Some(node) = self.removing_list.pop() {
-            if !self.nodes.contains_key(&node) {
+        let mut will_disconnect = vec![];
+        for (node, ts) in self.removing_list.iter() {
+            if now >= *ts + WAIT_DISCONNECT_MS && !self.nodes.contains_key(node) {
                 log::info!("ManualDiscoveryService node {node} still in removing_list => send Disconnect");
-                self.queue.push_back(neighbour_control(NeighbourControl::DisconnectFrom(node)));
+                self.queue.push_back(neighbour_control(NeighbourControl::DisconnectFrom(*node)));
+                will_disconnect.push(*node);
             }
+        }
+
+        for node in will_disconnect {
+            self.removing_list.remove(&node);
         }
     }
 }
@@ -114,7 +121,7 @@ impl<TC: Debug, TW: Debug> Service<FeaturesControl, FeaturesEvent, TC, TW> for M
         }
     }
 
-    fn on_input(&mut self, _now: u64, input: ServiceInput<FeaturesEvent, TC>) {
+    fn on_input(&mut self, now: u64, input: ServiceInput<FeaturesEvent, TC>) {
         match input {
             ServiceInput::FeatureEvent(FeaturesEvent::DhtKv(KvEvent::MapEvent(map, event))) => match event {
                 MapEvent::OnSet(_, source, value) => {
@@ -122,14 +129,14 @@ impl<TC: Debug, TW: Debug> Service<FeaturesControl, FeaturesEvent, TC, TW> for M
                         log::info!("ManualDiscoveryService node {source} added tag {map} => connect {addr}");
                         self.nodes.insert(source, addr.clone());
                         self.queue.push_back(neighbour_control(NeighbourControl::ConnectTo(addr)));
-                        self.removing_list.retain(|&node| node != source);
+                        self.removing_list.remove(&source);
                     }
                 }
                 MapEvent::OnDel(_, source) => {
                     self.nodes.remove(&source);
-                    if !self.removing_list.contains(&source) {
+                    if !self.removing_list.contains_key(&source) {
                         log::info!("ManualDiscoveryService node {source} removed tag {map} => push to removing_list");
-                        self.removing_list.push(source);
+                        self.removing_list.insert(source, now);
                     }
                 }
                 MapEvent::OnRelaySelected(node) => {
@@ -195,60 +202,117 @@ impl<TC: 'static + Debug + Send + Sync, TW: 'static + Debug + Send + Sync> Servi
 
 #[cfg(test)]
 mod test {
-    use atm0s_sdn_identity::{NodeAddrBuilder, Protocol};
+    use atm0s_sdn_identity::{ConnId, NodeAddr, NodeAddrBuilder, Protocol};
     use atm0s_sdn_utils::hash::hash_str;
 
     use crate::{
-        base::{Service, ServiceInput, ServiceOutput},
+        base::{Service, ServiceInput, ServiceOutput, ServiceSharedInput},
         features::{
             dht_kv::{self, Key, Map, MapControl, MapEvent},
-            neighbours, FeaturesControl,
+            neighbours, FeaturesControl, FeaturesEvent,
         },
+        services::manual_discovery::{RETRY_CONNECT_MS, WAIT_DISCONNECT_MS},
     };
 
     use super::ManualDiscoveryService;
 
+    fn node_addr(node: u32) -> NodeAddr {
+        let mut builder = NodeAddrBuilder::new(1);
+        builder.add_protocol(Protocol::Ip4([127, 0, 0, 1].into()));
+        builder.add_protocol(Protocol::Udp(node as u16));
+        builder.addr()
+    }
+
+    fn map_cmd<TC>(map: Map, control: MapControl) -> ServiceOutput<FeaturesControl, TC> {
+        ServiceOutput::FeatureControl(FeaturesControl::DhtKv(dht_kv::Control::MapCmd(map, control)))
+    }
+
+    fn map_event<TC>(map: Map, event: dht_kv::MapEvent) -> ServiceInput<FeaturesEvent, TC> {
+        ServiceInput::FeatureEvent(FeaturesEvent::DhtKv(dht_kv::Event::MapEvent(map, event)))
+    }
+
+    fn neighbour_cmd<TC>(control: neighbours::Control) -> ServiceOutput<FeaturesControl, TC> {
+        ServiceOutput::FeatureControl(FeaturesControl::Neighbours(control))
+    }
+
+    fn neighbour_event<TC>(event: neighbours::Event) -> ServiceInput<FeaturesEvent, TC> {
+        ServiceInput::FeatureEvent(FeaturesEvent::Neighbours(event))
+    }
+
     #[test]
     fn should_send_connect() {
-        let addr1 = {
-            let mut builder = NodeAddrBuilder::new(1);
-            builder.add_protocol(Protocol::Ip4([127, 0, 0, 1].into()));
-            builder.add_protocol(Protocol::Udp(100));
-            builder.addr()
-        };
-
-        let addr2 = {
-            let mut builder = NodeAddrBuilder::new(1);
-            builder.add_protocol(Protocol::Ip4([127, 0, 0, 1].into()));
-            builder.add_protocol(Protocol::Udp(101));
-            builder.addr()
-        };
+        let addr1 = node_addr(100);
+        let addr2 = node_addr(101);
 
         let mut service = ManualDiscoveryService::<(), ()>::new(addr1.clone(), vec!["local".into()], vec!["connect".into()]);
         let local_map = Map(hash_str("local"));
         let connect_map = Map(hash_str("connect"));
 
-        assert_eq!(
-            service.pop_output(),
-            Some(ServiceOutput::FeatureControl(FeaturesControl::DhtKv(dht_kv::Control::MapCmd(
-                local_map,
-                MapControl::Set(Key(0), addr1.to_vec())
-            ))))
-        );
-        assert_eq!(
-            service.pop_output(),
-            Some(ServiceOutput::FeatureControl(FeaturesControl::DhtKv(dht_kv::Control::MapCmd(connect_map, MapControl::Sub))))
-        );
+        assert_eq!(service.pop_output(), Some(map_cmd(local_map, MapControl::Set(Key(0), addr1.to_vec()))));
+        assert_eq!(service.pop_output(), Some(map_cmd(connect_map, MapControl::Sub)));
 
-        service.on_input(
-            100,
-            ServiceInput::FeatureEvent(crate::features::FeaturesEvent::DhtKv(dht_kv::Event::MapEvent(connect_map, MapEvent::OnSet(Key(1), 2, addr2.to_vec())))),
-        );
-        assert_eq!(
-            service.pop_output(),
-            Some(ServiceOutput::FeatureControl(FeaturesControl::Neighbours(neighbours::Control::ConnectTo(addr2))))
-        );
+        service.on_input(100, map_event(connect_map, MapEvent::OnSet(Key(1), 2, addr2.to_vec())));
+        assert_eq!(service.pop_output(), Some(neighbour_cmd(neighbours::Control::ConnectTo(addr2))));
     }
 
-    //TODO test more case
+    #[test]
+    fn should_wait_disconnect_after_remove() {
+        let addr1 = node_addr(100);
+        let addr2 = node_addr(101);
+
+        let mut service = ManualDiscoveryService::<(), ()>::new(addr1.clone(), vec!["local".into()], vec!["connect".into()]);
+        let local_map = Map(hash_str("local"));
+        let connect_map = Map(hash_str("connect"));
+
+        assert_eq!(service.pop_output(), Some(map_cmd(local_map, MapControl::Set(Key(0), addr1.to_vec()))));
+        assert_eq!(service.pop_output(), Some(map_cmd(connect_map, MapControl::Sub)));
+
+        // add node
+        service.on_input(100, map_event(connect_map, MapEvent::OnSet(Key(1), addr2.node_id(), addr2.to_vec())));
+        assert_eq!(service.pop_output(), Some(neighbour_cmd(neighbours::Control::ConnectTo(addr2.clone()))));
+
+        // fake connected
+        service.on_input(110, neighbour_event(neighbours::Event::Connected(addr2.node_id(), ConnId::from_out(0, 0))));
+
+        // remove node
+        service.on_shared_input(200, ServiceSharedInput::Tick(0));
+        assert_eq!(service.pop_output(), None);
+
+        // fake removed key
+        service.on_input(300, map_event(connect_map, MapEvent::OnDel(Key(1), addr2.node_id())));
+        assert_eq!(service.pop_output(), None);
+
+        // wait disconnect
+        service.on_shared_input(300 + WAIT_DISCONNECT_MS, ServiceSharedInput::Tick(0));
+        assert_eq!(service.pop_output(), Some(neighbour_cmd(neighbours::Control::DisconnectFrom(addr2.node_id()))));
+        assert_eq!(service.pop_output(), None);
+    }
+
+    #[test]
+    fn should_reconnect_after_disconnected() {
+        let addr1 = node_addr(100);
+        let addr2 = node_addr(101);
+
+        let mut service = ManualDiscoveryService::<(), ()>::new(addr1.clone(), vec!["local".into()], vec!["connect".into()]);
+        let local_map = Map(hash_str("local"));
+        let connect_map = Map(hash_str("connect"));
+
+        assert_eq!(service.pop_output(), Some(map_cmd(local_map, MapControl::Set(Key(0), addr1.to_vec()))));
+        assert_eq!(service.pop_output(), Some(map_cmd(connect_map, MapControl::Sub)));
+
+        service.on_input(100, map_event(connect_map, MapEvent::OnSet(Key(1), 2, addr2.to_vec())));
+        assert_eq!(service.pop_output(), Some(neighbour_cmd(neighbours::Control::ConnectTo(addr2.clone()))));
+
+        service.on_shared_input(200, ServiceSharedInput::Tick(0));
+        assert_eq!(service.pop_output(), None);
+
+        service.on_input(300, neighbour_event(neighbours::Event::Disconnected(addr2.node_id(), ConnId::from_out(0, 0))));
+
+        service.on_shared_input(200, ServiceSharedInput::Tick(0));
+        assert_eq!(service.pop_output(), None);
+
+        service.on_shared_input(RETRY_CONNECT_MS, ServiceSharedInput::Tick(0));
+        assert_eq!(service.pop_output(), Some(neighbour_cmd(neighbours::Control::ConnectTo(addr2.clone()))));
+        assert_eq!(service.pop_output(), None);
+    }
 }
