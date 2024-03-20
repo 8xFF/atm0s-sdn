@@ -43,6 +43,10 @@ struct Args {
     #[arg(short, long, default_value = "polling")]
     backend: BackendType,
 
+    /// Backend type
+    #[arg(short, long)]
+    vpn: bool,
+
     /// Workers
     #[arg(long, default_value_t = 2)]
     workers: usize,
@@ -74,6 +78,11 @@ fn main() {
     let mut builder = SdnBuilder::<SC, SE, TC, TW>::new(args.node_id, args.udp_port, args.custom_addrs);
 
     builder.set_manual_discovery(args.local_tags, args.connect_tags);
+
+    #[cfg(feature = "vpn")]
+    if args.vpn {
+        builder.enable_vpn();
+    }
 
     for seed in args.seeds {
         builder.add_seed(seed);

@@ -38,9 +38,8 @@ pub struct ControllerCfg {
     pub session: u64,
     pub password: String,
     pub tick_ms: u64,
-    // pub services: Vec<Box<dyn atm0s_sdn_network::controller_plane::Service>>,
     #[cfg(feature = "vpn")]
-    pub vpn_tun_device: sans_io_runtime::backend::tun::TunDevice,
+    pub vpn_tun_device: Option<sans_io_runtime::backend::tun::TunDevice>,
 }
 
 pub struct SdnInnerCfg<SC, SE, TC, TW> {
@@ -49,7 +48,7 @@ pub struct SdnInnerCfg<SC, SE, TC, TW> {
     pub controller: Option<ControllerCfg>,
     pub services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
     #[cfg(feature = "vpn")]
-    pub vpn_tun_fd: sans_io_runtime::backend::tun::TunFd,
+    pub vpn_tun_fd: Option<sans_io_runtime::backend::tun::TunFd>,
 }
 
 pub struct SdnSpawnCfg {}

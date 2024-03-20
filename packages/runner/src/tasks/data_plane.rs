@@ -34,7 +34,7 @@ pub struct DataPlaneCfg<SC, SE, TC, TW> {
     pub port: u16,
     pub services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
     #[cfg(feature = "vpn")]
-    pub vpn_tun_fd: sans_io_runtime::backend::tun::TunFd,
+    pub vpn_tun_fd: Option<sans_io_runtime::backend::tun::TunFd>,
 }
 
 pub struct DataPlaneTask<SC, SE, TC, TW> {
@@ -52,6 +52,15 @@ pub struct DataPlaneTask<SC, SE, TC, TW> {
 impl<SC, SE, TC, TW> DataPlaneTask<SC, SE, TC, TW> {
     pub fn build(cfg: DataPlaneCfg<SC, SE, TC, TW>) -> Self {
         let addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), cfg.port));
+        let mut queue = VecDeque::from([
+            TaskOutput::Net(NetOutgoing::UdpListen { addr, reuse: true }),
+            TaskOutput::Bus(BusEvent::ChannelSubscribe(ChannelIn::Broadcast)),
+            TaskOutput::Bus(BusEvent::ChannelSubscribe(ChannelIn::Worker(cfg.worker))),
+        ]);
+        #[cfg(feature = "vpn")]
+        if let Some(fd) = cfg.vpn_tun_fd {
+            queue.push_back(TaskOutput::Net(NetOutgoing::TunBind { fd }));
+        }
         Self {
             node_id: cfg.node_id,
             worker: cfg.worker,
@@ -60,13 +69,7 @@ impl<SC, SE, TC, TW> DataPlaneTask<SC, SE, TC, TW> {
             timer: TimePivot::build(),
             #[cfg(feature = "vpn")]
             backend_tun_slot: 0,
-            queue: VecDeque::from([
-                TaskOutput::Net(NetOutgoing::UdpListen { addr, reuse: true }),
-                #[cfg(feature = "vpn")]
-                TaskOutput::Net(NetOutgoing::TunBind { fd: cfg.vpn_tun_fd }),
-                TaskOutput::Bus(BusEvent::ChannelSubscribe(ChannelIn::Broadcast)),
-                TaskOutput::Bus(BusEvent::ChannelSubscribe(ChannelIn::Worker(cfg.worker))),
-            ]),
+            queue,
         }
     }
 

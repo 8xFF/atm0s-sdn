@@ -20,7 +20,7 @@ pub struct ControllerPlaneCfg<SC, SE, TC, TW> {
     pub tick_ms: u64,
     pub services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
     #[cfg(feature = "vpn")]
-    pub vpn_tun_device: sans_io_runtime::backend::tun::TunDevice,
+    pub vpn_tun_device: Option<sans_io_runtime::backend::tun::TunDevice>,
 }
 
 pub type EventIn<TC> = LogicControl<TC>;
@@ -34,7 +34,7 @@ pub struct ControllerPlaneTask<SC, SE, TC, TW> {
     ticker: TimeTicker,
     timer: TimePivot,
     #[cfg(feature = "vpn")]
-    vpn_tun_device: sans_io_runtime::backend::tun::TunDevice,
+    vpn_tun_device: Option<sans_io_runtime::backend::tun::TunDevice>,
 }
 
 impl<SC, SE, TC, TW> ControllerPlaneTask<SC, SE, TC, TW> {

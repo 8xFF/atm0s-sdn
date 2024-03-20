@@ -23,6 +23,8 @@ pub struct SdnBuilder<SC, SE, TC, TW> {
     seeds: Vec<NodeAddr>,
     services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
     #[cfg(feature = "vpn")]
+    vpn_enable: bool,
+    #[cfg(feature = "vpn")]
     vpn_ip: Option<(u8, u8, u8, u8)>,
     #[cfg(feature = "vpn")]
     vpn_netmask: Option<(u8, u8, u8, u8)>,
@@ -72,7 +74,8 @@ where
             udp_port,
             seeds: vec![],
             services: vec![],
-            // services: vec![],
+            #[cfg(feature = "vpn")]
+            vpn_enable: false,
             #[cfg(feature = "vpn")]
             vpn_ip: None,
             #[cfg(feature = "vpn")]
@@ -102,6 +105,11 @@ where
     }
 
     #[cfg(feature = "vpn")]
+    pub fn enable_vpn(&mut self) {
+        self.vpn_enable = true;
+    }
+
+    #[cfg(feature = "vpn")]
     pub fn set_vpn_ip(&mut self, ip: (u8, u8, u8, u8)) {
         self.vpn_ip = Some(ip);
     }
@@ -115,14 +123,18 @@ where
         assert!(workers > 0);
         #[cfg(feature = "vpn")]
         let (tun_device, mut queue_fds) = {
-            let vpn_ip = self.vpn_ip.unwrap_or((10, 33, 33, self.node_id as u8));
-            let vpn_netmask = self.vpn_netmask.unwrap_or((255, 255, 255, 0));
-            let mut tun_device = sans_io_runtime::backend::tun::create_tun(&format!("utun{}", self.node_id as u8), vpn_ip, vpn_netmask, 1400, workers);
-            let mut queue_fds = std::collections::VecDeque::with_capacity(workers);
-            for i in 0..workers {
-                queue_fds.push_back(tun_device.get_queue_fd(i).expect("Should have tun queue fd"));
+            if self.vpn_enable {
+                let vpn_ip = self.vpn_ip.unwrap_or((10, 33, 33, self.node_id as u8));
+                let vpn_netmask = self.vpn_netmask.unwrap_or((255, 255, 255, 0));
+                let mut tun_device = sans_io_runtime::backend::tun::create_tun(&format!("utun{}", self.node_id as u8), vpn_ip, vpn_netmask, 1400, workers);
+                let mut queue_fds = std::collections::VecDeque::with_capacity(workers);
+                for i in 0..workers {
+                    queue_fds.push_back(tun_device.get_queue_fd(i).expect("Should have tun queue fd"));
+                }
+                (Some(tun_device), queue_fds)
+            } else {
+                (None, std::collections::VecDeque::new())
             }
-            (tun_device, queue_fds)
         };
 
         let mut controler = SdnController::default();
@@ -135,12 +147,11 @@ where
                     session: self.session,
                     password: "password".to_string(),
                     tick_ms: 1000,
-                    // services: self.services,
                     #[cfg(feature = "vpn")]
                     vpn_tun_device: tun_device,
                 }),
                 #[cfg(feature = "vpn")]
-                vpn_tun_fd: queue_fds.pop_front().expect("Should have tun queue fd"),
+                vpn_tun_fd: queue_fds.pop_front(),
             },
             None,
         );
@@ -153,7 +164,7 @@ where
                     services: self.services.clone(),
                     controller: None,
                     #[cfg(feature = "vpn")]
-                    vpn_tun_fd: queue_fds.pop_front().expect("Should have tun queue fd"),
+                    vpn_tun_fd: queue_fds.pop_front(),
                 },
                 None,
             );
