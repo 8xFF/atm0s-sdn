@@ -8,6 +8,10 @@ use atm0s_sdn::{
 use atm0s_sdn::{NodeAddr, NodeId};
 use clap::{Parser, ValueEnum};
 use futures_util::{SinkExt, StreamExt};
+#[cfg(not(feature = "embed"))]
+use poem::endpoint::StaticFilesEndpoint;
+#[cfg(feature = "embed")]
+use poem::endpoint::{EmbeddedFileEndpoint, EmbeddedFilesEndpoint};
 use poem::{
     endpoint::StaticFilesEndpoint,
     get, handler,
@@ -18,6 +22,9 @@ use poem::{
     },
     EndpointExt, IntoResponse, Route, Server,
 };
+#[cfg(feature = "embed")]
+use rust_embed::RustEmbed;
+
 use serde::Serialize;
 use std::{
     collections::HashMap,
@@ -32,6 +39,11 @@ use tokio::sync::Mutex;
 
 use atm0s_sdn::builder::SdnBuilder;
 
+#[cfg(feature = "embed")]
+#[derive(RustEmbed)]
+#[folder = "public"]
+pub struct Files;
+
 #[derive(Debug, Clone, ValueEnum)]
 enum BackendType {
     Poll,
@@ -44,51 +56,51 @@ enum BackendType {
 #[command(version, about, long_about = None)]
 struct Args {
     /// Node Id
-    #[arg(short, long)]
+    #[arg(env, short, long, default_value_t = 0)]
     node_id: NodeId,
 
     /// Listen address
-    #[arg(short, long, default_value_t = 0)]
+    #[arg(env, short, long, default_value_t = 0)]
     udp_port: u16,
 
     /// Address of node we should connect to
-    #[arg(short, long)]
+    #[arg(env, short, long)]
     seeds: Vec<NodeAddr>,
 
     /// Password for the network
-    #[arg(short, long, default_value = "password")]
+    #[arg(env, short, long, default_value = "password")]
     password: String,
 
     /// Backend type
-    #[arg(short, long, default_value = "polling")]
+    #[arg(env, short, long, default_value = "polling")]
     backend: BackendType,
 
-    /// Backend type
-    #[arg(short, long)]
+    /// Enable Tun-Tap interface for create a vpn network between nodes
+    #[arg(env, short, long)]
     vpn: bool,
 
     /// Workers
-    #[arg(long, default_value_t = 2)]
+    #[arg(env, long, default_value_t = 2)]
     workers: usize,
 
     /// Custom IP
-    #[arg(long)]
+    #[arg(env, long)]
     custom_addrs: Vec<SocketAddr>,
 
     /// Local tags
-    #[arg(long)]
+    #[arg(env, long)]
     local_tags: Vec<String>,
 
     /// Connect tags
-    #[arg(long)]
+    #[arg(env, long)]
     connect_tags: Vec<String>,
 
     /// Web server addr
-    #[arg(long, default_value = "0.0.0.0:3000")]
+    #[arg(env, long, default_value = "0.0.0.0:3000")]
     web_addr: SocketAddr,
 
-    /// Master node
-    #[arg(long)]
+    /// Collector node, which will have UI for monitoring network structure
+    #[arg(env, long)]
     collector: bool,
 }
 
@@ -231,7 +243,6 @@ async fn main() {
 
     builder.set_manual_discovery(args.local_tags, args.connect_tags);
 
-    #[cfg(feature = "vpn")]
     if args.vpn {
         builder.enable_vpn();
     }
@@ -254,8 +265,17 @@ async fn main() {
         controller.send_to(Owner::worker(0), SdnExtIn::ServicesControl(visualization::SERVICE_ID.into(), visualization::Control::Subscribe));
         let ctx_c = ctx.clone();
         tokio::spawn(async move {
-            let app = Route::new().at("/ws", get(ws.data(ctx_c))).nest("/", StaticFilesEndpoint::new("./public/").index_file("index.html"));
-            Server::new(TcpListener::bind(args.web_addr)).run(app).await
+            let route = Route::new().at("/ws", get(ws.data(ctx_c)));
+
+            #[cfg(not(feature = "embed"))]
+            let route = route.nest("/", StaticFilesEndpoint::new("./public/").index_file("index.html"));
+
+            #[cfg(feature = "embed")]
+            let route = route.at("/", EmbeddedFileEndpoint::<Files>::new("index.html"));
+            #[cfg(feature = "embed")]
+            let route = route.nest("/", EmbeddedFilesEndpoint::<Files>::new());
+
+            Server::new(TcpListener::bind(args.web_addr)).run(route).await
         });
     }
 
