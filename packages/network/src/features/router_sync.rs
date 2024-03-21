@@ -66,6 +66,7 @@ impl Feature<Control, Event, ToController, ToWorker> for RouterSyncFeature {
                 }
 
                 while let Some(service) = self.services.pop() {
+                    log::info!("[RouterSync] register local service {}", service);
                     self.router.register_service(service);
                 }
 
@@ -83,7 +84,9 @@ impl Feature<Control, Event, ToController, ToWorker> for RouterSyncFeature {
                 }
                 ConnectionEvent::Stats(ctx, stats) => {
                     log::debug!("[RouterSync] Connection {} stats rtt_ms {}", ctx.remote, stats.rtt_ms);
-                    self.router.set_direct(ctx.conn, Metric::new(stats.rtt_ms as u16, vec![ctx.node], INIT_BW));
+                    let metric = Metric::new(stats.rtt_ms as u16, vec![ctx.node], INIT_BW);
+                    self.conns.insert(ctx.conn, (ctx.node, ctx.remote, metric.clone()));
+                    self.router.set_direct(ctx.conn, metric);
                 }
                 ConnectionEvent::Disconnected(ctx) => {
                     log::info!("[RouterSync] Connection {} disconnected", ctx.remote);
