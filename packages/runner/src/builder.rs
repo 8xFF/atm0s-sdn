@@ -20,7 +20,7 @@ pub struct SdnBuilder<SC, SE, TC, TW> {
     node_id: NodeId,
     session: u64,
     udp_port: u16,
-    visualization_master: bool,
+    visualization_collector: bool,
     seeds: Vec<NodeAddr>,
     services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
     #[cfg(feature = "vpn")]
@@ -73,7 +73,7 @@ where
             node_id,
             session: thread_rng().next_u64(),
             udp_port,
-            visualization_master: false,
+            visualization_collector: false,
             seeds: vec![],
             services: vec![],
             #[cfg(feature = "vpn")]
@@ -93,9 +93,9 @@ where
         self.seeds.push(addr);
     }
 
-    /// Setting visualization master mode
-    pub fn set_visualization_master(&mut self, value: bool) {
-        self.visualization_master = value;
+    /// Setting visualization collector mode
+    pub fn set_visualization_collector(&mut self, value: bool) {
+        self.visualization_collector = value;
     }
 
     /// Setting manual discovery
@@ -144,7 +144,7 @@ where
             }
         };
 
-        self.add_service(Arc::new(visualization::VisualizationServiceBuilder::<SC, SE, TC, TW>::new(self.visualization_master, self.node_id)));
+        self.add_service(Arc::new(visualization::VisualizationServiceBuilder::<SC, SE, TC, TW>::new(self.visualization_collector, self.node_id)));
 
         let mut controller = SdnController::default();
         controller.add_worker::<_, SdnWorkerInner<SC, SE, TC, TW>, B>(

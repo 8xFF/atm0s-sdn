@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use atm0s_sdn_identity::NodeId;
+use atm0s_sdn_identity::{ConnId, NodeId};
 use atm0s_sdn_network::{
     services::visualization::{self, ConnectionInfo, Control, Event, VisualizationServiceBuilder},
     ExtIn, ExtOut,
@@ -10,13 +10,13 @@ use crate::simulator::{node_to_addr, NetworkSimulator, TestNode};
 
 mod simulator;
 
-fn node_changed(node: NodeId, remotes: &[(NodeId, u64)]) -> ExtOut<Event> {
+fn node_changed(node: NodeId, remotes: &[(NodeId, ConnId)]) -> ExtOut<Event> {
     ExtOut::ServicesEvent(Event::NodeChanged(
         node,
         remotes
             .iter()
             .map(|(n, c)| ConnectionInfo {
-                uuid: *c,
+                conn: *c,
                 dest: *n,
                 remote: node_to_addr(*n),
                 rtt_ms: 0,
@@ -51,17 +51,17 @@ fn service_visualization_simple() {
         sim.process(1000);
     }
 
-    assert_eq!(sim.pop_res(), Some((node1, node_changed(node1, &[(node2, 1000)]))));
+    assert_eq!(sim.pop_res(), Some((node1, node_changed(node1, &[(node2, ConnId::from_out(0, 1000))]))));
 
-    assert_eq!(sim.pop_res(), Some((node1, node_changed(node2, &[(node1, 1000)]))));
+    assert_eq!(sim.pop_res(), Some((node1, node_changed(node2, &[(node1, ConnId::from_in(0, 1000))]))));
 }
 
 /// 3 nodes: Master <--> Master <--> Agent
 ///
-/// All masters should receive the same information about the agents
+/// All collectors should receive the same information about the agents
 ///
 #[test]
-fn service_visualization_multi_masters() {
+fn service_visualization_multi_collectors() {
     let node1 = 1;
     let node2 = 2;
     let node3 = 3;
@@ -109,18 +109,18 @@ fn service_visualization_multi_masters() {
     assert_eq!(
         node1_events,
         vec![
-            node_changed(node1, &[(node2, 1000)]),
-            node_changed(node2, &[(node3, 1000), (node1, 1000)]),
-            node_changed(node3, &[(node2, 1000)]),
+            node_changed(node1, &[(node2, ConnId::from_out(0, 1000))]),
+            node_changed(node2, &[(node3, ConnId::from_out(0, 1000)), (node1, ConnId::from_in(0, 1000))]),
+            node_changed(node3, &[(node2, ConnId::from_in(0, 1000))]),
         ]
     );
 
     assert_eq!(
         node2_events,
         vec![
-            node_changed(node1, &[(node2, 1000)]),
-            node_changed(node2, &[(node3, 1000), (node1, 1000)]),
-            node_changed(node3, &[(node2, 1000)]),
+            node_changed(node1, &[(node2, ConnId::from_out(0, 1000))]),
+            node_changed(node2, &[(node3, ConnId::from_out(0, 1000)), (node1, ConnId::from_in(0, 1000))]),
+            node_changed(node3, &[(node2, ConnId::from_in(0, 1000))]),
         ]
     );
 }

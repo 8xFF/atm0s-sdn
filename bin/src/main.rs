@@ -48,7 +48,7 @@ struct Args {
     node_id: NodeId,
 
     /// Listen address
-    #[arg(short, long)]
+    #[arg(short, long, default_value_t = 0)]
     udp_port: u16,
 
     /// Address of node we should connect to
@@ -89,7 +89,7 @@ struct Args {
 
     /// Master node
     #[arg(long)]
-    master: bool,
+    collector: bool,
 }
 
 type SC = visualization::Control;
@@ -98,9 +98,18 @@ type TC = ();
 type TW = ();
 
 #[derive(Debug, Clone, Serialize)]
+struct ConnInfo {
+    uuid: u64,
+    outgoing: bool,
+    dest: NodeId,
+    remote: SocketAddr,
+    rtt_ms: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct NodeInfo {
     id: NodeId,
-    connections: Vec<ConnectionInfo>,
+    connections: Vec<ConnInfo>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -114,7 +123,7 @@ enum WebsocketMessage {
 #[derive(Debug)]
 struct WebsocketCtx {
     channel: tokio::sync::broadcast::Sender<WebsocketMessage>,
-    snapshot: HashMap<NodeId, Vec<ConnectionInfo>>,
+    snapshot: HashMap<NodeId, Vec<ConnInfo>>,
 }
 
 impl WebsocketCtx {
@@ -129,14 +138,35 @@ impl WebsocketCtx {
     pub fn set_snapshot(&mut self, snapshot: Vec<(NodeId, Vec<ConnectionInfo>)>) {
         self.snapshot.clear();
         for (id, connections) in snapshot {
-            self.snapshot.insert(id, connections);
+            let conns = connections
+                .into_iter()
+                .map(|c| ConnInfo {
+                    uuid: c.conn.uuid(),
+                    outgoing: c.conn.is_outgoing(),
+                    dest: c.dest,
+                    remote: c.remote,
+                    rtt_ms: c.rtt_ms,
+                })
+                .collect();
+            self.snapshot.insert(id, conns);
         }
     }
 
     pub fn set_node(&mut self, delta: (NodeId, Vec<ConnectionInfo>)) {
-        self.snapshot.insert(delta.0, delta.1.clone());
-        if let Err(e) = self.channel.send(WebsocketMessage::Update(NodeInfo { id: delta.0, connections: delta.1 })) {
-            log::error!("Failed to send delta: {}", e);
+        let connections: Vec<ConnInfo> = delta
+            .1
+            .into_iter()
+            .map(|c| ConnInfo {
+                uuid: c.conn.uuid(),
+                outgoing: c.conn.is_outgoing(),
+                dest: c.dest,
+                remote: c.remote,
+                rtt_ms: c.rtt_ms,
+            })
+            .collect();
+        self.snapshot.insert(delta.0, connections.clone());
+        if let Err(e) = self.channel.send(WebsocketMessage::Update(NodeInfo { id: delta.0, connections })) {
+            log::debug!("Failed to send delta: {}", e);
         }
     }
 
@@ -206,7 +236,7 @@ async fn main() {
         builder.enable_vpn();
     }
 
-    builder.set_visualization_master(args.master);
+    builder.set_visualization_collector(args.collector);
 
     for seed in args.seeds {
         builder.add_seed(seed);
@@ -220,7 +250,7 @@ async fn main() {
 
     let ctx = Arc::new(Mutex::new(WebsocketCtx::new()));
 
-    if args.master {
+    if args.collector {
         controller.send_to(Owner::worker(0), SdnExtIn::ServicesControl(visualization::SERVICE_ID.into(), visualization::Control::Subscribe));
         let ctx_c = ctx.clone();
         tokio::spawn(async move {
@@ -246,7 +276,7 @@ async fn main() {
                         ctx.lock().await.set_snapshot(all);
                     }
                     visualization::Event::NodeChanged(node, changed) => {
-                        log::info!("Node changed: {:?} {:?}", node, changed);
+                        log::debug!("Node changed: {:?} {:?}", node, changed);
                         ctx.lock().await.set_node((node, changed));
                     }
                     visualization::Event::NodeRemoved(node) => {

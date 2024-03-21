@@ -26,7 +26,7 @@ fn data_cmd<SE, TW>(cmd: data::Control) -> ServiceOutput<FeaturesControl, SE, TW
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConnectionInfo {
-    pub uuid: u64,
+    pub conn: ConnId,
     pub dest: NodeId,
     pub remote: SocketAddr,
     pub rtt_ms: u32,
@@ -120,7 +120,7 @@ where
                 }
 
                 if now >= self.last_ping + NODE_PING_MS {
-                    log::debug!("[Visualization] Sending Snapshot to master with interval {NODE_PING_MS} ms with {} conns", self.conns.len());
+                    log::debug!("[Visualization] Sending Snapshot to collector with interval {NODE_PING_MS} ms with {} conns", self.conns.len());
                     self.last_ping = now;
                     let msg = Message::Snapshot(self.node_id, self.conns.values().cloned().collect::<Vec<_>>());
                     self.queue.push_back(data_cmd(data::Control::SendRule(
@@ -135,7 +135,7 @@ where
                 self.conns.insert(
                     ctx.conn,
                     ConnectionInfo {
-                        uuid: ctx.conn.uuid(),
+                        conn: ctx.conn,
                         dest: ctx.node,
                         remote: ctx.remote,
                         rtt_ms: 1000,
@@ -145,7 +145,7 @@ where
             ServiceSharedInput::Connection(ConnectionEvent::Stats(ctx, stats)) => {
                 log::debug!("[Visualization] Update rtt_ms for connection from {} to {} to {}ms", ctx.remote, ctx.node, stats.rtt_ms);
                 let entry = self.conns.entry(ctx.conn).or_insert(ConnectionInfo {
-                    uuid: ctx.conn.uuid(),
+                    conn: ctx.conn,
                     dest: ctx.node,
                     remote: ctx.remote,
                     rtt_ms: 1000,
@@ -214,16 +214,16 @@ impl<SE, TC, TW> ServiceWorker<FeaturesControl, FeaturesEvent, SE, TC, TW> for V
 }
 
 pub struct VisualizationServiceBuilder<SC, SE, TC, TW> {
-    master: bool,
+    collector: bool,
     node_id: NodeId,
     _tmp: std::marker::PhantomData<(SC, SE, TC, TW)>,
 }
 
 impl<SC, SE, TC, TW> VisualizationServiceBuilder<SC, SE, TC, TW> {
-    pub fn new(master: bool, node_id: NodeId) -> Self {
-        log::info!("[Visualization] started as master node => will receive metric from all other nodes");
+    pub fn new(collector: bool, node_id: NodeId) -> Self {
+        log::info!("[Visualization] started as collector node => will receive metric from all other nodes");
         Self {
-            master,
+            collector,
             node_id,
             _tmp: std::marker::PhantomData,
         }
@@ -246,7 +246,7 @@ where
     }
 
     fn discoverable(&self) -> bool {
-        self.master
+        self.collector
     }
 
     fn create(&self) -> Box<dyn Service<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>> {
@@ -339,7 +339,7 @@ mod test {
     }
 
     #[test]
-    fn master_handle_snapshot_correct() {
+    fn collector_handle_snapshot_correct() {
         let node_id = 1;
         let mut service = VisualizationService::<Control, Event, (), ()>::new(node_id);
 

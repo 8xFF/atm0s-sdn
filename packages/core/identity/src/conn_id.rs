@@ -87,6 +87,10 @@ impl ConnId {
             _ => ConnDirection::Incoming,
         }
     }
+    /// Returns `true` if the connection is outgoing, `false` otherwise.
+    pub fn is_outgoing(&self) -> bool {
+        self.direction() == ConnDirection::Outgoing
+    }
 
     /// Returns the UUID of the connection ID.
     pub fn uuid(&self) -> u64 {

@@ -58,29 +58,16 @@ impl NeighboursManager {
     pub fn on_input(&mut self, now_ms: u64, input: Input) {
         match input {
             Input::ConnectTo(addr) => {
-                //TODO move to other
                 let dest_node = addr.node_id();
-                log::info!("Connect to: addr {}", addr);
-                let mut dest_ip = None;
-                for part in addr.multiaddr().iter() {
-                    match part {
-                        Protocol::Ip4(i) => {
-                            dest_ip = Some(IpAddr::V4(i));
-                        }
-                        Protocol::Ip6(i) => {
-                            dest_ip = Some(IpAddr::V6(i));
-                        }
-                        Protocol::Udp(port) => {
-                            if let Some(ip) = dest_ip {
-                                let remote = SocketAddr::new(ip, port);
-                                log::info!("Sending connect request to {}, dest_node {}", remote, dest_node);
-                                let session_id = self.random.next_u64();
-                                let conn = NeighbourConnection::new_outgoing(self.node_id, dest_node, session_id, remote, now_ms);
-                                self.connections.insert(remote, conn);
-                            }
-                        }
-                        _ => {}
+                let dests = get_node_addr_dests(addr);
+                for remote in dests {
+                    if self.connections.contains_key(&remote) {
+                        continue;
                     }
+                    log::info!("Sending connect request to {}, dest_node {}", remote, dest_node);
+                    let session_id = self.random.next_u64();
+                    let conn = NeighbourConnection::new_outgoing(self.node_id, dest_node, session_id, remote, now_ms);
+                    self.connections.insert(remote, conn);
                 }
             }
             Input::DisconnectFrom(node) => {
@@ -174,4 +161,27 @@ impl NeighboursManager {
 
         self.queue.pop_front()
     }
+}
+
+fn get_node_addr_dests(addr: NodeAddr) -> Vec<SocketAddr> {
+    let mut dests = Vec::new();
+    log::info!("Connect to: addr {}", addr);
+    let mut dest_ip = None;
+    for part in addr.multiaddr().iter() {
+        match part {
+            Protocol::Ip4(i) => {
+                dest_ip = Some(IpAddr::V4(i));
+            }
+            Protocol::Ip6(i) => {
+                dest_ip = Some(IpAddr::V6(i));
+            }
+            Protocol::Udp(port) => {
+                if let Some(ip) = dest_ip {
+                    dests.push(SocketAddr::new(ip, port));
+                }
+            }
+            _ => {}
+        }
+    }
+    dests
 }

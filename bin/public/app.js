@@ -39,11 +39,11 @@ let cy = cytoscape({
     },
 });
 
-function edgeKey(node1, node2, uuid) {
-    if (node1 < node2) {
-        return "e" + node1 + "-" + node2 + "-" + uuid;
+function edgeKey(from, to, uuid, is_outgoing) {
+    if (is_outgoing) {
+        return "e" + from + "-" + to + "-" + uuid;
     } else {
-        return "e" + node2 + "-" + node1 + "-" + uuid;
+        return "e" + to + "-" + from + "-" + uuid;
     }
 }
 
@@ -55,12 +55,12 @@ function resetGraph(nodes) {
     nodes.map((node) => {
         cy.add({ data: { id: node.id } });
         node.connections.map((connection) => {
-            let edge = edgeKey(node.id, connection.dest, connection.uuid);
+            let edge = edgeKey(node.id, connection.dest, connection.uuid, connection.outgoing);
             if (edges[edge] === undefined) {
                 edges[edge] = {
                     id: edge,
-                    source: node.id,
-                    target: connection.dest,
+                    source: connection.outgoing ? node.id : connection.dest,
+                    target: connection.outgoing ? connection.dest : node.id,
                     nodes: {
                         [node.id]: {
                             remote: connection.remote,
@@ -93,19 +93,23 @@ function resetGraph(nodes) {
 
 function updateNode(node) {
     let added = false;
-    cy.startBatch();
     if (cy.$id(node.id).length == 0) {
         added = true;
         cy.add({ data: { id: node.id } });
     }
     cy.data({ elements: { data: { id: node.id } } });
     node.connections.map((connection) => {
-        let edge = edgeKey(node.id, connection.dest, connection.uuid);
+        if (cy.$id(connection.dest).length == 0) {
+            added = true;
+            cy.add({ data: { id: connection.dest } });
+        }
+
+        let edge = edgeKey(node.id, connection.dest, connection.uuid, connection.outgoing);
         if (edges[edge] === undefined) {
             edges[edge] = {
                 id: edge,
-                source: node.id,
-                target: connection.dest,
+                source: connection.outgoing ? node.id : connection.dest,
+                target: connection.outgoing ? connection.dest : node.id,
                 nodes: {
                     [node.id]: {
                         remote: connection.remote,
@@ -135,7 +139,6 @@ function updateNode(node) {
             });
         }
     });
-    cy.endBatch();
     if(added) {
         cy.layout({ name: "circle" }).run();
     }
