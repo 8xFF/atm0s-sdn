@@ -2,24 +2,18 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 
-#[derive(Deserialize, Serialize, Copy, Clone, Ord)]
+#[derive(Deserialize, Serialize, Copy, Clone)]
 pub struct ConnId {
-    value: u64,
+    protocol: u8,
+    direction: ConnDirection,
+    session: u64,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Copy, Clone, PartialEq, Eq, Debug, PartialOrd, Ord)]
+#[repr(u8)]
 pub enum ConnDirection {
-    Outgoing,
-    Incoming,
-}
-
-impl ConnDirection {
-    pub fn to_byte(&self) -> u8 {
-        match self {
-            ConnDirection::Outgoing => 0,
-            ConnDirection::Incoming => 1,
-        }
-    }
+    Outgoing = 0,
+    Incoming = 1,
 }
 
 impl ConnId {
@@ -29,36 +23,35 @@ impl ConnId {
     ///
     /// * `protocol` - A `u8` representing the protocol used for the connection.
     /// * `direction` - A `ConnDirection` enum representing the direction of the connection.
-    /// * `uuid` - A `u64` representing the UUID of the connection.
+    /// * `session` - A `u64` representing the UUID of the connection.
     ///
     /// # Returns
     ///
     /// A new `ConnId` instance.
-    pub fn from_raw(protocol: u8, direction: ConnDirection, uuid: u64) -> ConnId {
-        let value = uuid << 16 | ((protocol as u64) << 8) | (direction.to_byte() as u64);
-        ConnId { value }
+    pub fn from_raw(protocol: u8, direction: ConnDirection, session: u64) -> ConnId {
+        ConnId { protocol, direction, session }
     }
 
-    /// Creates a new outgoing `ConnId` from the given `protocol` and `uuid`.
+    /// Creates a new outgoing `ConnId` from the given `protocol` and `session`.
     ///
     /// # Arguments
     ///
     /// * `protocol` - An unsigned 8-bit integer representing the protocol.
-    /// * `uuid` - An unsigned 64-bit integer representing the UUID.
+    /// * `session` - An unsigned 64-bit integer representing the UUID.
     ///
     /// # Returns
     ///
     /// A new `ConnId` instance.
-    pub fn from_out(protocol: u8, uuid: u64) -> ConnId {
-        Self::from_raw(protocol, ConnDirection::Outgoing, uuid)
+    pub fn from_out(protocol: u8, session: u64) -> ConnId {
+        Self::from_raw(protocol, ConnDirection::Outgoing, session)
     }
 
-    /// Creates a new incoming `ConnId` from the given `protocol` and `uuid`.
+    /// Creates a new incoming `ConnId` from the given `protocol` and `session`.
     ///
     /// # Arguments
     ///
     /// * `protocol` - A `u8` representing the protocol.
-    /// * `uuid` - A `u64` representing the UUID.
+    /// * `session` - A `u64` representing the UUID.
     ///
     /// # Returns
     ///
@@ -71,21 +64,18 @@ impl ConnId {
     ///
     /// let conn_id = ConnId::from_in(1, 123456789);
     /// ```
-    pub fn from_in(protocol: u8, uuid: u64) -> ConnId {
-        Self::from_raw(protocol, ConnDirection::Incoming, uuid)
+    pub fn from_in(protocol: u8, session: u64) -> ConnId {
+        Self::from_raw(protocol, ConnDirection::Incoming, session)
     }
 
     /// Returns the protocol of the connection ID.
     pub fn protocol(&self) -> u8 {
-        (self.value >> 8) as u8
+        self.protocol
     }
 
     /// Returns the direction of the connection.
     pub fn direction(&self) -> ConnDirection {
-        match self.value as u8 {
-            0 => ConnDirection::Outgoing,
-            _ => ConnDirection::Incoming,
-        }
+        self.direction
     }
     /// Returns `true` if the connection is outgoing, `false` otherwise.
     pub fn is_outgoing(&self) -> bool {
@@ -93,34 +83,29 @@ impl ConnId {
     }
 
     /// Returns the UUID of the connection ID.
-    pub fn uuid(&self) -> u64 {
-        self.value >> 16
+    pub fn session(&self) -> u64 {
+        self.session
     }
 }
 
 impl std::fmt::Display for ConnId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let str = format!("Conn({:?},{},{})", self.direction(), self.protocol(), self.uuid());
+        let str = format!("Conn({:?},{},{})", self.direction(), self.protocol(), self.session());
         std::fmt::Display::fmt(&str, f)
     }
 }
 
 impl Debug for ConnId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let str = format!("Conn({:?},{},{})", self.direction(), self.protocol(), self.uuid());
+        let str = format!("Conn({:?},{},{})", self.direction(), self.protocol(), self.session());
         Debug::fmt(&str, f)
     }
 }
 
 impl PartialEq<Self> for ConnId {
     fn eq(&self, other: &Self) -> bool {
-        self.value.eq(&other.value)
-    }
-}
-
-impl PartialOrd<Self> for ConnId {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.value.partial_cmp(&other.value)
+        //compare both session and direction
+        self.session == other.session && self.direction == other.direction
     }
 }
 
@@ -128,9 +113,33 @@ impl Eq for ConnId {}
 
 impl Hash for ConnId {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_u64(self.value);
+        state.write_u8(self.direction as u8);
+        state.write_u64(self.session);
     }
 }
+
+impl PartialOrd<Self> for ConnId {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        //compare both session and direction
+        if self.session == other.session {
+            self.direction.partial_cmp(&other.direction)
+        } else {
+            self.session.partial_cmp(&other.session)
+        }
+    }
+}
+
+impl Ord for ConnId {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        //compare both session and direction
+        if self.session == other.session {
+            self.direction.cmp(&other.direction)
+        } else {
+            self.session.cmp(&other.session)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,7 +149,7 @@ mod tests {
         let conn_id = ConnId::from_out(1, 123);
         assert_eq!(conn_id.protocol(), 1);
         assert_eq!(conn_id.direction(), ConnDirection::Outgoing);
-        assert_eq!(conn_id.uuid(), 123);
+        assert_eq!(conn_id.session(), 123);
     }
 
     #[test]
@@ -148,7 +157,7 @@ mod tests {
         let conn_id = ConnId::from_in(2, 456);
         assert_eq!(conn_id.protocol(), 2);
         assert_eq!(conn_id.direction(), ConnDirection::Incoming);
-        assert_eq!(conn_id.uuid(), 456);
+        assert_eq!(conn_id.session(), 456);
     }
 
     #[test]

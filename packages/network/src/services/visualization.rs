@@ -283,7 +283,6 @@ mod test {
     fn connected_event(node: NodeId) -> ConnectionEvent {
         ConnectionEvent::Connected(
             ConnectionCtx {
-                session: 0,
                 conn: ConnId::from_in(0, node as u64),
                 node,
                 remote: SocketAddr::from(([127, 0, 0, 1], 1234)),
@@ -294,7 +293,6 @@ mod test {
 
     fn disconnected_event(node: NodeId) -> ConnectionEvent {
         ConnectionEvent::Disconnected(ConnectionCtx {
-            session: 0,
             conn: ConnId::from_in(0, node as u64),
             node,
             remote: SocketAddr::from(([127, 0, 0, 1], 1234)),

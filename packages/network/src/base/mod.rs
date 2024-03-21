@@ -17,7 +17,6 @@ pub use service::*;
 
 #[derive(Debug, Clone)]
 pub struct ConnectionCtx {
-    pub session: u64,
     pub conn: ConnId,
     pub node: NodeId,
     pub remote: SocketAddr,

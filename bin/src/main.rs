@@ -141,7 +141,7 @@ impl WebsocketCtx {
             let conns = connections
                 .into_iter()
                 .map(|c| ConnInfo {
-                    uuid: c.conn.uuid(),
+                    uuid: c.conn.session(),
                     outgoing: c.conn.is_outgoing(),
                     dest: c.dest,
                     remote: c.remote,
@@ -157,7 +157,7 @@ impl WebsocketCtx {
             .1
             .into_iter()
             .map(|c| ConnInfo {
-                uuid: c.conn.uuid(),
+                uuid: c.conn.session(),
                 outgoing: c.conn.is_outgoing(),
                 dest: c.dest,
                 remote: c.remote,

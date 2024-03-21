@@ -62,7 +62,7 @@ impl Router {
         let eq_util_layer = self.node_id.eq_util_layer(&over_node) as usize;
         log::debug!("[Router {}] set_direct {}/{} with metric {:?}, eq_util_layer {}", self.node_id, over, over_node, metric, eq_util_layer);
         assert!(eq_util_layer <= 4);
-        debug_assert!(eq_util_layer > 0);
+        debug_assert!(eq_util_layer > 0, "wrong eq_layer {} {}", self.node_id, over_node);
         if eq_util_layer > 0 {
             self.tables[eq_util_layer - 1].add_direct(over, metric.clone());
         }
