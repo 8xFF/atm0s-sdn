@@ -30,6 +30,7 @@ fn neighbour_control<SE, TW>(c: NeighbourControl) -> ServiceOutput<FeaturesContr
 }
 
 pub struct ManualDiscoveryService<SC, SE, TC, TW> {
+    node_addr: NodeAddr,
     queue: VecDeque<ServiceOutput<FeaturesControl, SE, TW>>,
     nodes: HashMap<NodeId, NodeAddr>,
     conns: HashMap<NodeId, Vec<ConnId>>,
@@ -57,6 +58,7 @@ impl<SC, SE, TC, TW> ManualDiscoveryService<SC, SE, TC, TW> {
         }
 
         Self {
+            node_addr,
             nodes: HashMap::new(),
             conns: HashMap::new(),
             queue,
@@ -125,6 +127,9 @@ impl<SC, SE, TC: Debug, TW: Debug> Service<FeaturesControl, FeaturesEvent, SC, S
         match input {
             ServiceInput::FeatureEvent(FeaturesEvent::DhtKv(KvEvent::MapEvent(map, event))) => match event {
                 MapEvent::OnSet(_, source, value) => {
+                    if source == self.node_addr.node_id() {
+                        return;
+                    }
                     if let Some(addr) = NodeAddr::from_vec(&value) {
                         log::info!("ManualDiscoveryService node {source} added tag {map} => connect {addr}");
                         self.nodes.insert(source, addr.clone());
@@ -223,7 +228,7 @@ mod test {
     use super::ManualDiscoveryService;
 
     fn node_addr(node: u32) -> NodeAddr {
-        let mut builder = NodeAddrBuilder::new(1);
+        let mut builder = NodeAddrBuilder::new(node);
         builder.add_protocol(Protocol::Ip4([127, 0, 0, 1].into()));
         builder.add_protocol(Protocol::Udp(node as u16));
         builder.addr()
