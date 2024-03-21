@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use atm0s_sdn_identity::NodeId;
+use rand::RngCore;
 
 use crate::{
     base::{ConnectionEvent, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, ServiceBuilder, ServiceControlActor, ServiceInput, ServiceOutput, ServiceSharedInput},
@@ -56,6 +57,7 @@ impl TryFrom<usize> for TaskType {
 }
 
 pub struct ControllerPlane<SC, SE, TC, TW> {
+    tick_count: u64,
     neighbours: NeighboursManager,
     features: FeatureManager,
     services: ServiceManager<SC, SE, TC, TW>,
@@ -76,12 +78,13 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
     /// # Returns
     ///
     /// A new ControllerPlane
-    pub fn new(node_id: NodeId, session: u64, services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>) -> Self {
+    pub fn new(node_id: NodeId, session: u64, services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>, random: Box<dyn RngCore>) -> Self {
         log::info!("Create ControllerPlane for node: {}, running session {}", node_id, session);
         let service_ids = services.iter().filter(|s| s.discoverable()).map(|s| s.service_id()).collect();
 
         Self {
-            neighbours: NeighboursManager::new(node_id),
+            tick_count: 0,
+            neighbours: NeighboursManager::new(node_id, random),
             features: FeatureManager::new(node_id, session, service_ids),
             services: ServiceManager::new(services),
             last_task: None,
@@ -91,9 +94,10 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
 
     pub fn on_tick(&mut self, now_ms: u64) {
         self.last_task = None;
-        self.neighbours.on_tick(now_ms);
-        self.features.on_shared_input(now_ms, FeatureSharedInput::Tick(now_ms));
-        self.services.on_shared_input(now_ms, ServiceSharedInput::Tick(now_ms));
+        self.neighbours.on_tick(now_ms, self.tick_count);
+        self.features.on_shared_input(now_ms, FeatureSharedInput::Tick(self.tick_count));
+        self.services.on_shared_input(now_ms, ServiceSharedInput::Tick(self.tick_count));
+        self.tick_count += 1;
     }
 
     pub fn on_event(&mut self, now_ms: u64, event: Input<SC, TC>) {

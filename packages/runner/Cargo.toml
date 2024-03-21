@@ -14,19 +14,18 @@ sans-io-runtime = { git = "https://github.com/giangndm/sans-io-runtime.git", fea
 # sans-io-runtime = { path = "../../../sans-io-runtime", features = ["poll-backend", "polling-backend", "mio-backend", "udp"]}
 atm0s-sdn-identity = { path = "../core/identity", version = "0.2.0" }
 atm0s-sdn-router = { path = "../core/router", version = "0.1.4" }
-atm0s-sdn-utils = { path = "../core/utils", version = "0.1.1" }
 atm0s-sdn-network = { path = "../network", version = "0.3.1" }
 
-paste = "1.0"
+rand.workspace = true
 log.workspace = true
 serde.workspace = true
-clap.workspace = true
 bincode.workspace = true
 local-ip-address = "0.6.1"
 
 [dev-dependencies]
 env_logger = { workspace = true }
 signal-hook = "0.3.17"
+clap.workspace = true
 
 [features]
 default = []

@@ -66,6 +66,7 @@ enum QueueOutput<SE, TC> {
 }
 
 pub struct DataPlane<SC, SE, TC, TW> {
+    tick_count: u64,
     ctx: FeatureWorkerContext,
     features: FeatureWorkerManager,
     services: ServiceWorkerManager<SC, SE, TC, TW>,
@@ -81,6 +82,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
         log::info!("Create DataPlane for node: {}", node_id);
 
         Self {
+            tick_count: 0,
             ctx: FeatureWorkerContext { router: ShadowRouter::new(node_id) },
             features: FeatureWorkerManager::new(node_id),
             services: ServiceWorkerManager::new(services),
@@ -98,8 +100,9 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
 
     pub fn on_tick<'a>(&mut self, now_ms: u64) {
         self.last_task = None;
-        self.features.on_tick(&mut self.ctx, now_ms);
-        self.services.on_tick(now_ms);
+        self.features.on_tick(&mut self.ctx, now_ms, self.tick_count);
+        self.services.on_tick(now_ms, self.tick_count);
+        self.tick_count += 1;
     }
 
     pub fn on_event<'a>(&mut self, now_ms: u64, event: Input<'a, TW>) -> Option<Output<'a, SE, TC>> {
@@ -239,22 +242,22 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
     fn outgoing_route<'a>(&mut self, now_ms: u64, feature: Features, rule: RouteRule, ttl: Ttl, buf: Vec<u8>) -> Option<Output<'a, SE, TC>> {
         match self.ctx.router.derive_action(&rule, None) {
             RouteAction::Reject => {
-                log::debug!("[DataPlane] route rule {:?} is rejected", rule);
+                log::debug!("[DataPlane] outgoing route rule {:?} is rejected", rule);
                 None
             }
             RouteAction::Local => {
-                log::debug!("[DataPlane] route rule {:?} is processed locally", rule);
+                log::debug!("[DataPlane] outgoing route rule {:?} is processed locally", rule);
                 let out = self.features.on_input(&mut self.ctx, feature, now_ms, FeatureWorkerInput::Local(buf.into()))?;
                 Some(self.convert_features(now_ms, feature, out.owned()))
             }
             RouteAction::Next(remote) => {
-                log::debug!("[DataPlane] route rule {:?} is go with remote {remote}", rule);
+                log::debug!("[DataPlane] outgoing route rule {:?} is go with remote {remote}", rule);
                 let header = TransportMsgHeader::build(feature as u8, 0, rule).set_ttl(*ttl);
                 let msg = TransportMsg::build_raw(header, &buf);
                 Some(NetOutput::UdpPacket(remote, msg.take().into()).into())
             }
             RouteAction::Broadcast(local, remotes) => {
-                log::debug!("[DataPlane] route rule {:?} is go with local {local} and remotes {:?}", rule, remotes);
+                log::debug!("[DataPlane] outgoing route rule {:?} is go with local {local} and remotes {:?}", rule, remotes);
 
                 let header = TransportMsgHeader::build(feature as u8, 0, rule).set_ttl(*ttl);
                 let msg = TransportMsg::build_raw(header, &buf);

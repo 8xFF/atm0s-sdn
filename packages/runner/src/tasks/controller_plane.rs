@@ -7,6 +7,7 @@ use atm0s_sdn_network::{
     features::{FeaturesControl, FeaturesEvent},
     ExtIn, ExtOut, LogicControl, LogicEvent,
 };
+use rand::rngs::ThreadRng;
 use sans_io_runtime::{bus::BusEvent, Task, TaskInput, TaskOutput};
 
 use crate::time::{TimePivot, TimeTicker};
@@ -41,7 +42,7 @@ impl<SC, SE, TC, TW> ControllerPlaneTask<SC, SE, TC, TW> {
     pub fn build(cfg: ControllerPlaneCfg<SC, SE, TC, TW>) -> Self {
         Self {
             node_id: cfg.node_id,
-            controller: ControllerPlane::new(cfg.node_id, cfg.session, cfg.services),
+            controller: ControllerPlane::new(cfg.node_id, cfg.session, cfg.services, Box::new(ThreadRng::default())),
             queue: VecDeque::from([TaskOutput::Bus(BusEvent::ChannelSubscribe(()))]),
             ticker: TimeTicker::build(1000),
             timer: TimePivot::build(),

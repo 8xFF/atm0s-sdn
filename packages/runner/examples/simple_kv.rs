@@ -1,7 +1,10 @@
 use atm0s_sdn_identity::{NodeAddr, NodeId};
-use atm0s_sdn_network::features::{
-    dht_kv::{Control, Key, Map, MapControl},
-    FeaturesControl,
+use atm0s_sdn_network::{
+    features::{
+        dht_kv::{Control, Key, Map, MapControl},
+        FeaturesControl,
+    },
+    services::visualization,
 };
 use clap::{Parser, ValueEnum};
 use sans_io_runtime::{
@@ -66,8 +69,8 @@ struct Args {
     kv_set: bool,
 }
 
-type SC = ();
-type SE = ();
+type SC = visualization::Control;
+type SE = visualization::Event;
 type TC = ();
 type TW = ();
 

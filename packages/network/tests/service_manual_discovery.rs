@@ -42,10 +42,10 @@ fn service_manual_discovery_three_nodes() {
 
     assert_eq!(
         sim.pop_res(),
-        Some((node1, ExtOut::FeaturesEvent(FeaturesEvent::Neighbours(neighbours::Event::Connected(node2, ConnId::from_out(0, 0))))))
+        Some((node1, ExtOut::FeaturesEvent(FeaturesEvent::Neighbours(neighbours::Event::Connected(node2, ConnId::from_out(0, 1000))))))
     );
     assert_eq!(
         sim.pop_res(),
-        Some((node1, ExtOut::FeaturesEvent(FeaturesEvent::Neighbours(neighbours::Event::Connected(node3, ConnId::from_out(0, 1))))))
+        Some((node1, ExtOut::FeaturesEvent(FeaturesEvent::Neighbours(neighbours::Event::Connected(node3, ConnId::from_out(0, 1005))))))
     );
 }

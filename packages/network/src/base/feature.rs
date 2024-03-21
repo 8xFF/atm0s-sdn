@@ -138,7 +138,7 @@ pub struct FeatureWorkerContext {
 pub trait FeatureWorker<SdkControl, SdkEvent, ToController, ToWorker> {
     fn feature_type(&self) -> u8;
     fn feature_name(&self) -> &str;
-    fn on_tick(&mut self, _ctx: &mut FeatureWorkerContext, _now: u64) {}
+    fn on_tick(&mut self, _ctx: &mut FeatureWorkerContext, _now: u64, _tick_count: u64) {}
     fn on_network_raw<'a>(
         &mut self,
         ctx: &mut FeatureWorkerContext,

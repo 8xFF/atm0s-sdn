@@ -1,7 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 
 use atm0s_sdn_identity::{ConnId, NodeId, NodeIdType};
-use atm0s_sdn_utils::init_array::init_array;
 use serde::{Deserialize, Serialize};
 
 pub use dest::{Dest, DestDelta};
@@ -31,11 +30,10 @@ pub struct Table {
 
 impl Table {
     pub fn new(node_id: NodeId, layer: u8) -> Self {
-        let dests = init_array!(Dest, 256, Default::default());
         Table {
             node_id,
             layer,
-            dests,
+            dests: std::array::from_fn(|_| Dest::default()),
             slots: vec![],
             deltas: VecDeque::new(),
         }

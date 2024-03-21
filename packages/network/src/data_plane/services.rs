@@ -23,10 +23,10 @@ impl<ServiceControl, ServiceEvent, ToController, ToWorker> ServiceWorkerManager<
         }
     }
 
-    pub fn on_tick(&mut self, now: u64) {
+    pub fn on_tick(&mut self, now: u64, tick_count: u64) {
         for service in self.services.iter_mut() {
             if let Some(service) = service {
-                service.on_tick(now);
+                service.on_tick(now, tick_count);
             }
         }
     }

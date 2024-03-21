@@ -42,6 +42,7 @@ pub fn convert_output<'a, SE, TC: Debug, TW: Debug>(
         ),
         TaskOutput::Bus(BusEvent::ChannelPublish(_, safe, event)) => {
             let channel = if event.is_broadcast() {
+                log::debug!("Broadcast to all workers {:?}", event);
                 SdnChannel::DataPlane(data_plane::ChannelIn::Broadcast)
             } else {
                 SdnChannel::DataPlane(data_plane::ChannelIn::Worker(0))

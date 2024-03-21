@@ -1,7 +1,6 @@
 use atm0s_sdn_identity::{ConnId, NodeId};
 use std::collections::{HashMap, VecDeque};
 
-use atm0s_sdn_utils::init_array::init_array;
 use serde::{Deserialize, Serialize};
 
 mod dest;
@@ -33,8 +32,8 @@ impl Registry {
     pub fn new(node_id: NodeId) -> Self {
         Registry {
             node_id,
-            local_destinations: init_array!(bool, 256, false),
-            remote_destinations: init_array!(RegistryDest, 256, Default::default()),
+            local_destinations: [false; 256],
+            remote_destinations: std::array::from_fn(|_| RegistryDest::default()),
             deltas: VecDeque::new(),
         }
     }

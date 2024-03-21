@@ -19,7 +19,7 @@ pub enum ShadowRouterDelta<Remote> {
     DelServiceLocal { service: u8 },
 }
 
-pub struct ShadowRouter<Remote> {
+pub struct ShadowRouter<Remote: Debug + Hash + Eq + Clone + Copy> {
     node_id: NodeId,
     local_registries: [bool; 256],
     remote_registry: [Service<Remote>; 256],

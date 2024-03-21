@@ -26,7 +26,7 @@ fn data_cmd<SE, TW>(cmd: data::Control) -> ServiceOutput<FeaturesControl, SE, TW
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConnectionInfo {
-    pub conn: ConnId,
+    pub uuid: u64,
     pub dest: NodeId,
     pub remote: SocketAddr,
     pub rtt_ms: u32,
@@ -37,16 +37,17 @@ struct NodeInfo {
     conns: Vec<ConnectionInfo>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Control {
     Subscribe,
     GetAll,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     GotAll(Vec<(NodeId, Vec<ConnectionInfo>)>),
     NodeChanged(NodeId, Vec<ConnectionInfo>),
+    NodeRemoved(NodeId),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -65,7 +66,11 @@ pub struct VisualizationService<SC, SE, TC, TW> {
     _tmp: std::marker::PhantomData<(SC, TC, TW)>,
 }
 
-impl<SC, SE, TC, TW> VisualizationService<SC, SE, TC, TW> {
+impl<SC, SE, TC, TW> VisualizationService<SC, SE, TC, TW>
+where
+    SC: From<Control> + TryInto<Control>,
+    SE: From<Event> + TryInto<Event>,
+{
     pub fn new(node_id: NodeId) -> Self {
         Self {
             node_id,
@@ -76,6 +81,12 @@ impl<SC, SE, TC, TW> VisualizationService<SC, SE, TC, TW> {
             queue: VecDeque::new(),
             subscribers: Vec::new(),
             _tmp: std::marker::PhantomData,
+        }
+    }
+
+    fn fire_event(&mut self, event: Event) {
+        for sub in self.subscribers.iter() {
+            self.queue.push_back(ServiceOutput::Event(*sub, event.clone().into()));
         }
     }
 }
@@ -99,11 +110,12 @@ where
                 let mut to_remove = Vec::new();
                 for (node, info) in self.network_nodes.iter() {
                     if now >= NODE_TIMEOUT_MS + info.last_ping_ms {
-                        log::debug!("[Visualization] Node {} is dead after timeout {NODE_TIMEOUT_MS} ms", node);
+                        log::warn!("[Visualization] Node {} is dead after timeout {NODE_TIMEOUT_MS} ms", node);
                         to_remove.push(*node);
                     }
                 }
                 for node in to_remove {
+                    self.fire_event(Event::NodeRemoved(node));
                     self.network_nodes.remove(&node);
                 }
 
@@ -123,7 +135,7 @@ where
                 self.conns.insert(
                     ctx.conn,
                     ConnectionInfo {
-                        conn: ctx.conn,
+                        uuid: ctx.conn.uuid(),
                         dest: ctx.node,
                         remote: ctx.remote,
                         rtt_ms: 1000,
@@ -133,7 +145,7 @@ where
             ServiceSharedInput::Connection(ConnectionEvent::Stats(ctx, stats)) => {
                 log::debug!("[Visualization] Update rtt_ms for connection from {} to {} to {}ms", ctx.remote, ctx.node, stats.rtt_ms);
                 let entry = self.conns.entry(ctx.conn).or_insert(ConnectionInfo {
-                    conn: ctx.conn,
+                    uuid: ctx.conn.uuid(),
                     dest: ctx.node,
                     remote: ctx.remote,
                     rtt_ms: 1000,
@@ -154,9 +166,7 @@ where
                     match msg {
                         Message::Snapshot(from, conns) => {
                             log::debug!("[Visualization] Got snapshot from {} with {} connections", from, conns.len());
-                            for sub in self.subscribers.iter() {
-                                self.queue.push_back(ServiceOutput::Event(*sub, Event::NodeChanged(from, conns.clone()).into()));
-                            }
+                            self.fire_event(Event::NodeChanged(from, conns.clone()));
                             self.network_nodes.insert(from, NodeInfo { last_ping_ms: now, conns });
                         }
                     }
@@ -211,6 +221,7 @@ pub struct VisualizationServiceBuilder<SC, SE, TC, TW> {
 
 impl<SC, SE, TC, TW> VisualizationServiceBuilder<SC, SE, TC, TW> {
     pub fn new(master: bool, node_id: NodeId) -> Self {
+        log::info!("[Visualization] started as master node => will receive metric from all other nodes");
         Self {
             master,
             node_id,

@@ -37,13 +37,13 @@ impl FeatureWorkerManager {
         }
     }
 
-    pub fn on_tick(&mut self, ctx: &mut FeatureWorkerContext, now_ms: u64) {
+    pub fn on_tick(&mut self, ctx: &mut FeatureWorkerContext, now_ms: u64, tick_count: u64) {
         self.last_input_feature = None;
-        self.neighbours.on_tick(ctx, now_ms);
-        self.data.on_tick(ctx, now_ms);
-        self.router_sync.on_tick(ctx, now_ms);
-        self.vpn.on_tick(ctx, now_ms);
-        self.dht_kv.on_tick(ctx, now_ms);
+        self.neighbours.on_tick(ctx, now_ms, tick_count);
+        self.data.on_tick(ctx, now_ms, tick_count);
+        self.router_sync.on_tick(ctx, now_ms, tick_count);
+        self.vpn.on_tick(ctx, now_ms, tick_count);
+        self.dht_kv.on_tick(ctx, now_ms, tick_count);
     }
 
     pub fn on_network_raw<'a>(&mut self, ctx: &mut FeatureWorkerContext, feature: Features, now_ms: u64, conn: ConnId, header_len: usize, buf: GenericBuffer<'a>) -> Option<FeaturesWorkerOutput<'a>> {

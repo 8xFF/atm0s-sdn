@@ -20,6 +20,7 @@ use atm0s_sdn_network::{
 };
 use log::{LevelFilter, Metadata, Record};
 use parking_lot::Mutex;
+use rand::rngs::mock::StepRng;
 
 static CONTEXT_LOGGER: ContextLogger = ContextLogger { node: Mutex::new(None) };
 
@@ -99,7 +100,7 @@ pub struct TestNode<SC, SE, TC, TW> {
 impl<SC, SE, TC, TW> TestNode<SC, SE, TC, TW> {
     pub fn new(node_id: NodeId, session: u64, services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>) -> Self {
         let _log = AutoContext::new(node_id);
-        let controller = ControllerPlane::new(node_id, session, services.clone());
+        let controller = ControllerPlane::new(node_id, session, services.clone(), Box::new(StepRng::new(1000, 5)));
         let worker = DataPlane::new(node_id, services);
         Self { node_id, controller, worker }
     }

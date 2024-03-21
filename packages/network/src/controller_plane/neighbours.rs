@@ -3,8 +3,7 @@ use std::{
     net::{IpAddr, SocketAddr},
 };
 
-use atm0s_sdn_identity::{ConnDirection, ConnId, NodeAddr, NodeId, Protocol};
-use atm0s_sdn_utils::random::{self, Random};
+use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId, Protocol};
 
 use crate::base::{self, ConnectionCtx, NeighboursControl, NeighboursControlCmds, SecureContext};
 
@@ -26,23 +25,23 @@ pub enum Output {
 }
 
 pub struct NeighboursManager {
-    conn_id_seed: u64,
     node_id: NodeId,
     connections: HashMap<SocketAddr, NeighbourConnection>,
     neighbours: HashMap<ConnId, ConnectionCtx>,
     queue: VecDeque<Output>,
     shutdown: bool,
+    random: Box<dyn rand::RngCore>,
 }
 
 impl NeighboursManager {
-    pub fn new(node_id: NodeId) -> Self {
+    pub fn new(node_id: NodeId, random: Box<dyn rand::RngCore>) -> Self {
         Self {
-            conn_id_seed: 0,
             node_id,
             connections: HashMap::new(),
             neighbours: HashMap::new(),
             queue: VecDeque::new(),
             shutdown: false,
+            random,
         }
     }
 
@@ -50,7 +49,7 @@ impl NeighboursManager {
         self.neighbours.get(&conn)
     }
 
-    pub fn on_tick(&mut self, now_ms: u64) {
+    pub fn on_tick(&mut self, now_ms: u64, _tick_count: u64) {
         for conn in self.connections.values_mut() {
             conn.on_tick(now_ms);
         }
@@ -59,6 +58,7 @@ impl NeighboursManager {
     pub fn on_input(&mut self, now_ms: u64, input: Input) {
         match input {
             Input::ConnectTo(addr) => {
+                //TODO move to other
                 let dest_node = addr.node_id();
                 log::info!("Connect to: addr {}", addr);
                 let mut dest_ip = None;
@@ -74,9 +74,8 @@ impl NeighboursManager {
                             if let Some(ip) = dest_ip {
                                 let remote = SocketAddr::new(ip, port);
                                 log::info!("Sending connect request to {}, dest_node {}", remote, dest_node);
-                                let conn_id = self.gen_conn_id(ConnDirection::Outgoing);
-                                let session_id = Self::gen_session_id();
-                                let conn = NeighbourConnection::new_outgoing(conn_id, self.node_id, dest_node, session_id, remote, now_ms);
+                                let session_id = self.random.next_u64();
+                                let conn = NeighbourConnection::new_outgoing(self.node_id, dest_node, session_id, remote, now_ms);
                                 self.connections.insert(remote, conn);
                             }
                         }
@@ -97,8 +96,7 @@ impl NeighboursManager {
                 } else {
                     match &control.cmd {
                         NeighboursControlCmds::ConnectRequest { from, to: _, session } => {
-                            let conn_id = self.gen_conn_id(ConnDirection::Incoming);
-                            let mut conn = NeighbourConnection::new_incoming(conn_id, self.node_id, *from, *session, addr, now_ms);
+                            let mut conn = NeighbourConnection::new_incoming(self.node_id, *from, *session, addr, now_ms);
                             conn.on_input(now_ms, control);
                             self.connections.insert(addr, conn);
                         }
@@ -175,16 +173,5 @@ impl NeighboursManager {
         }
 
         self.queue.pop_front()
-    }
-
-    fn gen_conn_id(&mut self, direction: ConnDirection) -> ConnId {
-        let id = self.conn_id_seed;
-        self.conn_id_seed += 1;
-        ConnId::from_raw(0, direction, id)
-    }
-
-    /// Generates a random session ID.
-    fn gen_session_id() -> u64 {
-        random::RealRandom().random()
     }
 }

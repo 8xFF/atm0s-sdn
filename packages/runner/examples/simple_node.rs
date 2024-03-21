@@ -1,4 +1,5 @@
 use atm0s_sdn_identity::{NodeAddr, NodeId};
+use atm0s_sdn_network::services::visualization;
 use clap::{Parser, ValueEnum};
 use sans_io_runtime::backend::{MioBackend, PollBackend, PollingBackend};
 use std::{
@@ -64,8 +65,8 @@ struct Args {
     connect_tags: Vec<String>,
 }
 
-type SC = ();
-type SE = ();
+type SC = visualization::Control;
+type SE = visualization::Event;
 type TC = ();
 type TW = ();
 

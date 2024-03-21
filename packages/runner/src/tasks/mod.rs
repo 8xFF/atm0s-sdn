@@ -2,7 +2,11 @@ mod controller_plane;
 mod data_plane;
 mod event_convert;
 
-use std::{fmt::Debug, sync::Arc, time::Instant};
+use std::{
+    fmt::Debug,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_network::{
@@ -88,6 +92,7 @@ impl<SC, SE, TC: Debug, TW: Debug> SdnWorkerInner<SC, SE, TC, TW> {
 impl<SC, SE, TC: Debug, TW: Debug> WorkerInner<SdnExtIn<SC>, SdnExtOut<SE>, SdnChannel, SdnEvent<TC, TW>, SdnInnerCfg<SC, SE, TC, TW>, SdnSpawnCfg> for SdnWorkerInner<SC, SE, TC, TW> {
     fn build(worker: u16, cfg: SdnInnerCfg<SC, SE, TC, TW>) -> Self {
         if let Some(controller) = cfg.controller {
+            log::info!("Create controller worker");
             Self {
                 worker,
                 controller: Some(ControllerPlaneTask::build(ControllerPlaneCfg {
@@ -111,6 +116,7 @@ impl<SC, SE, TC: Debug, TW: Debug> WorkerInner<SdnExtIn<SC>, SdnExtOut<SE>, SdnC
                 state: State::Running,
             }
         } else {
+            log::info!("Create data only worker");
             Self {
                 worker,
                 controller: None,

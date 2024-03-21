@@ -41,10 +41,10 @@ pub struct NeighbourConnection {
 }
 
 impl NeighbourConnection {
-    pub fn new_outgoing(conn: ConnId, local: NodeId, node: NodeId, session: u64, remote: SocketAddr, now_ms: u64) -> Self {
+    pub fn new_outgoing(local: NodeId, node: NodeId, session: u64, remote: SocketAddr, now_ms: u64) -> Self {
         let state = State::Connecting { at_ms: now_ms, client: true };
         Self {
-            conn,
+            conn: ConnId::from_out(0, session),
             local,
             node,
             session,
@@ -61,10 +61,10 @@ impl NeighbourConnection {
         }
     }
 
-    pub fn new_incoming(conn: ConnId, local: NodeId, node: NodeId, session: u64, remote: SocketAddr, now_ms: u64) -> Self {
+    pub fn new_incoming(local: NodeId, node: NodeId, session: u64, remote: SocketAddr, now_ms: u64) -> Self {
         let state: State = State::Connecting { at_ms: now_ms, client: false };
         Self {
-            conn,
+            conn: ConnId::from_in(0, session),
             local,
             node,
             session,

@@ -57,7 +57,7 @@ pub enum ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceEvent, ToCon
 pub trait ServiceWorker<FeaturesControl, FeaturesEvent, ServiceEvent, ToController, ToWorker> {
     fn service_id(&self) -> u8;
     fn service_name(&self) -> &str;
-    fn on_tick(&mut self, _now: u64) {}
+    fn on_tick(&mut self, _now: u64, _tick_count: u64) {}
     fn on_input(&mut self, _now: u64, input: ServiceWorkerInput<FeaturesEvent, ToWorker>) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceEvent, ToController>> {
         match input {
             ServiceWorkerInput::FeatureEvent(event) => Some(ServiceWorkerOutput::ForwardFeatureEventToController(event)),

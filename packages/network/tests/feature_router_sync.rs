@@ -1,11 +1,91 @@
+use std::sync::Arc;
+
 use atm0s_sdn_network::{
+    base::{Service, ServiceBuilder, ServiceInput, ServiceOutput, ServiceSharedInput, ServiceWorker},
     features::{data, FeaturesControl, FeaturesEvent},
     ExtIn, ExtOut,
 };
+use atm0s_sdn_router::RouteRule;
 
 use crate::simulator::{NetworkSimulator, TestNode};
 
 mod simulator;
+
+struct MockService;
+
+impl Service<FeaturesControl, FeaturesEvent, (), (), (), ()> for MockService {
+    fn service_id(&self) -> u8 {
+        0
+    }
+
+    fn service_name(&self) -> &str {
+        "mock"
+    }
+
+    fn on_input(&mut self, _now: u64, _input: ServiceInput<FeaturesEvent, (), ()>) {}
+
+    fn on_shared_input<'a>(&mut self, _now: u64, _input: ServiceSharedInput) {}
+
+    fn pop_output(&mut self) -> Option<ServiceOutput<FeaturesControl, (), ()>> {
+        None
+    }
+}
+
+struct MockServiceWorker;
+
+impl ServiceWorker<FeaturesControl, FeaturesEvent, (), (), ()> for MockServiceWorker {
+    fn service_id(&self) -> u8 {
+        0
+    }
+
+    fn service_name(&self) -> &str {
+        "mock"
+    }
+}
+
+struct MockServiceBuilder;
+
+impl ServiceBuilder<FeaturesControl, FeaturesEvent, (), (), (), ()> for MockServiceBuilder {
+    fn service_id(&self) -> u8 {
+        0
+    }
+
+    fn service_name(&self) -> &str {
+        "mock"
+    }
+
+    fn create(&self) -> Box<dyn Service<FeaturesControl, FeaturesEvent, (), (), (), ()>> {
+        Box::new(MockService)
+    }
+
+    fn create_worker(&self) -> Box<dyn ServiceWorker<FeaturesControl, FeaturesEvent, (), (), ()>> {
+        Box::new(MockServiceWorker)
+    }
+}
+
+#[test]
+fn feature_router_sync_single_node() {
+    let node1 = 1;
+    let mut sim = NetworkSimulator::<(), (), (), ()>::new(0);
+
+    let _addr1 = sim.add_node(TestNode::new(node1, 1234, vec![Arc::new(MockServiceBuilder)]));
+
+    // For sync
+    for _i in 0..4 {
+        sim.process(500);
+    }
+
+    sim.control(node1, ExtIn::FeaturesControl(FeaturesControl::Data(data::Control::Ping(node1))));
+    sim.process(10);
+    assert_eq!(sim.pop_res(), Some((node1, ExtOut::FeaturesEvent(FeaturesEvent::Data(data::Event::Pong(node1, Some(0)))))));
+
+    sim.control(
+        node1,
+        ExtIn::FeaturesControl(FeaturesControl::Data(data::Control::SendRule(RouteRule::ToService(0), 10.into(), vec![1, 2, 3, 4]))),
+    );
+    sim.process(10);
+    assert_eq!(sim.pop_res(), Some((node1, ExtOut::FeaturesEvent(FeaturesEvent::Data(data::Event::Recv(vec![1, 2, 3, 4]))))));
+}
 
 #[test]
 fn feature_router_sync_two_nodes() {

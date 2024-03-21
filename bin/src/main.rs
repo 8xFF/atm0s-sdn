@@ -1,0 +1,264 @@
+use atm0s_sdn::sans_io_runtime::Owner;
+use atm0s_sdn::services::visualization;
+use atm0s_sdn::tasks::{SdnExtIn, SdnExtOut};
+use atm0s_sdn::{
+    sans_io_runtime::backend::{MioBackend, PollBackend, PollingBackend},
+    services::visualization::ConnectionInfo,
+};
+use atm0s_sdn::{NodeAddr, NodeId};
+use clap::{Parser, ValueEnum};
+use futures_util::{SinkExt, StreamExt};
+use poem::{
+    endpoint::StaticFilesEndpoint,
+    get, handler,
+    listener::TcpListener,
+    web::{
+        websocket::{Message, WebSocket},
+        Data,
+    },
+    EndpointExt, IntoResponse, Route, Server,
+};
+use serde::Serialize;
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
+use tokio::sync::Mutex;
+
+use atm0s_sdn::builder::SdnBuilder;
+
+#[derive(Debug, Clone, ValueEnum)]
+enum BackendType {
+    Poll,
+    Polling,
+    Mio,
+}
+
+/// Simple program to running a node
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// Node Id
+    #[arg(short, long)]
+    node_id: NodeId,
+
+    /// Listen address
+    #[arg(short, long)]
+    udp_port: u16,
+
+    /// Address of node we should connect to
+    #[arg(short, long)]
+    seeds: Vec<NodeAddr>,
+
+    /// Password for the network
+    #[arg(short, long, default_value = "password")]
+    password: String,
+
+    /// Backend type
+    #[arg(short, long, default_value = "polling")]
+    backend: BackendType,
+
+    /// Backend type
+    #[arg(short, long)]
+    vpn: bool,
+
+    /// Workers
+    #[arg(long, default_value_t = 2)]
+    workers: usize,
+
+    /// Custom IP
+    #[arg(long)]
+    custom_addrs: Vec<SocketAddr>,
+
+    /// Local tags
+    #[arg(long)]
+    local_tags: Vec<String>,
+
+    /// Connect tags
+    #[arg(long)]
+    connect_tags: Vec<String>,
+
+    /// Web server addr
+    #[arg(long, default_value = "0.0.0.0:3000")]
+    web_addr: SocketAddr,
+
+    /// Master node
+    #[arg(long)]
+    master: bool,
+}
+
+type SC = visualization::Control;
+type SE = visualization::Event;
+type TC = ();
+type TW = ();
+
+#[derive(Debug, Clone, Serialize)]
+struct NodeInfo {
+    id: NodeId,
+    connections: Vec<ConnectionInfo>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", content = "data")]
+enum WebsocketMessage {
+    Snapshot(Vec<NodeInfo>),
+    Update(NodeInfo),
+    Delete(NodeId),
+}
+
+#[derive(Debug)]
+struct WebsocketCtx {
+    channel: tokio::sync::broadcast::Sender<WebsocketMessage>,
+    snapshot: HashMap<NodeId, Vec<ConnectionInfo>>,
+}
+
+impl WebsocketCtx {
+    pub fn new() -> Self {
+        let (tx, _) = tokio::sync::broadcast::channel(10);
+        Self {
+            channel: tx,
+            snapshot: HashMap::new(),
+        }
+    }
+
+    pub fn set_snapshot(&mut self, snapshot: Vec<(NodeId, Vec<ConnectionInfo>)>) {
+        self.snapshot.clear();
+        for (id, connections) in snapshot {
+            self.snapshot.insert(id, connections);
+        }
+    }
+
+    pub fn set_node(&mut self, delta: (NodeId, Vec<ConnectionInfo>)) {
+        self.snapshot.insert(delta.0, delta.1.clone());
+        if let Err(e) = self.channel.send(WebsocketMessage::Update(NodeInfo { id: delta.0, connections: delta.1 })) {
+            log::error!("Failed to send delta: {}", e);
+        }
+    }
+
+    pub fn del_node(&mut self, id: NodeId) {
+        self.snapshot.remove(&id);
+        if let Err(e) = self.channel.send(WebsocketMessage::Delete(id)) {
+            log::error!("Failed to send delta: {}", e);
+        }
+    }
+
+    pub fn get_snapshot(&self) -> Vec<NodeInfo> {
+        self.snapshot
+            .iter()
+            .map(|(id, connections)| NodeInfo {
+                id: *id,
+                connections: connections.clone(),
+            })
+            .collect()
+    }
+
+    pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<WebsocketMessage> {
+        self.channel.subscribe()
+    }
+}
+
+#[handler]
+fn ws(ws: WebSocket, ctx: Data<&Arc<Mutex<WebsocketCtx>>>) -> impl IntoResponse {
+    let ctx = ctx.clone();
+    ws.on_upgrade(move |socket| async move {
+        let (mut sink, mut _stream) = socket.split();
+        let ctx = ctx.lock().await;
+        let snapshot = ctx.get_snapshot();
+        if let Err(e) = sink
+            .send(Message::Text(serde_json::to_string(&WebsocketMessage::Snapshot(snapshot)).expect("should convert json")))
+            .await
+        {
+            log::error!("Failed to send snapshot: {}", e);
+            return;
+        }
+        let mut rx = ctx.subscribe();
+        drop(ctx);
+        while let Ok(event) = rx.recv().await {
+            if let Err(e) = sink.send(Message::Text(serde_json::to_string(&event).expect("should convert json"))).await {
+                log::error!("Failed to send delta: {}", e);
+                return;
+            }
+        }
+    })
+}
+
+#[tokio::main]
+async fn main() {
+    if std::env::var_os("RUST_LOG").is_none() {
+        std::env::set_var("RUST_LOG", "info");
+    }
+    let term = Arc::new(AtomicBool::new(false));
+    signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&term)).expect("Should register hook");
+    let mut shutdown_wait = 0;
+    let args = Args::parse();
+    tracing_subscriber::fmt::init();
+    let mut builder = SdnBuilder::<SC, SE, TC, TW>::new(args.node_id, args.udp_port, args.custom_addrs);
+
+    builder.set_manual_discovery(args.local_tags, args.connect_tags);
+
+    #[cfg(feature = "vpn")]
+    if args.vpn {
+        builder.enable_vpn();
+    }
+
+    builder.set_visualization_master(args.master);
+
+    for seed in args.seeds {
+        builder.add_seed(seed);
+    }
+
+    let mut controller = match args.backend {
+        BackendType::Mio => builder.build::<MioBackend<128, 128>>(args.workers),
+        BackendType::Poll => builder.build::<PollBackend<128, 128>>(args.workers),
+        BackendType::Polling => builder.build::<PollingBackend<128, 128>>(args.workers),
+    };
+
+    let ctx = Arc::new(Mutex::new(WebsocketCtx::new()));
+
+    if args.master {
+        controller.send_to(Owner::worker(0), SdnExtIn::ServicesControl(visualization::SERVICE_ID.into(), visualization::Control::Subscribe));
+        let ctx_c = ctx.clone();
+        tokio::spawn(async move {
+            let app = Route::new().at("/ws", get(ws.data(ctx_c))).nest("/", StaticFilesEndpoint::new("./public/").index_file("index.html"));
+            Server::new(TcpListener::bind(args.web_addr)).run(app).await
+        });
+    }
+
+    while controller.process().is_some() {
+        if term.load(Ordering::Relaxed) {
+            if shutdown_wait == 200 {
+                log::warn!("Force shutdown");
+                break;
+            }
+            shutdown_wait += 1;
+            controller.shutdown();
+        }
+        while let Some(event) = controller.pop_event() {
+            match event {
+                SdnExtOut::ServicesEvent(event) => match event {
+                    visualization::Event::GotAll(all) => {
+                        log::info!("Got all: {:?}", all);
+                        ctx.lock().await.set_snapshot(all);
+                    }
+                    visualization::Event::NodeChanged(node, changed) => {
+                        log::info!("Node changed: {:?} {:?}", node, changed);
+                        ctx.lock().await.set_node((node, changed));
+                    }
+                    visualization::Event::NodeRemoved(node) => {
+                        log::info!("Node removed: {:?}", node);
+                        ctx.lock().await.del_node(node);
+                    }
+                },
+                SdnExtOut::FeaturesEvent(_event) => {}
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+
+    log::info!("Server shutdown");
+}

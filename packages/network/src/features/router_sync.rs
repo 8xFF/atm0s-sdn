@@ -27,18 +27,16 @@ pub struct RouterSyncFeature {
     router: Router,
     conns: HashMap<ConnId, (NodeId, SocketAddr, Metric)>,
     queue: VecDeque<FeatureOutput<Event, ToWorker>>,
+    services: Vec<u8>,
 }
 
 impl RouterSyncFeature {
     pub fn new(node: NodeId, services: Vec<u8>) -> Self {
-        let mut router = Router::new(node);
-
-        for service in services {
-            router.register_service(service);
-        }
+        log::info!("[RouterSync] started node {} with public services {:?}", node, services);
 
         Self {
-            router,
+            router: Router::new(node),
+            services,
             conns: HashMap::new(),
             queue: VecDeque::new(),
         }
@@ -61,7 +59,16 @@ impl Feature<Control, Event, ToController, ToWorker> for RouterSyncFeature {
 
     fn on_shared_input(&mut self, _now: u64, input: FeatureSharedInput) {
         match input {
-            FeatureSharedInput::Tick(_) => {
+            FeatureSharedInput::Tick(tick_count) => {
+                if tick_count < 1 {
+                    //we need to wait all workers to be ready
+                    return;
+                }
+
+                while let Some(service) = self.services.pop() {
+                    self.router.register_service(service);
+                }
+
                 for (conn, (node, _, _)) in self.conns.iter() {
                     Self::send_sync_to(&self.router, &mut self.queue, *conn, *node);
                 }

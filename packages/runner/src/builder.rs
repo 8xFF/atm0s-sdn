@@ -8,9 +8,9 @@ use atm0s_sdn_identity::{NodeAddr, NodeAddrBuilder, NodeId, Protocol};
 use atm0s_sdn_network::{
     base::ServiceBuilder,
     features::{FeaturesControl, FeaturesEvent},
-    services::manual_discovery,
+    services::{manual_discovery, visualization},
 };
-use atm0s_sdn_utils::random::{self, Random};
+use rand::{thread_rng, RngCore};
 use sans_io_runtime::{backend::Backend, Owner};
 
 use crate::tasks::{ControllerCfg, SdnController, SdnExtIn, SdnInnerCfg, SdnWorkerInner};
@@ -20,6 +20,7 @@ pub struct SdnBuilder<SC, SE, TC, TW> {
     node_id: NodeId,
     session: u64,
     udp_port: u16,
+    visualization_master: bool,
     seeds: Vec<NodeAddr>,
     services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
     #[cfg(feature = "vpn")]
@@ -32,8 +33,8 @@ pub struct SdnBuilder<SC, SE, TC, TW> {
 
 impl<SC, SE, TC: Debug, TW: Debug> SdnBuilder<SC, SE, TC, TW>
 where
-    SC: 'static + Debug + Clone + Send + Sync,
-    SE: 'static + Debug + Clone + Send + Sync,
+    SC: 'static + Clone + Debug + Send + Sync + From<visualization::Control> + TryInto<visualization::Control>,
+    SE: 'static + Clone + Debug + Send + Sync + From<visualization::Event> + TryInto<visualization::Event>,
     TC: 'static + Clone + Send + Sync,
     TW: 'static + Clone + Send + Sync,
 {
@@ -70,8 +71,9 @@ where
         Self {
             node_addr,
             node_id,
-            session: random::RealRandom().random(),
+            session: thread_rng().next_u64(),
             udp_port,
+            visualization_master: false,
             seeds: vec![],
             services: vec![],
             #[cfg(feature = "vpn")]
@@ -89,6 +91,11 @@ where
 
     pub fn add_seed(&mut self, addr: NodeAddr) {
         self.seeds.push(addr);
+    }
+
+    /// Setting visualization master mode
+    pub fn set_visualization_master(&mut self, value: bool) {
+        self.visualization_master = value;
     }
 
     /// Setting manual discovery
@@ -119,7 +126,7 @@ where
         self.vpn_netmask = Some(netmask);
     }
 
-    pub fn build<B: Backend>(self, workers: usize) -> SdnController<SC, SE, TC, TW> {
+    pub fn build<B: Backend>(mut self, workers: usize) -> SdnController<SC, SE, TC, TW> {
         assert!(workers > 0);
         #[cfg(feature = "vpn")]
         let (tun_device, mut queue_fds) = {
@@ -136,6 +143,8 @@ where
                 (None, std::collections::VecDeque::new())
             }
         };
+
+        self.add_service(Arc::new(visualization::VisualizationServiceBuilder::<SC, SE, TC, TW>::new(self.visualization_master, self.node_id)));
 
         let mut controller = SdnController::default();
         controller.add_worker::<_, SdnWorkerInner<SC, SE, TC, TW>, B>(

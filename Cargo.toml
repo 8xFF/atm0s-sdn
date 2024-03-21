@@ -4,6 +4,7 @@ independent = true
 [workspace]
 resolver = "2"
 members = [
+    "bin",
     "packages/core/utils",
     "packages/core/identity",
     "packages/core/router",
