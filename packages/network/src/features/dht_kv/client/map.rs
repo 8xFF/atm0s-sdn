@@ -450,7 +450,7 @@ impl LocalMap {
                     log::warn!("[ClientMap] Received OnSet {key} but state or remote is not correct");
                     return None;
                 }
-                let slot = self.get_slot(key, self.session, true).expect("Must have slot for set");
+                let slot = self.get_slot(key, source, true).expect("Must have slot for set");
                 let (event, updated) = slot.on_set(now, key, source, version, data.clone())?;
                 log::debug!("[ClientMap] Received OnSet for key {}", key);
                 if updated {
@@ -464,7 +464,7 @@ impl LocalMap {
                     return None;
                 }
 
-                let slot = self.get_slot(key, self.session, true).expect("Must have slot for set");
+                let slot = self.get_slot(key, source, true).expect("Must have slot for set");
                 let event = slot.on_del(now, key, source, version)?;
                 log::debug!("[ClientMap] Received OnDel for key {}", key);
                 self.fire_event(MapEvent::OnDel(key, source.0));
@@ -483,6 +483,7 @@ impl LocalMap {
 
     fn get_slot(&mut self, key: Key, source: NodeSession, auto_create: bool) -> Option<&mut MapSlot> {
         if !self.slots.contains_key(&(key, source)) && auto_create {
+            log::debug!("[ClientMap] Create new slot for key {} from source {}", key, source.0);
             self.slots.insert((key, source), MapSlot::new(key));
         }
         self.slots.get_mut(&(key, source))
@@ -862,5 +863,39 @@ mod test {
             ),
             Some(ClientMapCommand::OnSetAck(key, source, Version(2000)))
         );
+    }
+
+    #[test]
+    fn map_with_multi_sources() {
+        let local_session = NodeSession(1, 2);
+        let relay = NodeSession(3, 4);
+        let other_source = NodeSession(5, 6);
+        let mut map = LocalMap::new(local_session);
+
+        let key = Key(1);
+
+        assert_eq!(map.on_control(100, FeatureControlActor::Controller, MapControl::Sub), Some(ClientMapCommand::Sub(100, None)));
+        assert_eq!(map.on_server(100, relay, ServerMapEvent::SubOk(100)), None);
+
+        assert_eq!(
+            map.on_control(100, FeatureControlActor::Controller, MapControl::Set(key, vec![1, 2, 3, 4])),
+            Some(ClientMapCommand::Set(key, Version(100), vec![1, 2, 3, 4]))
+        );
+
+        assert_eq!(
+            map.on_server(
+                120,
+                relay,
+                ServerMapEvent::OnSet {
+                    key,
+                    source: other_source,
+                    version: Version(1000),
+                    data: vec![2, 3, 4]
+                }
+            ),
+            Some(ClientMapCommand::OnSetAck(key, other_source, Version(1000)))
+        );
+
+        assert_eq!(map.slots.len(), 2);
     }
 }
