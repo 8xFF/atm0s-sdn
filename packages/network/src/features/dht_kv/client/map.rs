@@ -1,7 +1,5 @@
 use std::collections::{HashMap, VecDeque};
 
-use log::info;
-
 use crate::{
     base::FeatureControlActor,
     features::dht_kv::{
@@ -98,7 +96,7 @@ impl MapSlot {
     }
 
     /// We resend the last command if we don't get ack in RESEND_MS, and we predictcaly send current state in SYNC_MS
-    pub fn sync(&mut self, now: u64) -> Option<ClientMapCommand> {
+    pub fn sync(&mut self, now: u64, force: bool) -> Option<ClientMapCommand> {
         match self {
             MapSlot::Unspecific { .. } | MapSlot::Remote { .. } => None,
             MapSlot::Local {
@@ -108,7 +106,7 @@ impl MapSlot {
                 syncing,
                 last_sync,
             } => {
-                if (*syncing && now >= *last_sync + RESEND_MS) || now >= *last_sync + SYNC_MS {
+                if (*syncing && now >= *last_sync + RESEND_MS) || now >= *last_sync + SYNC_MS || force {
                     *last_sync = now;
                     if let Some(value) = value {
                         Some(ClientMapCommand::Set(*key, *version, value.clone()))
@@ -267,12 +265,7 @@ impl LocalMap {
             }
         }
 
-        for slot in self.slots.values_mut() {
-            if let Some(cmd) = slot.sync(now) {
-                log::debug!("[ClientMap] Sync slot with command {:?}", cmd);
-                self.queue.push_back(LocalMapOutput::Remote(cmd));
-            }
-        }
+        self.sync_slots(now, false);
 
         // remove all empty slots
         let mut to_remove = vec![];
@@ -410,7 +403,13 @@ impl LocalMap {
                             *sync_ts = now;
 
                             if old_locked.0 != remote.0 {
-                                log::debug!("[ClientMap] Received SubOk with id {}, in Subscribed from new remote {} with sync_ts {}", id, remote.0, now);
+                                log::debug!(
+                                    "[ClientMap] Received SubOk with id {}, in Subscribed from new remote {} with sync_ts {} => resync all local slots now",
+                                    id,
+                                    remote.0,
+                                    now
+                                );
+                                self.sync_slots(now, true);
                                 self.fire_event(MapEvent::OnRelaySelected(remote.0));
                             } else {
                                 log::debug!("[ClientMap] Received SubOk with id {} from same remote {} vs {}", id, locked.0, remote.0);
@@ -516,6 +515,15 @@ impl LocalMap {
             }
         }
     }
+
+    fn sync_slots(&mut self, now: u64, force: bool) {
+        for slot in self.slots.values_mut() {
+            if let Some(cmd) = slot.sync(now, force) {
+                log::debug!("[ClientMap] Sync slot with command {:?}", cmd);
+                self.queue.push_back(LocalMapOutput::Remote(cmd));
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -551,14 +559,26 @@ mod test {
         //we must output set command with new slot, with Version is now_ms
         assert_eq!(slot.set(100, vec![1, 2, 3, 4]), Some(ClientMapCommand::Set(key, Version(100), vec![1, 2, 3, 4])));
 
-        assert_eq!(slot.sync(101), None);
-        assert_eq!(slot.sync(100 + RESEND_MS), Some(ClientMapCommand::Set(key, Version(100), vec![1, 2, 3, 4])));
+        assert_eq!(slot.sync(101, false), None);
+        assert_eq!(slot.sync(100 + RESEND_MS, false), Some(ClientMapCommand::Set(key, Version(100), vec![1, 2, 3, 4])));
 
         slot.set_ok(Version(100));
-        assert_eq!(slot.sync(100 + RESEND_MS * 2), None);
+        assert_eq!(slot.sync(100 + RESEND_MS * 2, false), None);
 
         //after set_ok we only resend with SYNC_MS
-        assert_eq!(slot.sync(100 + RESEND_MS + SYNC_MS), Some(ClientMapCommand::Set(key, Version(100), vec![1, 2, 3, 4])));
+        assert_eq!(slot.sync(100 + RESEND_MS + SYNC_MS, false), Some(ClientMapCommand::Set(key, Version(100), vec![1, 2, 3, 4])));
+    }
+
+    #[test]
+    fn map_slot_sync_local_force() {
+        let key = Key(1);
+        let mut slot = MapSlot::new(key);
+
+        //we must output set command with new slot, with Version is now_ms
+        assert_eq!(slot.set(100, vec![1, 2, 3, 4]), Some(ClientMapCommand::Set(key, Version(100), vec![1, 2, 3, 4])));
+
+        assert_eq!(slot.sync(101, false), None);
+        assert_eq!(slot.sync(101, true), Some(ClientMapCommand::Set(key, Version(100), vec![1, 2, 3, 4])));
     }
 
     #[test]
@@ -569,12 +589,12 @@ mod test {
         //we must output set command with new slot, with Version is now_ms
         assert_eq!(slot.set(100, vec![1, 2, 3, 4]), Some(ClientMapCommand::Set(key, Version(100), vec![1, 2, 3, 4])));
         slot.set_ok(Version(100));
-        assert_eq!(slot.sync(100 + RESEND_MS), None);
+        assert_eq!(slot.sync(100 + RESEND_MS, false), None);
 
         //we must output del command with new slot, with Version is now_ms
         assert_eq!(slot.del(200), Some(ClientMapCommand::Del(key, Version(100))));
         slot.del_ok(Version(100));
-        assert_eq!(slot.sync(200 + RESEND_MS), None);
+        assert_eq!(slot.sync(200 + RESEND_MS, false), None);
     }
 
     #[test]
@@ -589,7 +609,7 @@ mod test {
         //we must output del command with new slot, with Version is now_ms
         assert_eq!(slot.del(200), Some(ClientMapCommand::Del(key, Version(100))));
         slot.del_ok(Version(100));
-        assert_eq!(slot.sync(200 + RESEND_MS), None);
+        assert_eq!(slot.sync(200 + RESEND_MS, false), None);
     }
 
     #[test]
@@ -600,11 +620,11 @@ mod test {
         //we must output set command with new slot, with Version is now_ms
         assert_eq!(slot.set(100, vec![1, 2, 3, 4]), Some(ClientMapCommand::Set(key, Version(100), vec![1, 2, 3, 4])));
         slot.set_ok(Version(101));
-        assert_ne!(slot.sync(100 + RESEND_MS), None);
+        assert_ne!(slot.sync(100 + RESEND_MS, false), None);
 
         assert_eq!(slot.del(200 + RESEND_MS), Some(ClientMapCommand::Del(key, Version(100))));
         slot.del_ok(Version(101));
-        assert_ne!(slot.sync(200 + RESEND_MS + RESEND_MS), None);
+        assert_ne!(slot.sync(200 + RESEND_MS + RESEND_MS, false), None);
     }
 
     #[test]
