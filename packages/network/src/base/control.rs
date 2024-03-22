@@ -37,8 +37,8 @@ impl TryFrom<&[u8]> for NeighboursControl {
     type Error = ();
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        if value[0] == 255 {
-            bincode::DefaultOptions::new().with_limit(1500).deserialize(&value[1..]).map_err(|_| ())
+        if value.first() == Some(&255) {
+            bincode::DefaultOptions::new().with_limit(1499).deserialize(&value[1..]).map_err(|_| ())
         } else {
             Err(())
         }
@@ -51,7 +51,7 @@ impl TryInto<Vec<u8>> for &NeighboursControl {
     fn try_into(self) -> Result<Vec<u8>, Self::Error> {
         let mut buf = Vec::with_capacity(1500);
         buf.push(255);
-        bincode::DefaultOptions::new().with_limit(1500).serialize_into(&mut buf, &self).map_err(|_| ())?;
+        bincode::DefaultOptions::new().with_limit(1499).serialize_into(&mut buf, &self).map_err(|_| ())?;
         Ok(buf)
     }
 }
