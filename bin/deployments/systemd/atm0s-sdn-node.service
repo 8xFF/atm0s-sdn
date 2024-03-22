@@ -4,6 +4,8 @@ After=network.target
 
 [Service]
 ExecStart=/opt/atm0s-sdn-node.sh
+StandardOutput=append:/var/log/atm0s-sdn-node.log
+StandardError=append:/var/log/atm0s-sdn-node.log
 
 [Install]
 WantedBy=multi-user.target
