@@ -106,6 +106,16 @@ fn service_visualization_multi_collectors() {
         }
     }
 
+    let get_key = |a: &ExtOut<Event>| -> u32 {
+        match a {
+            ExtOut::ServicesEvent(Event::NodeChanged(node, _)) => *node,
+            _ => panic!("Unexpected event: {:?}", a),
+        }
+    };
+
+    node1_events.sort_by(|a, b| get_key(a).cmp(&get_key(b)));
+    node2_events.sort_by(|a, b| get_key(a).cmp(&get_key(b)));
+
     assert_eq!(
         node1_events,
         vec![

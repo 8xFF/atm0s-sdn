@@ -55,11 +55,11 @@ impl log::Log for ContextLogger {
     fn flush(&self) {}
 }
 
-struct AutoContext(NodeId);
+struct AutoContext();
 impl AutoContext {
     pub fn new(node: NodeId) -> Self {
         CONTEXT_LOGGER.set_ctx(node);
-        Self(node)
+        Self()
     }
 }
 
