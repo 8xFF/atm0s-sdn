@@ -64,6 +64,7 @@ impl MapSlot {
 struct WaitAcksEvent {
     event: ServerMapEvent,
     remotes: Vec<NodeSession>,
+    created_at: u64,
     last_send_ms: u64,
 }
 
@@ -108,7 +109,7 @@ impl RemoteMap {
         //resend events
         let mut to_remove = vec![];
         for (key, slot) in self.slots_event.iter_mut() {
-            if now >= TIMEOUT_MS + slot.last_send_ms {
+            if now >= TIMEOUT_MS + slot.created_at {
                 log::warn!("[ServerMap] Remove wait event {:?} for key {} to node {} after timeout {TIMEOUT_MS}", slot.event, key.0, key.1 .0);
                 to_remove.push(*key);
             } else if now >= RESEND_MS + slot.last_send_ms {
@@ -256,7 +257,15 @@ impl RemoteMap {
                 self.queue.push_back((*remote, event.clone()));
             }
         }
-        self.slots_event.insert((key, source), WaitAcksEvent { event, remotes, last_send_ms: now });
+        self.slots_event.insert(
+            (key, source),
+            WaitAcksEvent {
+                event,
+                remotes,
+                created_at: now,
+                last_send_ms: now,
+            },
+        );
     }
 
     /// We only send events which not owned by remote
@@ -276,6 +285,7 @@ impl RemoteMap {
                 let entry = self.slots_event.entry(*key).or_insert_with(|| WaitAcksEvent {
                     event: event.clone(),
                     remotes: vec![],
+                    created_at: now,
                     last_send_ms: now,
                 });
                 if !entry.remotes.contains(&remote) {
@@ -292,8 +302,25 @@ mod test {
     use super::{MapSlot, RemoteMap};
     use crate::features::dht_kv::{
         msg::{ClientMapCommand, Key, NodeSession, ServerMapEvent, Version},
-        server::map::RESEND_MS,
+        server::map::{RESEND_MS, TIMEOUT_MS},
     };
+
+    fn on_set(key: u64, version: u64, source: NodeSession, data: Vec<u8>) -> ServerMapEvent {
+        ServerMapEvent::OnSet {
+            key: Key(key),
+            version: Version(version),
+            source,
+            data,
+        }
+    }
+
+    fn on_del(key: u64, version: u64, source: NodeSession) -> ServerMapEvent {
+        ServerMapEvent::OnDel {
+            key: Key(key),
+            version: Version(version),
+            source,
+        }
+    }
 
     #[test]
     fn map_slot_set_del_correct() {
@@ -342,51 +369,19 @@ mod test {
             map.on_client(0, source, ClientMapCommand::Set(Key(1000), Version(1), vec![1, 2, 3, 4])),
             Some(ServerMapEvent::SetOk(Key(1000), Version(1)))
         );
-        assert_eq!(
-            map.pop_action(),
-            Some((
-                consumer,
-                ServerMapEvent::OnSet {
-                    key: Key(1000),
-                    version: Version(1),
-                    source,
-                    data: vec![1, 2, 3, 4]
-                }
-            ))
-        );
+        assert_eq!(map.pop_action(), Some((consumer, on_set(1000, 1, source, vec![1, 2, 3, 4]),)));
 
         assert_eq!(
             map.on_client(0, source, ClientMapCommand::Set(Key(1000), Version(2), vec![1, 2, 3, 5])),
             Some(ServerMapEvent::SetOk(Key(1000), Version(2)))
         );
-        assert_eq!(
-            map.pop_action(),
-            Some((
-                consumer,
-                ServerMapEvent::OnSet {
-                    key: Key(1000),
-                    version: Version(2),
-                    source,
-                    data: vec![1, 2, 3, 5]
-                }
-            ))
-        );
+        assert_eq!(map.pop_action(), Some((consumer, on_set(1000, 2, source, vec![1, 2, 3, 5]),)));
 
         assert_eq!(
             map.on_client(0, source, ClientMapCommand::Del(Key(1000), Version(2))),
             Some(ServerMapEvent::DelOk(Key(1000), Version(2)))
         );
-        assert_eq!(
-            map.pop_action(),
-            Some((
-                consumer,
-                ServerMapEvent::OnDel {
-                    key: Key(1000),
-                    version: Version(2),
-                    source
-                }
-            ))
-        );
+        assert_eq!(map.pop_action(), Some((consumer, on_del(1000, 2, source))));
     }
 
     #[test]
@@ -404,18 +399,7 @@ mod test {
         assert_eq!(map.pop_action(), None);
 
         assert_eq!(map.on_client(1, consumer, ClientMapCommand::Sub(1, None)), Some(ServerMapEvent::SubOk(1)));
-        assert_eq!(
-            map.pop_action(),
-            Some((
-                consumer,
-                ServerMapEvent::OnSet {
-                    key: Key(1000),
-                    version: Version(1),
-                    source,
-                    data: vec![1, 2, 3, 4]
-                }
-            ))
-        );
+        assert_eq!(map.pop_action(), Some((consumer, on_set(1000, 1, source, vec![1, 2, 3, 4]))));
 
         //if resub with same session, it should not fire event
         assert_eq!(map.on_client(2, consumer, ClientMapCommand::Sub(2, Some(relay))), Some(ServerMapEvent::SubOk(2)));
@@ -437,35 +421,13 @@ mod test {
         assert_eq!(map.pop_action(), None);
 
         assert_eq!(map.on_client(1, consumer, ClientMapCommand::Sub(1, None)), Some(ServerMapEvent::SubOk(1)));
-        assert_eq!(
-            map.pop_action(),
-            Some((
-                consumer,
-                ServerMapEvent::OnSet {
-                    key: Key(1000),
-                    version: Version(1),
-                    source,
-                    data: vec![1, 2, 3, 4]
-                }
-            ))
-        );
+        assert_eq!(map.pop_action(), Some((consumer, on_set(1000, 1, source, vec![1, 2, 3, 4]))));
 
         //if resub with new session, it should fire event
         let old_relay = NodeSession(0, 1);
 
         assert_eq!(map.on_client(2, consumer, ClientMapCommand::Sub(2, Some(old_relay))), Some(ServerMapEvent::SubOk(2)));
-        assert_eq!(
-            map.pop_action(),
-            Some((
-                consumer,
-                ServerMapEvent::OnSet {
-                    key: Key(1000),
-                    version: Version(1),
-                    source,
-                    data: vec![1, 2, 3, 4]
-                }
-            ))
-        );
+        assert_eq!(map.pop_action(), Some((consumer, on_set(1000, 1, source, vec![1, 2, 3, 4]))));
         assert_eq!(map.pop_action(), None);
     }
 
@@ -507,18 +469,7 @@ mod test {
             map.on_client(0, source, ClientMapCommand::Set(Key(1000), Version(1), vec![1, 2, 3, 4])),
             Some(ServerMapEvent::SetOk(Key(1000), Version(1)))
         );
-        assert_eq!(
-            map.pop_action(),
-            Some((
-                consumer,
-                ServerMapEvent::OnSet {
-                    key: Key(1000),
-                    version: Version(1),
-                    source,
-                    data: vec![1, 2, 3, 4]
-                }
-            ))
-        );
+        assert_eq!(map.pop_action(), Some((consumer, on_set(1000, 1, source, vec![1, 2, 3, 4]))));
         assert_eq!(map.pop_action(), None);
     }
 
@@ -537,18 +488,7 @@ mod test {
             map.on_client(0, source, ClientMapCommand::Set(Key(1000), Version(1), vec![1, 2, 3, 4])),
             Some(ServerMapEvent::SetOk(Key(1000), Version(1)))
         );
-        assert_eq!(
-            map.pop_action(),
-            Some((
-                consumer,
-                ServerMapEvent::OnSet {
-                    key: Key(1000),
-                    version: Version(1),
-                    source,
-                    data: vec![1, 2, 3, 4]
-                }
-            ))
-        );
+        assert_eq!(map.pop_action(), Some((consumer, on_set(1000, 1, source, vec![1, 2, 3, 4]))));
         assert_eq!(map.pop_action(), None);
 
         //set with older version should not affected
@@ -571,18 +511,7 @@ mod test {
             map.on_client(0, source, ClientMapCommand::Set(Key(1000), Version(1), vec![1, 2, 3, 4])),
             Some(ServerMapEvent::SetOk(Key(1000), Version(1)))
         );
-        assert_eq!(
-            map.pop_action(),
-            Some((
-                consumer,
-                ServerMapEvent::OnSet {
-                    key: Key(1000),
-                    version: Version(1),
-                    source,
-                    data: vec![1, 2, 3, 4]
-                }
-            ))
-        );
+        assert_eq!(map.pop_action(), Some((consumer, on_set(1000, 1, source, vec![1, 2, 3, 4]))));
         assert_eq!(map.pop_action(), None);
 
         //del with older version should not affected
@@ -606,18 +535,7 @@ mod test {
             map.on_client(0, source, ClientMapCommand::Set(Key(1000), Version(1), vec![1, 2, 3, 4])),
             Some(ServerMapEvent::SetOk(Key(1000), Version(1)))
         );
-        assert_eq!(
-            map.pop_action(),
-            Some((
-                consumer,
-                ServerMapEvent::OnSet {
-                    key: Key(1000),
-                    version: Version(1),
-                    source,
-                    data: vec![1, 2, 3, 4]
-                }
-            ))
-        );
+        assert_eq!(map.pop_action(), Some((consumer, on_set(1000, 1, source, vec![1, 2, 3, 4]))));
         assert_eq!(map.pop_action(), None);
 
         //del with newer version should affected
@@ -625,17 +543,7 @@ mod test {
             map.on_client(0, source, ClientMapCommand::Del(Key(1000), Version(2))),
             Some(ServerMapEvent::DelOk(Key(1000), Version(1)))
         );
-        assert_eq!(
-            map.pop_action(),
-            Some((
-                consumer,
-                ServerMapEvent::OnDel {
-                    key: Key(1000),
-                    version: Version(1),
-                    source
-                }
-            ))
-        );
+        assert_eq!(map.pop_action(), Some((consumer, on_del(1000, 1, source))));
         assert_eq!(map.pop_action(), None);
         assert_eq!(map.slots.len(), 0);
     }
@@ -655,34 +563,12 @@ mod test {
             map.on_client(0, source, ClientMapCommand::Set(Key(1000), Version(1), vec![1, 2, 3, 4])),
             Some(ServerMapEvent::SetOk(Key(1000), Version(1)))
         );
-        assert_eq!(
-            map.pop_action(),
-            Some((
-                consumer,
-                ServerMapEvent::OnSet {
-                    key: Key(1000),
-                    version: Version(1),
-                    source,
-                    data: vec![1, 2, 3, 4]
-                }
-            ))
-        );
+        assert_eq!(map.pop_action(), Some((consumer, on_set(1000, 1, source, vec![1, 2, 3, 4]))));
         assert_eq!(map.pop_action(), None);
 
         map.on_tick(RESEND_MS);
 
-        assert_eq!(
-            map.pop_action(),
-            Some((
-                consumer,
-                ServerMapEvent::OnSet {
-                    key: Key(1000),
-                    version: Version(1),
-                    source,
-                    data: vec![1, 2, 3, 4]
-                }
-            ))
-        );
+        assert_eq!(map.pop_action(), Some((consumer, on_set(1000, 1, source, vec![1, 2, 3, 4]))));
         assert_eq!(map.pop_action(), None);
     }
 
@@ -701,34 +587,12 @@ mod test {
         assert_eq!(map.pop_action(), None);
 
         assert_eq!(map.on_client(0, consumer, ClientMapCommand::Sub(1, None)), Some(ServerMapEvent::SubOk(1)));
-        assert_eq!(
-            map.pop_action(),
-            Some((
-                consumer,
-                ServerMapEvent::OnSet {
-                    key: Key(1000),
-                    version: Version(1),
-                    source,
-                    data: vec![1, 2, 3, 4]
-                }
-            ))
-        );
+        assert_eq!(map.pop_action(), Some((consumer, on_set(1000, 1, source, vec![1, 2, 3, 4]))));
         assert_eq!(map.pop_action(), None);
 
         map.on_tick(RESEND_MS);
 
-        assert_eq!(
-            map.pop_action(),
-            Some((
-                consumer,
-                ServerMapEvent::OnSet {
-                    key: Key(1000),
-                    version: Version(1),
-                    source,
-                    data: vec![1, 2, 3, 4]
-                }
-            ))
-        );
+        assert_eq!(map.pop_action(), Some((consumer, on_set(1000, 1, source, vec![1, 2, 3, 4]))));
         assert_eq!(map.pop_action(), None);
     }
 
@@ -747,24 +611,46 @@ mod test {
             map.on_client(0, source, ClientMapCommand::Set(Key(1000), Version(1), vec![1, 2, 3, 4])),
             Some(ServerMapEvent::SetOk(Key(1000), Version(1)))
         );
-        assert_eq!(
-            map.pop_action(),
-            Some((
-                consumer,
-                ServerMapEvent::OnSet {
-                    key: Key(1000),
-                    version: Version(1),
-                    source,
-                    data: vec![1, 2, 3, 4]
-                }
-            ))
-        );
+        assert_eq!(map.pop_action(), Some((consumer, on_set(1000, 1, source, vec![1, 2, 3, 4]))));
         assert_eq!(map.pop_action(), None);
 
         assert_eq!(map.on_client(2, consumer, ClientMapCommand::OnSetAck(Key(1000), source, Version(1))), None);
 
         map.on_tick(RESEND_MS);
 
+        assert_eq!(map.pop_action(), None);
+    }
+
+    #[test]
+    fn map_event_should_timeout_after_sending_some_retry() {
+        env_logger::init();
+        let relay = NodeSession(1, 2);
+        let mut map = RemoteMap::new(relay);
+
+        let source = NodeSession(3, 4);
+        let consumer = NodeSession(5, 6);
+
+        assert_eq!(map.on_client(0, consumer, ClientMapCommand::Sub(1, None)), Some(ServerMapEvent::SubOk(1)));
+        assert_eq!(map.pop_action(), None);
+
+        assert_eq!(
+            map.on_client(0, source, ClientMapCommand::Set(Key(1000), Version(1), vec![1, 2, 3, 4])),
+            Some(ServerMapEvent::SetOk(Key(1000), Version(1)))
+        );
+        assert_eq!(map.pop_action(), Some((consumer, on_set(1000, 1, source, vec![1, 2, 3, 4]))));
+        assert_eq!(map.pop_action(), None);
+
+        map.on_tick(RESEND_MS);
+
+        assert_eq!(map.pop_action(), Some((consumer, on_set(1000, 1, source, vec![1, 2, 3, 4]))));
+        assert_eq!(map.pop_action(), None);
+
+        map.on_tick(RESEND_MS * 2);
+
+        assert_eq!(map.pop_action(), Some((consumer, on_set(1000, 1, source, vec![1, 2, 3, 4]))));
+        assert_eq!(map.pop_action(), None);
+
+        map.on_tick(TIMEOUT_MS);
         assert_eq!(map.pop_action(), None);
     }
 
