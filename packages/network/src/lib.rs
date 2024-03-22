@@ -6,6 +6,8 @@ use base::{FeatureControlActor, NeighboursControl, SecureContext, ServiceId, Ttl
 pub use convert_enum;
 use features::{Features, FeaturesControl, FeaturesEvent, FeaturesToController, FeaturesToWorker};
 
+#[cfg(feature = "fuzz")]
+pub mod _fuzz_export;
 pub mod base;
 pub mod controller_plane;
 pub mod data_plane;

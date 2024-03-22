@@ -5,6 +5,7 @@ independent = true
 resolver = "2"
 members = [
     "bin",
+    "fuzz",
     "packages/core/utils",
     "packages/core/identity",
     "packages/core/router",

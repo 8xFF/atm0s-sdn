@@ -22,7 +22,7 @@ impl Default for Ttl {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum MsgHeaderError {
+pub enum TransportMsgHeaderError {
     InvalidVersion,
     InvalidRoute,
     TooSmall,
@@ -139,112 +139,6 @@ impl TransportMsgHeader {
     pub fn set_route(mut self, route: RouteRule) -> Self {
         self.route = route;
         self
-    }
-
-    /// Parses a byte slice into a `Msg` struct and returns the number of bytes read.
-    ///
-    /// # Arguments
-    ///
-    /// * `bytes` - A byte slice containing the message to be parsed.
-    ///
-    /// # Returns
-    ///
-    /// A tuple containing the parsed `Msg` struct and the number of bytes read.
-    ///
-    /// # Errors
-    ///
-    /// Returns a `MsgHeaderError` if the message header is invalid.
-    #[allow(unused_assignments)]
-    pub fn from_bytes(bytes: &[u8]) -> Result<(Self, usize), MsgHeaderError> {
-        if bytes.len() < 4 {
-            return Err(MsgHeaderError::TooSmall);
-        }
-        let version = bytes[0] >> 6; //2 bits
-        let e_bit = (bytes[0] >> 5) & 1 == 1; //1 bit
-        let n_bit = (bytes[0] >> 4) & 1 == 1; //1 bit
-        let route_type = bytes[0] & 15; //4 bits
-
-        if version != 0 {
-            return Err(MsgHeaderError::InvalidVersion);
-        }
-
-        let ttl = bytes[1];
-        let feature = bytes[2];
-        let meta = bytes[3];
-
-        let mut ptr = 4;
-
-        let route = match route_type {
-            ROUTE_RULE_DIRECT => RouteRule::Direct,
-            ROUTE_RULE_TO_NODE => {
-                if bytes.len() < ptr + 4 {
-                    return Err(MsgHeaderError::TooSmall);
-                }
-                let rr = RouteRule::ToNode(NodeId::from_be_bytes([bytes[ptr], bytes[ptr + 1], bytes[ptr + 2], bytes[ptr + 3]]));
-                ptr += 4;
-                rr
-            }
-            ROUTE_RULE_TO_SERVICE => {
-                if bytes.len() < ptr + 4 {
-                    return Err(MsgHeaderError::TooSmall);
-                }
-                let rr = RouteRule::ToService(bytes[ptr]);
-                ptr += 4;
-                rr
-            }
-            ROUTE_RULE_TO_SERVICES => {
-                if bytes.len() < ptr + 4 {
-                    return Err(MsgHeaderError::TooSmall);
-                }
-                let rr = RouteRule::ToServices(bytes[ptr], ServiceBroadcastLevel::from(bytes[ptr + 1]));
-                ptr += 4;
-                rr
-            }
-            ROUTE_RULE_TO_KEY => {
-                if bytes.len() < ptr + 4 {
-                    return Err(MsgHeaderError::TooSmall);
-                }
-                let rr = RouteRule::ToKey(NodeId::from_be_bytes([bytes[ptr], bytes[ptr + 1], bytes[ptr + 2], bytes[ptr + 3]]));
-                ptr += 4;
-                rr
-            }
-            _ => return Err(MsgHeaderError::InvalidRoute),
-        };
-
-        let from_node = if n_bit {
-            if bytes.len() < ptr + 4 {
-                return Err(MsgHeaderError::TooSmall);
-            }
-            let from_node_id = NodeId::from_be_bytes([bytes[ptr], bytes[ptr + 1], bytes[ptr + 2], bytes[ptr + 3]]);
-            ptr += 4;
-            Some(from_node_id)
-        } else {
-            None
-        };
-
-        let len =
-            4 + if from_node.is_some() {
-                4
-            } else {
-                0
-            } + if route_type == ROUTE_RULE_DIRECT {
-                0
-            } else {
-                4
-            };
-
-        Ok((
-            Self {
-                version,
-                encrypt: e_bit,
-                ttl,
-                route,
-                feature,
-                meta,
-                from_node,
-            },
-            len,
-        ))
     }
 
     /// Converts the message to a byte representation and appends it to the given output vector.
@@ -450,44 +344,6 @@ impl TransportMsg {
         self.buffer
     }
 
-    /// Constructs a TransportMsg from a vector.
-    ///
-    /// # Arguments
-    ///
-    /// * `buf` - A vector of bytes containing the message to be parsed.
-    ///
-    /// # Returns
-    ///
-    /// A new `TransportMsg` instance.
-    ///
-    pub fn from_vec(buffer: Vec<u8>) -> Result<Self, MsgHeaderError> {
-        let (header, header_size) = TransportMsgHeader::from_bytes(&buffer)?;
-        Ok(Self {
-            buffer,
-            header,
-            payload_start: header_size,
-        })
-    }
-
-    /// Constructs a TransportMsg from a buf, this will link to buffer.
-    ///
-    /// # Arguments
-    ///
-    /// * `buf` - A vector of bytes containing the message to be parsed.
-    ///
-    /// # Returns
-    ///
-    /// A new `TransportMsg` instance.
-    ///
-    pub fn from_ref(buf: &[u8]) -> Result<Self, MsgHeaderError> {
-        let (header, header_size) = TransportMsgHeader::from_bytes(buf)?;
-        Ok(Self {
-            buffer: buf.to_vec(),
-            header,
-            payload_start: header_size,
-        })
-    }
-
     /// Returns a reference to the message buffer.
     pub fn get_buf(&self) -> &[u8] {
         &self.buffer
@@ -540,6 +396,111 @@ impl TransportMsg {
     }
 }
 
+impl TryFrom<Vec<u8>> for TransportMsg {
+    type Error = TransportMsgHeaderError;
+    fn try_from(buffer: Vec<u8>) -> Result<Self, Self::Error> {
+        let header = TransportMsgHeader::try_from(buffer.as_slice())?;
+        Ok(Self {
+            buffer,
+            payload_start: header.serialize_size(),
+            header,
+        })
+    }
+}
+
+impl TryFrom<&[u8]> for TransportMsg {
+    type Error = TransportMsgHeaderError;
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        let header = TransportMsgHeader::try_from(bytes)?;
+        Ok(Self {
+            buffer: bytes.to_vec(),
+            payload_start: header.serialize_size(),
+            header,
+        })
+    }
+}
+
+impl TryFrom<&[u8]> for TransportMsgHeader {
+    type Error = TransportMsgHeaderError;
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        if bytes.len() < 4 {
+            return Err(TransportMsgHeaderError::TooSmall);
+        }
+        let version = bytes[0] >> 6; //2 bits
+        let e_bit = (bytes[0] >> 5) & 1 == 1; //1 bit
+        let n_bit = (bytes[0] >> 4) & 1 == 1; //1 bit
+        let route_type = bytes[0] & 15; //4 bits
+
+        if version != 0 {
+            return Err(TransportMsgHeaderError::InvalidVersion);
+        }
+
+        let ttl = bytes[1];
+        let feature = bytes[2];
+        let meta = bytes[3];
+
+        let mut ptr = 4;
+
+        let route = match route_type {
+            ROUTE_RULE_DIRECT => RouteRule::Direct,
+            ROUTE_RULE_TO_NODE => {
+                if bytes.len() < ptr + 4 {
+                    return Err(TransportMsgHeaderError::TooSmall);
+                }
+                let rr = RouteRule::ToNode(NodeId::from_be_bytes([bytes[ptr], bytes[ptr + 1], bytes[ptr + 2], bytes[ptr + 3]]));
+                ptr += 4;
+                rr
+            }
+            ROUTE_RULE_TO_SERVICE => {
+                if bytes.len() < ptr + 4 {
+                    return Err(TransportMsgHeaderError::TooSmall);
+                }
+                let rr = RouteRule::ToService(bytes[ptr]);
+                ptr += 4;
+                rr
+            }
+            ROUTE_RULE_TO_SERVICES => {
+                if bytes.len() < ptr + 4 {
+                    return Err(TransportMsgHeaderError::TooSmall);
+                }
+                let rr = RouteRule::ToServices(bytes[ptr], ServiceBroadcastLevel::from(bytes[ptr + 1]));
+                ptr += 4;
+                rr
+            }
+            ROUTE_RULE_TO_KEY => {
+                if bytes.len() < ptr + 4 {
+                    return Err(TransportMsgHeaderError::TooSmall);
+                }
+                let rr = RouteRule::ToKey(NodeId::from_be_bytes([bytes[ptr], bytes[ptr + 1], bytes[ptr + 2], bytes[ptr + 3]]));
+                ptr += 4;
+                rr
+            }
+            _ => return Err(TransportMsgHeaderError::InvalidRoute),
+        };
+
+        let from_node = if n_bit {
+            if bytes.len() < ptr + 4 {
+                return Err(TransportMsgHeaderError::TooSmall);
+            }
+            let from_node_id = NodeId::from_be_bytes([bytes[ptr], bytes[ptr + 1], bytes[ptr + 2], bytes[ptr + 3]]);
+            ptr += 4;
+            Some(from_node_id)
+        } else {
+            None
+        };
+
+        Ok(Self {
+            version,
+            encrypt: e_bit,
+            ttl,
+            route,
+            feature,
+            meta,
+            from_node,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -559,7 +520,7 @@ mod tests {
         };
         let size = header.to_bytes(&mut buf).expect("should serialize");
         assert_eq!(header.serialize_size(), 4);
-        let (header, _) = TransportMsgHeader::from_bytes(&buf[0..size]).unwrap();
+        let header = TransportMsgHeader::try_from(&buf[0..size]).expect("");
         assert_eq!(header.serialize_size(), 4);
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 1);
@@ -585,7 +546,7 @@ mod tests {
         };
         let size = header.to_bytes(&mut buf).expect("should serialize");
         assert_eq!(header.serialize_size(), 8);
-        let (header, _) = TransportMsgHeader::from_bytes(&buf[0..size]).unwrap();
+        let header = TransportMsgHeader::try_from(&buf[0..size]).expect("");
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 1);
         assert_eq!(header.feature, 2);
@@ -609,7 +570,7 @@ mod tests {
         };
         let size = header.to_bytes(&mut buf).expect("should serialize");
         assert_eq!(header.serialize_size(), 8);
-        let (header, _) = TransportMsgHeader::from_bytes(&buf[0..size]).unwrap();
+        let header = TransportMsgHeader::try_from(&buf[0..size]).expect("");
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 1);
         assert_eq!(header.feature, 2);
@@ -633,7 +594,7 @@ mod tests {
         };
         let size = header.to_bytes(&mut buf).expect("should serialize");
         assert_eq!(header.serialize_size(), 12);
-        let (header, _) = TransportMsgHeader::from_bytes(&buf[0..size]).unwrap();
+        let header = TransportMsgHeader::try_from(&buf[0..size]).expect("");
         assert_eq!(header.version, 0);
         assert_eq!(header.ttl, 1);
         assert_eq!(header.feature, 2);
@@ -656,15 +617,15 @@ mod tests {
             from_node: Some(5),
         };
         let size = header.to_bytes(&mut buf).expect("should serialize");
-        let err = TransportMsgHeader::from_bytes(&buf[0..size]).unwrap_err();
-        assert_eq!(err, MsgHeaderError::InvalidVersion);
+        let err = TransportMsgHeader::try_from(&buf[0..size]).unwrap_err();
+        assert_eq!(err, TransportMsgHeaderError::InvalidVersion);
     }
 
     #[test]
     fn msg_simple() {
         let msg = TransportMsg::build(0, 0, RouteRule::Direct, &[1, 2, 3, 4]);
         let buf = msg.get_buf().to_vec();
-        let msg2 = TransportMsg::from_vec(buf).unwrap();
+        let msg2 = TransportMsg::try_from(buf).expect("");
         assert_eq!(msg, msg2);
         assert_eq!(msg.payload(), &[1, 2, 3, 4]);
     }
@@ -673,7 +634,7 @@ mod tests {
     fn msg_build_raw() {
         let msg = TransportMsg::build_raw(TransportMsgHeader::new(), &[1, 2, 3, 4]);
         let buf = msg.get_buf().to_vec();
-        let msg2 = TransportMsg::from_vec(buf).unwrap();
+        let msg2 = TransportMsg::try_from(buf).expect("");
         assert_eq!(msg, msg2);
         assert_eq!(msg.payload(), &[1, 2, 3, 4]);
     }

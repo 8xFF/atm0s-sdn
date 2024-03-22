@@ -205,14 +205,14 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
 
     fn incoming_route<'a>(&mut self, now_ms: u64, remote: SocketAddr, mut buf: GenericBufferMut<'a>) -> Option<Output<'a, SE, TC>> {
         let conn = self.conns.get(&remote)?;
-        let (header, header_len) = TransportMsgHeader::from_bytes(&buf).ok()?;
+        let header = TransportMsgHeader::try_from(&buf as &[u8]).ok()?;
         let action = self.ctx.router.derive_action(&header.route, Some(conn.node()));
         log::debug!("Incoming rule: {:?} from: {remote} => action {:?}", header.route, action);
         match action {
             RouteAction::Reject => None,
             RouteAction::Local => {
                 let feature = header.feature.try_into().ok()?;
-                let out = self.features.on_network_raw(&mut self.ctx, feature, now_ms, conn.conn(), header_len, buf.to_readonly())?;
+                let out = self.features.on_network_raw(&mut self.ctx, feature, now_ms, conn.conn(), header.serialize_size(), buf.to_readonly())?;
                 Some(self.convert_features(now_ms, feature, out))
             }
             RouteAction::Next(remote) => {
@@ -229,7 +229,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 let buf = buf.to_readonly();
                 if local {
                     if let Ok(feature) = header.feature.try_into() {
-                        if let Some(out) = self.features.on_network_raw(&mut self.ctx, feature, now_ms, conn.conn(), header_len, buf.clone()) {
+                        if let Some(out) = self.features.on_network_raw(&mut self.ctx, feature, now_ms, conn.conn(), header.serialize_size(), buf.clone()) {
                             self.queue_output.push_back(QueueOutput::Feature(feature, out.owned()));
                         }
                     }

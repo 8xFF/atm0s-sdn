@@ -27,5 +27,6 @@ mockall = { workspace = true }
 atm0s-sdn-router = { path = "../core/router", version = "0.1.4", features = ["mock"]}
 
 [features]
-default = ["vpn"]
+default = ["vpn", "fuzz"]
 vpn = []
+fuzz = []
