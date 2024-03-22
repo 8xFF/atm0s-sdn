@@ -20,6 +20,7 @@ pub struct FeatureManager {
     router_sync: router_sync::RouterSyncFeature,
     vpn: vpn::VpnFeature,
     dht_kv: dht_kv::DhtKvFeature,
+    pubsub: pubsub::PubSubFeature,
     switcher: TasksSwitcher<5>,
     last_input_feature: Option<Features>,
 }
@@ -32,6 +33,7 @@ impl FeatureManager {
             router_sync: router_sync::RouterSyncFeature::new(node, services),
             vpn: vpn::VpnFeature::default(),
             dht_kv: dht_kv::DhtKvFeature::new(node, session),
+            pubsub: pubsub::PubSubFeature::default(),
             last_input_feature: None,
             switcher: TasksSwitcher::default(),
         }
@@ -42,7 +44,8 @@ impl FeatureManager {
         self.neighbours.on_shared_input(now_ms, input.clone());
         self.router_sync.on_shared_input(now_ms, input.clone());
         self.dht_kv.on_shared_input(now_ms, input.clone());
-        self.vpn.on_shared_input(now_ms, input);
+        self.vpn.on_shared_input(now_ms, input.clone());
+        self.pubsub.on_shared_input(now_ms, input);
         self.last_input_feature = None;
     }
 
@@ -69,6 +72,10 @@ impl FeatureManager {
                     self.last_input_feature = Some(Features::DhtKv);
                     self.dht_kv.on_input(now_ms, FeatureInput::FromWorker(to))
                 }
+                FeaturesToController::PubSub(to) => {
+                    self.last_input_feature = Some(Features::PubSub);
+                    self.pubsub.on_input(now_ms, FeatureInput::FromWorker(to))
+                }
             },
             FeatureInput::Control(service, control) => match control {
                 FeaturesControl::Data(control) => {
@@ -90,6 +97,10 @@ impl FeatureManager {
                 FeaturesControl::DhtKv(control) => {
                     self.last_input_feature = Some(Features::DhtKv);
                     self.dht_kv.on_input(now_ms, FeatureInput::Control(service, control))
+                }
+                FeaturesControl::PubSub(control) => {
+                    self.last_input_feature = Some(Features::PubSub);
+                    self.pubsub.on_input(now_ms, FeatureInput::Control(service, control))
                 }
             },
             FeatureInput::Net(ctx, buf) => match feature {
@@ -113,6 +124,10 @@ impl FeatureManager {
                     self.last_input_feature = Some(Features::DhtKv);
                     self.dht_kv.on_input(now_ms, FeatureInput::Net(ctx, buf))
                 }
+                Features::PubSub => {
+                    self.last_input_feature = Some(Features::PubSub);
+                    self.pubsub.on_input(now_ms, FeatureInput::Net(ctx, buf))
+                }
             },
             FeatureInput::Local(buf) => match feature {
                 Features::Data => {
@@ -135,6 +150,10 @@ impl FeatureManager {
                     self.last_input_feature = Some(Features::DhtKv);
                     self.dht_kv.on_input(now_ms, FeatureInput::Local(buf))
                 }
+                Features::PubSub => {
+                    self.last_input_feature = Some(Features::PubSub);
+                    self.pubsub.on_input(now_ms, FeatureInput::Local(buf))
+                }
             },
         }
     }
@@ -147,6 +166,7 @@ impl FeatureManager {
                 Features::RouterSync => self.router_sync.pop_output().map(|a| (Features::RouterSync, a.into2())),
                 Features::Vpn => self.vpn.pop_output().map(|a| (Features::Vpn, a.into2())),
                 Features::DhtKv => self.dht_kv.pop_output().map(|a| (Features::DhtKv, a.into2())),
+                Features::PubSub => self.pubsub.pop_output().map(|a| (Features::PubSub, a.into2())),
             };
             if res.is_none() {
                 self.last_input_feature = None;
@@ -179,6 +199,11 @@ impl FeatureManager {
                     Features::DhtKv => {
                         if let Some(out) = s.process(self.dht_kv.pop_output()) {
                             return Some((Features::DhtKv, out.into2()));
+                        }
+                    }
+                    Features::PubSub => {
+                        if let Some(out) = s.process(self.pubsub.pop_output()) {
+                            return Some((Features::PubSub, out.into2()));
                         }
                     }
                 }

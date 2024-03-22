@@ -1,7 +1,7 @@
 pub mod data;
 pub mod dht_kv;
-pub mod lazy_kv;
 pub mod neighbours;
+pub mod pubsub;
 pub mod router_sync;
 pub mod vpn;
 
@@ -18,6 +18,7 @@ pub enum Features {
     RouterSync = router_sync::FEATURE_ID,
     Vpn = vpn::FEATURE_ID,
     DhtKv = dht_kv::FEATURE_ID,
+    PubSub = pubsub::FEATURE_ID,
 }
 
 impl TryFrom<u8> for Features {
@@ -42,6 +43,7 @@ pub enum FeaturesControl {
     RouterSync(router_sync::Control),
     Vpn(vpn::Control),
     DhtKv(dht_kv::Control),
+    PubSub(pubsub::Control),
 }
 
 impl FeaturesControl {
@@ -52,6 +54,7 @@ impl FeaturesControl {
             Self::RouterSync(_) => Features::RouterSync,
             Self::Vpn(_) => Features::Vpn,
             Self::DhtKv(_) => Features::DhtKv,
+            Self::PubSub(_) => Features::PubSub,
         }
     }
 }
@@ -63,6 +66,7 @@ pub enum FeaturesEvent {
     RouterSync(router_sync::Event),
     Vpn(vpn::Event),
     DhtKv(dht_kv::Event),
+    PubSub(pubsub::Event),
 }
 
 #[derive(Debug, Clone, convert_enum::From)]
@@ -72,6 +76,7 @@ pub enum FeaturesToController {
     RouterSync(router_sync::ToController),
     Vpn(vpn::ToController),
     DhtKv(dht_kv::ToController),
+    PubSub(pubsub::ToController),
 }
 
 impl FeaturesToController {
@@ -82,6 +87,7 @@ impl FeaturesToController {
             Self::RouterSync(_) => Features::RouterSync,
             Self::Vpn(_) => Features::Vpn,
             Self::DhtKv(_) => Features::DhtKv,
+            Self::PubSub(_) => Features::PubSub,
         }
     }
 }
@@ -93,6 +99,7 @@ pub enum FeaturesToWorker {
     RouterSync(router_sync::ToWorker),
     Vpn(vpn::ToWorker),
     DhtKv(dht_kv::ToWorker),
+    PubSub(pubsub::ToWorker),
 }
 
 impl FeaturesToWorker {
@@ -103,6 +110,7 @@ impl FeaturesToWorker {
             Self::RouterSync(_) => Features::RouterSync,
             Self::Vpn(_) => Features::Vpn,
             Self::DhtKv(_) => Features::DhtKv,
+            Self::PubSub(_) => Features::PubSub,
         }
     }
 }

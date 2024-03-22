@@ -1,45 +1,30 @@
 use std::collections::HashMap;
 
 use atm0s_sdn_identity::NodeId;
-use serde::{Deserialize, Serialize};
 
 use crate::base::{Feature, FeatureInput, FeatureOutput, FeatureWorker, ServiceId};
 
-pub const FEATURE_ID: u8 = 4;
-pub const FEATURE_NAME: &str = "lazy_kv";
+use self::msg::PubsubChannel;
+
+mod msg;
+
+pub const FEATURE_ID: u8 = 5;
+pub const FEATURE_NAME: &str = "pubsub";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Control {}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Event {}
 
 #[derive(Debug, Clone)]
-pub enum Control {
-    Set(u64, Vec<u8>),
-    Get(u64),
-    Del(u64),
+pub enum ToWorker {
+    Pin(PubsubChannel, NodeId),
+    Unpin(PubsubChannel, NodeId),
 }
-
-#[derive(Debug, Clone)]
-pub enum LazyKvError {
-    Timeout,
-}
-
-#[derive(Debug, Clone)]
-pub enum Event {
-    Result(u64, Result<(Vec<u8>, NodeId), LazyKvError>),
-}
-
-#[derive(Debug, Clone)]
-pub struct ToWorker;
 
 #[derive(Debug, Clone)]
 pub struct ToController;
-
-#[derive(Debug, Serialize, Deserialize)]
-enum Command {
-    Check(u8, u64),
-    CheckResult(u8, u64, Option<Vec<u8>>),
-    Scan(u8, u64),
-    Found(u8, u64, NodeId, Vec<u8>),
-    Set(u8, u64, NodeId),
-    Del(u8, u64, NodeId),
-}
 
 struct Slot {
     local: bool,
@@ -47,11 +32,11 @@ struct Slot {
 }
 
 #[derive(Default)]
-pub struct LazyKvFeature {
+pub struct PubSubFeature {
     slots: HashMap<(ServiceId, u64), Slot>,
 }
 
-impl Feature<Control, Event, ToController, ToWorker> for LazyKvFeature {
+impl Feature<Control, Event, ToController, ToWorker> for PubSubFeature {
     fn feature_type(&self) -> u8 {
         FEATURE_ID
     }
@@ -70,9 +55,9 @@ impl Feature<Control, Event, ToController, ToWorker> for LazyKvFeature {
 }
 
 #[derive(Default)]
-pub struct LazyKvFeatureWorker {}
+pub struct PubSubFeatureWorker {}
 
-impl FeatureWorker<Control, Event, ToController, ToWorker> for LazyKvFeatureWorker {
+impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWorker {
     fn feature_type(&self) -> u8 {
         FEATURE_ID
     }
