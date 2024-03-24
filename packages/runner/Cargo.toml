@@ -17,6 +17,7 @@ atm0s-sdn-router = { path = "../core/router", version = "0.1.4" }
 atm0s-sdn-network = { path = "../network", version = "0.3.1" }
 
 rand.workspace = true
+parking_lot.workspace = true
 log.workspace = true
 serde.workspace = true
 bincode.workspace = true

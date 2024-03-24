@@ -5,7 +5,10 @@ use std::{
 };
 
 use atm0s_sdn_identity::{ConnId, NodeId};
-use atm0s_sdn_router::{shadow::ShadowRouter, RouteAction, RouteRule, RouterTable};
+use atm0s_sdn_router::{
+    shadow::{ShadowRouter, ShadowRouterHistory},
+    RouteAction, RouteRule, RouterTable,
+};
 
 use crate::{
     base::{
@@ -78,12 +81,15 @@ pub struct DataPlane<SC, SE, TC, TW> {
 }
 
 impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
-    pub fn new(node_id: NodeId, services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>) -> Self {
+    pub fn new(node_id: NodeId, services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>, history: Arc<dyn ShadowRouterHistory>) -> Self {
         log::info!("Create DataPlane for node: {}", node_id);
 
         Self {
             tick_count: 0,
-            ctx: FeatureWorkerContext { router: ShadowRouter::new(node_id) },
+            ctx: FeatureWorkerContext {
+                node_id,
+                router: ShadowRouter::new(node_id, history),
+            },
             features: FeatureWorkerManager::new(node_id),
             services: ServiceWorkerManager::new(services),
             conns: HashMap::new(),
@@ -94,8 +100,8 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
         }
     }
 
-    pub fn route(&self, rule: RouteRule, relay_from: Option<NodeId>) -> RouteAction<SocketAddr> {
-        self.ctx.router.derive_action(&rule, relay_from)
+    pub fn route(&self, rule: RouteRule, source: Option<NodeId>, relay_from: Option<NodeId>) -> RouteAction<SocketAddr> {
+        self.ctx.router.derive_action(&rule, source, relay_from)
     }
 
     pub fn on_tick<'a>(&mut self, now_ms: u64) {
@@ -206,8 +212,8 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
     fn incoming_route<'a>(&mut self, now_ms: u64, remote: SocketAddr, mut buf: GenericBufferMut<'a>) -> Option<Output<'a, SE, TC>> {
         let conn = self.conns.get(&remote)?;
         let header = TransportMsgHeader::try_from(&buf as &[u8]).ok()?;
-        let action = self.ctx.router.derive_action(&header.route, Some(conn.node()));
-        log::debug!("Incoming rule: {:?} from: {remote} => action {:?}", header.route, action);
+        let action = self.ctx.router.derive_action(&header.route, header.from_node, Some(conn.node()));
+        log::debug!("[DataPlame] Incoming rule: {:?} from: {remote}, node {:?} => action {:?}", header.route, header.from_node, action);
         match action {
             RouteAction::Reject => None,
             RouteAction::Local => {
@@ -244,7 +250,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
     }
 
     fn outgoing_route<'a>(&mut self, now_ms: u64, feature: Features, rule: RouteRule, ttl: Ttl, buf: Vec<u8>) -> Option<Output<'a, SE, TC>> {
-        match self.ctx.router.derive_action(&rule, None) {
+        match self.ctx.router.derive_action(&rule, Some(self.ctx.node_id), None) {
             RouteAction::Reject => {
                 log::debug!("[DataPlane] outgoing route rule {:?} is rejected", rule);
                 None
@@ -263,7 +269,8 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
             RouteAction::Broadcast(local, remotes) => {
                 log::debug!("[DataPlane] outgoing route rule {:?} is go with local {local} and remotes {:?}", rule, remotes);
 
-                let header = TransportMsgHeader::build(feature as u8, 0, rule).set_ttl(*ttl);
+                let header = TransportMsgHeader::build(feature as u8, 0, rule).set_ttl(*ttl)
+                    .set_from_node(Some(self.ctx.node_id));
                 let msg = TransportMsg::build_raw(header, &buf);
                 if local {
                     if let Some(out) = self.features.on_input(&mut self.ctx, feature, now_ms, FeatureWorkerInput::Local(buf.into())) {

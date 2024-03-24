@@ -1,4 +1,4 @@
-use std::{fmt::Debug, hash::Hash};
+use std::{fmt::Debug, hash::Hash, sync::Arc};
 
 use atm0s_sdn_identity::{NodeId, NodeIdType};
 
@@ -8,6 +8,13 @@ use self::{service::Service, table::ShadowTable};
 
 mod service;
 mod table;
+
+#[mockall::automock]
+pub trait ShadowRouterHistory: Send + Sync {
+    /// This methid will check if the broadcast message is already received or not
+    /// If not received, it will cache the message and return true
+    fn allready_received_broadcast(&self, from: Option<NodeId>, service: u8, seq: u16) -> bool;
+}
 
 #[derive(Debug, Clone)]
 pub enum ShadowRouterDelta<Remote> {
@@ -24,15 +31,17 @@ pub struct ShadowRouter<Remote: Debug + Hash + Eq + Clone + Copy> {
     local_registries: [bool; 256],
     remote_registry: [Service<Remote>; 256],
     tables: [ShadowTable<Remote>; 4],
+    cached: Arc<dyn ShadowRouterHistory>,
 }
 
 impl<Remote: Debug + Hash + Eq + Clone + Copy> ShadowRouter<Remote> {
-    pub fn new(node_id: NodeId) -> Self {
+    pub fn new(node_id: NodeId, cached: Arc<dyn ShadowRouterHistory>) -> Self {
         Self {
             node_id,
             local_registries: [false; 256],
             remote_registry: std::array::from_fn(|_| Service::new()),
             tables: [ShadowTable::new(0), ShadowTable::new(1), ShadowTable::new(2), ShadowTable::new(3)],
+            cached,
         }
     }
 
@@ -113,7 +122,10 @@ impl<Remote: Debug + Hash + Eq + Clone + Copy> RouterTable<Remote> for ShadowRou
         }
     }
 
-    fn path_to_services(&self, service_id: u8, level: ServiceBroadcastLevel, relay_from: Option<NodeId>) -> RouteAction<Remote> {
+    fn path_to_services(&self, service_id: u8, seq: u16, level: ServiceBroadcastLevel, source: Option<NodeId>, relay_from: Option<NodeId>) -> RouteAction<Remote> {
+        if self.cached.allready_received_broadcast(source, service_id, seq) {
+            return RouteAction::Reject;
+        }
         let local = self.local_registries[service_id as usize];
         if let Some(nexts) = self.remote_registry[service_id as usize].broadcast_dests(self.node_id, level, relay_from) {
             RouteAction::Broadcast(local, nexts)
@@ -127,13 +139,16 @@ impl<Remote: Debug + Hash + Eq + Clone + Copy> RouterTable<Remote> for ShadowRou
 
 #[cfg(test)]
 mod tests {
-    use crate::{RouteAction, RouterTable, ServiceBroadcastLevel};
+    use std::sync::Arc;
+
+    use crate::{shadow::MockShadowRouterHistory, RouteAction, RouterTable, ServiceBroadcastLevel};
 
     use super::{ShadowRouter, ShadowRouterDelta};
 
     #[test]
     fn should_route_to_next_service_local() {
-        let mut router = ShadowRouter::<u64>::new(1);
+        let history = MockShadowRouterHistory::new();
+        let mut router = ShadowRouter::<u64>::new(1, Arc::new(history));
         router.apply_delta(ShadowRouterDelta::SetServiceLocal { service: 1 });
 
         assert_eq!(router.path_to_service(0), RouteAction::Reject);
@@ -142,7 +157,8 @@ mod tests {
 
     #[test]
     fn should_route_to_next_service_remote() {
-        let mut router = ShadowRouter::<u64>::new(1);
+        let history = MockShadowRouterHistory::new();
+        let mut router = ShadowRouter::<u64>::new(1, Arc::new(history));
         router.apply_delta(ShadowRouterDelta::SetServiceRemote {
             service: 1,
             conn: 2,
@@ -157,15 +173,20 @@ mod tests {
 
     #[test]
     fn should_broadcast_to_next_service_local() {
-        let mut router = ShadowRouter::<u64>::new(1);
+        let mut history = MockShadowRouterHistory::new();
+        history.expect_allready_received_broadcast().return_const(true);
+        let mut router = ShadowRouter::<u64>::new(1, Arc::new(history));
         router.apply_delta(ShadowRouterDelta::SetServiceLocal { service: 1 });
 
-        assert_eq!(router.path_to_services(1, ServiceBroadcastLevel::Global, None), RouteAction::Local);
+        assert_eq!(router.path_to_services(1, 1, ServiceBroadcastLevel::Global, None, None), RouteAction::Local);
     }
 
     #[test]
     fn should_broadcast_to_next_service_remote() {
-        let mut router = ShadowRouter::<u64>::new(1);
+        let mut history = MockShadowRouterHistory::new();
+        history.expect_allready_received_broadcast().return_const(true);
+
+        let mut router = ShadowRouter::<u64>::new(1, Arc::new(history));
         router.apply_delta(ShadowRouterDelta::SetServiceRemote {
             service: 1,
             conn: 2,
@@ -188,10 +209,10 @@ mod tests {
             score: 1,
         });
 
-        assert_eq!(router.path_to_services(1, ServiceBroadcastLevel::Global, None), RouteAction::Broadcast(false, vec![4, 3]));
+        assert_eq!(router.path_to_services(1, 1, ServiceBroadcastLevel::Global, None, None), RouteAction::Broadcast(false, vec![4, 3]));
 
         router.apply_delta(ShadowRouterDelta::SetServiceLocal { service: 1 });
-        assert_eq!(router.path_to_services(1, ServiceBroadcastLevel::Global, None), RouteAction::Broadcast(true, vec![4, 3]));
+        assert_eq!(router.path_to_services(1, 2, ServiceBroadcastLevel::Global, None, None), RouteAction::Broadcast(true, vec![4, 3]));
 
         router.apply_delta(ShadowRouterDelta::SetServiceRemote {
             service: 1,
@@ -200,6 +221,18 @@ mod tests {
             dest: 5,
             score: 1,
         });
-        assert_eq!(router.path_to_services(1, ServiceBroadcastLevel::Global, Some(4)), RouteAction::Broadcast(true, vec![3, 2]));
+        assert_eq!(router.path_to_services(1, 3, ServiceBroadcastLevel::Global, None, Some(4)), RouteAction::Broadcast(true, vec![3, 2]));
+    }
+
+    #[test]
+    fn reject_received_broadcast_message() {
+        let mut history = MockShadowRouterHistory::new();
+        history.expect_allready_received_broadcast().return_const(false);
+
+        let mut router = ShadowRouter::<u64>::new(1, Arc::new(history));
+        router.apply_delta(ShadowRouterDelta::SetServiceLocal { service: 100 });
+
+        // should not broadcast if already received
+        assert_eq!(router.path_to_services(100, 1, ServiceBroadcastLevel::Global, None, None), RouteAction::Reject);
     }
 }

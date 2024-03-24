@@ -2,11 +2,7 @@ mod controller_plane;
 mod data_plane;
 mod event_convert;
 
-use std::{
-    fmt::Debug,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{fmt::Debug, sync::Arc, time::Instant};
 
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_network::{
@@ -14,8 +10,10 @@ use atm0s_sdn_network::{
     features::{FeaturesControl, FeaturesEvent},
     ExtIn, ExtOut,
 };
+use atm0s_sdn_router::shadow::ShadowRouterHistory;
 use sans_io_runtime::{Controller, Task, TaskGroupOutputsState, TaskInput, TaskOutput, WorkerInner, WorkerInnerInput, WorkerInnerOutput};
 
+pub use self::data_plane::history::DataWorkerHistory;
 use self::{
     controller_plane::{ControllerPlaneCfg, ControllerPlaneTask},
     data_plane::{DataPlaneCfg, DataPlaneTask},
@@ -51,6 +49,7 @@ pub struct SdnInnerCfg<SC, SE, TC, TW> {
     pub udp_port: u16,
     pub controller: Option<ControllerCfg>,
     pub services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
+    pub history: Arc<dyn ShadowRouterHistory>,
     #[cfg(feature = "vpn")]
     pub vpn_tun_fd: Option<sans_io_runtime::backend::tun::TunFd>,
 }
@@ -108,6 +107,7 @@ impl<SC, SE, TC: Debug, TW: Debug> WorkerInner<SdnExtIn<SC>, SdnExtOut<SE>, SdnC
                     node_id: cfg.node_id,
                     port: cfg.udp_port,
                     services: cfg.services,
+                    history: cfg.history,
                     #[cfg(feature = "vpn")]
                     vpn_tun_fd: cfg.vpn_tun_fd,
                 }),
@@ -125,6 +125,7 @@ impl<SC, SE, TC: Debug, TW: Debug> WorkerInner<SdnExtIn<SC>, SdnExtOut<SE>, SdnC
                     node_id: cfg.node_id,
                     port: cfg.udp_port,
                     services: cfg.services,
+                    history: cfg.history,
                     #[cfg(feature = "vpn")]
                     vpn_tun_fd: cfg.vpn_tun_fd,
                 }),

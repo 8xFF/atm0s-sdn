@@ -13,9 +13,12 @@ use atm0s_sdn_network::{
     features::{FeaturesControl, FeaturesEvent},
     ExtOut, LogicControl, LogicEvent,
 };
+use atm0s_sdn_router::shadow::ShadowRouterHistory;
 use sans_io_runtime::{bus::BusEvent, Buffer, NetIncoming, NetOutgoing, Task, TaskInput, TaskOutput};
 
 use crate::time::TimePivot;
+
+pub(crate) mod history;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum ChannelIn {
@@ -29,6 +32,7 @@ pub type EventIn<TW> = LogicEvent<TW>;
 pub type EventOut<TC> = LogicControl<TC>;
 
 pub struct DataPlaneCfg<SC, SE, TC, TW> {
+    pub history: Arc<dyn ShadowRouterHistory>,
     pub worker: u16,
     pub node_id: NodeId,
     pub port: u16,
@@ -64,7 +68,7 @@ impl<SC, SE, TC, TW> DataPlaneTask<SC, SE, TC, TW> {
         Self {
             node_id: cfg.node_id,
             worker: cfg.worker,
-            data_plane: DataPlane::new(cfg.node_id, cfg.services),
+            data_plane: DataPlane::new(cfg.node_id, cfg.services, cfg.history),
             backend_udp_slot: 0,
             timer: TimePivot::build(),
             #[cfg(feature = "vpn")]

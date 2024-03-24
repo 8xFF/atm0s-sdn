@@ -18,6 +18,7 @@ use atm0s_sdn_network::{
     data_plane::{self, DataPlane},
     ExtIn, ExtOut,
 };
+use atm0s_sdn_router::shadow::ShadowRouterHistory;
 use log::{LevelFilter, Metadata, Record};
 use parking_lot::Mutex;
 use rand::rngs::mock::StepRng;
@@ -91,6 +92,29 @@ pub fn build_addr(node_id: NodeId) -> NodeAddr {
     builder.addr()
 }
 
+#[derive(Debug, Default)]
+struct SingleThreadDataWorkerHistory {
+    queue: Mutex<Vec<(Option<NodeId>, u8, u16)>>,
+    map: Mutex<HashMap<(Option<NodeId>, u8, u16), bool>>,
+}
+
+impl ShadowRouterHistory for SingleThreadDataWorkerHistory {
+    fn allready_received_broadcast(&self, from: Option<NodeId>, service: u8, seq: u16) -> bool {
+        log::debug!("Check allready_received_broadcast from {:?} service {} seq {}", from, service, seq);
+        let mut map = self.map.lock();
+        let mut queue = self.queue.lock();
+        if map.contains_key(&(from, service, seq)) {
+            return true;
+        }
+        map.insert((from, service, seq), true);
+        if queue.len() > 100 {
+            let pair = queue.remove(0);
+            map.remove(&pair);
+        }
+        false
+    }
+}
+
 pub struct TestNode<SC, SE, TC, TW> {
     node_id: NodeId,
     controller: ControllerPlane<SC, SE, TC, TW>,
@@ -101,7 +125,7 @@ impl<SC, SE, TC, TW> TestNode<SC, SE, TC, TW> {
     pub fn new(node_id: NodeId, session: u64, services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>) -> Self {
         let _log = AutoContext::new(node_id);
         let controller = ControllerPlane::new(node_id, session, services.clone(), Box::new(StepRng::new(1000, 5)));
-        let worker = DataPlane::new(node_id, services);
+        let worker = DataPlane::new(node_id, services, Arc::new(SingleThreadDataWorkerHistory::default()));
         Self { node_id, controller, worker }
     }
 

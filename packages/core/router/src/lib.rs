@@ -48,7 +48,8 @@ pub enum RouteRule {
     Direct,
     ToNode(NodeId),
     ToService(u8),
-    ToServices(u8, ServiceBroadcastLevel),
+    /// First is service id, second is the level, and third is seq of message
+    ToServices(u8, ServiceBroadcastLevel, u16),
     ToKey(NodeId),
 }
 
@@ -92,16 +93,16 @@ pub trait RouterTable<Remote> {
     fn path_to_service(&self, service_id: u8) -> RouteAction<Remote>;
     /// Determine the next action if we need broadcast to all node running a service.
     /// If relay_from is set, it should not sending back for avoiding loop
-    fn path_to_services(&self, service_id: u8, level: ServiceBroadcastLevel, relay_from: Option<NodeId>) -> RouteAction<Remote>;
+    fn path_to_services(&self, service_id: u8, seq: u16, level: ServiceBroadcastLevel, source: Option<NodeId>, relay_from: Option<NodeId>) -> RouteAction<Remote>;
     /// Determine next action for incoming messages
     /// given the route rule and service id
-    fn derive_action(&self, route: &RouteRule, relay_from: Option<NodeId>) -> RouteAction<Remote> {
+    fn derive_action(&self, route: &RouteRule, source: Option<NodeId>, relay_from: Option<NodeId>) -> RouteAction<Remote> {
         match route {
             RouteRule::Direct => RouteAction::Local,
             RouteRule::ToNode(dest) => self.path_to_node(*dest),
             RouteRule::ToKey(key) => self.path_to_key(*key),
             RouteRule::ToService(service) => self.path_to_service(*service),
-            RouteRule::ToServices(service, level) => self.path_to_services(*service, *level, relay_from),
+            RouteRule::ToServices(service, level, seq) => self.path_to_services(*service, *seq, *level, source, relay_from),
         }
     }
 }

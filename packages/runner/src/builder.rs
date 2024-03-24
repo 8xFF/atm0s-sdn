@@ -13,7 +13,7 @@ use atm0s_sdn_network::{
 use rand::{thread_rng, RngCore};
 use sans_io_runtime::{backend::Backend, Owner};
 
-use crate::tasks::{ControllerCfg, SdnController, SdnExtIn, SdnInnerCfg, SdnWorkerInner};
+use crate::tasks::{ControllerCfg, DataWorkerHistory, SdnController, SdnExtIn, SdnInnerCfg, SdnWorkerInner};
 
 pub struct SdnBuilder<SC, SE, TC, TW> {
     node_addr: NodeAddr,
@@ -146,12 +146,15 @@ where
 
         self.add_service(Arc::new(visualization::VisualizationServiceBuilder::<SC, SE, TC, TW>::new(self.visualization_collector, self.node_id)));
 
+        let history = Arc::new(DataWorkerHistory::default());
+
         let mut controller = SdnController::default();
         controller.add_worker::<_, SdnWorkerInner<SC, SE, TC, TW>, B>(
             SdnInnerCfg {
                 node_id: self.node_id,
                 udp_port: self.udp_port,
                 services: self.services.clone(),
+                history: history.clone(),
                 controller: Some(ControllerCfg {
                     session: self.session,
                     password: "password".to_string(),
@@ -171,6 +174,7 @@ where
                     node_id: self.node_id,
                     udp_port: self.udp_port,
                     services: self.services.clone(),
+                    history: history.clone(),
                     controller: None,
                     #[cfg(feature = "vpn")]
                     vpn_tun_fd: queue_fds.pop_front(),

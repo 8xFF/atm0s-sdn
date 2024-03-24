@@ -134,6 +134,7 @@ impl<'a, Control, Event, ToController> FeatureWorkerOutput<'a, Control, Event, T
 }
 
 pub struct FeatureWorkerContext {
+    pub node_id: NodeId,
     pub router: ShadowRouter<SocketAddr>,
 }
 

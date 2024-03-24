@@ -171,7 +171,7 @@ impl TransportMsgHeader {
             RouteRule::Direct => ROUTE_RULE_DIRECT,
             RouteRule::ToNode(_) => ROUTE_RULE_TO_NODE,
             RouteRule::ToService(_) => ROUTE_RULE_TO_SERVICE,
-            RouteRule::ToServices(_, _) => ROUTE_RULE_TO_SERVICES,
+            RouteRule::ToServices(_, _, _) => ROUTE_RULE_TO_SERVICES,
             RouteRule::ToKey(_) => ROUTE_RULE_TO_KEY,
         };
 
@@ -192,9 +192,10 @@ impl TransportMsgHeader {
                 output[ptr] = service;
                 ptr += 4;
             }
-            RouteRule::ToServices(service, level) => {
+            RouteRule::ToServices(service, level, seq) => {
                 output[ptr] = service;
                 output[ptr + 1] = level.into();
+                output[ptr + 2..ptr + 4].copy_from_slice(&seq.to_be_bytes());
                 ptr += 4;
             }
             RouteRule::ToKey(key) => {
@@ -463,7 +464,7 @@ impl TryFrom<&[u8]> for TransportMsgHeader {
                 if bytes.len() < ptr + 4 {
                     return Err(TransportMsgHeaderError::TooSmall);
                 }
-                let rr = RouteRule::ToServices(bytes[ptr], ServiceBroadcastLevel::from(bytes[ptr + 1]));
+                let rr = RouteRule::ToServices(bytes[ptr], ServiceBroadcastLevel::from(bytes[ptr + 1]), u16::from_be_bytes([bytes[ptr + 2], bytes[ptr + 3]]));
                 ptr += 4;
                 rr
             }
@@ -564,7 +565,7 @@ mod tests {
             ttl: 1,
             feature: 2,
             meta: 3,
-            route: RouteRule::ToServices(4, ServiceBroadcastLevel::Geo2),
+            route: RouteRule::ToServices(4, ServiceBroadcastLevel::Geo2, 1000),
             encrypt: true,
             from_node: None,
         };
@@ -575,7 +576,7 @@ mod tests {
         assert_eq!(header.ttl, 1);
         assert_eq!(header.feature, 2);
         assert_eq!(header.meta, 3);
-        assert_eq!(header.route, RouteRule::ToServices(4, ServiceBroadcastLevel::Geo2));
+        assert_eq!(header.route, RouteRule::ToServices(4, ServiceBroadcastLevel::Geo2, 1000));
         assert_eq!(header.from_node, None);
     }
 

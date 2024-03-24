@@ -57,8 +57,8 @@ enum Message {
 
 pub struct VisualizationService<SC, SE, TC, TW> {
     node_id: NodeId,
-    broadcast_rule: RouteRule,
     last_ping: u64,
+    broadcast_seq: u16,
     queue: VecDeque<ServiceOutput<FeaturesControl, SE, TW>>,
     conns: BTreeMap<ConnId, ConnectionInfo>,
     network_nodes: BTreeMap<NodeId, NodeInfo>,
@@ -74,7 +74,7 @@ where
     pub fn new(node_id: NodeId) -> Self {
         Self {
             node_id,
-            broadcast_rule: RouteRule::ToServices(SERVICE_ID, ServiceBroadcastLevel::Global),
+            broadcast_seq: 0,
             last_ping: 0,
             conns: BTreeMap::new(),
             network_nodes: BTreeMap::new(),
@@ -123,8 +123,10 @@ where
                     log::debug!("[Visualization] Sending Snapshot to collector with interval {NODE_PING_MS} ms with {} conns", self.conns.len());
                     self.last_ping = now;
                     let msg = Message::Snapshot(self.node_id, self.conns.values().cloned().collect::<Vec<_>>());
+                    let seq = self.broadcast_seq;
+                    self.broadcast_seq = self.broadcast_seq.saturating_add(1);
                     self.queue.push_back(data_cmd(data::Control::SendRule(
-                        self.broadcast_rule.clone(),
+                        RouteRule::ToServices(SERVICE_ID, ServiceBroadcastLevel::Global, seq),
                         Ttl(NODE_PING_TTL),
                         bincode::serialize(&msg).expect("Should to bytes"),
                     )));
@@ -310,7 +312,17 @@ mod test {
         assert_eq!(
             service.pop_output(),
             Some(data_cmd(DataControl::SendRule(
-                RouteRule::ToServices(SERVICE_ID, ServiceBroadcastLevel::Global),
+                RouteRule::ToServices(SERVICE_ID, ServiceBroadcastLevel::Global, 0),
+                Ttl(NODE_PING_TTL),
+                bincode::serialize(&Message::Snapshot(node_id, vec![])).expect("Should to bytes")
+            )))
+        );
+
+        service.on_shared_input(NODE_PING_MS * 2, ServiceSharedInput::Tick(0));
+        assert_eq!(
+            service.pop_output(),
+            Some(data_cmd(DataControl::SendRule(
+                RouteRule::ToServices(SERVICE_ID, ServiceBroadcastLevel::Global, 1),
                 Ttl(NODE_PING_TTL),
                 bincode::serialize(&Message::Snapshot(node_id, vec![])).expect("Should to bytes")
             )))
