@@ -38,12 +38,18 @@ impl RelayConsummers {
     }
 
     pub fn on_local_sub(&mut self, _now: u64, actor: FeatureControlActor) {
+        if self.locals.contains(&actor) {
+            log::warn!("[RelayConsumers] Sub for already subbed local actor {:?}", actor);
+            return;
+        }
+        log::debug!("[RelayConsumers] Sub for local actor {:?}", actor);
         self.locals.push(actor);
         self.queue.push_back(RelayWorkerControl::RouteSetLocal(actor));
     }
 
     pub fn on_local_unsub(&mut self, _now: u64, actor: FeatureControlActor) {
         if let Some(pos) = self.locals.iter().position(|a| *a == actor) {
+            log::debug!("[RelayConsumers] Unsub from local actor {:?}", actor);
             self.queue.push_back(RelayWorkerControl::RouteDelLocal(actor));
             self.locals.swap_remove(pos);
         } else {
@@ -62,14 +68,16 @@ impl RelayConsummers {
                         log::warn!("[RelayConsumers] Sub for remote {remote} with different uuid {uuid} vs {}", slot.uuid);
                     }
                 } else {
+                    log::debug!("[PubSubConsumers] Sub for remote {remote} with uuid {uuid}");
                     self.remotes.insert(remote, RelayRemote { uuid, last_sub: now });
                     self.queue.push_back(RelayWorkerControl::SendSubOk(uuid, remote));
-                    self.queue.push_back(RelayWorkerControl::RouteSetRemote(remote));
+                    self.queue.push_back(RelayWorkerControl::RouteSetRemote(remote, uuid));
                 }
             }
             RelayControl::Unsub(uuid) => {
                 if let Some(slot) = self.remotes.get(&remote) {
                     if slot.uuid == uuid {
+                        log::debug!("[PubSubConsumers] Unsub from remote {remote} with uuid {uuid}");
                         self.queue.push_back(RelayWorkerControl::SendUnsubOk(uuid, remote));
                         self.queue.push_back(RelayWorkerControl::RouteDelRemote(remote));
                         self.remotes.remove(&remote);
@@ -176,7 +184,7 @@ mod tests {
         consumers.on_remote(0, remote, RelayControl::Sub(1000));
 
         assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::SendSubOk(1000, remote)));
-        assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteSetRemote(remote)));
+        assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteSetRemote(remote, 1000)));
         assert_eq!(consumers.pop_output(), None);
 
         assert_eq!(consumers.relay_dests(), (&[] as &[_], true));
@@ -202,13 +210,13 @@ mod tests {
         consumers.on_remote(0, remote1, RelayControl::Sub(1000));
 
         assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::SendSubOk(1000, remote1)));
-        assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteSetRemote(remote1)));
+        assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteSetRemote(remote1, 1000)));
         assert_eq!(consumers.pop_output(), None);
 
         consumers.on_remote(0, remote2, RelayControl::Sub(1001));
 
         assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::SendSubOk(1001, remote2)));
-        assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteSetRemote(remote2)));
+        assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteSetRemote(remote2, 1001)));
         assert_eq!(consumers.pop_output(), None);
 
         assert_eq!(consumers.relay_dests(), (&[] as &[_], true));
@@ -242,7 +250,7 @@ mod tests {
         consumers.on_remote(0, remote1, RelayControl::Sub(1000));
 
         assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::SendSubOk(1000, remote1)));
-        assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteSetRemote(remote1)));
+        assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteSetRemote(remote1, 1000)));
         assert_eq!(consumers.pop_output(), None);
 
         consumers.on_local_sub(0, FeatureControlActor::Controller);

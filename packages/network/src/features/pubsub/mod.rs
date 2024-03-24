@@ -4,13 +4,14 @@ use atm0s_sdn_identity::NodeId;
 
 use crate::base::FeatureControlActor;
 
-use self::msg::{ChannelId, RelayControl, RelayId};
+use self::msg::{RelayControl, RelayId};
 
 mod controller;
 mod msg;
 mod worker;
 
 pub use controller::PubSubFeature;
+pub use msg::ChannelId;
 pub use worker::PubSubFeatureWorker;
 
 pub const FEATURE_ID: u8 = 5;
@@ -24,15 +25,16 @@ pub enum ChannelControl {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Control(ChannelId, ChannelControl);
+pub struct Control(pub ChannelId, pub ChannelControl);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChannelEvent {
+    RouteChanged(NodeId),
     SourceData(NodeId, Vec<u8>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Event(ChannelId, ChannelEvent);
+pub struct Event(pub ChannelId, pub ChannelEvent);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RelayWorkerControl {
@@ -40,11 +42,12 @@ pub enum RelayWorkerControl {
     SendUnsub(u64, SocketAddr),
     SendSubOk(u64, SocketAddr),
     SendUnsubOk(u64, SocketAddr),
-    RouteSet(SocketAddr),
-    RouteDel(SocketAddr),
+    SendRouteChanged,
+    RouteSetSource(SocketAddr),
+    RouteDelSource(SocketAddr),
     RouteSetLocal(FeatureControlActor),
     RouteDelLocal(FeatureControlActor),
-    RouteSetRemote(SocketAddr),
+    RouteSetRemote(SocketAddr, u64),
     RouteDelRemote(SocketAddr),
 }
 
@@ -55,6 +58,7 @@ impl RelayWorkerControl {
             RelayWorkerControl::SendUnsub(_, _) => false,
             RelayWorkerControl::SendSubOk(_, _) => false,
             RelayWorkerControl::SendUnsubOk(_, _) => false,
+            RelayWorkerControl::SendRouteChanged => false,
             _ => true,
         }
     }

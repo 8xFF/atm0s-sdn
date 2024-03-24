@@ -3,7 +3,7 @@ use crate::{
     features::pubsub::{msg::RelayControl, RelayWorkerControl},
 };
 
-use super::{consumers::RelayConsummers, GenericRelay};
+use super::{consumers::RelayConsummers, GenericRelay, GenericRelayOutput};
 
 #[derive(Default)]
 pub struct LocalRelay {
@@ -39,7 +39,7 @@ impl GenericRelay for LocalRelay {
         Some(self.consumers.relay_dests())
     }
 
-    fn pop_output(&mut self) -> Option<RelayWorkerControl> {
-        self.consumers.pop_output()
+    fn pop_output(&mut self) -> Option<GenericRelayOutput> {
+        self.consumers.pop_output().map(GenericRelayOutput::ToWorker)
     }
 }

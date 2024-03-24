@@ -623,7 +623,6 @@ mod test {
 
     #[test]
     fn map_event_should_timeout_after_sending_some_retry() {
-        env_logger::init();
         let relay = NodeSession(1, 2);
         let mut map = RemoteMap::new(relay);
 

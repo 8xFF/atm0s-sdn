@@ -1,11 +1,11 @@
 use atm0s_sdn_identity::NodeId;
+use atm0s_sdn_router::RouteRule;
 use atm0s_sdn_utils::simple_pub_type;
 use serde::{Deserialize, Serialize};
 
-use crate::base::TransportMsgHeaderError;
+use crate::base::{TransportMsg, TransportMsgHeader, TransportMsgHeaderError};
 
-pub const CONTROL_PKT_META: u8 = 0x01;
-pub const DATA_PKT_META: u8 = 0x02;
+use super::FEATURE_ID;
 
 simple_pub_type!(ChannelId, u64);
 
@@ -18,6 +18,7 @@ pub enum RelayControl {
     Unsub(u64),
     SubOK(u64),
     UnsubOK(u64),
+    RouteChanged(u64),
 }
 
 impl RelayControl {
@@ -32,43 +33,30 @@ impl RelayControl {
 pub enum PubsubMessageError {
     TransportError(TransportMsgHeaderError),
     DeserializeError,
-    WrongMeta,
-    TooSmall,
 }
 
-pub enum PubsubMessage<'a> {
+#[derive(Debug, Serialize, Deserialize)]
+pub enum PubsubMessage {
     Control(RelayId, RelayControl),
-    Data(RelayId, &'a [u8]),
+    Data(RelayId, Vec<u8>),
 }
 
-impl<'a> PubsubMessage<'a> {
+impl PubsubMessage {
     pub fn write_to(&self, dest: &mut [u8]) -> Option<usize> {
-        todo!()
+        let header = TransportMsgHeader::build(FEATURE_ID, 0, RouteRule::Direct);
+        let msg = TransportMsg::from_payload_bincode(header, &self);
+        let buf = msg.take();
+        let len = buf.len();
+        dest[..len].copy_from_slice(&buf);
+        Some(len)
     }
 }
 
-impl<'a> TryFrom<&'a [u8]> for PubsubMessage<'a> {
+impl TryFrom<&[u8]> for PubsubMessage {
     type Error = PubsubMessageError;
 
-    fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
-        todo!()
-        // let header = TransportMsgHeader::try_from(value).map_err(|e| Self::Error::TransportError(e))?;
-
-        // match header.meta {
-        //     CONTROL_PKT_META => {
-        //         let msg = bincode::DefaultOptions::new().with_limit(1499).deserialize(&value[header.serialize_size()..]).map_err(|_| PubsubMessageError::DeserializeError)?;
-        //         Ok(PubsubMessage::Control(msg))
-        //     }
-        //     DATA_PKT_META => {
-        //         if value.len() < header.serialize_size() + 12 {
-        //             return Err(Self::Error::TooSmall);
-        //         }
-        //         let ptr = &value[header.serialize_size()..];
-        //         let channel_id = u64::from_be_bytes([ptr[0], ptr[1], ptr[2], ptr[3], ptr[4], ptr[5], ptr[6], ptr[7]]);
-        //         let source = u32::from_be_bytes([ptr[8], ptr[9], ptr[10], ptr[11]]);
-        //         Ok(PubsubMessage::Data(StreamId(channel_id.into(), source), &ptr[12..]))
-        //     }
-        //     _ => Err(Self::Error::WrongMeta),
-        // }
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        let msg = TransportMsg::try_from(value).map_err(PubsubMessageError::TransportError)?;
+        msg.get_payload_bincode().map_err(|_| PubsubMessageError::DeserializeError)
     }
 }

@@ -13,6 +13,7 @@ use super::{
 };
 
 pub const RELAY_TIMEOUT: u64 = 10_000;
+pub const RELAY_STICKY_MS: u64 = 5 * 60 * 1000; //sticky route path in 5 minutes
 
 mod consumers;
 mod local_relay;
@@ -20,6 +21,12 @@ mod remote_relay;
 
 use local_relay::LocalRelay;
 use remote_relay::RemoteRelay;
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum GenericRelayOutput {
+    ToWorker(RelayWorkerControl),
+    RouteChanged(FeatureControlActor),
+}
 
 pub trait GenericRelay {
     fn on_tick(&mut self, now: u64);
@@ -29,7 +36,7 @@ pub trait GenericRelay {
     fn conn_disconnected(&mut self, now: u64, remote: SocketAddr);
     fn should_clear(&self) -> bool;
     fn relay_dests(&self) -> Option<(&[FeatureControlActor], bool)>;
-    fn pop_output(&mut self) -> Option<RelayWorkerControl>;
+    fn pop_output(&mut self) -> Option<GenericRelayOutput>;
 }
 
 pub struct PubSubFeature {
@@ -51,10 +58,11 @@ impl PubSubFeature {
 
     fn get_relay(&mut self, relay_id: RelayId, auto_create: bool) -> Option<&mut Box<dyn GenericRelay>> {
         if !self.relays.contains_key(&relay_id) && auto_create {
-            log::info!("[PubSubFeatureController] Creating new relay: {:?}", relay_id);
             let relay: Box<dyn GenericRelay> = if self.node_id == relay_id.1 {
+                log::info!("[PubSubFeatureController] Creating new LocalRelay: {}", relay_id.0);
                 Box::new(LocalRelay::default())
             } else {
+                log::info!("[PubSubFeatureController] Creating new RemoteController: {:?}", relay_id);
                 Box::new(RemoteRelay::new(self.session))
             };
             self.relays.insert(relay_id, relay);
@@ -85,6 +93,12 @@ impl PubSubFeature {
                 let relay_id = RelayId(channel, self.node_id);
                 if let Some(relay) = self.relays.get(&relay_id) {
                     if let Some((locals, has_remote)) = relay.relay_dests() {
+                        log::debug!(
+                            "[PubSubFeatureController] Pub for {:?} from {:?} to {:?} locals, has remote {has_remote}",
+                            relay_id,
+                            actor,
+                            locals.len()
+                        );
                         for local in locals {
                             self.queue.push_back(FeatureOutput::Event(*local, Event(channel, ChannelEvent::SourceData(self.node_id, data.clone()))));
                         }
@@ -92,7 +106,11 @@ impl PubSubFeature {
                         if has_remote {
                             self.queue.push_back(FeatureOutput::ToWorker(true, ToWorker::RelayData(relay_id, data)));
                         }
+                    } else {
+                        log::debug!("[PubSubFeatureController] No subscribers for {:?}, dropping data from {:?}", relay_id, actor)
                     }
+                } else {
+                    log::warn!("[PubSubFeatureController] Pub for unknown relay {:?}", relay_id);
                 }
             }
         }
@@ -110,7 +128,10 @@ impl PubSubFeature {
 
     fn pop_single_relay(relay_id: RelayId, relay: &mut Box<dyn GenericRelay>, queue: &mut VecDeque<FeatureOutput<Event, ToWorker>>) {
         while let Some(control) = relay.pop_output() {
-            queue.push_back(FeatureOutput::ToWorker(control.is_broadcast(), ToWorker::RelayWorkerControl(relay_id, control)));
+            queue.push_back(match control {
+                GenericRelayOutput::ToWorker(control) => FeatureOutput::ToWorker(true, ToWorker::RelayWorkerControl(relay_id, control)),
+                GenericRelayOutput::RouteChanged(actor) => FeatureOutput::Event(actor, Event(relay_id.0, ChannelEvent::RouteChanged(relay_id.1))),
+            });
         }
     }
 }

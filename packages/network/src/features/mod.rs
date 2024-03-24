@@ -31,6 +31,7 @@ impl TryFrom<u8> for Features {
             router_sync::FEATURE_ID => Ok(Features::RouterSync),
             vpn::FEATURE_ID => Ok(Features::Vpn),
             dht_kv::FEATURE_ID => Ok(Features::DhtKv),
+            pubsub::FEATURE_ID => Ok(Features::PubSub),
             _ => Err(()),
         }
     }

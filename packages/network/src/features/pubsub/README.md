@@ -23,3 +23,14 @@ If the node don't interest in the topic anymore, it will send Unsub (channel, so
 Each node when receive Sub, it will send SubOk to the source node, and start to relay data from source to the node. If the node receive Unsub, it will send UnsubOk to the source node, and stop relaying data.
 
 The uuid also to be used to validate SubOk and UnsubOk. In the future, we can have more complex logic to validate the message, like signature or encryption.
+
+## Sticky or Dynamic path
+
+Atm0s routing table can providing two way to route the message:
+
+- Sticky: the route path will be fixed until pubsub channel is closed. When any node in route path is down, the previous node will try to find the new path to the source node.
+- Dynamic: the route path will be updated periodically, and the route path will be changed if the network structure is changed. This is useful when the network is changed frequently.
+
+We can have combine of both, which the route path will be sticky in a period of time, and will be updated if the network structure is changed.
+
+Currently implement will keep sticky in 5 minutes, and will be updated if the network structure is changed.

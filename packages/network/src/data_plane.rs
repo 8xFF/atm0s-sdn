@@ -212,6 +212,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
             RouteAction::Reject => None,
             RouteAction::Local => {
                 let feature = header.feature.try_into().ok()?;
+                log::debug!("Incoming feature: {:?} from: {remote}", feature);
                 let out = self
                     .features
                     .on_network_raw(&mut self.ctx, feature, now_ms, conn.conn(), remote, header.serialize_size(), buf.to_readonly())?;
@@ -231,6 +232,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 let buf = buf.to_readonly();
                 if local {
                     if let Ok(feature) = header.feature.try_into() {
+                        log::debug!("Incoming broadcast feature: {:?} from: {remote}", feature);
                         if let Some(out) = self.features.on_network_raw(&mut self.ctx, feature, now_ms, conn.conn(), remote, header.serialize_size(), buf.clone()) {
                             self.queue_output.push_back(QueueOutput::Feature(feature, out.owned()));
                         }

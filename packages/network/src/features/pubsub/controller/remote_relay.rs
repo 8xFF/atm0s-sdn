@@ -10,12 +10,12 @@ use crate::{
 };
 use std::{collections::VecDeque, net::SocketAddr};
 
-use super::{consumers::RelayConsummers, GenericRelay, RELAY_TIMEOUT};
+use super::{consumers::RelayConsummers, GenericRelay, GenericRelayOutput, RELAY_STICKY_MS, RELAY_TIMEOUT};
 
 enum RelayState {
     New,
     Binding { consumers: RelayConsummers },
-    Bound { consumers: RelayConsummers, next: SocketAddr },
+    Bound { consumers: RelayConsummers, next: SocketAddr, sticky_session_at: u64 },
     Unbinding { next: SocketAddr, started_at: u64 },
     Unbound,
 }
@@ -23,7 +23,7 @@ enum RelayState {
 pub struct RemoteRelay {
     uuid: u64,
     state: RelayState,
-    queue: VecDeque<RelayWorkerControl>,
+    queue: VecDeque<GenericRelayOutput>,
 }
 
 impl RemoteRelay {
@@ -35,9 +35,9 @@ impl RemoteRelay {
         }
     }
 
-    fn pop_consumers_out(consumers: &mut RelayConsummers, queue: &mut VecDeque<RelayWorkerControl>) {
+    fn pop_consumers_out(consumers: &mut RelayConsummers, queue: &mut VecDeque<GenericRelayOutput>) {
         while let Some(control) = consumers.pop_output() {
-            queue.push_back(control);
+            queue.push_back(GenericRelayOutput::ToWorker(control));
         }
     }
 }
@@ -45,18 +45,26 @@ impl RemoteRelay {
 impl GenericRelay for RemoteRelay {
     fn on_tick(&mut self, now: u64) {
         match &mut self.state {
-            RelayState::Bound { next, consumers, .. } => {
-                self.queue.push_back(RelayWorkerControl::SendSub(self.uuid, Some(*next)));
+            RelayState::Bound {
+                next, consumers, sticky_session_at, ..
+            } => {
+                if now >= *sticky_session_at + RELAY_STICKY_MS {
+                    log::info!("[PubSubRemoteRelay] Sticky session end for relay from {next} => trying finding better way");
+                    self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(self.uuid, None)));
+                } else {
+                    self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(self.uuid, Some(*next))));
+                }
                 consumers.on_tick(now);
                 Self::pop_consumers_out(consumers, &mut self.queue);
 
                 if consumers.should_clear() {
-                    self.queue.push_back(RelayWorkerControl::SendUnsub(self.uuid, *next));
+                    self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendUnsub(self.uuid, *next)));
+                    self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteDelSource(*next)));
                     self.state = RelayState::Unbinding { next: *next, started_at: now };
                 }
             }
             RelayState::Binding { consumers, .. } => {
-                self.queue.push_back(RelayWorkerControl::SendSub(self.uuid, None));
+                self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(self.uuid, None)));
                 consumers.on_tick(now);
                 Self::pop_consumers_out(consumers, &mut self.queue);
 
@@ -68,7 +76,7 @@ impl GenericRelay for RemoteRelay {
                 if now >= *started_at + RELAY_TIMEOUT {
                     self.state = RelayState::Unbound;
                 } else {
-                    self.queue.push_back(RelayWorkerControl::SendUnsub(self.uuid, *next));
+                    self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendUnsub(self.uuid, *next)));
                 }
             }
             _ => {}
@@ -80,12 +88,14 @@ impl GenericRelay for RemoteRelay {
             RelayState::Bound { consumers, next, .. } => {
                 consumers.conn_disconnected(now, remote);
                 Self::pop_consumers_out(consumers, &mut self.queue);
+                // If remote is next, this will not be consumers, because it will cause loop deps
                 if *next == remote {
                     let consumers = std::mem::replace(consumers, Default::default());
                     self.state = RelayState::Binding { consumers };
-                    self.queue.push_back(RelayWorkerControl::SendSub(self.uuid, None));
+                    self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(self.uuid, None)));
                 } else if consumers.should_clear() {
-                    self.queue.push_back(RelayWorkerControl::SendUnsub(self.uuid, *next));
+                    self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendUnsub(self.uuid, *next)));
+                    self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteDelSource(*next)));
                     self.state = RelayState::Unbinding { next: *next, started_at: now };
                 }
             }
@@ -106,20 +116,23 @@ impl GenericRelay for RemoteRelay {
     fn on_local_sub(&mut self, now: u64, actor: FeatureControlActor) {
         match &mut self.state {
             RelayState::New | RelayState::Unbound => {
+                log::info!("[PubSubRemoteRelay] Sub in New or Unbound state => switch to Binding and send Sub message");
                 let mut consumers = RelayConsummers::default();
                 consumers.on_local_sub(now, actor);
                 Self::pop_consumers_out(&mut consumers, &mut self.queue);
                 self.state = RelayState::Binding { consumers };
-                self.queue.push_back(RelayWorkerControl::SendSub(self.uuid, None));
+                self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(self.uuid, None)));
             }
             RelayState::Unbinding { next, .. } => {
+                log::debug!("[PubSubRemoteRelay] Sub in Unbinding state => switch to Binding with previous next {next}");
                 let mut consumers = RelayConsummers::default();
                 consumers.on_local_sub(now, actor);
                 Self::pop_consumers_out(&mut consumers, &mut self.queue);
-                self.queue.push_back(RelayWorkerControl::SendSub(self.uuid, Some(*next)));
+                self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(self.uuid, Some(*next))));
                 self.state = RelayState::Binding { consumers };
             }
             RelayState::Binding { consumers, .. } | RelayState::Bound { consumers, .. } => {
+                log::debug!("[PubSubRemoteRelay] Sub in Binding or Bound state => just add to list");
                 consumers.on_local_sub(now, actor);
                 Self::pop_consumers_out(consumers, &mut self.queue);
             }
@@ -147,7 +160,8 @@ impl GenericRelay for RemoteRelay {
                 consumers.on_local_unsub(now, actor);
                 Self::pop_consumers_out(consumers, &mut self.queue);
                 if consumers.should_clear() {
-                    self.queue.push_back(RelayWorkerControl::SendUnsub(self.uuid, *next));
+                    self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendUnsub(self.uuid, *next)));
+                    self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteDelSource(*next)));
                     self.state = RelayState::Unbinding { next: *next, started_at: now };
                 }
             }
@@ -164,8 +178,31 @@ impl GenericRelay for RemoteRelay {
                 match &mut self.state {
                     RelayState::Binding { consumers } => {
                         log::info!("[Relay] SubOK for binding relay {} from {remote} => switched to Bound with this remote", self.uuid);
+                        self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteSetSource(remote)));
                         let consumers = std::mem::replace(consumers, Default::default());
-                        self.state = RelayState::Bound { next: remote, consumers };
+                        self.state = RelayState::Bound {
+                            next: remote,
+                            consumers,
+                            sticky_session_at: now,
+                        };
+                    }
+                    RelayState::Bound { next, sticky_session_at, consumers } => {
+                        if *next == remote {
+                            log::info!("[Relay] SubOK for bound relay {} from same remote {remote} => renew sticky session", self.uuid);
+                            *sticky_session_at = now;
+                        } else {
+                            log::info!("[Relay] SubOK for bound relay {} from other remote {remote} => renew stick session and Unsub older", self.uuid);
+                            let (locals, has_remote) = consumers.relay_dests();
+                            self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendUnsub(self.uuid, *next)));
+                            if has_remote {
+                                self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendRouteChanged));
+                            }
+                            self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteSetSource(remote)));
+                            for actor in locals {
+                                self.queue.push_back(GenericRelayOutput::RouteChanged(*actor));
+                            }
+                            *next = remote;
+                        }
                     }
                     _ => {}
                 }
@@ -183,19 +220,37 @@ impl GenericRelay for RemoteRelay {
                     _ => {}
                 }
             }
+            RelayControl::RouteChanged(uuid) => {
+                if uuid != self.uuid {
+                    log::warn!("[Relay] RouteChanged for wrong relay session {uuid} vs {}", uuid);
+                    return;
+                }
+                match &mut self.state {
+                    RelayState::Bound { consumers, .. } => {
+                        let (locals, has_remote) = consumers.relay_dests();
+                        if has_remote {
+                            self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendRouteChanged));
+                        }
+                        for actor in locals {
+                            self.queue.push_back(GenericRelayOutput::RouteChanged(*actor));
+                        }
+                    }
+                    _ => {}
+                }
+            }
             _ => match &mut self.state {
                 RelayState::New | RelayState::Unbound => {
                     let mut consumers = RelayConsummers::default();
                     consumers.on_remote(now, remote, control);
                     Self::pop_consumers_out(&mut consumers, &mut self.queue);
-                    self.queue.push_back(RelayWorkerControl::SendSub(self.uuid, None));
+                    self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(self.uuid, None)));
                     self.state = RelayState::Binding { consumers };
                 }
                 RelayState::Unbinding { next, .. } => {
                     let mut consumers = RelayConsummers::default();
                     consumers.on_remote(now, remote, control);
                     Self::pop_consumers_out(&mut consumers, &mut self.queue);
-                    self.queue.push_back(RelayWorkerControl::SendSub(self.uuid, Some(*next)));
+                    self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(self.uuid, Some(*next))));
                     self.state = RelayState::Binding { consumers };
                 }
                 RelayState::Binding { consumers, .. } => {
@@ -209,7 +264,8 @@ impl GenericRelay for RemoteRelay {
                     consumers.on_remote(now, remote, control);
                     Self::pop_consumers_out(consumers, &mut self.queue);
                     if consumers.should_clear() {
-                        self.queue.push_back(RelayWorkerControl::SendUnsub(self.uuid, *next));
+                        self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendUnsub(self.uuid, *next)));
+                        self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteDelSource(*next)));
                         self.state = RelayState::Unbinding { next: *next, started_at: now };
                     }
                 }
@@ -217,7 +273,7 @@ impl GenericRelay for RemoteRelay {
         }
     }
 
-    fn pop_output(&mut self) -> Option<RelayWorkerControl> {
+    fn pop_output(&mut self) -> Option<GenericRelayOutput> {
         self.queue.pop_front()
     }
 
@@ -240,7 +296,7 @@ mod tests {
     use crate::{
         base::FeatureControlActor,
         features::pubsub::{
-            controller::{GenericRelay, RELAY_TIMEOUT},
+            controller::{GenericRelay, GenericRelayOutput, RELAY_STICKY_MS, RELAY_TIMEOUT},
             msg::RelayControl,
             RelayWorkerControl,
         },
@@ -248,25 +304,49 @@ mod tests {
 
     use super::RemoteRelay;
 
+    fn create_local_bound_relay(uuid: u64, actor: FeatureControlActor, remote: SocketAddr) -> RemoteRelay {
+        let mut relay = RemoteRelay::new(uuid);
+
+        relay.on_local_sub(0, actor);
+
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteSetLocal(actor))));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(uuid, None))));
+        assert_eq!(relay.pop_output(), None);
+
+        //fake SubOk
+        relay.on_remote(0, remote, RelayControl::SubOK(uuid));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteSetSource(remote))));
+
+        relay
+    }
+
     #[test]
     fn on_local_sub_unsub() {
         let mut relay = RemoteRelay::new(1000);
 
         relay.on_local_sub(100, FeatureControlActor::Controller);
 
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::RouteSetLocal(FeatureControlActor::Controller)));
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::SendSub(1000, None)));
+        assert_eq!(
+            relay.pop_output(),
+            Some(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteSetLocal(FeatureControlActor::Controller)))
+        );
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(1000, None))));
         assert_eq!(relay.pop_output(), None);
         assert!(!relay.should_clear());
 
         //fake SubOk
         let remote = SocketAddr::from(([127, 0, 0, 1], 1234));
         relay.on_remote(200, remote, RelayControl::SubOK(1000));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteSetSource(remote))));
 
         relay.on_local_unsub(300, FeatureControlActor::Controller);
 
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::RouteDelLocal(FeatureControlActor::Controller)));
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::SendUnsub(1000, remote)));
+        assert_eq!(
+            relay.pop_output(),
+            Some(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteDelLocal(FeatureControlActor::Controller)))
+        );
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::SendUnsub(1000, remote))));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteDelSource(remote))));
         assert_eq!(relay.pop_output(), None);
 
         assert!(!relay.should_clear());
@@ -285,21 +365,23 @@ mod tests {
 
         relay.on_remote(100, consumer, RelayControl::Sub(2000));
 
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::SendSubOk(2000, consumer)));
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::RouteSetRemote(consumer)));
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::SendSub(1000, None)));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSubOk(2000, consumer))));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteSetRemote(consumer, 2000))));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(1000, None))));
         assert_eq!(relay.pop_output(), None);
         assert!(!relay.should_clear());
 
         //fake SubOk
         let remote = SocketAddr::from(([127, 0, 0, 1], 1234));
         relay.on_remote(200, remote, RelayControl::SubOK(1000));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteSetSource(remote))));
 
         relay.on_remote(300, consumer, RelayControl::Unsub(2000));
 
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::SendUnsubOk(2000, consumer)));
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::RouteDelRemote(consumer)));
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::SendUnsub(1000, remote)));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::SendUnsubOk(2000, consumer))));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteDelRemote(consumer))));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::SendUnsub(1000, remote))));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteDelSource(remote))));
         assert_eq!(relay.pop_output(), None);
 
         assert!(!relay.should_clear());
@@ -316,47 +398,45 @@ mod tests {
 
         relay.on_local_sub(100, FeatureControlActor::Controller);
 
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::RouteSetLocal(FeatureControlActor::Controller)));
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::SendSub(1000, None)));
+        assert_eq!(
+            relay.pop_output(),
+            Some(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteSetLocal(FeatureControlActor::Controller)))
+        );
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(1000, None))));
         assert_eq!(relay.pop_output(), None);
 
         relay.on_tick(200);
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::SendSub(1000, None)));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(1000, None))));
         assert_eq!(relay.pop_output(), None);
 
         relay.on_tick(300);
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::SendSub(1000, None)));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(1000, None))));
         assert_eq!(relay.pop_output(), None);
     }
 
     #[test]
     fn retry_sending_unsub() {
-        let mut relay = RemoteRelay::new(1000);
-
-        relay.on_local_sub(100, FeatureControlActor::Controller);
-
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::RouteSetLocal(FeatureControlActor::Controller)));
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::SendSub(1000, None)));
-        assert_eq!(relay.pop_output(), None);
-
-        //fake SubOk
         let remote = SocketAddr::from(([127, 0, 0, 1], 1234));
-        relay.on_remote(200, remote, RelayControl::SubOK(1000));
+        let mut relay = create_local_bound_relay(1000, FeatureControlActor::Controller, remote);
 
         relay.on_local_unsub(300, FeatureControlActor::Controller);
 
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::RouteDelLocal(FeatureControlActor::Controller)));
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::SendUnsub(1000, remote)));
+        assert_eq!(
+            relay.pop_output(),
+            Some(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteDelLocal(FeatureControlActor::Controller)))
+        );
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::SendUnsub(1000, remote))));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteDelSource(remote))));
         assert_eq!(relay.pop_output(), None);
         assert!(!relay.should_clear());
 
         relay.on_tick(200);
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::SendUnsub(1000, remote)));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::SendUnsub(1000, remote))));
         assert_eq!(relay.pop_output(), None);
         assert!(!relay.should_clear());
 
         relay.on_tick(300);
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::SendUnsub(1000, remote)));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::SendUnsub(1000, remote))));
         assert_eq!(relay.pop_output(), None);
         assert!(!relay.should_clear());
 
@@ -367,22 +447,13 @@ mod tests {
 
     #[test]
     fn retry_sending_sub_after_disconnected_to_next() {
-        let mut relay = RemoteRelay::new(1000);
-
-        relay.on_local_sub(100, FeatureControlActor::Controller);
-
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::RouteSetLocal(FeatureControlActor::Controller)));
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::SendSub(1000, None)));
-        assert_eq!(relay.pop_output(), None);
-
-        //fake SubOk
         let remote = SocketAddr::from(([127, 0, 0, 1], 1234));
-        relay.on_remote(200, remote, RelayControl::SubOK(1000));
+        let mut relay = create_local_bound_relay(1000, FeatureControlActor::Controller, remote);
 
         //simulate next is disconnected
         relay.conn_disconnected(300, remote);
 
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::SendSub(1000, None)));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(1000, None))));
         assert_eq!(relay.pop_output(), None);
     }
 
@@ -394,21 +465,71 @@ mod tests {
 
         relay.on_remote(100, consumer, RelayControl::Sub(2000));
 
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::SendSubOk(2000, consumer)));
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::RouteSetRemote(consumer)));
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::SendSub(1000, None)));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSubOk(2000, consumer))));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteSetRemote(consumer, 2000))));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(1000, None))));
         assert_eq!(relay.pop_output(), None);
         assert!(!relay.should_clear());
 
         //fake SubOk
         let remote = SocketAddr::from(([127, 0, 0, 1], 1234));
         relay.on_remote(200, remote, RelayControl::SubOK(1000));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteSetSource(remote))));
 
         //simulate consumer is disconnected
         relay.conn_disconnected(300, consumer);
 
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::RouteDelRemote(consumer)));
-        assert_eq!(relay.pop_output(), Some(RelayWorkerControl::SendUnsub(1000, remote)));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteDelRemote(consumer))));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::SendUnsub(1000, remote))));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteDelSource(remote))));
+        assert_eq!(relay.pop_output(), None);
+    }
+
+    #[test]
+    fn sticky_session_timeout_should_fire_bind_without_remote_hint() {
+        let remote = SocketAddr::from(([127, 0, 0, 1], 1234));
+        let mut relay = create_local_bound_relay(1000, FeatureControlActor::Controller, remote);
+
+        //default resend sub
+        relay.on_tick(300);
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(1000, Some(remote)))));
+        assert_eq!(relay.pop_output(), None);
+
+        //after timeout should bind without remote hint
+        relay.on_tick(RELAY_STICKY_MS);
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(1000, None))));
+        assert_eq!(relay.pop_output(), None);
+    }
+
+    #[test]
+    fn sticky_session_timeout_bind_to_new_remote() {
+        let remote = SocketAddr::from(([127, 0, 0, 1], 1234));
+        let mut relay = create_local_bound_relay(1000, FeatureControlActor::Controller, remote);
+
+        let remote2 = SocketAddr::from(([127, 0, 0, 2], 1234));
+
+        //after timeout should bind without remote hint
+        relay.on_tick(RELAY_STICKY_MS);
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(1000, None))));
+        assert_eq!(relay.pop_output(), None);
+
+        //fake SubOk
+        relay.on_remote(1 + RELAY_STICKY_MS, remote2, RelayControl::SubOK(1000));
+
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::SendUnsub(1000, remote))));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteSetSource(remote2))));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::RouteChanged(FeatureControlActor::Controller)));
+        assert_eq!(relay.pop_output(), None);
+    }
+
+    #[test]
+    fn next_node_notify_route_changed() {
+        let remote = SocketAddr::from(([127, 0, 0, 1], 1234));
+        let mut relay = create_local_bound_relay(1000, FeatureControlActor::Controller, remote);
+
+        //fake RouteChanged
+        relay.on_remote(100, remote, RelayControl::RouteChanged(1000));
+        assert_eq!(relay.pop_output(), Some(GenericRelayOutput::RouteChanged(FeatureControlActor::Controller)));
         assert_eq!(relay.pop_output(), None);
     }
 }
