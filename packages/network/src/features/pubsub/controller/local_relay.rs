@@ -1,6 +1,6 @@
 use crate::{
     base::FeatureControlActor,
-    features::pubsub::{msg::RelayControl, RelayWorkerControl},
+    features::pubsub::msg::RelayControl,
 };
 
 use super::{consumers::RelayConsummers, GenericRelay, GenericRelayOutput};

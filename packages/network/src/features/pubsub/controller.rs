@@ -81,10 +81,13 @@ impl PubSubFeature {
             }
             ChannelControl::UnsubSource(source) => {
                 let relay_id = RelayId(channel, source);
-                if let Some(relay) = self.get_relay(relay_id, false) {
+                if let Some(relay) = self.relays.get_mut(&relay_id) {
                     log::debug!("[PubSubFeatureController] Unsub for {:?} from {:?}", relay_id, actor);
                     relay.on_local_unsub(now, actor);
-                    Self::pop_single_relay(relay_id, self.relays.get_mut(&relay_id).expect("Should have"), &mut self.queue);
+                    Self::pop_single_relay(relay_id, relay, &mut self.queue);
+                    if relay.should_clear() {
+                        self.relays.remove(&relay_id);
+                    }
                 } else {
                     log::warn!("[PubSubFeatureController] Unsub for unknown relay {:?}", relay_id);
                 }
@@ -117,10 +120,14 @@ impl PubSubFeature {
     }
 
     fn on_remote(&mut self, now: u64, remote: SocketAddr, relay_id: RelayId, control: RelayControl) {
-        if let Some(relay) = self.get_relay(relay_id, control.should_create()) {
+        if let Some(_) = self.get_relay(relay_id, control.should_create()) {
+            let relay = self.relays.get_mut(&relay_id).expect("Should have relay");
             log::debug!("[PubSubFeatureController] Remote control for {:?} from {:?}: {:?}", relay_id, remote, control);
             relay.on_remote(now, remote, control);
-            Self::pop_single_relay(relay_id, self.relays.get_mut(&relay_id).expect("Should have relay"), &mut self.queue);
+            Self::pop_single_relay(relay_id, relay, &mut self.queue);
+            if relay.should_clear() {
+                self.relays.remove(&relay_id);
+            }
         } else {
             log::warn!("[PubSubFeatureController] Remote control for unknown relay {:?}", relay_id);
         }

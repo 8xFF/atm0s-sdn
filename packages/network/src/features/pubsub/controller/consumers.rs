@@ -117,7 +117,7 @@ mod tests {
 
     use crate::{
         base::FeatureControlActor,
-        features::pubsub::{msg::RelayControl, RelayWorkerControl},
+        features::pubsub::{controller::RELAY_TIMEOUT, msg::RelayControl, RelayWorkerControl},
     };
 
     use super::RelayConsummers;
@@ -277,5 +277,29 @@ mod tests {
 
         assert_eq!(consumers.relay_dests(), (&[] as &[_], false));
         assert_eq!(consumers.should_clear(), true);
+    }
+
+    #[test]
+    fn clear_timeout_remote() {
+        let mut consumers = RelayConsummers::default();
+
+        let remote1 = SocketAddr::from(([127, 0, 0, 1], 8080));
+
+        consumers.on_remote(0, remote1, RelayControl::Sub(1000));
+
+        assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::SendSubOk(1000, remote1)));
+        assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteSetRemote(remote1, 1000)));
+        assert_eq!(consumers.pop_output(), None);
+
+        consumers.on_remote(1000, remote1, RelayControl::Sub(1000));
+        assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::SendSubOk(1000, remote1)));
+        assert_eq!(consumers.pop_output(), None);
+
+        consumers.on_tick(RELAY_TIMEOUT);
+        assert_eq!(consumers.pop_output(), None);
+
+        consumers.on_tick(1000 + RELAY_TIMEOUT);
+        assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteDelRemote(remote1)));
+        assert_eq!(consumers.pop_output(), None);
     }
 }
