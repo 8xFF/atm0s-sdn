@@ -3,14 +3,14 @@ use std::{
     net::SocketAddr,
 };
 
-use atm0s_sdn_identity::{ConnId, NodeId};
+use atm0s_sdn_identity::ConnId;
 use atm0s_sdn_router::RouterTable;
 
 use crate::base::{FeatureControlActor, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer};
 
 use super::{
     msg::{PubsubMessage, RelayControl, RelayId},
-    ChannelControl, ChannelEvent, Control, Event, RelayWorkerControl, ToController, ToWorker, FEATURE_ID, FEATURE_NAME,
+    ChannelControl, ChannelEvent, Control, Event, RelayWorkerControl, ToController, ToWorker,
 };
 
 struct WorkerRelay {
@@ -27,16 +27,14 @@ impl WorkerRelay {
 }
 
 pub struct PubSubFeatureWorker {
-    node_id: NodeId,
     relays: HashMap<RelayId, WorkerRelay>,
     buf: [u8; 1500],
     queue: VecDeque<FeatureWorkerOutput<'static, Control, Event, ToController>>,
 }
 
 impl PubSubFeatureWorker {
-    pub(crate) fn new(node_id: NodeId) -> Self {
+    pub(crate) fn new() -> Self {
         Self {
-            node_id,
             relays: HashMap::new(),
             buf: [0; 1500],
             queue: VecDeque::new(),
@@ -45,14 +43,6 @@ impl PubSubFeatureWorker {
 }
 
 impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWorker {
-    fn feature_type(&self) -> u8 {
-        FEATURE_ID
-    }
-
-    fn feature_name(&self) -> &str {
-        FEATURE_NAME
-    }
-
     fn on_network_raw<'a>(
         &mut self,
         _ctx: &mut FeatureWorkerContext,
@@ -239,12 +229,12 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWork
             }
             FeatureWorkerInput::Control(actor, control) => match control {
                 Control(channel, ChannelControl::PubData(data)) => {
-                    let relay_id = RelayId(channel, self.node_id);
+                    let relay_id = RelayId(channel, ctx.node_id);
                     let relay = self.relays.get(&relay_id)?;
 
                     for actor in &relay.locals {
                         self.queue
-                            .push_back(FeatureWorkerOutput::Event(*actor, Event(channel, ChannelEvent::SourceData(self.node_id, data.clone()))));
+                            .push_back(FeatureWorkerOutput::Event(*actor, Event(channel, ChannelEvent::SourceData(ctx.node_id, data.clone()))));
                     }
 
                     if !relay.remotes.is_empty() {
@@ -263,7 +253,7 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWork
         }
     }
 
-    fn pop_output<'a>(&mut self) -> Option<FeatureWorkerOutput<'a, Control, Event, ToController>> {
+    fn pop_output<'a>(&mut self, _ctx: &mut FeatureWorkerContext) -> Option<FeatureWorkerOutput<'a, Control, Event, ToController>> {
         self.queue.pop_front()
     }
 }

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use atm0s_sdn_network::{
-    base::{Service, ServiceBuilder, ServiceInput, ServiceOutput, ServiceSharedInput, ServiceWorker},
+    base::{Service, ServiceBuilder, ServiceCtx, ServiceInput, ServiceOutput, ServiceSharedInput, ServiceWorker},
     features::{data, FeaturesControl, FeaturesEvent},
     ExtIn, ExtOut,
 };
@@ -22,11 +22,11 @@ impl Service<FeaturesControl, FeaturesEvent, (), (), (), ()> for MockService {
         "mock"
     }
 
-    fn on_input(&mut self, _now: u64, _input: ServiceInput<FeaturesEvent, (), ()>) {}
+    fn on_input(&mut self, _ctx: &ServiceCtx, _now: u64, _input: ServiceInput<FeaturesEvent, (), ()>) {}
 
-    fn on_shared_input<'a>(&mut self, _now: u64, _input: ServiceSharedInput) {}
+    fn on_shared_input<'a>(&mut self, _ctx: &ServiceCtx, _now: u64, _input: ServiceSharedInput) {}
 
-    fn pop_output(&mut self) -> Option<ServiceOutput<FeaturesControl, (), ()>> {
+    fn pop_output(&mut self, _ctx: &ServiceCtx) -> Option<ServiceOutput<FeaturesControl, (), ()>> {
         None
     }
 }

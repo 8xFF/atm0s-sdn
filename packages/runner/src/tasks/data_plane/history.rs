@@ -11,7 +11,7 @@ pub struct DataWorkerHistory {
 }
 
 impl ShadowRouterHistory for DataWorkerHistory {
-    fn allready_received_broadcast(&self, from: Option<NodeId>, service: u8, seq: u16) -> bool {
+    fn already_received_broadcast(&self, from: Option<NodeId>, service: u8, seq: u16) -> bool {
         let mut map = self.map.lock();
         let mut queue = self.queue.lock();
         if map.contains_key(&(from, service, seq)) {

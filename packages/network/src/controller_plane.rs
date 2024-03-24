@@ -4,7 +4,10 @@ use atm0s_sdn_identity::NodeId;
 use rand::RngCore;
 
 use crate::{
-    base::{ConnectionEvent, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, ServiceBuilder, ServiceControlActor, ServiceInput, ServiceOutput, ServiceSharedInput},
+    base::{
+        ConnectionEvent, FeatureContext, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, ServiceBuilder, ServiceControlActor, ServiceCtx, ServiceInput, ServiceOutput,
+        ServiceSharedInput,
+    },
     features::{FeaturesControl, FeaturesEvent},
     san_io_utils::TasksSwitcher,
     ExtIn, ExtOut, LogicControl, LogicEvent,
@@ -59,7 +62,9 @@ impl TryFrom<usize> for TaskType {
 pub struct ControllerPlane<SC, SE, TC, TW> {
     tick_count: u64,
     neighbours: NeighboursManager,
+    feature_ctx: FeatureContext,
     features: FeatureManager,
+    service_ctx: ServiceCtx,
     services: ServiceManager<SC, SE, TC, TW>,
     // TODO may be we need stack style for optimize performance
     // and support some case task output call other task
@@ -85,7 +90,9 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
         Self {
             tick_count: 0,
             neighbours: NeighboursManager::new(node_id, random),
+            feature_ctx: FeatureContext { node_id, session },
             features: FeatureManager::new(node_id, session, service_ids),
+            service_ctx: ServiceCtx { node_id, session },
             services: ServiceManager::new(services),
             last_task: None,
             switcher: TasksSwitcher::default(),
@@ -95,8 +102,8 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
     pub fn on_tick(&mut self, now_ms: u64) {
         self.last_task = None;
         self.neighbours.on_tick(now_ms, self.tick_count);
-        self.features.on_shared_input(now_ms, FeatureSharedInput::Tick(self.tick_count));
-        self.services.on_shared_input(now_ms, ServiceSharedInput::Tick(self.tick_count));
+        self.features.on_shared_input(&self.feature_ctx, now_ms, FeatureSharedInput::Tick(self.tick_count));
+        self.services.on_shared_input(&self.service_ctx, now_ms, ServiceSharedInput::Tick(self.tick_count));
         self.tick_count += 1;
     }
 
@@ -112,11 +119,13 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
             }
             Input::Ext(ExtIn::FeaturesControl(control)) => {
                 self.last_task = Some(TaskType::Feature);
-                self.features.on_input(now_ms, control.to_feature(), FeatureInput::Control(FeatureControlActor::Controller, control));
+                self.features
+                    .on_input(&self.feature_ctx, now_ms, control.to_feature(), FeatureInput::Control(FeatureControlActor::Controller, control));
             }
             Input::Ext(ExtIn::ServicesControl(service, control)) => {
                 self.last_task = Some(TaskType::Service);
-                self.services.on_input(now_ms, service, ServiceInput::Control(ServiceControlActor::Controller, control));
+                self.services
+                    .on_input(&self.service_ctx, now_ms, service, ServiceInput::Control(ServiceControlActor::Controller, control));
             }
             Input::Control(LogicControl::NetNeighbour(remote, control)) => {
                 self.last_task = Some(TaskType::Neighbours);
@@ -124,29 +133,29 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
             }
             Input::Control(LogicControl::Feature(to)) => {
                 self.last_task = Some(TaskType::Feature);
-                self.features.on_input(now_ms, to.to_feature(), FeatureInput::FromWorker(to));
+                self.features.on_input(&self.feature_ctx, now_ms, to.to_feature(), FeatureInput::FromWorker(to));
             }
             Input::Control(LogicControl::Service(service, to)) => {
                 self.last_task = Some(TaskType::Service);
-                self.services.on_input(now_ms, service, ServiceInput::FromWorker(to));
+                self.services.on_input(&self.service_ctx, now_ms, service, ServiceInput::FromWorker(to));
             }
             Input::Control(LogicControl::NetRemote(feature, conn, msg)) => {
                 if let Some(ctx) = self.neighbours.conn(conn) {
                     self.last_task = Some(TaskType::Feature);
-                    self.features.on_input(now_ms, feature, FeatureInput::Net(ctx, msg));
+                    self.features.on_input(&self.feature_ctx, now_ms, feature, FeatureInput::Net(ctx, msg));
                 }
             }
             Input::Control(LogicControl::NetLocal(feature, msg)) => {
                 self.last_task = Some(TaskType::Feature);
-                self.features.on_input(now_ms, feature, FeatureInput::Local(msg));
+                self.features.on_input(&self.feature_ctx, now_ms, feature, FeatureInput::Local(msg));
             }
             Input::Control(LogicControl::ServiceEvent(service, event)) => {
                 self.last_task = Some(TaskType::Service);
-                self.services.on_input(now_ms, service, ServiceInput::FeatureEvent(event));
+                self.services.on_input(&self.service_ctx, now_ms, service, ServiceInput::FeatureEvent(event));
             }
             Input::Control(LogicControl::FeaturesControl(actor, control)) => {
                 self.last_task = Some(TaskType::Feature);
-                self.features.on_input(now_ms, control.to_feature(), FeatureInput::Control(actor, control));
+                self.features.on_input(&self.feature_ctx, now_ms, control.to_feature(), FeatureInput::Control(actor, control));
             }
             Input::ShutdownRequest => {
                 self.last_task = Some(TaskType::Neighbours);
@@ -199,8 +208,8 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
         match out {
             neighbours::Output::Control(remote, control) => Some(Output::Event(LogicEvent::NetNeighbour(remote, control))),
             neighbours::Output::Event(event) => {
-                self.features.on_shared_input(now_ms, FeatureSharedInput::Connection(event.clone()));
-                self.services.on_shared_input(now_ms, ServiceSharedInput::Connection(event.clone()));
+                self.features.on_shared_input(&self.feature_ctx, now_ms, FeatureSharedInput::Connection(event.clone()));
+                self.services.on_shared_input(&self.service_ctx, now_ms, ServiceSharedInput::Connection(event.clone()));
                 match event {
                     ConnectionEvent::Connected(ctx, secure) => Some(Output::Event(LogicEvent::Pin(ctx.conn, ctx.node, ctx.remote, secure))),
                     ConnectionEvent::Stats(_ctx, _stats) => None,
@@ -212,7 +221,7 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
     }
 
     fn pop_features(&mut self, now_ms: u64) -> Option<Output<SE, TW>> {
-        let (feature, out) = self.features.pop_output()?;
+        let (feature, out) = self.features.pop_output(&self.feature_ctx)?;
         match out {
             FeatureOutput::ToWorker(is_broadcast, to) => Some(Output::Event(LogicEvent::Feature(is_broadcast, to))),
             FeatureOutput::Event(actor, event) => {
@@ -220,7 +229,7 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
                 match actor {
                     FeatureControlActor::Controller => Some(Output::Ext(ExtOut::FeaturesEvent(event))),
                     FeatureControlActor::Service(service) => {
-                        self.services.on_input(now_ms, service, ServiceInput::FeatureEvent(event));
+                        self.services.on_input(&self.service_ctx, now_ms, service, ServiceInput::FeatureEvent(event));
                         None
                     }
                 }
@@ -247,11 +256,11 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
     }
 
     fn pop_services(&mut self, now_ms: u64) -> Option<Output<SE, TW>> {
-        let (service, out) = self.services.pop_output()?;
+        let (service, out) = self.services.pop_output(&self.service_ctx)?;
         match out {
             ServiceOutput::FeatureControl(control) => {
                 self.features
-                    .on_input(now_ms, control.to_feature(), FeatureInput::Control(FeatureControlActor::Service(service), control));
+                    .on_input(&self.feature_ctx, now_ms, control.to_feature(), FeatureInput::Control(FeatureControlActor::Service(service), control));
                 None
             }
             ServiceOutput::Event(actor, event) => match actor {

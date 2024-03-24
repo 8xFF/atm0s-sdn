@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 
-use crate::base::{ConnectionEvent, Feature, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker};
+use crate::base::{ConnectionEvent, Feature, FeatureContext, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker};
 
 pub const FEATURE_ID: u8 = 0;
 pub const FEATURE_NAME: &str = "neighbours_api";
@@ -34,15 +34,7 @@ pub struct NeighboursFeature {
 }
 
 impl Feature<Control, Event, ToController, ToWorker> for NeighboursFeature {
-    fn feature_type(&self) -> u8 {
-        FEATURE_ID
-    }
-
-    fn feature_name(&self) -> &str {
-        FEATURE_NAME
-    }
-
-    fn on_shared_input(&mut self, _now: u64, input: FeatureSharedInput) {
+    fn on_shared_input(&mut self, _ctx: &FeatureContext, _now: u64, input: FeatureSharedInput) {
         match input {
             FeatureSharedInput::Connection(ConnectionEvent::Connected(ctx, _)) => {
                 for sub in self.subs.iter() {
@@ -58,7 +50,7 @@ impl Feature<Control, Event, ToController, ToWorker> for NeighboursFeature {
         }
     }
 
-    fn on_input<'a>(&mut self, _now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
+    fn on_input<'a>(&mut self, _ctx: &FeatureContext, _now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
         match input {
             FeatureInput::Control(actor, control) => match control {
                 Control::Sub => {
@@ -84,7 +76,7 @@ impl Feature<Control, Event, ToController, ToWorker> for NeighboursFeature {
         }
     }
 
-    fn pop_output<'a>(&mut self) -> Option<FeatureOutput<Event, ToWorker>> {
+    fn pop_output<'a>(&mut self, _ctx: &FeatureContext) -> Option<FeatureOutput<Event, ToWorker>> {
         self.output.pop_front()
     }
 }
@@ -92,12 +84,4 @@ impl Feature<Control, Event, ToController, ToWorker> for NeighboursFeature {
 #[derive(Default)]
 pub struct NeighboursFeatureWorker {}
 
-impl FeatureWorker<Control, Event, ToController, ToWorker> for NeighboursFeatureWorker {
-    fn feature_type(&self) -> u8 {
-        FEATURE_ID
-    }
-
-    fn feature_name(&self) -> &str {
-        FEATURE_NAME
-    }
-}
+impl FeatureWorker<Control, Event, ToController, ToWorker> for NeighboursFeatureWorker {}

@@ -99,8 +99,7 @@ impl RegistryDest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::{table::BANDWIDTH_LIMIT, Metric, Path};
-    use atm0s_sdn_identity::{ConnId, NodeId};
+    use crate::core::table::BANDWIDTH_LIMIT;
 
     #[test]
     fn push_sort() {

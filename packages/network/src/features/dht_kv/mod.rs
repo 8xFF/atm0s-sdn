@@ -8,7 +8,7 @@
 
 use atm0s_sdn_identity::NodeId;
 
-use crate::base::{Feature, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker, Ttl};
+use crate::base::{Feature, FeatureContext, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker, Ttl};
 
 use self::{
     internal::InternalOutput,
@@ -87,15 +87,7 @@ impl DhtKvFeature {
 }
 
 impl Feature<Control, Event, ToController, ToWorker> for DhtKvFeature {
-    fn feature_type(&self) -> u8 {
-        FEATURE_ID
-    }
-
-    fn feature_name(&self) -> &str {
-        FEATURE_NAME
-    }
-
-    fn on_shared_input(&mut self, now: u64, input: FeatureSharedInput) {
+    fn on_shared_input(&mut self, _ctx: &FeatureContext, now: u64, input: FeatureSharedInput) {
         match input {
             FeatureSharedInput::Tick(_) => {
                 self.internal.on_tick(now);
@@ -104,7 +96,7 @@ impl Feature<Control, Event, ToController, ToWorker> for DhtKvFeature {
         }
     }
 
-    fn on_input<'a>(&mut self, now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
+    fn on_input<'a>(&mut self, _ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
         match input {
             FeatureInput::Control(actor, control) => {
                 log::debug!("[DhtKv] on ext input: actor={:?}, control={:?}", actor, control);
@@ -124,7 +116,7 @@ impl Feature<Control, Event, ToController, ToWorker> for DhtKvFeature {
         }
     }
 
-    fn pop_output<'a>(&mut self) -> Option<FeatureOutput<Event, ToWorker>> {
+    fn pop_output<'a>(&mut self, _ctx: &FeatureContext) -> Option<FeatureOutput<Event, ToWorker>> {
         match self.internal.pop_action()? {
             InternalOutput::Local(service, event) => Some(FeatureOutput::Event(service, event)),
             InternalOutput::Remote(rule, cmd) => Some(FeatureOutput::SendRoute(rule, Ttl::default(), bincode::serialize(&cmd).expect("Should to bytes"))),
@@ -135,12 +127,4 @@ impl Feature<Control, Event, ToController, ToWorker> for DhtKvFeature {
 #[derive(Default)]
 pub struct DhtKvFeatureWorker {}
 
-impl FeatureWorker<Control, Event, ToController, ToWorker> for DhtKvFeatureWorker {
-    fn feature_type(&self) -> u8 {
-        FEATURE_ID
-    }
-
-    fn feature_name(&self) -> &str {
-        FEATURE_NAME
-    }
-}
+impl FeatureWorker<Control, Event, ToController, ToWorker> for DhtKvFeatureWorker {}

@@ -9,7 +9,7 @@ use atm0s_sdn_router::{RouteRule, ServiceBroadcastLevel};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    base::{ConnectionEvent, Service, ServiceBuilder, ServiceControlActor, ServiceInput, ServiceOutput, ServiceSharedInput, ServiceWorker, Ttl},
+    base::{ConnectionEvent, Service, ServiceBuilder, ServiceControlActor, ServiceCtx, ServiceInput, ServiceOutput, ServiceSharedInput, ServiceWorker, Ttl},
     features::{data, FeaturesControl, FeaturesEvent},
 };
 
@@ -56,7 +56,6 @@ enum Message {
 }
 
 pub struct VisualizationService<SC, SE, TC, TW> {
-    node_id: NodeId,
     last_ping: u64,
     broadcast_seq: u16,
     queue: VecDeque<ServiceOutput<FeaturesControl, SE, TW>>,
@@ -71,9 +70,8 @@ where
     SC: From<Control> + TryInto<Control>,
     SE: From<Event> + TryInto<Event>,
 {
-    pub fn new(node_id: NodeId) -> Self {
+    pub fn new() -> Self {
         Self {
-            node_id,
             broadcast_seq: 0,
             last_ping: 0,
             conns: BTreeMap::new(),
@@ -104,7 +102,7 @@ where
         SERVICE_NAME
     }
 
-    fn on_shared_input<'a>(&mut self, now: u64, input: ServiceSharedInput) {
+    fn on_shared_input<'a>(&mut self, ctx: &ServiceCtx, now: u64, input: ServiceSharedInput) {
         match input {
             ServiceSharedInput::Tick(_) => {
                 let mut to_remove = Vec::new();
@@ -122,7 +120,7 @@ where
                 if now >= self.last_ping + NODE_PING_MS {
                     log::debug!("[Visualization] Sending Snapshot to collector with interval {NODE_PING_MS} ms with {} conns", self.conns.len());
                     self.last_ping = now;
-                    let msg = Message::Snapshot(self.node_id, self.conns.values().cloned().collect::<Vec<_>>());
+                    let msg = Message::Snapshot(ctx.node_id, self.conns.values().cloned().collect::<Vec<_>>());
                     let seq = self.broadcast_seq;
                     self.broadcast_seq = self.broadcast_seq.saturating_add(1);
                     self.queue.push_back(data_cmd(data::Control::SendRule(
@@ -161,7 +159,7 @@ where
         }
     }
 
-    fn on_input(&mut self, now: u64, input: ServiceInput<FeaturesEvent, SC, TC>) {
+    fn on_input(&mut self, _ctx: &ServiceCtx, now: u64, input: ServiceInput<FeaturesEvent, SC, TC>) {
         match input {
             ServiceInput::FeatureEvent(FeaturesEvent::Data(data::Event::Recv(buf))) => {
                 if let Ok(msg) = bincode::deserialize::<Message>(&buf) {
@@ -198,7 +196,7 @@ where
         }
     }
 
-    fn pop_output(&mut self) -> Option<ServiceOutput<FeaturesControl, SE, TW>> {
+    fn pop_output(&mut self, _ctx: &ServiceCtx) -> Option<ServiceOutput<FeaturesControl, SE, TW>> {
         self.queue.pop_front()
     }
 }
@@ -217,16 +215,14 @@ impl<SE, TC, TW> ServiceWorker<FeaturesControl, FeaturesEvent, SE, TC, TW> for V
 
 pub struct VisualizationServiceBuilder<SC, SE, TC, TW> {
     collector: bool,
-    node_id: NodeId,
     _tmp: std::marker::PhantomData<(SC, SE, TC, TW)>,
 }
 
 impl<SC, SE, TC, TW> VisualizationServiceBuilder<SC, SE, TC, TW> {
-    pub fn new(collector: bool, node_id: NodeId) -> Self {
+    pub fn new(collector: bool) -> Self {
         log::info!("[Visualization] started as collector node => will receive metric from all other nodes");
         Self {
             collector,
-            node_id,
             _tmp: std::marker::PhantomData,
         }
     }
@@ -252,7 +248,7 @@ where
     }
 
     fn create(&self) -> Box<dyn Service<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>> {
-        Box::new(VisualizationService::new(self.node_id))
+        Box::new(VisualizationService::new())
     }
 
     fn create_worker(&self) -> Box<dyn ServiceWorker<FeaturesControl, FeaturesEvent, SE, TC, TW>> {
@@ -268,7 +264,7 @@ mod test {
     use atm0s_sdn_router::{RouteRule, ServiceBroadcastLevel};
 
     use crate::{
-        base::{ConnectionCtx, ConnectionEvent, SecureContext, Service, ServiceInput, ServiceSharedInput, Ttl},
+        base::{ConnectionCtx, ConnectionEvent, SecureContext, Service, ServiceCtx, ServiceInput, ServiceSharedInput, Ttl},
         features::{
             data::{Control as DataControl, Event as DataEvent},
             FeaturesEvent,
@@ -304,13 +300,14 @@ mod test {
     #[test]
     fn agent_should_prediotic_sending_snapshot() {
         let node_id = 1;
-        let mut service = VisualizationService::<Control, Event, (), ()>::new(node_id);
+        let ctx = ServiceCtx { node_id, session: 0 };
+        let mut service = VisualizationService::<Control, Event, (), ()>::new();
 
-        assert_eq!(service.pop_output(), None);
+        assert_eq!(service.pop_output(&ctx), None);
 
-        service.on_shared_input(NODE_PING_MS, ServiceSharedInput::Tick(0));
+        service.on_shared_input(&ctx, NODE_PING_MS, ServiceSharedInput::Tick(0));
         assert_eq!(
-            service.pop_output(),
+            service.pop_output(&ctx),
             Some(data_cmd(DataControl::SendRule(
                 RouteRule::ToServices(SERVICE_ID, ServiceBroadcastLevel::Global, 0),
                 Ttl(NODE_PING_TTL),
@@ -318,9 +315,9 @@ mod test {
             )))
         );
 
-        service.on_shared_input(NODE_PING_MS * 2, ServiceSharedInput::Tick(0));
+        service.on_shared_input(&ctx, NODE_PING_MS * 2, ServiceSharedInput::Tick(0));
         assert_eq!(
-            service.pop_output(),
+            service.pop_output(&ctx),
             Some(data_cmd(DataControl::SendRule(
                 RouteRule::ToServices(SERVICE_ID, ServiceBroadcastLevel::Global, 1),
                 Ttl(NODE_PING_TTL),
@@ -332,17 +329,18 @@ mod test {
     #[test]
     fn agent_handle_connection_event() {
         let node_id = 1;
-        let mut service = VisualizationService::<Control, Event, (), ()>::new(node_id);
+        let mut service = VisualizationService::<Control, Event, (), ()>::new();
 
         let node2 = 2;
         let node3 = 3;
 
-        service.on_shared_input(110, ServiceSharedInput::Connection(connected_event(node2)));
-        service.on_shared_input(110, ServiceSharedInput::Connection(connected_event(node3)));
+        let ctx = ServiceCtx { node_id, session: 0 };
+        service.on_shared_input(&ctx, 110, ServiceSharedInput::Connection(connected_event(node2)));
+        service.on_shared_input(&ctx, 110, ServiceSharedInput::Connection(connected_event(node3)));
 
         assert_eq!(service.conns.len(), 2);
 
-        service.on_shared_input(210, ServiceSharedInput::Connection(disconnected_event(node3)));
+        service.on_shared_input(&ctx, 210, ServiceSharedInput::Connection(disconnected_event(node3)));
         assert_eq!(service.conns.len(), 1);
 
         //TODO check with Snapshot msg too
@@ -351,18 +349,19 @@ mod test {
     #[test]
     fn collector_handle_snapshot_correct() {
         let node_id = 1;
-        let mut service = VisualizationService::<Control, Event, (), ()>::new(node_id);
+        let ctx = ServiceCtx { node_id, session: 0 };
+        let mut service = VisualizationService::<Control, Event, (), ()>::new();
 
         let node2 = 2;
 
         let snapshot = Message::Snapshot(node2, vec![]);
         let buf = bincode::serialize(&snapshot).expect("Should to bytes");
-        service.on_input(100, data_event(DataEvent::Recv(buf)));
+        service.on_input(&ctx, 100, data_event(DataEvent::Recv(buf)));
 
         assert_eq!(service.network_nodes.len(), 1);
 
         //auto delete after timeout
-        service.on_shared_input(100 + NODE_TIMEOUT_MS, ServiceSharedInput::Tick(0));
+        service.on_shared_input(&ctx, 100 + NODE_TIMEOUT_MS, ServiceSharedInput::Tick(0));
         assert_eq!(service.network_nodes.len(), 0);
     }
 }

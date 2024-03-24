@@ -13,7 +13,7 @@ use atm0s_sdn_router::{
 use crate::{
     base::{
         FeatureControlActor, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer, GenericBufferMut, NeighboursControl, ServiceBuilder, ServiceControlActor, ServiceId,
-        ServiceWorkerInput, ServiceWorkerOutput, TransportMsg, TransportMsgHeader, Ttl,
+        ServiceWorkerCtx, ServiceWorkerInput, ServiceWorkerOutput, TransportMsg, TransportMsgHeader, Ttl,
     },
     features::{Features, FeaturesControl, FeaturesEvent, FeaturesToController},
     san_io_utils::TasksSwitcher,
@@ -70,8 +70,9 @@ enum QueueOutput<SE, TC> {
 
 pub struct DataPlane<SC, SE, TC, TW> {
     tick_count: u64,
-    ctx: FeatureWorkerContext,
+    feature_ctx: FeatureWorkerContext,
     features: FeatureWorkerManager,
+    service_ctx: ServiceWorkerCtx,
     services: ServiceWorkerManager<SC, SE, TC, TW>,
     conns: HashMap<SocketAddr, DataPlaneConnection>,
     conns_reverse: HashMap<ConnId, SocketAddr>,
@@ -86,11 +87,12 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
 
         Self {
             tick_count: 0,
-            ctx: FeatureWorkerContext {
+            feature_ctx: FeatureWorkerContext {
                 node_id,
                 router: ShadowRouter::new(node_id, history),
             },
-            features: FeatureWorkerManager::new(node_id),
+            features: FeatureWorkerManager::new(),
+            service_ctx: ServiceWorkerCtx { node_id },
             services: ServiceWorkerManager::new(services),
             conns: HashMap::new(),
             conns_reverse: HashMap::new(),
@@ -101,13 +103,13 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
     }
 
     pub fn route(&self, rule: RouteRule, source: Option<NodeId>, relay_from: Option<NodeId>) -> RouteAction<SocketAddr> {
-        self.ctx.router.derive_action(&rule, source, relay_from)
+        self.feature_ctx.router.derive_action(&rule, source, relay_from)
     }
 
     pub fn on_tick<'a>(&mut self, now_ms: u64) {
         self.last_task = None;
-        self.features.on_tick(&mut self.ctx, now_ms, self.tick_count);
-        self.services.on_tick(now_ms, self.tick_count);
+        self.features.on_tick(&mut self.feature_ctx, now_ms, self.tick_count);
+        self.services.on_tick(&mut self.service_ctx, now_ms, self.tick_count);
         self.tick_count += 1;
     }
 
@@ -121,16 +123,16 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 }
             }
             Input::Net(NetInput::TunPacket(pkt)) => {
-                let out = self.features.on_input(&mut self.ctx, Features::Vpn, now_ms, FeatureWorkerInput::TunPkt(pkt))?;
+                let out = self.features.on_input(&mut self.feature_ctx, Features::Vpn, now_ms, FeatureWorkerInput::TunPkt(pkt))?;
                 Some(self.convert_features(now_ms, Features::Vpn, out))
             }
             Input::Event(LogicEvent::Feature(is_broadcast, to)) => {
                 let feature = to.to_feature();
-                let out = self.features.on_input(&mut self.ctx, feature, now_ms, FeatureWorkerInput::FromController(is_broadcast, to))?;
+                let out = self.features.on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::FromController(is_broadcast, to))?;
                 Some(self.convert_features(now_ms, feature, out))
             }
             Input::Event(LogicEvent::Service(service, to)) => {
-                let out = self.services.on_input(now_ms, service, ServiceWorkerInput::FromController(to))?;
+                let out = self.services.on_input(&mut self.service_ctx, now_ms, service, ServiceWorkerInput::FromController(to))?;
                 Some(self.convert_services(now_ms, service, out))
             }
             Input::Event(LogicEvent::NetNeighbour(remote, control)) => {
@@ -199,11 +201,11 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
     fn pop_last<'a>(&mut self, now_ms: u64, last_task: TaskType) -> Option<Output<'a, SE, TC>> {
         match last_task {
             TaskType::Feature => {
-                let (feature, out) = self.features.pop_output()?;
+                let (feature, out) = self.features.pop_output(&mut self.feature_ctx)?;
                 Some(self.convert_features(now_ms, feature, out))
             }
             TaskType::Service => {
-                let (service, out) = self.services.pop_output()?;
+                let (service, out) = self.services.pop_output(&mut self.service_ctx)?;
                 Some(self.convert_services(now_ms, service, out))
             }
         }
@@ -212,7 +214,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
     fn incoming_route<'a>(&mut self, now_ms: u64, remote: SocketAddr, mut buf: GenericBufferMut<'a>) -> Option<Output<'a, SE, TC>> {
         let conn = self.conns.get(&remote)?;
         let header = TransportMsgHeader::try_from(&buf as &[u8]).ok()?;
-        let action = self.ctx.router.derive_action(&header.route, header.from_node, Some(conn.node()));
+        let action = self.feature_ctx.router.derive_action(&header.route, header.from_node, Some(conn.node()));
         log::debug!("[DataPlame] Incoming rule: {:?} from: {remote}, node {:?} => action {:?}", header.route, header.from_node, action);
         match action {
             RouteAction::Reject => None,
@@ -221,7 +223,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 log::debug!("Incoming feature: {:?} from: {remote}", feature);
                 let out = self
                     .features
-                    .on_network_raw(&mut self.ctx, feature, now_ms, conn.conn(), remote, header.serialize_size(), buf.to_readonly())?;
+                    .on_network_raw(&mut self.feature_ctx, feature, now_ms, conn.conn(), remote, header.serialize_size(), buf.to_readonly())?;
                 Some(self.convert_features(now_ms, feature, out))
             }
             RouteAction::Next(remote) => {
@@ -239,7 +241,10 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 if local {
                     if let Ok(feature) = header.feature.try_into() {
                         log::debug!("Incoming broadcast feature: {:?} from: {remote}", feature);
-                        if let Some(out) = self.features.on_network_raw(&mut self.ctx, feature, now_ms, conn.conn(), remote, header.serialize_size(), buf.clone()) {
+                        if let Some(out) = self
+                            .features
+                            .on_network_raw(&mut self.feature_ctx, feature, now_ms, conn.conn(), remote, header.serialize_size(), buf.clone())
+                        {
                             self.queue_output.push_back(QueueOutput::Feature(feature, out.owned()));
                         }
                     }
@@ -250,14 +255,14 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
     }
 
     fn outgoing_route<'a>(&mut self, now_ms: u64, feature: Features, rule: RouteRule, ttl: Ttl, buf: Vec<u8>) -> Option<Output<'a, SE, TC>> {
-        match self.ctx.router.derive_action(&rule, Some(self.ctx.node_id), None) {
+        match self.feature_ctx.router.derive_action(&rule, Some(self.feature_ctx.node_id), None) {
             RouteAction::Reject => {
                 log::debug!("[DataPlane] outgoing route rule {:?} is rejected", rule);
                 None
             }
             RouteAction::Local => {
                 log::debug!("[DataPlane] outgoing route rule {:?} is processed locally", rule);
-                let out = self.features.on_input(&mut self.ctx, feature, now_ms, FeatureWorkerInput::Local(buf.into()))?;
+                let out = self.features.on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::Local(buf.into()))?;
                 Some(self.convert_features(now_ms, feature, out.owned()))
             }
             RouteAction::Next(remote) => {
@@ -269,10 +274,10 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
             RouteAction::Broadcast(local, remotes) => {
                 log::debug!("[DataPlane] outgoing route rule {:?} is go with local {local} and remotes {:?}", rule, remotes);
 
-                let header = TransportMsgHeader::build(feature as u8, 0, rule).set_ttl(*ttl).set_from_node(Some(self.ctx.node_id));
+                let header = TransportMsgHeader::build(feature as u8, 0, rule).set_ttl(*ttl).set_from_node(Some(self.feature_ctx.node_id));
                 let msg = TransportMsg::build_raw(header, &buf);
                 if local {
-                    if let Some(out) = self.features.on_input(&mut self.ctx, feature, now_ms, FeatureWorkerInput::Local(buf.into())) {
+                    if let Some(out) = self.features.on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::Local(buf.into())) {
                         self.queue_output.push_back(QueueOutput::Feature(feature, out.owned()));
                     }
                 }
@@ -292,7 +297,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
             FeatureWorkerOutput::Event(actor, event) => match actor {
                 FeatureControlActor::Controller => Output::Ext(ExtOut::FeaturesEvent(event)),
                 FeatureControlActor::Service(service) => {
-                    if let Some(out) = self.services.on_input(now_ms, service, ServiceWorkerInput::FeatureEvent(event)) {
+                    if let Some(out) = self.services.on_input(&mut self.service_ctx, now_ms, service, ServiceWorkerInput::FeatureEvent(event)) {
                         self.queue_output.push_back(QueueOutput::Service(service, out));
                     }
                     Output::Continue
@@ -340,7 +345,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 let feature = control.to_feature();
                 if let Some(out) = self
                     .features
-                    .on_input(&mut self.ctx, feature, now_ms, FeatureWorkerInput::Control(FeatureControlActor::Service(service), control))
+                    .on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::Control(FeatureControlActor::Service(service), control))
                 {
                     self.queue_output.push_back(QueueOutput::Feature(feature, out));
                 }

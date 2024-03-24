@@ -144,7 +144,7 @@ where
             }
         };
 
-        self.add_service(Arc::new(visualization::VisualizationServiceBuilder::<SC, SE, TC, TW>::new(self.visualization_collector, self.node_id)));
+        self.add_service(Arc::new(visualization::VisualizationServiceBuilder::<SC, SE, TC, TW>::new(self.visualization_collector)));
 
         let history = Arc::new(DataWorkerHistory::default());
 

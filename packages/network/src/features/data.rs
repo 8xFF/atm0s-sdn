@@ -4,7 +4,7 @@ use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_router::RouteRule;
 use serde::{Deserialize, Serialize};
 
-use crate::base::{Feature, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker, Ttl};
+use crate::base::{Feature, FeatureContext, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker, Ttl};
 
 pub const FEATURE_ID: u8 = 1;
 pub const FEATURE_NAME: &str = "data_transfer";
@@ -35,34 +35,15 @@ enum DataMsg {
     DataService { service: u8, data: Vec<u8> },
 }
 
+#[derive(Default)]
 pub struct DataFeature {
-    node_id: NodeId,
     waits: HashMap<u64, (u64, FeatureControlActor, NodeId)>,
     ping_seq: u64,
     queue: VecDeque<FeatureOutput<Event, ToWorker>>,
 }
 
-impl DataFeature {
-    pub fn new(node_id: NodeId) -> Self {
-        Self {
-            node_id,
-            waits: HashMap::new(),
-            ping_seq: 0,
-            queue: VecDeque::new(),
-        }
-    }
-}
-
 impl Feature<Control, Event, ToController, ToWorker> for DataFeature {
-    fn feature_type(&self) -> u8 {
-        FEATURE_ID
-    }
-
-    fn feature_name(&self) -> &str {
-        FEATURE_NAME
-    }
-
-    fn on_shared_input(&mut self, now: u64, input: FeatureSharedInput) {
+    fn on_shared_input(&mut self, _ctx: &FeatureContext, now: u64, input: FeatureSharedInput) {
         match input {
             FeatureSharedInput::Tick(_) => {
                 //clean timeout ping
@@ -82,7 +63,7 @@ impl Feature<Control, Event, ToController, ToWorker> for DataFeature {
         }
     }
 
-    fn on_input<'a>(&mut self, now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
+    fn on_input<'a>(&mut self, ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
         match input {
             FeatureInput::Control(actor, control) => match control {
                 Control::Ping(dest) => {
@@ -93,7 +74,7 @@ impl Feature<Control, Event, ToController, ToWorker> for DataFeature {
                     let msg = bincode::serialize(&DataMsg::Ping {
                         id: seq,
                         ts: now_ms,
-                        from: self.node_id,
+                        from: ctx.node_id,
                     })
                     .expect("should work");
                     let rule = RouteRule::ToNode(dest);
@@ -137,7 +118,7 @@ impl Feature<Control, Event, ToController, ToWorker> for DataFeature {
         }
     }
 
-    fn pop_output<'a>(&mut self) -> Option<FeatureOutput<Event, ToWorker>> {
+    fn pop_output<'a>(&mut self, _ctx: &FeatureContext) -> Option<FeatureOutput<Event, ToWorker>> {
         self.queue.pop_front()
     }
 }
@@ -145,12 +126,4 @@ impl Feature<Control, Event, ToController, ToWorker> for DataFeature {
 #[derive(Default)]
 pub struct DataFeatureWorker {}
 
-impl FeatureWorker<Control, Event, ToController, ToWorker> for DataFeatureWorker {
-    fn feature_type(&self) -> u8 {
-        FEATURE_ID
-    }
-
-    fn feature_name(&self) -> &str {
-        FEATURE_NAME
-    }
-}
+impl FeatureWorker<Control, Event, ToController, ToWorker> for DataFeatureWorker {}

@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use crate::base::{ServiceBuilder, ServiceId, ServiceWorker, ServiceWorkerInput, ServiceWorkerOutput};
+use crate::base::{ServiceBuilder, ServiceId, ServiceWorker, ServiceWorkerCtx, ServiceWorkerInput, ServiceWorkerOutput};
 use crate::features::{FeaturesControl, FeaturesEvent};
 use crate::san_io_utils::TasksSwitcher;
 
@@ -23,23 +23,29 @@ impl<ServiceControl, ServiceEvent, ToController, ToWorker> ServiceWorkerManager<
         }
     }
 
-    pub fn on_tick(&mut self, now: u64, tick_count: u64) {
+    pub fn on_tick(&mut self, ctx: &ServiceWorkerCtx, now: u64, tick_count: u64) {
         for service in self.services.iter_mut() {
             if let Some(service) = service {
-                service.on_tick(now, tick_count);
+                service.on_tick(ctx, now, tick_count);
             }
         }
     }
 
-    pub fn on_input(&mut self, now: u64, id: ServiceId, input: ServiceWorkerInput<FeaturesEvent, ToWorker>) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceEvent, ToController>> {
+    pub fn on_input(
+        &mut self,
+        ctx: &ServiceWorkerCtx,
+        now: u64,
+        id: ServiceId,
+        input: ServiceWorkerInput<FeaturesEvent, ToWorker>,
+    ) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceEvent, ToController>> {
         let service = self.services[*id as usize].as_mut()?;
         self.last_input_service = Some(id);
-        service.on_input(now, input)
+        service.on_input(ctx, now, input)
     }
 
-    pub fn pop_output(&mut self) -> Option<(ServiceId, ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceEvent, ToController>)> {
+    pub fn pop_output(&mut self, ctx: &ServiceWorkerCtx) -> Option<(ServiceId, ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceEvent, ToController>)> {
         if let Some(last_service) = self.last_input_service {
-            let res = self.services[*last_service as usize].as_mut().map(|s| s.pop_output()).flatten();
+            let res = self.services[*last_service as usize].as_mut().map(|s| s.pop_output(ctx)).flatten();
             if res.is_none() {
                 self.last_input_service = None;
             }
@@ -50,7 +56,7 @@ impl<ServiceControl, ServiceEvent, ToController, ToWorker> ServiceWorkerManager<
                 let s = &mut self.switcher;
                 let index = s.current()?;
                 if let Some(Some(service)) = self.services.get_mut(index) {
-                    if let Some(output) = s.process(service.pop_output()) {
+                    if let Some(output) = s.process(service.pop_output(ctx)) {
                         return Some(((index as u8).into(), output));
                     }
                 } else {

@@ -11,7 +11,7 @@ mod table;
 
 #[mockall::automock]
 pub trait ShadowRouterHistory: Send + Sync {
-    /// This methid will check if the broadcast message is already received or not
+    /// This method will check if the broadcast message is already received or not
     /// If not received, it will cache the message and return true
     fn already_received_broadcast(&self, from: Option<NodeId>, service: u8, seq: u16) -> bool;
 }
@@ -123,7 +123,7 @@ impl<Remote: Debug + Hash + Eq + Clone + Copy> RouterTable<Remote> for ShadowRou
     }
 
     fn path_to_services(&self, service_id: u8, seq: u16, level: ServiceBroadcastLevel, source: Option<NodeId>, relay_from: Option<NodeId>) -> RouteAction<Remote> {
-        if self.cached.allready_received_broadcast(source, service_id, seq) {
+        if self.cached.already_received_broadcast(source, service_id, seq) {
             return RouteAction::Reject;
         }
         let local = self.local_registries[service_id as usize];
@@ -174,7 +174,7 @@ mod tests {
     #[test]
     fn should_broadcast_to_next_service_local() {
         let mut history = MockShadowRouterHistory::new();
-        history.expect_allready_received_broadcast().return_const(true);
+        history.expect_already_received_broadcast().return_const(false);
         let mut router = ShadowRouter::<u64>::new(1, Arc::new(history));
         router.apply_delta(ShadowRouterDelta::SetServiceLocal { service: 1 });
 
@@ -184,7 +184,7 @@ mod tests {
     #[test]
     fn should_broadcast_to_next_service_remote() {
         let mut history = MockShadowRouterHistory::new();
-        history.expect_allready_received_broadcast().return_const(true);
+        history.expect_already_received_broadcast().return_const(false);
 
         let mut router = ShadowRouter::<u64>::new(1, Arc::new(history));
         router.apply_delta(ShadowRouterDelta::SetServiceRemote {
@@ -227,7 +227,7 @@ mod tests {
     #[test]
     fn reject_received_broadcast_message() {
         let mut history = MockShadowRouterHistory::new();
-        history.expect_allready_received_broadcast().return_const(false);
+        history.expect_already_received_broadcast().return_const(true);
 
         let mut router = ShadowRouter::<u64>::new(1, Arc::new(history));
         router.apply_delta(ShadowRouterDelta::SetServiceLocal { service: 100 });

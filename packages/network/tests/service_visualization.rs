@@ -31,8 +31,8 @@ fn service_visualization_simple() {
     let node2 = 2;
     let mut sim = NetworkSimulator::<Control, Event, (), ()>::new(0);
 
-    let _addr1 = sim.add_node(TestNode::new(node1, 1234, vec![Arc::new(VisualizationServiceBuilder::new(true, node1))]));
-    let addr2 = sim.add_node(TestNode::new(node2, 1235, vec![Arc::new(VisualizationServiceBuilder::new(false, node2))]));
+    let _addr1 = sim.add_node(TestNode::new(node1, 1234, vec![Arc::new(VisualizationServiceBuilder::new(true))]));
+    let addr2 = sim.add_node(TestNode::new(node2, 1235, vec![Arc::new(VisualizationServiceBuilder::new(false))]));
 
     sim.control(node1, ExtIn::ServicesControl(visualization::SERVICE_ID.into(), Control::Subscribe));
 
@@ -68,9 +68,9 @@ fn service_visualization_multi_collectors() {
     let mut sim = NetworkSimulator::<Control, Event, (), ()>::new(0);
     sim.enable_log(log::LevelFilter::Debug);
 
-    let _addr1 = sim.add_node(TestNode::new(node1, 1234, vec![Arc::new(VisualizationServiceBuilder::new(true, node1))]));
-    let addr2 = sim.add_node(TestNode::new(node2, 1235, vec![Arc::new(VisualizationServiceBuilder::new(true, node2))]));
-    let addr3 = sim.add_node(TestNode::new(node3, 1236, vec![Arc::new(VisualizationServiceBuilder::new(false, node3))]));
+    let _addr1 = sim.add_node(TestNode::new(node1, 1234, vec![Arc::new(VisualizationServiceBuilder::new(true))]));
+    let addr2 = sim.add_node(TestNode::new(node2, 1235, vec![Arc::new(VisualizationServiceBuilder::new(true))]));
+    let addr3 = sim.add_node(TestNode::new(node3, 1236, vec![Arc::new(VisualizationServiceBuilder::new(false))]));
 
     sim.control(node1, ExtIn::ServicesControl(visualization::SERVICE_ID.into(), Control::Subscribe));
     sim.control(node2, ExtIn::ServicesControl(visualization::SERVICE_ID.into(), Control::Subscribe));

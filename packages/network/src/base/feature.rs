@@ -56,12 +56,15 @@ impl<'a, Event, ToWorker> FeatureOutput<Event, ToWorker> {
     }
 }
 
+pub struct FeatureContext {
+    pub node_id: NodeId,
+    pub session: u64,
+}
+
 pub trait Feature<Control, Event, ToController, ToWorker> {
-    fn feature_type(&self) -> u8;
-    fn feature_name(&self) -> &str;
-    fn on_shared_input(&mut self, _now: u64, _input: FeatureSharedInput);
-    fn on_input<'a>(&mut self, now_ms: u64, input: FeatureInput<'a, Control, ToController>);
-    fn pop_output(&mut self) -> Option<FeatureOutput<Event, ToWorker>>;
+    fn on_shared_input(&mut self, _ctx: &FeatureContext, _now: u64, _input: FeatureSharedInput);
+    fn on_input<'a>(&mut self, _ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'a, Control, ToController>);
+    fn pop_output(&mut self, _ctx: &FeatureContext) -> Option<FeatureOutput<Event, ToWorker>>;
 }
 
 ///
@@ -139,8 +142,6 @@ pub struct FeatureWorkerContext {
 }
 
 pub trait FeatureWorker<SdkControl, SdkEvent, ToController, ToWorker> {
-    fn feature_type(&self) -> u8;
-    fn feature_name(&self) -> &str;
     fn on_tick(&mut self, _ctx: &mut FeatureWorkerContext, _now: u64, _tick_count: u64) {}
     fn on_network_raw<'a>(
         &mut self,
@@ -159,13 +160,13 @@ pub trait FeatureWorker<SdkControl, SdkEvent, ToController, ToWorker> {
             FeatureWorkerInput::Network(conn, buf) => Some(FeatureWorkerOutput::ForwardNetworkToController(conn, buf.to_vec())),
             FeatureWorkerInput::TunPkt(_buf) => None,
             FeatureWorkerInput::FromController(_, _) => {
-                log::warn!("No handler for FromController in {}", self.feature_name());
+                log::warn!("No handler for FromController");
                 None
             }
             FeatureWorkerInput::Local(buf) => Some(FeatureWorkerOutput::ForwardLocalToController(buf.to_vec())),
         }
     }
-    fn pop_output<'a>(&mut self) -> Option<FeatureWorkerOutput<'a, SdkControl, SdkEvent, ToController>> {
+    fn pop_output<'a>(&mut self, _ctx: &mut FeatureWorkerContext) -> Option<FeatureWorkerOutput<'a, SdkControl, SdkEvent, ToController>> {
         None
     }
 }

@@ -1,3 +1,4 @@
+use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_utils::simple_pub_type;
 
 use super::ConnectionEvent;
@@ -31,13 +32,18 @@ pub enum ServiceOutput<FeaturesControl, ServiceEvent, ToWorker> {
     BroadcastWorkers(ToWorker),
 }
 
+pub struct ServiceCtx {
+    pub node_id: NodeId,
+    pub session: u64,
+}
+
 pub trait Service<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker> {
     fn service_id(&self) -> u8;
     fn service_name(&self) -> &str;
 
-    fn on_shared_input<'a>(&mut self, _now: u64, _input: ServiceSharedInput);
-    fn on_input(&mut self, _now: u64, input: ServiceInput<FeaturesEvent, ServiceControl, ToController>);
-    fn pop_output(&mut self) -> Option<ServiceOutput<FeaturesControl, ServiceEvent, ToWorker>>;
+    fn on_shared_input<'a>(&mut self, _ctx: &ServiceCtx, _now: u64, _input: ServiceSharedInput);
+    fn on_input(&mut self, _ctx: &ServiceCtx, _now: u64, input: ServiceInput<FeaturesEvent, ServiceControl, ToController>);
+    fn pop_output(&mut self, _ctx: &ServiceCtx) -> Option<ServiceOutput<FeaturesControl, ServiceEvent, ToWorker>>;
 }
 
 /// Second part is Worker, which is running inside each data plane workers.
@@ -54,11 +60,20 @@ pub enum ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceEvent, ToCon
     Event(ServiceControlActor, ServiceEvent),
 }
 
+pub struct ServiceWorkerCtx {
+    pub node_id: NodeId,
+}
+
 pub trait ServiceWorker<FeaturesControl, FeaturesEvent, ServiceEvent, ToController, ToWorker> {
     fn service_id(&self) -> u8;
     fn service_name(&self) -> &str;
-    fn on_tick(&mut self, _now: u64, _tick_count: u64) {}
-    fn on_input(&mut self, _now: u64, input: ServiceWorkerInput<FeaturesEvent, ToWorker>) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceEvent, ToController>> {
+    fn on_tick(&mut self, _ctx: &ServiceWorkerCtx, _now: u64, _tick_count: u64) {}
+    fn on_input(
+        &mut self,
+        _ctx: &ServiceWorkerCtx,
+        _now: u64,
+        input: ServiceWorkerInput<FeaturesEvent, ToWorker>,
+    ) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceEvent, ToController>> {
         match input {
             ServiceWorkerInput::FeatureEvent(event) => Some(ServiceWorkerOutput::ForwardFeatureEventToController(event)),
             ServiceWorkerInput::FromController(_) => {
@@ -67,7 +82,7 @@ pub trait ServiceWorker<FeaturesControl, FeaturesEvent, ServiceEvent, ToControll
             }
         }
     }
-    fn pop_output(&mut self) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceEvent, ToController>> {
+    fn pop_output(&mut self, _ctx: &ServiceWorkerCtx) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceEvent, ToController>> {
         None
     }
 }

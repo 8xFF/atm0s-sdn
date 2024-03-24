@@ -3,13 +3,11 @@ use std::{
     net::SocketAddr,
 };
 
-use atm0s_sdn_identity::NodeId;
-
-use crate::base::{ConnectionEvent, Feature, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput};
+use crate::base::{ConnectionEvent, Feature, FeatureContext, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput};
 
 use super::{
     msg::{ChannelId, RelayControl, RelayId},
-    ChannelControl, ChannelEvent, Control, Event, RelayWorkerControl, ToController, ToWorker, FEATURE_ID, FEATURE_NAME,
+    ChannelControl, ChannelEvent, Control, Event, RelayWorkerControl, ToController, ToWorker,
 };
 
 pub const RELAY_TIMEOUT: u64 = 10_000;
@@ -40,41 +38,37 @@ pub trait GenericRelay {
 }
 
 pub struct PubSubFeature {
-    node_id: NodeId,
-    session: u64,
     relays: HashMap<RelayId, Box<dyn GenericRelay>>,
     queue: VecDeque<FeatureOutput<Event, ToWorker>>,
 }
 
 impl PubSubFeature {
-    pub fn new(node_id: NodeId, session: u64) -> Self {
+    pub fn new() -> Self {
         Self {
-            node_id,
-            session,
             relays: HashMap::new(),
             queue: VecDeque::new(),
         }
     }
 
-    fn get_relay(&mut self, relay_id: RelayId, auto_create: bool) -> Option<&mut Box<dyn GenericRelay>> {
+    fn get_relay(&mut self, ctx: &FeatureContext, relay_id: RelayId, auto_create: bool) -> Option<&mut Box<dyn GenericRelay>> {
         if !self.relays.contains_key(&relay_id) && auto_create {
-            let relay: Box<dyn GenericRelay> = if self.node_id == relay_id.1 {
+            let relay: Box<dyn GenericRelay> = if ctx.node_id == relay_id.1 {
                 log::info!("[PubSubFeatureController] Creating new LocalRelay: {}", relay_id.0);
                 Box::new(LocalRelay::default())
             } else {
                 log::info!("[PubSubFeatureController] Creating new RemoteController: {:?}", relay_id);
-                Box::new(RemoteRelay::new(self.session))
+                Box::new(RemoteRelay::new(ctx.session))
             };
             self.relays.insert(relay_id, relay);
         }
         self.relays.get_mut(&relay_id)
     }
 
-    fn on_local(&mut self, now: u64, actor: FeatureControlActor, channel: ChannelId, control: ChannelControl) {
+    fn on_local(&mut self, ctx: &FeatureContext, now: u64, actor: FeatureControlActor, channel: ChannelId, control: ChannelControl) {
         match control {
             ChannelControl::SubSource(source) => {
                 let relay_id = RelayId(channel, source);
-                let relay = self.get_relay(relay_id, true).expect("Should create");
+                let relay = self.get_relay(ctx, relay_id, true).expect("Should create");
                 log::debug!("[PubSubFeatureController] Sub for {:?} from {:?}", relay_id, actor);
                 relay.on_local_sub(now, actor);
                 Self::pop_single_relay(relay_id, self.relays.get_mut(&relay_id).expect("Should have"), &mut self.queue);
@@ -93,7 +87,7 @@ impl PubSubFeature {
                 }
             }
             ChannelControl::PubData(data) => {
-                let relay_id = RelayId(channel, self.node_id);
+                let relay_id = RelayId(channel, ctx.node_id);
                 if let Some(relay) = self.relays.get(&relay_id) {
                     if let Some((locals, has_remote)) = relay.relay_dests() {
                         log::debug!(
@@ -103,7 +97,7 @@ impl PubSubFeature {
                             locals.len()
                         );
                         for local in locals {
-                            self.queue.push_back(FeatureOutput::Event(*local, Event(channel, ChannelEvent::SourceData(self.node_id, data.clone()))));
+                            self.queue.push_back(FeatureOutput::Event(*local, Event(channel, ChannelEvent::SourceData(ctx.node_id, data.clone()))));
                         }
 
                         if has_remote {
@@ -119,8 +113,8 @@ impl PubSubFeature {
         }
     }
 
-    fn on_remote(&mut self, now: u64, remote: SocketAddr, relay_id: RelayId, control: RelayControl) {
-        if let Some(_) = self.get_relay(relay_id, control.should_create()) {
+    fn on_remote(&mut self, ctx: &FeatureContext, now: u64, remote: SocketAddr, relay_id: RelayId, control: RelayControl) {
+        if let Some(_) = self.get_relay(ctx, relay_id, control.should_create()) {
             let relay = self.relays.get_mut(&relay_id).expect("Should have relay");
             log::debug!("[PubSubFeatureController] Remote control for {:?} from {:?}: {:?}", relay_id, remote, control);
             relay.on_remote(now, remote, control);
@@ -144,15 +138,7 @@ impl PubSubFeature {
 }
 
 impl Feature<Control, Event, ToController, ToWorker> for PubSubFeature {
-    fn feature_type(&self) -> u8 {
-        FEATURE_ID
-    }
-
-    fn feature_name(&self) -> &str {
-        FEATURE_NAME
-    }
-
-    fn on_shared_input(&mut self, now: u64, input: FeatureSharedInput) {
+    fn on_shared_input(&mut self, _ctx: &FeatureContext, now: u64, input: FeatureSharedInput) {
         match input {
             FeatureSharedInput::Tick(_) => {
                 let mut clears = vec![];
@@ -180,19 +166,19 @@ impl Feature<Control, Event, ToController, ToWorker> for PubSubFeature {
         }
     }
 
-    fn on_input<'a>(&mut self, _now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
+    fn on_input<'a>(&mut self, ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
         match input {
             FeatureInput::FromWorker(ToController::RemoteControl(remote, relay_id, control)) => {
-                self.on_remote(_now_ms, remote, relay_id, control);
+                self.on_remote(ctx, now_ms, remote, relay_id, control);
             }
             FeatureInput::Control(actor, Control(channel, control)) => {
-                self.on_local(_now_ms, actor, channel, control);
+                self.on_local(ctx, now_ms, actor, channel, control);
             }
             _ => panic!("Unexpected input"),
         }
     }
 
-    fn pop_output<'a>(&mut self) -> Option<FeatureOutput<Event, ToWorker>> {
+    fn pop_output<'a>(&mut self, _ctx: &FeatureContext) -> Option<FeatureOutput<Event, ToWorker>> {
         self.queue.pop_front()
     }
 }
