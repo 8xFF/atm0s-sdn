@@ -16,13 +16,13 @@ struct RelayRemote {
 }
 
 #[derive(Default)]
-pub struct RelayConsummers {
+pub struct RelayConsumers {
     remotes: HashMap<SocketAddr, RelayRemote>,
     locals: Vec<FeatureControlActor>,
     queue: VecDeque<RelayWorkerControl>,
 }
 
-impl RelayConsummers {
+impl RelayConsumers {
     pub fn on_tick(&mut self, now: u64) {
         let mut timeout = vec![];
         for (remote, slot) in self.remotes.iter() {
@@ -120,11 +120,11 @@ mod tests {
         features::pubsub::{controller::RELAY_TIMEOUT, msg::RelayControl, RelayWorkerControl},
     };
 
-    use super::RelayConsummers;
+    use super::RelayConsumers;
 
     #[test]
     fn relay_local_should_work_single_sub() {
-        let mut consumers = RelayConsummers::default();
+        let mut consumers = RelayConsumers::default();
         consumers.on_local_sub(0, FeatureControlActor::Controller);
 
         assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteSetLocal(FeatureControlActor::Controller)));
@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn relay_local_should_work_multi_subs() {
-        let mut consumers = RelayConsummers::default();
+        let mut consumers = RelayConsumers::default();
         consumers.on_local_sub(0, FeatureControlActor::Controller);
 
         assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteSetLocal(FeatureControlActor::Controller)));
@@ -177,7 +177,7 @@ mod tests {
 
     #[test]
     fn relay_remote_should_work_single_sub() {
-        let mut consumers = RelayConsummers::default();
+        let mut consumers = RelayConsumers::default();
 
         let remote = SocketAddr::from(([127, 0, 0, 1], 8080));
 
@@ -202,7 +202,7 @@ mod tests {
 
     #[test]
     fn relay_remote_should_work_multi_subs() {
-        let mut consumers = RelayConsummers::default();
+        let mut consumers = RelayConsumers::default();
 
         let remote1 = SocketAddr::from(([127, 0, 0, 1], 8080));
         let remote2 = SocketAddr::from(([127, 0, 0, 2], 8080));
@@ -243,7 +243,7 @@ mod tests {
 
     #[test]
     fn relay_should_work_both_local_and_remote() {
-        let mut consumers = RelayConsummers::default();
+        let mut consumers = RelayConsumers::default();
 
         let remote1 = SocketAddr::from(([127, 0, 0, 1], 8080));
 
@@ -281,7 +281,7 @@ mod tests {
 
     #[test]
     fn clear_timeout_remote() {
-        let mut consumers = RelayConsummers::default();
+        let mut consumers = RelayConsumers::default();
 
         let remote1 = SocketAddr::from(([127, 0, 0, 1], 8080));
 

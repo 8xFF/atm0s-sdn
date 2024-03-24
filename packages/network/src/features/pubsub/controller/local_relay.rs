@@ -1,10 +1,10 @@
 use crate::{base::FeatureControlActor, features::pubsub::msg::RelayControl};
 
-use super::{consumers::RelayConsummers, GenericRelay, GenericRelayOutput};
+use super::{consumers::RelayConsumers, GenericRelay, GenericRelayOutput};
 
 #[derive(Default)]
 pub struct LocalRelay {
-    consumers: RelayConsummers,
+    consumers: RelayConsumers,
 }
 
 impl GenericRelay for LocalRelay {

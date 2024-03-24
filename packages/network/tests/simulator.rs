@@ -99,8 +99,8 @@ struct SingleThreadDataWorkerHistory {
 }
 
 impl ShadowRouterHistory for SingleThreadDataWorkerHistory {
-    fn allready_received_broadcast(&self, from: Option<NodeId>, service: u8, seq: u16) -> bool {
-        log::debug!("Check allready_received_broadcast from {:?} service {} seq {}", from, service, seq);
+    fn already_received_broadcast(&self, from: Option<NodeId>, service: u8, seq: u16) -> bool {
+        log::debug!("Check already_received_broadcast from {:?} service {} seq {}", from, service, seq);
         let mut map = self.map.lock();
         let mut queue = self.queue.lock();
         if map.contains_key(&(from, service, seq)) {

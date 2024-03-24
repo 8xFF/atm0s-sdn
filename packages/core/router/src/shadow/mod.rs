@@ -13,7 +13,7 @@ mod table;
 pub trait ShadowRouterHistory: Send + Sync {
     /// This methid will check if the broadcast message is already received or not
     /// If not received, it will cache the message and return true
-    fn allready_received_broadcast(&self, from: Option<NodeId>, service: u8, seq: u16) -> bool;
+    fn already_received_broadcast(&self, from: Option<NodeId>, service: u8, seq: u16) -> bool;
 }
 
 #[derive(Debug, Clone)]

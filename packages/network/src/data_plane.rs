@@ -269,8 +269,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
             RouteAction::Broadcast(local, remotes) => {
                 log::debug!("[DataPlane] outgoing route rule {:?} is go with local {local} and remotes {:?}", rule, remotes);
 
-                let header = TransportMsgHeader::build(feature as u8, 0, rule).set_ttl(*ttl)
-                    .set_from_node(Some(self.ctx.node_id));
+                let header = TransportMsgHeader::build(feature as u8, 0, rule).set_ttl(*ttl).set_from_node(Some(self.ctx.node_id));
                 let msg = TransportMsg::build_raw(header, &buf);
                 if local {
                     if let Some(out) = self.features.on_input(&mut self.ctx, feature, now_ms, FeatureWorkerInput::Local(buf.into())) {

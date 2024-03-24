@@ -1,4 +1,4 @@
-//! This is single relay logic, which take care relay both local and remotes of a smallest part in pubsub sytem: Channel from a single source
+//! This is single relay logic, which take care relay both local and remotes of a smallest part in pubsub system: Channel from a single source
 //! This part take care two things:
 //!
 //! - Sub, Unsub logic
@@ -10,12 +10,12 @@ use crate::{
 };
 use std::{collections::VecDeque, net::SocketAddr};
 
-use super::{consumers::RelayConsummers, GenericRelay, GenericRelayOutput, RELAY_STICKY_MS, RELAY_TIMEOUT};
+use super::{consumers::RelayConsumers, GenericRelay, GenericRelayOutput, RELAY_STICKY_MS, RELAY_TIMEOUT};
 
 enum RelayState {
     New,
-    Binding { consumers: RelayConsummers },
-    Bound { consumers: RelayConsummers, next: SocketAddr, sticky_session_at: u64 },
+    Binding { consumers: RelayConsumers },
+    Bound { consumers: RelayConsumers, next: SocketAddr, sticky_session_at: u64 },
     Unbinding { next: SocketAddr, started_at: u64 },
     Unbound,
 }
@@ -35,7 +35,7 @@ impl RemoteRelay {
         }
     }
 
-    fn pop_consumers_out(consumers: &mut RelayConsummers, queue: &mut VecDeque<GenericRelayOutput>) {
+    fn pop_consumers_out(consumers: &mut RelayConsumers, queue: &mut VecDeque<GenericRelayOutput>) {
         while let Some(control) = consumers.pop_output() {
             queue.push_back(GenericRelayOutput::ToWorker(control));
         }
@@ -117,7 +117,7 @@ impl GenericRelay for RemoteRelay {
         match &mut self.state {
             RelayState::New | RelayState::Unbound => {
                 log::info!("[PubSubRemoteRelay] Sub in New or Unbound state => switch to Binding and send Sub message");
-                let mut consumers = RelayConsummers::default();
+                let mut consumers = RelayConsumers::default();
                 consumers.on_local_sub(now, actor);
                 Self::pop_consumers_out(&mut consumers, &mut self.queue);
                 self.state = RelayState::Binding { consumers };
@@ -125,7 +125,7 @@ impl GenericRelay for RemoteRelay {
             }
             RelayState::Unbinding { next, .. } => {
                 log::debug!("[PubSubRemoteRelay] Sub in Unbinding state => switch to Binding with previous next {next}");
-                let mut consumers = RelayConsummers::default();
+                let mut consumers = RelayConsumers::default();
                 consumers.on_local_sub(now, actor);
                 Self::pop_consumers_out(&mut consumers, &mut self.queue);
                 self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(self.uuid, Some(*next))));
@@ -240,14 +240,14 @@ impl GenericRelay for RemoteRelay {
             }
             _ => match &mut self.state {
                 RelayState::New | RelayState::Unbound => {
-                    let mut consumers = RelayConsummers::default();
+                    let mut consumers = RelayConsumers::default();
                     consumers.on_remote(now, remote, control);
                     Self::pop_consumers_out(&mut consumers, &mut self.queue);
                     self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(self.uuid, None)));
                     self.state = RelayState::Binding { consumers };
                 }
                 RelayState::Unbinding { next, .. } => {
-                    let mut consumers = RelayConsummers::default();
+                    let mut consumers = RelayConsumers::default();
                     consumers.on_remote(now, remote, control);
                     Self::pop_consumers_out(&mut consumers, &mut self.queue);
                     self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(self.uuid, Some(*next))));
