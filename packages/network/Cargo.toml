@@ -24,7 +24,7 @@ sha1 = "0.10.6"
 [dev-dependencies]
 env_logger = { workspace = true }
 mockall = { workspace = true }
-atm0s-sdn-router = { path = "../core/router", version = "0.1.4", features = ["mock"]}
+atm0s-sdn-router = { path = "../core/router", version = "0.1.4" }
 
 [features]
 default = ["vpn", "fuzz"]
