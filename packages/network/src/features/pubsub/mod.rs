@@ -1,68 +1,69 @@
-use std::collections::HashMap;
+use std::net::SocketAddr;
 
 use atm0s_sdn_identity::NodeId;
 
-use crate::base::{Feature, FeatureInput, FeatureOutput, FeatureWorker, ServiceId};
+use crate::base::FeatureControlActor;
 
-use self::msg::PubsubChannel;
+use self::msg::{ChannelId, RelayControl, RelayId};
 
+mod channel;
+mod controller;
 mod msg;
+mod worker;
+
+pub use controller::PubSubFeature;
+pub use worker::PubSubFeatureWorker;
 
 pub const FEATURE_ID: u8 = 5;
 pub const FEATURE_NAME: &str = "pubsub";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Control {}
+pub enum ChannelControl {
+    SubSource(NodeId),
+    UnsubSource(NodeId),
+    PubData(Vec<u8>),
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Event {}
+pub struct Control(ChannelId, ChannelControl);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChannelEvent {
+    SourceData(NodeId, Vec<u8>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Event(ChannelId, ChannelEvent);
+
+#[derive(Debug, Clone)]
+pub enum RelayWorkerControl {
+    SendSub(u64, Option<SocketAddr>),
+    SendUnsub(u64, SocketAddr),
+    RouteSet(SocketAddr),
+    RouteDel(SocketAddr),
+    RouteSetLocal(FeatureControlActor),
+    RouteDelLocal(FeatureControlActor),
+    RouteSetRemote(SocketAddr),
+    RouteDelRemote(SocketAddr),
+}
+
+impl RelayWorkerControl {
+    pub fn is_broadcast(&self) -> bool {
+        match self {
+            RelayWorkerControl::SendSub(_, _) => false,
+            RelayWorkerControl::SendUnsub(_, _) => false,
+            _ => true,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum ToWorker {
-    Pin(PubsubChannel, NodeId),
-    Unpin(PubsubChannel, NodeId),
+    RelayWorkerControl(RelayId, RelayWorkerControl),
+    RelayData(RelayId, Vec<u8>),
 }
 
 #[derive(Debug, Clone)]
-pub struct ToController;
-
-struct Slot {
-    local: bool,
-    hint: Option<NodeId>,
-}
-
-#[derive(Default)]
-pub struct PubSubFeature {
-    slots: HashMap<(ServiceId, u64), Slot>,
-}
-
-impl Feature<Control, Event, ToController, ToWorker> for PubSubFeature {
-    fn feature_type(&self) -> u8 {
-        FEATURE_ID
-    }
-
-    fn feature_name(&self) -> &str {
-        FEATURE_NAME
-    }
-
-    fn on_shared_input(&mut self, _now: u64, _input: crate::base::FeatureSharedInput) {}
-
-    fn on_input<'a>(&mut self, _now_ms: u64, _input: FeatureInput<'a, Control, ToController>) {}
-
-    fn pop_output<'a>(&mut self) -> Option<FeatureOutput<Event, ToWorker>> {
-        None
-    }
-}
-
-#[derive(Default)]
-pub struct PubSubFeatureWorker {}
-
-impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWorker {
-    fn feature_type(&self) -> u8 {
-        FEATURE_ID
-    }
-
-    fn feature_name(&self) -> &str {
-        FEATURE_NAME
-    }
+pub enum ToController {
+    RemoteControl(SocketAddr, RelayId, RelayControl),
 }

@@ -80,6 +80,10 @@ impl<Remote> RouteAction<Remote> {
 }
 
 pub trait RouterTable<Remote> {
+    /// Find the closest node for the given key
+    fn closest_for(&self, key: NodeId) -> Option<Remote>;
+    /// Find the next node for the given destination node
+    fn next(&self, dest: NodeId) -> Option<Remote>;
     /// Determine the next action for the given destination node
     fn path_to_node(&self, dest: NodeId) -> RouteAction<Remote>;
     /// Determine the next action for the given key

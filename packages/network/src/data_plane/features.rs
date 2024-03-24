@@ -1,3 +1,5 @@
+use std::net::SocketAddr;
+
 use atm0s_sdn_identity::{ConnId, NodeId};
 
 use crate::base::{FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer};
@@ -49,14 +51,23 @@ impl FeatureWorkerManager {
         self.pubsub.on_tick(ctx, now_ms, tick_count);
     }
 
-    pub fn on_network_raw<'a>(&mut self, ctx: &mut FeatureWorkerContext, feature: Features, now_ms: u64, conn: ConnId, header_len: usize, buf: GenericBuffer<'a>) -> Option<FeaturesWorkerOutput<'a>> {
+    pub fn on_network_raw<'a>(
+        &mut self,
+        ctx: &mut FeatureWorkerContext,
+        feature: Features,
+        now_ms: u64,
+        conn: ConnId,
+        remote: SocketAddr,
+        header_len: usize,
+        buf: GenericBuffer<'a>,
+    ) -> Option<FeaturesWorkerOutput<'a>> {
         match feature {
-            Features::Neighbours => self.neighbours.on_network_raw(ctx, now_ms, conn, header_len, buf).map(|a| a.into2()),
-            Features::Data => self.data.on_network_raw(ctx, now_ms, conn, header_len, buf).map(|a| a.into2()),
-            Features::RouterSync => self.router_sync.on_network_raw(ctx, now_ms, conn, header_len, buf).map(|a| a.into2()),
-            Features::Vpn => self.vpn.on_network_raw(ctx, now_ms, conn, header_len, buf).map(|a| a.into2()),
-            Features::DhtKv => self.dht_kv.on_network_raw(ctx, now_ms, conn, header_len, buf).map(|a| a.into2()),
-            Features::PubSub => self.pubsub.on_network_raw(ctx, now_ms, conn, header_len, buf).map(|a| a.into2()),
+            Features::Neighbours => self.neighbours.on_network_raw(ctx, now_ms, conn, remote, header_len, buf).map(|a| a.into2()),
+            Features::Data => self.data.on_network_raw(ctx, now_ms, conn, remote, header_len, buf).map(|a| a.into2()),
+            Features::RouterSync => self.router_sync.on_network_raw(ctx, now_ms, conn, remote, header_len, buf).map(|a| a.into2()),
+            Features::Vpn => self.vpn.on_network_raw(ctx, now_ms, conn, remote, header_len, buf).map(|a| a.into2()),
+            Features::DhtKv => self.dht_kv.on_network_raw(ctx, now_ms, conn, remote, header_len, buf).map(|a| a.into2()),
+            Features::PubSub => self.pubsub.on_network_raw(ctx, now_ms, conn, remote, header_len, buf).map(|a| a.into2()),
         }
     }
 

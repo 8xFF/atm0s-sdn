@@ -141,7 +141,7 @@ impl Feature<Control, Event, ToController, ToWorker> for RouterSyncFeature {
                     conn: self.conns.get(&conn)?.1,
                 },
             };
-            return Some(FeatureOutput::ToWorkers(rule));
+            return Some(FeatureOutput::ToWorker(true, rule));
         }
         self.queue.pop_front()
     }

@@ -50,7 +50,8 @@ pub enum LogicEvent<TW> {
 
     Pin(ConnId, NodeId, SocketAddr, SecureContext),
     UnPin(ConnId),
-    Feature(FeaturesToWorker),
+    /// first bool is flag for broadcast or not
+    Feature(bool, FeaturesToWorker),
     Service(ServiceId, TW),
 }
 
@@ -59,7 +60,7 @@ impl<TW> LogicEvent<TW> {
         match self {
             LogicEvent::Pin(..) => true,
             LogicEvent::UnPin(..) => true,
-            LogicEvent::Feature(..) => true,
+            LogicEvent::Feature(is_broadcast, ..) => *is_broadcast,
             LogicEvent::Service(..) => true,
             _ => false,
         }

@@ -118,7 +118,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 let out = self.features.on_input(&mut self.ctx, Features::Vpn, now_ms, FeatureWorkerInput::TunPkt(pkt))?;
                 Some(self.convert_features(now_ms, Features::Vpn, out))
             }
-            Input::Event(LogicEvent::Feature(to)) => {
+            Input::Event(LogicEvent::Feature(is_broadcast, to)) => {
                 let feature = to.to_feature();
                 let out = self.features.on_input(&mut self.ctx, feature, now_ms, FeatureWorkerInput::FromController(to))?;
                 Some(self.convert_features(now_ms, feature, out))
@@ -212,7 +212,9 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
             RouteAction::Reject => None,
             RouteAction::Local => {
                 let feature = header.feature.try_into().ok()?;
-                let out = self.features.on_network_raw(&mut self.ctx, feature, now_ms, conn.conn(), header.serialize_size(), buf.to_readonly())?;
+                let out = self
+                    .features
+                    .on_network_raw(&mut self.ctx, feature, now_ms, conn.conn(), remote, header.serialize_size(), buf.to_readonly())?;
                 Some(self.convert_features(now_ms, feature, out))
             }
             RouteAction::Next(remote) => {
@@ -229,7 +231,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 let buf = buf.to_readonly();
                 if local {
                     if let Ok(feature) = header.feature.try_into() {
-                        if let Some(out) = self.features.on_network_raw(&mut self.ctx, feature, now_ms, conn.conn(), header.serialize_size(), buf.clone()) {
+                        if let Some(out) = self.features.on_network_raw(&mut self.ctx, feature, now_ms, conn.conn(), remote, header.serialize_size(), buf.clone()) {
                             self.queue_output.push_back(QueueOutput::Feature(feature, out.owned()));
                         }
                     }

@@ -33,7 +33,7 @@ impl FeatureManager {
             router_sync: router_sync::RouterSyncFeature::new(node, services),
             vpn: vpn::VpnFeature::default(),
             dht_kv: dht_kv::DhtKvFeature::new(node, session),
-            pubsub: pubsub::PubSubFeature::default(),
+            pubsub: pubsub::PubSubFeature::new(node, session),
             last_input_feature: None,
             switcher: TasksSwitcher::default(),
         }

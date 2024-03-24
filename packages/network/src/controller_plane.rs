@@ -214,7 +214,7 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
     fn pop_features(&mut self, now_ms: u64) -> Option<Output<SE, TW>> {
         let (feature, out) = self.features.pop_output()?;
         match out {
-            FeatureOutput::ToWorkers(to) => Some(Output::Event(LogicEvent::Feature(to))),
+            FeatureOutput::ToWorker(is_broadcast, to) => Some(Output::Event(LogicEvent::Feature(is_broadcast, to))),
             FeatureOutput::Event(actor, event) => {
                 //TODO may be we need stack style for optimize performance
                 match actor {

@@ -30,7 +30,8 @@ pub enum FeatureInput<'a, Control, ToController> {
 
 #[derive(Debug)]
 pub enum FeatureOutput<Event, ToWorker> {
-    ToWorkers(ToWorker),
+    /// First bool is flag for broadcast or not
+    ToWorker(bool, ToWorker),
     Event(FeatureControlActor, Event),
     SendDirect(ConnId, Vec<u8>),
     SendRoute(RouteRule, Ttl, Vec<u8>),
@@ -45,7 +46,7 @@ impl<'a, Event, ToWorker> FeatureOutput<Event, ToWorker> {
         ToWorker2: From<ToWorker>,
     {
         match self {
-            FeatureOutput::ToWorkers(to) => FeatureOutput::ToWorkers(to.into()),
+            FeatureOutput::ToWorker(is_broadcast, to) => FeatureOutput::ToWorker(is_broadcast, to.into()),
             FeatureOutput::Event(actor, event) => FeatureOutput::Event(actor, event.into()),
             FeatureOutput::SendDirect(conn, msg) => FeatureOutput::SendDirect(conn, msg),
             FeatureOutput::SendRoute(rule, ttl, buf) => FeatureOutput::SendRoute(rule, ttl, buf),
@@ -55,7 +56,7 @@ impl<'a, Event, ToWorker> FeatureOutput<Event, ToWorker> {
     }
 }
 
-pub trait Feature<Control, Event, ToController, ToWorker>: Send + Sync {
+pub trait Feature<Control, Event, ToController, ToWorker> {
     fn feature_type(&self) -> u8;
     fn feature_name(&self) -> &str;
     fn on_shared_input(&mut self, _now: u64, _input: FeatureSharedInput);
@@ -144,6 +145,7 @@ pub trait FeatureWorker<SdkControl, SdkEvent, ToController, ToWorker> {
         ctx: &mut FeatureWorkerContext,
         now: u64,
         conn: ConnId,
+        _remote: SocketAddr,
         header_len: usize,
         buf: GenericBuffer<'a>,
     ) -> Option<FeatureWorkerOutput<'a, SdkControl, SdkEvent, ToController>> {

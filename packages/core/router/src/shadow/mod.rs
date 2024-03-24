@@ -58,7 +58,9 @@ impl<Remote: Debug + Hash + Eq + Clone + Copy> ShadowRouter<Remote> {
             }
         }
     }
+}
 
+impl<Remote: Debug + Hash + Eq + Clone + Copy> RouterTable<Remote> for ShadowRouter<Remote> {
     fn next(&self, dest: NodeId) -> Option<Remote> {
         let eq_util_layer = self.node_id.eq_util_layer(&dest) as usize;
         debug_assert!(eq_util_layer <= 4);
@@ -85,9 +87,7 @@ impl<Remote: Debug + Hash + Eq + Clone + Copy> ShadowRouter<Remote> {
         }
         None
     }
-}
 
-impl<Remote: Debug + Hash + Eq + Clone + Copy> RouterTable<Remote> for ShadowRouter<Remote> {
     fn path_to_key(&self, key: NodeId) -> RouteAction<Remote> {
         match self.closest_for(key) {
             Some(remote) => RouteAction::Next(remote),
