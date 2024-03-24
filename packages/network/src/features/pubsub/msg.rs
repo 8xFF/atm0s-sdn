@@ -42,7 +42,7 @@ pub enum PubsubMessage<'a> {
 }
 
 impl<'a> PubsubMessage<'a> {
-    pub fn write_to(&self, dest: &mut [u8]) {
+    pub fn write_to(&self, dest: &mut [u8]) -> Option<usize> {
         todo!()
     }
 }

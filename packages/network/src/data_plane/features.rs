@@ -35,7 +35,7 @@ impl FeatureWorkerManager {
             router_sync: router_sync::RouterSyncFeatureWorker::default(),
             vpn: vpn::VpnFeatureWorker::new(node),
             dht_kv: dht_kv::DhtKvFeatureWorker::default(),
-            pubsub: pubsub::PubSubFeatureWorker::default(),
+            pubsub: pubsub::PubSubFeatureWorker::new(node),
             last_input_feature: None,
             switcher: TasksSwitcher::default(),
         }

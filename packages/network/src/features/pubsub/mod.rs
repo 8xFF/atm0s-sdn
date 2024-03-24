@@ -6,7 +6,6 @@ use crate::base::FeatureControlActor;
 
 use self::msg::{ChannelId, RelayControl, RelayId};
 
-mod channel;
 mod controller;
 mod msg;
 mod worker;
@@ -35,10 +34,12 @@ pub enum ChannelEvent {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Event(ChannelId, ChannelEvent);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RelayWorkerControl {
     SendSub(u64, Option<SocketAddr>),
     SendUnsub(u64, SocketAddr),
+    SendSubOk(u64, SocketAddr),
+    SendUnsubOk(u64, SocketAddr),
     RouteSet(SocketAddr),
     RouteDel(SocketAddr),
     RouteSetLocal(FeatureControlActor),
@@ -52,6 +53,8 @@ impl RelayWorkerControl {
         match self {
             RelayWorkerControl::SendSub(_, _) => false,
             RelayWorkerControl::SendUnsub(_, _) => false,
+            RelayWorkerControl::SendSubOk(_, _) => false,
+            RelayWorkerControl::SendUnsubOk(_, _) => false,
             _ => true,
         }
     }
