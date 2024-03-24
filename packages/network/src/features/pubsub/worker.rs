@@ -20,6 +20,12 @@ struct WorkerRelay {
     remotes_uuid: HashMap<SocketAddr, u64>,
 }
 
+impl WorkerRelay {
+    pub fn is_empty(&self) -> bool {
+        self.locals.is_empty() && self.remotes.is_empty()
+    }
+}
+
 pub struct PubSubFeatureWorker {
     node_id: NodeId,
     relays: HashMap<RelayId, WorkerRelay>,
@@ -158,7 +164,6 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWork
                     if let Some(entry) = self.relays.get_mut(&relay_id) {
                         if entry.source == Some(source) {
                             entry.source = None;
-                            //TODO remove if empty
                         } else {
                             log::warn!("[PubsubWorker] RelayDel: relay {:?} source mismatch locked {:?} vs {}", relay_id, entry.source, source);
                         }
@@ -185,6 +190,9 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWork
                         if let Some(pos) = entry.locals.iter().position(|x| *x == actor) {
                             entry.locals.swap_remove(pos);
                         }
+                        if entry.is_empty() {
+                            self.relays.remove(&relay_id);
+                        }
                     } else {
                         log::warn!("[PubsubWorker] RelayDelLocal: relay not found {:?}", relay_id);
                     }
@@ -208,6 +216,9 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWork
                     if let Some(entry) = self.relays.get_mut(&relay_id) {
                         if let Some(pos) = entry.remotes.iter().position(|x| *x == remote) {
                             entry.remotes.swap_remove(pos);
+                        }
+                        if entry.is_empty() {
+                            self.relays.remove(&relay_id);
                         }
                     } else {
                         log::warn!("RelayDelSub: relay not found {:?}", relay_id);
