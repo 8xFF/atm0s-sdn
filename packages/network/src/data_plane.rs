@@ -120,7 +120,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
             }
             Input::Event(LogicEvent::Feature(is_broadcast, to)) => {
                 let feature = to.to_feature();
-                let out = self.features.on_input(&mut self.ctx, feature, now_ms, FeatureWorkerInput::FromController(to))?;
+                let out = self.features.on_input(&mut self.ctx, feature, now_ms, FeatureWorkerInput::FromController(is_broadcast, to))?;
                 Some(self.convert_features(now_ms, feature, out))
             }
             Input::Event(LogicEvent::Service(service, to)) => {

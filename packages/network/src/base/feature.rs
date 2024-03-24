@@ -68,7 +68,8 @@ pub trait Feature<Control, Event, ToController, ToWorker> {
 ///
 
 pub enum FeatureWorkerInput<'a, Control, ToWorker> {
-    FromController(ToWorker),
+    /// First bool is flag for broadcast or not
+    FromController(bool, ToWorker),
     Control(FeatureControlActor, Control),
     Network(ConnId, GenericBuffer<'a>),
     Local(GenericBuffer<'a>),
@@ -156,7 +157,7 @@ pub trait FeatureWorker<SdkControl, SdkEvent, ToController, ToWorker> {
             FeatureWorkerInput::Control(actor, control) => Some(FeatureWorkerOutput::ForwardControlToController(actor, control)),
             FeatureWorkerInput::Network(conn, buf) => Some(FeatureWorkerOutput::ForwardNetworkToController(conn, buf.to_vec())),
             FeatureWorkerInput::TunPkt(_buf) => None,
-            FeatureWorkerInput::FromController(_event) => {
+            FeatureWorkerInput::FromController(_, _) => {
                 log::warn!("No handler for FromController in {}", self.feature_name());
                 None
             }

@@ -81,13 +81,13 @@ impl FeatureWorkerManager {
                 FeaturesControl::DhtKv(control) => self.dht_kv.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| a.into2()),
                 FeaturesControl::PubSub(control) => self.pubsub.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| a.into2()),
             },
-            FeatureWorkerInput::FromController(to) => match to {
-                FeaturesToWorker::Neighbours(to) => self.neighbours.on_input(ctx, now_ms, FeatureWorkerInput::FromController(to)).map(|a| a.into2()),
-                FeaturesToWorker::Data(to) => self.data.on_input(ctx, now_ms, FeatureWorkerInput::FromController(to)).map(|a| a.into2()),
-                FeaturesToWorker::RouterSync(to) => self.router_sync.on_input(ctx, now_ms, FeatureWorkerInput::FromController(to)).map(|a| a.into2()),
-                FeaturesToWorker::Vpn(to) => self.vpn.on_input(ctx, now_ms, FeatureWorkerInput::FromController(to)).map(|a| a.into2()),
-                FeaturesToWorker::DhtKv(to) => self.dht_kv.on_input(ctx, now_ms, FeatureWorkerInput::FromController(to)).map(|a| a.into2()),
-                FeaturesToWorker::PubSub(to) => self.pubsub.on_input(ctx, now_ms, FeatureWorkerInput::FromController(to)).map(|a| a.into2()),
+            FeatureWorkerInput::FromController(is_broadcast, to) => match to {
+                FeaturesToWorker::Neighbours(to) => self.neighbours.on_input(ctx, now_ms, FeatureWorkerInput::FromController(is_broadcast, to)).map(|a| a.into2()),
+                FeaturesToWorker::Data(to) => self.data.on_input(ctx, now_ms, FeatureWorkerInput::FromController(is_broadcast, to)).map(|a| a.into2()),
+                FeaturesToWorker::RouterSync(to) => self.router_sync.on_input(ctx, now_ms, FeatureWorkerInput::FromController(is_broadcast, to)).map(|a| a.into2()),
+                FeaturesToWorker::Vpn(to) => self.vpn.on_input(ctx, now_ms, FeatureWorkerInput::FromController(is_broadcast, to)).map(|a| a.into2()),
+                FeaturesToWorker::DhtKv(to) => self.dht_kv.on_input(ctx, now_ms, FeatureWorkerInput::FromController(is_broadcast, to)).map(|a| a.into2()),
+                FeaturesToWorker::PubSub(to) => self.pubsub.on_input(ctx, now_ms, FeatureWorkerInput::FromController(is_broadcast, to)).map(|a| a.into2()),
             },
             FeatureWorkerInput::Network(_conn, _buf) => {
                 panic!("should call above on_network_raw")

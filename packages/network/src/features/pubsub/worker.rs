@@ -98,7 +98,7 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWork
 
     fn on_input<'a>(&mut self, ctx: &mut FeatureWorkerContext, _now: u64, input: FeatureWorkerInput<'a, Control, ToWorker>) -> Option<FeatureWorkerOutput<'a, Control, Event, ToController>> {
         match input {
-            FeatureWorkerInput::FromController(ToWorker::RelayWorkerControl(relay_id, control)) => match control {
+            FeatureWorkerInput::FromController(_, ToWorker::RelayWorkerControl(relay_id, control)) => match control {
                 RelayWorkerControl::SendSub(uuid, remote) => {
                     let dest = if let Some(remote) = remote {
                         log::debug!("[PubsubWorker] SendSub for {:?} to {}", relay_id, remote);
@@ -226,7 +226,7 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWork
                     None
                 }
             },
-            FeatureWorkerInput::FromController(ToWorker::RelayData(relay_id, data)) => {
+            FeatureWorkerInput::FromController(_, ToWorker::RelayData(relay_id, data)) => {
                 let relay = self.relays.get(&relay_id)?;
                 if relay.remotes.is_empty() {
                     log::warn!("RelayData: no remote for {:?}", relay_id);

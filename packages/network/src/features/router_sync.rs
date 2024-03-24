@@ -163,7 +163,7 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for RouterSyncFeature
         match input {
             FeatureWorkerInput::Control(service, control) => Some(FeatureWorkerOutput::ForwardControlToController(service, control)),
             FeatureWorkerInput::Network(conn, msg) => Some(FeatureWorkerOutput::ForwardNetworkToController(conn, msg.to_vec())),
-            FeatureWorkerInput::FromController(delta) => {
+            FeatureWorkerInput::FromController(_, delta) => {
                 log::debug!("[RouterSyncWorker] apply router delta {:?}", delta);
                 ctx.router.apply_delta(delta);
                 None
