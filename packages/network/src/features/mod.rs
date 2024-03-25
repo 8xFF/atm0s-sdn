@@ -22,6 +22,7 @@ pub enum Features {
     DhtKv = dht_kv::FEATURE_ID,
     PubSub = pubsub::FEATURE_ID,
     Alias = alias::FEATURE_ID,
+    Socket = socket::FEATURE_ID,
 }
 
 impl TryFrom<u8> for Features {
@@ -36,6 +37,7 @@ impl TryFrom<u8> for Features {
             dht_kv::FEATURE_ID => Ok(Features::DhtKv),
             pubsub::FEATURE_ID => Ok(Features::PubSub),
             alias::FEATURE_ID => Ok(Features::Alias),
+            socket::FEATURE_ID => Ok(Features::Socket),
             _ => Err(()),
         }
     }
@@ -50,6 +52,7 @@ pub enum FeaturesControl {
     DhtKv(dht_kv::Control),
     PubSub(pubsub::Control),
     Alias(alias::Control),
+    Socket(socket::Control),
 }
 
 impl FeaturesControl {
@@ -62,6 +65,7 @@ impl FeaturesControl {
             Self::DhtKv(_) => Features::DhtKv,
             Self::PubSub(_) => Features::PubSub,
             Self::Alias(_) => Features::Alias,
+            Self::Socket(_) => Features::Socket,
         }
     }
 }
@@ -75,6 +79,7 @@ pub enum FeaturesEvent {
     DhtKv(dht_kv::Event),
     PubSub(pubsub::Event),
     Alias(alias::Event),
+    Socket(socket::Event),
 }
 
 #[derive(Debug, Clone, convert_enum::From)]
@@ -86,6 +91,7 @@ pub enum FeaturesToController {
     DhtKv(dht_kv::ToController),
     PubSub(pubsub::ToController),
     Alias(alias::ToController),
+    Socket(socket::ToController),
 }
 
 impl FeaturesToController {
@@ -98,6 +104,7 @@ impl FeaturesToController {
             Self::DhtKv(_) => Features::DhtKv,
             Self::PubSub(_) => Features::PubSub,
             Self::Alias(_) => Features::Alias,
+            Self::Socket(_) => Features::Socket,
         }
     }
 }
@@ -111,6 +118,7 @@ pub enum FeaturesToWorker {
     DhtKv(dht_kv::ToWorker),
     PubSub(pubsub::ToWorker),
     Alias(alias::ToWorker),
+    Socket(socket::ToWorker),
 }
 
 impl FeaturesToWorker {
@@ -123,6 +131,7 @@ impl FeaturesToWorker {
             Self::DhtKv(_) => Features::DhtKv,
             Self::PubSub(_) => Features::PubSub,
             Self::Alias(_) => Features::Alias,
+            Self::Socket(_) => Features::Socket,
         }
     }
 }

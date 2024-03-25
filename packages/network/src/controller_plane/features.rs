@@ -22,7 +22,8 @@ pub struct FeatureManager {
     dht_kv: dht_kv::DhtKvFeature,
     pubsub: pubsub::PubSubFeature,
     alias: alias::AliasFeature,
-    switcher: TasksSwitcher<u8, 7>,
+    socket: socket::SocketFeature,
+    switcher: TasksSwitcher<u8, 8>,
 }
 
 impl FeatureManager {
@@ -35,6 +36,7 @@ impl FeatureManager {
             dht_kv: dht_kv::DhtKvFeature::new(node, session),
             pubsub: pubsub::PubSubFeature::new(),
             alias: alias::AliasFeature::default(),
+            socket: socket::SocketFeature::default(),
             switcher: TasksSwitcher::default(),
         }
     }
@@ -47,7 +49,8 @@ impl FeatureManager {
         self.dht_kv.on_shared_input(ctx, now_ms, input.clone());
         self.vpn.on_shared_input(ctx, now_ms, input.clone());
         self.pubsub.on_shared_input(ctx, now_ms, input.clone());
-        self.alias.on_shared_input(ctx, now_ms, input);
+        self.alias.on_shared_input(ctx, now_ms, input.clone());
+        self.socket.on_shared_input(ctx, now_ms, input);
     }
 
     pub fn on_input<'a>(&mut self, ctx: &FeatureContext, now_ms: u64, feature: Features, input: FeaturesInput<'a>) {
@@ -61,6 +64,7 @@ impl FeatureManager {
                 FeaturesToController::DhtKv(to) => self.dht_kv.on_input(ctx, now_ms, FeatureInput::FromWorker(to)),
                 FeaturesToController::PubSub(to) => self.pubsub.on_input(ctx, now_ms, FeatureInput::FromWorker(to)),
                 FeaturesToController::Alias(to) => self.alias.on_input(ctx, now_ms, FeatureInput::FromWorker(to)),
+                FeaturesToController::Socket(to) => self.socket.on_input(ctx, now_ms, FeatureInput::FromWorker(to)),
             },
             FeatureInput::Control(service, control) => match control {
                 FeaturesControl::Data(control) => self.data.on_input(ctx, now_ms, FeatureInput::Control(service, control)),
@@ -70,6 +74,7 @@ impl FeatureManager {
                 FeaturesControl::DhtKv(control) => self.dht_kv.on_input(ctx, now_ms, FeatureInput::Control(service, control)),
                 FeaturesControl::PubSub(control) => self.pubsub.on_input(ctx, now_ms, FeatureInput::Control(service, control)),
                 FeaturesControl::Alias(control) => self.alias.on_input(ctx, now_ms, FeatureInput::Control(service, control)),
+                FeaturesControl::Socket(control) => self.socket.on_input(ctx, now_ms, FeatureInput::Control(service, control)),
             },
             FeatureInput::Net(con_ctx, header, buf) => match feature {
                 Features::Data => self.data.on_input(ctx, now_ms, FeatureInput::Net(con_ctx, header, buf)),
@@ -79,6 +84,7 @@ impl FeatureManager {
                 Features::DhtKv => self.dht_kv.on_input(ctx, now_ms, FeatureInput::Net(con_ctx, header, buf)),
                 Features::PubSub => self.pubsub.on_input(ctx, now_ms, FeatureInput::Net(con_ctx, header, buf)),
                 Features::Alias => self.alias.on_input(ctx, now_ms, FeatureInput::Net(con_ctx, header, buf)),
+                Features::Socket => self.socket.on_input(ctx, now_ms, FeatureInput::Net(con_ctx, header, buf)),
             },
             FeatureInput::Local(header, buf) => match feature {
                 Features::Data => self.data.on_input(ctx, now_ms, FeatureInput::Local(header, buf)),
@@ -88,6 +94,7 @@ impl FeatureManager {
                 Features::DhtKv => self.dht_kv.on_input(ctx, now_ms, FeatureInput::Local(header, buf)),
                 Features::PubSub => self.pubsub.on_input(ctx, now_ms, FeatureInput::Local(header, buf)),
                 Features::Alias => self.alias.on_input(ctx, now_ms, FeatureInput::Local(header, buf)),
+                Features::Socket => self.socket.on_input(ctx, now_ms, FeatureInput::Local(header, buf)),
             },
         }
     }
@@ -129,6 +136,11 @@ impl FeatureManager {
                 Features::Alias => {
                     if let Some(out) = s.process(self.alias.pop_output(ctx)) {
                         return Some((Features::Alias, out.into2()));
+                    }
+                }
+                Features::Socket => {
+                    if let Some(out) = s.process(self.socket.pop_output(ctx)) {
+                        return Some((Features::Socket, out.into2()));
                     }
                 }
             }
