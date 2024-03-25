@@ -31,6 +31,12 @@ A SAN I/O driven, open-source decentralized network infrastructure that can deli
 
 For a deep dive into the technical aspects of network architecture, please refer to our [Smart-Routing](https://github.com/8xFF/atm0s-sdn/blob/master/docs/smart_routing.md)
 
+## Project Status: Alpha
+
+This project is currently in the alpha stage of development. It is actively being developed and may undergo significant changes, including changes to the API. The primary focus at this stage is to make the project stable and reliable.
+
+We are working with some potential partners to integrate the network in real-world scenarios. If you are interested in testing the network, feel free to contact us or sending an issues.
+
 ## Features
 
 - High availability by being fully distributed, with no central controller.
@@ -48,6 +54,7 @@ For a deep dive into the technical aspects of network architecture, please refer
 - [x] DHT Multi-Map: Key-Value store
 - [x] Node Alias: Each node can have multiple alias
 - [x] Virtual Socket: Act as virtual UDP socket
+- [ ] Network accelerator by eBPF redirect
 
 ### Build-in services
 
@@ -124,6 +131,8 @@ Average optimized:
 We will test more in the future to get more accurate result with more cloud provider and local ISP.
 
 ### Speeds
+
+In some fast test, it show that network node can relay around 1Gbps per core. We will test more in the future to get more accurate result.
 
 ## Showcases
 

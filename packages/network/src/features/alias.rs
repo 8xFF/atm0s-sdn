@@ -66,7 +66,7 @@ pub struct AliasFeature {
 }
 
 impl AliasFeature {
-    fn process_controll(&mut self, now_ms: u64, actor: FeatureControlActor, control: Control) {
+    fn process_control(&mut self, now_ms: u64, actor: FeatureControlActor, control: Control) {
         match control {
             Control::Register { alias, service, level } => {
                 log::info!("[AliasFeature] Register local alias {} and broadcast hint", alias);
@@ -229,7 +229,7 @@ impl Feature<Control, Event, ToController, ToWorker> for AliasFeature {
 
     fn on_input<'a>(&mut self, _ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
         match input {
-            FeatureInput::Control(actor, control) => self.process_controll(now_ms, actor, control),
+            FeatureInput::Control(actor, control) => self.process_control(now_ms, actor, control),
             FeatureInput::Local(meta, msg) | FeatureInput::Net(_, meta, msg) => match (meta.source, bincode::deserialize::<Message>(&msg)) {
                 (Some(from), Ok(msg)) => self.process_remote(now_ms, from, msg),
                 _ => {}
