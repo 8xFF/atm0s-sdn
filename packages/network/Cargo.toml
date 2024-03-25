@@ -11,19 +11,23 @@ license = "MIT"
 atm0s-sdn-utils = { path = "../core/utils", version = "0.1.1" }
 atm0s-sdn-identity = { path = "../core/identity", version = "0.2.0" }
 atm0s-sdn-router = { path = "../core/router", version = "0.1.4" }
-async-std = { workspace = true }
-futures = "0.3"
+rand = { workspace = true }
 convert-enum = "0.1.0"
 parking_lot = { workspace = true }
-async-trait = { workspace = true }
 log = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 bytes = "1.5.0"
 bincode = "1.3.3"
 sha1 = "0.10.6"
+num = "0.4.1"
 
 [dev-dependencies]
 env_logger = { workspace = true }
 mockall = { workspace = true }
-atm0s-sdn-router = { path = "../core/router", version = "0.1.4", features = ["mock"]}
+atm0s-sdn-router = { path = "../core/router", version = "0.1.4" }
+
+[features]
+default = ["vpn", "fuzz"]
+vpn = []
+fuzz = []

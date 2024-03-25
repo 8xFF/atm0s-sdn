@@ -5,11 +5,21 @@ edition = "2021"
 description = "Router interface for atm0s-sdn"
 license = "MIT"
 
-[features]
-mock = ["mockall"]
-
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 atm0s-sdn-identity = { path = "../identity", version = "0.2.0" }
-mockall = { workspace = true, optional = true }
+atm0s-sdn-utils = { path = "../utils", version = "0.1.1" }
+serde = { workspace = true }
+log = { workspace = true }
+mockall = { workspace = true }
+
+
+[dev-dependencies]
+env_logger = { workspace = true }
+criterion = { version = "0.5.1" }
+rand = { version = "0.8.5" }
+
+[[bench]]
+name = "router"
+harness = false

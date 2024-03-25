@@ -36,7 +36,7 @@ Message is sending to other node by routing table and transport
 By provide a custom behaviour, we can add logic to application with modules style, each that will need to defined some parts:
 
 - Behaviour: defined main logic (this is heart of behaviour), which handle some main event like: new incoming-outgoing connection, connection disconnected,
-- Connection Handler: defined logic which handle seperate with each connection like: connection event, transport message ...
+- Connection Handler: defined logic which handle separate with each connection like: connection event, transport message ...
 
 Each part also can exchanged data with other part by using Agent, which is provide in each function handler
 
@@ -52,7 +52,7 @@ where
     MSG: Send + Sync,
 {
     fn service_id(&self) -> u8;
-    fn on_tick(&mut self, agent: &BehaviorAgent<HE, MSG>, ts_ms: u64, interal_ms: u64);
+    fn on_tick(&mut self, agent: &BehaviorAgent<HE, MSG>, ts_ms: u64, interval_ms: u64);
     fn check_incoming_connection(
         &mut self,
         node: NodeId,
@@ -111,7 +111,7 @@ Bellow is trait of ConnectionHandler
 ```rust
 pub trait ConnectionHandler<BE, HE, MSG>: Send + Sync {
     fn on_opened(&mut self, agent: &ConnectionAgent<BE, HE, MSG>);
-    fn on_tick(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, ts_ms: u64, interal_ms: u64);
+    fn on_tick(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, ts_ms: u64, interval_ms: u64);
     fn on_event(&mut self, agent: &ConnectionAgent<BE, HE, MSG>, event: ConnectionEvent<MSG>);
     fn on_other_handler_event(
         &mut self,

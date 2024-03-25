@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# Define servers as an associative array with additional details
+declare -A servers
+servers=(
+    ["server1"]="root@ADDR"
+    ["server1_public"]="ADDR"
+    ["server1_node_id"]="1"
+    ["server1_collector"]="true"
+    ["server1_seeds"]="1@/ip4/ADDR/udp/10000"
+)

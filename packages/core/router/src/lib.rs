@@ -1,36 +1,72 @@
-mod force_local;
-mod force_node;
+use atm0s_sdn_identity::{NodeId, NodeIdType};
+pub mod core;
+pub mod shadow;
 
-use atm0s_sdn_identity::{ConnId, NodeId};
-pub use force_local::ForceLocalRouter;
-pub use force_node::ForceNodeRouter;
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ServiceBroadcastLevel {
+    Global,
+    Geo1,
+    Geo2,
+    Group,
+}
 
-#[cfg(any(test, feature = "mock"))]
-use mockall::automock;
+impl ServiceBroadcastLevel {
+    pub fn same_level(&self, node1: NodeId, node2: NodeId) -> bool {
+        match self {
+            ServiceBroadcastLevel::Global => true,
+            ServiceBroadcastLevel::Geo1 => node1.geo1() == node2.geo1(),
+            ServiceBroadcastLevel::Geo2 => node1.geo1() == node2.geo1() && node1.geo2() == node2.geo2(),
+            ServiceBroadcastLevel::Group => node1.geo1() == node2.geo1() && node1.geo2() == node2.geo2() && node1.group() == node2.group(),
+        }
+    }
+}
 
-/// ServiceMeta is using for determine which node will be routed, example node with lowest price or lowest latency, which for future use
-pub type ServiceMeta = u32;
+impl Into<u8> for ServiceBroadcastLevel {
+    fn into(self) -> u8 {
+        match self {
+            ServiceBroadcastLevel::Global => 0,
+            ServiceBroadcastLevel::Geo1 => 1,
+            ServiceBroadcastLevel::Geo2 => 2,
+            ServiceBroadcastLevel::Group => 3,
+        }
+    }
+}
+
+impl From<u8> for ServiceBroadcastLevel {
+    fn from(val: u8) -> Self {
+        match val {
+            0 => ServiceBroadcastLevel::Global,
+            1 => ServiceBroadcastLevel::Geo1,
+            2 => ServiceBroadcastLevel::Geo2,
+            _ => ServiceBroadcastLevel::Group,
+        }
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RouteRule {
     Direct,
     ToNode(NodeId),
-    ToService(ServiceMeta),
+    ToService(u8),
+    /// First is service id, second is the level, and third is seq of message
+    ToServices(u8, ServiceBroadcastLevel, u16),
     ToKey(NodeId),
 }
 
 /// Determine the destination of an action/message
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum RouteAction {
+pub enum RouteAction<Remote> {
     /// Reject the message
     Reject,
     /// Will be processed locally
     Local,
-    /// Will be forward to the given node
-    Next(ConnId, NodeId),
+    /// Will be forward to the given connection
+    Next(Remote),
+    /// Will be forward to the given connection, first is local or not, next is the list of remote dests
+    Broadcast(bool, Vec<Remote>),
 }
 
-impl RouteAction {
+impl<Remote> RouteAction<Remote> {
     pub fn is_local(&self) -> bool {
         matches!(self, RouteAction::Local)
     }
@@ -40,40 +76,46 @@ impl RouteAction {
     }
 
     pub fn is_remote(&self) -> bool {
-        matches!(self, RouteAction::Next(_, _))
+        matches!(self, RouteAction::Next(_))
     }
 }
 
-#[cfg_attr(any(test, feature = "mock"), automock)]
-pub trait RouterTable: Send + Sync {
-    /// Register service
-    fn register_service(&self, service_id: u8);
+pub trait RouterTable<Remote> {
+    /// Find the closest node for the given key
+    fn closest_for(&self, key: NodeId) -> Option<Remote>;
+    /// Find the next node for the given destination node
+    fn next(&self, dest: NodeId) -> Option<Remote>;
     /// Determine the next action for the given destination node
-    fn path_to_node(&self, dest: NodeId) -> RouteAction;
+    fn path_to_node(&self, dest: NodeId) -> RouteAction<Remote>;
     /// Determine the next action for the given key
-    fn path_to_key(&self, key: NodeId) -> RouteAction;
+    fn path_to_key(&self, key: NodeId) -> RouteAction<Remote>;
     /// Determine the next action for the given service
-    fn path_to_service(&self, service_id: u8) -> RouteAction;
+    fn path_to_service(&self, service_id: u8) -> RouteAction<Remote>;
+    /// Determine the next action if we need broadcast to all node running a service.
+    /// If relay_from is set, it should not sending back for avoiding loop
+    fn path_to_services(&self, service_id: u8, seq: u16, level: ServiceBroadcastLevel, source: Option<NodeId>, relay_from: Option<NodeId>) -> RouteAction<Remote>;
     /// Determine next action for incoming messages
     /// given the route rule and service id
-    fn derive_action(&self, route: &RouteRule, service_id: u8) -> RouteAction {
+    fn derive_action(&self, route: &RouteRule, source: Option<NodeId>, relay_from: Option<NodeId>) -> RouteAction<Remote> {
         match route {
             RouteRule::Direct => RouteAction::Local,
             RouteRule::ToNode(dest) => self.path_to_node(*dest),
             RouteRule::ToKey(key) => self.path_to_key(*key),
-            RouteRule::ToService(_) => self.path_to_service(service_id),
+            RouteRule::ToService(service) => self.path_to_service(*service),
+            RouteRule::ToServices(service, level, seq) => self.path_to_services(*service, *seq, *level, source, relay_from),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use atm0s_sdn_identity::ConnId;
+    type RouteAction = super::RouteAction<ConnId>;
 
     #[test]
     fn test_is_local() {
         let local = RouteAction::Local;
-        let remote = RouteAction::Next(ConnId::from_in(1, 1), 2);
+        let remote = RouteAction::Next(ConnId::from_in(1, 1));
         let reject = RouteAction::Reject;
 
         assert!(local.is_local());
@@ -84,7 +126,7 @@ mod tests {
     #[test]
     fn test_is_reject() {
         let local = RouteAction::Local;
-        let remote = RouteAction::Next(ConnId::from_in(1, 1), 2);
+        let remote = RouteAction::Next(ConnId::from_in(1, 1));
         let reject = RouteAction::Reject;
 
         assert!(!local.is_reject());
@@ -95,20 +137,11 @@ mod tests {
     #[test]
     fn test_is_remote() {
         let local = RouteAction::Local;
-        let remote = RouteAction::Next(ConnId::from_in(1, 1), 2);
+        let remote = RouteAction::Next(ConnId::from_in(1, 1));
         let reject = RouteAction::Reject;
 
         assert!(!local.is_remote());
         assert!(remote.is_remote());
         assert!(!reject.is_remote());
-    }
-
-    #[test]
-    fn test_derive_action_to_service() {
-        let router = ForceLocalRouter();
-        let route = RouteRule::ToService(3);
-        let service_id = 1;
-
-        assert_eq!(router.derive_action(&route, service_id), RouteAction::Local);
     }
 }
