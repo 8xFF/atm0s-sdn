@@ -64,7 +64,7 @@ impl NeighboursManager {
                     if self.connections.contains_key(&remote) {
                         continue;
                     }
-                    log::info!("Sending connect request to {}, dest_node {}", remote, dest_node);
+                    log::info!("[Neighbours] Sending connect request to {}, dest_node {}", remote, dest_node);
                     let session_id = self.random.next_u64();
                     let conn = NeighbourConnection::new_outgoing(self.node_id, dest_node, session_id, remote, now_ms);
                     self.connections.insert(remote, conn);
@@ -78,6 +78,7 @@ impl NeighboursManager {
                 }
             }
             Input::Control(addr, control) => {
+                log::debug!("[NeighboursManager] received Control(addr: {:?}, control: {:?})", addr, control);
                 if let Some(conn) = self.connections.get_mut(&addr) {
                     conn.on_input(now_ms, control);
                 } else {
@@ -88,7 +89,7 @@ impl NeighboursManager {
                             self.connections.insert(addr, conn);
                         }
                         _ => {
-                            log::warn!("Neighbour connection not found for control {:?}", control);
+                            log::warn!("[Neighbours] Neighbour connection not found for control {:?}", control);
                         }
                     }
                 }
@@ -145,6 +146,7 @@ impl NeighboursManager {
                         }
                     }
                     connection::Output::Net(remote, control) => {
+                        log::debug!("[NeighboursManager] pop_output Net(remote: {:?}, control: {:?})", remote, control);
                         self.queue.push_back(Output::Control(remote, control));
                     }
                 }

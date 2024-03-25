@@ -57,7 +57,7 @@ pub enum Output<'a, SE, TC> {
     Continue,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
 enum TaskType {
     Feature,
     Service,
@@ -77,7 +77,6 @@ pub struct DataPlane<SC, SE, TC, TW> {
     conns: HashMap<SocketAddr, DataPlaneConnection>,
     conns_reverse: HashMap<ConnId, SocketAddr>,
     queue_output: VecDeque<QueueOutput<SE, TC>>,
-    last_task: Option<TaskType>,
     switcher: TasksSwitcher<2>,
 }
 
@@ -97,7 +96,6 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
             conns: HashMap::new(),
             conns_reverse: HashMap::new(),
             queue_output: VecDeque::new(),
-            last_task: None,
             switcher: TasksSwitcher::default(),
         }
     }
@@ -107,7 +105,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
     }
 
     pub fn on_tick<'a>(&mut self, now_ms: u64) {
-        self.last_task = None;
+        self.switcher.push_all();
         self.features.on_tick(&mut self.feature_ctx, now_ms, self.tick_count);
         self.services.on_tick(&mut self.service_ctx, now_ms, self.tick_count);
         self.tick_count += 1;
@@ -169,46 +167,25 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
             };
         };
 
-        if let Some(last) = &self.last_task {
-            let res = self.pop_last(now_ms, *last);
-            if res.is_none() {
-                self.last_task = None;
-            }
-            res
-        } else {
-            while let Some(current) = self.switcher.current() {
-                match current {
-                    0 => {
-                        let out = self.pop_last(now_ms, TaskType::Feature);
-                        if let Some(out) = self.switcher.process(out) {
-                            return Some(out);
-                        }
+        while let Some(current) = self.switcher.current() {
+            match current {
+                0 => {
+                    let out = self.features.pop_output(&mut self.feature_ctx);
+                    if let Some((feature, out)) = self.switcher.process(out) {
+                        return Some(self.convert_features(now_ms, feature, out));
                     }
-                    1 => {
-                        let out = self.pop_last(now_ms, TaskType::Service);
-                        if let Some(out) = self.switcher.process(out) {
-                            return Some(out);
-                        }
-                    }
-                    _ => return None,
                 }
-            }
-
-            None
-        }
-    }
-
-    fn pop_last<'a>(&mut self, now_ms: u64, last_task: TaskType) -> Option<Output<'a, SE, TC>> {
-        match last_task {
-            TaskType::Feature => {
-                let (feature, out) = self.features.pop_output(&mut self.feature_ctx)?;
-                Some(self.convert_features(now_ms, feature, out))
-            }
-            TaskType::Service => {
-                let (service, out) = self.services.pop_output(&mut self.service_ctx)?;
-                Some(self.convert_services(now_ms, service, out))
+                1 => {
+                    let out = self.services.pop_output(&mut self.service_ctx);
+                    if let Some((feature, out)) = self.switcher.process(out) {
+                        return Some(self.convert_services(now_ms, feature, out));
+                    }
+                }
+                _ => panic!("Invalid task group index: {}", current),
             }
         }
+
+        None
     }
 
     fn incoming_route<'a>(&mut self, now_ms: u64, remote: SocketAddr, mut buf: GenericBufferMut<'a>) -> Option<Output<'a, SE, TC>> {
@@ -278,6 +255,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 let msg = TransportMsg::build_raw(header, &buf);
                 if local {
                     if let Some(out) = self.features.on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::Local(buf.into())) {
+                        self.switcher.push_last(TaskType::Feature as u8);
                         self.queue_output.push_back(QueueOutput::Feature(feature, out.owned()));
                     }
                 }
@@ -288,7 +266,8 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
     }
 
     fn convert_features<'a>(&mut self, now_ms: u64, feature: Features, out: FeatureWorkerOutput<'a, FeaturesControl, FeaturesEvent, FeaturesToController>) -> Output<'a, SE, TC> {
-        self.last_task = Some(TaskType::Feature);
+        self.switcher.push_last(TaskType::Feature as u8);
+
         match out {
             FeatureWorkerOutput::ForwardControlToController(service, control) => LogicControl::FeaturesControl(service, control).into(),
             FeatureWorkerOutput::ForwardNetworkToController(conn, msg) => LogicControl::NetRemote(feature, conn, msg).into(),
@@ -298,6 +277,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 FeatureControlActor::Controller => Output::Ext(ExtOut::FeaturesEvent(event)),
                 FeatureControlActor::Service(service) => {
                     if let Some(out) = self.services.on_input(&mut self.service_ctx, now_ms, service, ServiceWorkerInput::FeatureEvent(event)) {
+                        self.switcher.push_last(TaskType::Service as u8);
                         self.queue_output.push_back(QueueOutput::Service(service, out));
                     }
                     Output::Continue
@@ -337,7 +317,8 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
     }
 
     fn convert_services<'a>(&mut self, now_ms: u64, service: ServiceId, out: ServiceWorkerOutput<FeaturesControl, FeaturesEvent, SE, TC>) -> Output<'a, SE, TC> {
-        self.last_task = Some(TaskType::Service);
+        self.switcher.push_last(TaskType::Service as u8);
+
         match out {
             ServiceWorkerOutput::ForwardFeatureEventToController(event) => LogicControl::ServiceEvent(service, event).into(),
             ServiceWorkerOutput::ToController(tc) => LogicControl::Service(service, tc).into(),
@@ -347,6 +328,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                     .features
                     .on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::Control(FeatureControlActor::Service(service), control))
                 {
+                    self.switcher.push_last(TaskType::Feature as u8);
                     self.queue_output.push_back(QueueOutput::Feature(feature, out));
                 }
                 Output::Continue

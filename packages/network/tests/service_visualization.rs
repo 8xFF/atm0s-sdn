@@ -66,7 +66,6 @@ fn service_visualization_multi_collectors() {
     let node2 = 2;
     let node3 = 3;
     let mut sim = NetworkSimulator::<Control, Event, (), ()>::new(0);
-    sim.enable_log(log::LevelFilter::Debug);
 
     let _addr1 = sim.add_node(TestNode::new(node1, 1234, vec![Arc::new(VisualizationServiceBuilder::new(true))]));
     let addr2 = sim.add_node(TestNode::new(node2, 1235, vec![Arc::new(VisualizationServiceBuilder::new(true))]));

@@ -19,7 +19,7 @@ fn event(event: Event) -> ExtOut<()> {
 }
 
 #[test]
-fn feature_single_node() {
+fn feature_dht_kv_single_node() {
     let node_id = 1;
     let mut sim = NetworkSimulator::<(), (), (), ()>::new(0);
     sim.add_node(TestNode::new(node_id, 1234, vec![]));
@@ -42,7 +42,7 @@ fn feature_single_node() {
 }
 
 #[test]
-fn feature_single_node_sub_after() {
+fn feature_dht_kv_single_node_sub_after() {
     let node_id = 1;
     let mut sim = NetworkSimulator::<(), (), (), ()>::new(0);
     sim.add_node(TestNode::new(node_id, 1234, vec![]));

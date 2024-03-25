@@ -23,8 +23,7 @@ pub struct FeatureWorkerManager {
     vpn: vpn::VpnFeatureWorker,
     dht_kv: dht_kv::DhtKvFeatureWorker,
     pubsub: pubsub::PubSubFeatureWorker,
-    last_input_feature: Option<Features>,
-    switcher: TasksSwitcher<5>,
+    switcher: TasksSwitcher<6>,
 }
 
 impl FeatureWorkerManager {
@@ -36,13 +35,12 @@ impl FeatureWorkerManager {
             vpn: vpn::VpnFeatureWorker,
             dht_kv: dht_kv::DhtKvFeatureWorker::default(),
             pubsub: pubsub::PubSubFeatureWorker::new(),
-            last_input_feature: None,
             switcher: TasksSwitcher::default(),
         }
     }
 
     pub fn on_tick(&mut self, ctx: &mut FeatureWorkerContext, now_ms: u64, tick_count: u64) {
-        self.last_input_feature = None;
+        self.switcher.push_all();
         self.neighbours.on_tick(ctx, now_ms, tick_count);
         self.data.on_tick(ctx, now_ms, tick_count);
         self.router_sync.on_tick(ctx, now_ms, tick_count);
@@ -61,18 +59,22 @@ impl FeatureWorkerManager {
         header_len: usize,
         buf: GenericBuffer<'a>,
     ) -> Option<FeaturesWorkerOutput<'a>> {
-        match feature {
+        let out = match feature {
             Features::Neighbours => self.neighbours.on_network_raw(ctx, now_ms, conn, remote, header_len, buf).map(|a| a.into2()),
             Features::Data => self.data.on_network_raw(ctx, now_ms, conn, remote, header_len, buf).map(|a| a.into2()),
             Features::RouterSync => self.router_sync.on_network_raw(ctx, now_ms, conn, remote, header_len, buf).map(|a| a.into2()),
             Features::Vpn => self.vpn.on_network_raw(ctx, now_ms, conn, remote, header_len, buf).map(|a| a.into2()),
             Features::DhtKv => self.dht_kv.on_network_raw(ctx, now_ms, conn, remote, header_len, buf).map(|a| a.into2()),
             Features::PubSub => self.pubsub.on_network_raw(ctx, now_ms, conn, remote, header_len, buf).map(|a| a.into2()),
+        };
+        if out.is_some() {
+            self.switcher.push_last(feature as u8);
         }
+        out
     }
 
     pub fn on_input<'a>(&mut self, ctx: &mut FeatureWorkerContext, feature: Features, now_ms: u64, input: FeaturesWorkerInput<'a>) -> Option<FeaturesWorkerOutput<'a>> {
-        match input {
+        let out = match input {
             FeatureWorkerInput::Control(service, control) => match control {
                 FeaturesControl::Neighbours(control) => self.neighbours.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| a.into2()),
                 FeaturesControl::Data(control) => self.data.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| a.into2()),
@@ -101,58 +103,45 @@ impl FeatureWorkerManager {
                 Features::DhtKv => self.dht_kv.on_input(ctx, now_ms, FeatureWorkerInput::Local(buf)).map(|a| a.into2()),
                 Features::PubSub => self.pubsub.on_input(ctx, now_ms, FeatureWorkerInput::Local(buf)).map(|a| a.into2()),
             },
+        };
+        if out.is_some() {
+            self.switcher.push_last(feature as u8);
         }
+        out
     }
 
     pub fn pop_output(&mut self, ctx: &mut FeatureWorkerContext) -> Option<(Features, FeaturesWorkerOutput<'static>)> {
-        if let Some(last_feature) = self.last_input_feature {
-            let res = match last_feature {
-                Features::Neighbours => self.neighbours.pop_output(ctx).map(|a| (Features::Neighbours, a.owned().into2())),
-                Features::Data => self.data.pop_output(ctx).map(|a| (Features::Data, a.owned().into2())),
-                Features::RouterSync => self.router_sync.pop_output(ctx).map(|a| (Features::RouterSync, a.owned().into2())),
-                Features::Vpn => self.vpn.pop_output(ctx).map(|a| (Features::Vpn, a.owned().into2())),
-                Features::DhtKv => self.dht_kv.pop_output(ctx).map(|a| (Features::DhtKv, a.owned().into2())),
-                Features::PubSub => self.pubsub.pop_output(ctx).map(|a| (Features::PubSub, a.owned().into2())),
-            };
-
-            if res.is_none() {
-                self.last_input_feature = None;
-            }
-
-            res
-        } else {
-            loop {
-                let s = &mut self.switcher;
-                match (s.current()? as u8).try_into().ok()? {
-                    Features::Neighbours => {
-                        if let Some(out) = s.process(self.neighbours.pop_output(ctx)) {
-                            return Some((Features::Neighbours, out.owned().into2()));
-                        }
+        loop {
+            let s = &mut self.switcher;
+            match (s.current()? as u8).try_into().ok()? {
+                Features::Neighbours => {
+                    if let Some(out) = s.process(self.neighbours.pop_output(ctx)) {
+                        return Some((Features::Neighbours, out.owned().into2()));
                     }
-                    Features::Data => {
-                        if let Some(out) = s.process(self.data.pop_output(ctx)) {
-                            return Some((Features::Data, out.owned().into2()));
-                        }
+                }
+                Features::Data => {
+                    if let Some(out) = s.process(self.data.pop_output(ctx)) {
+                        return Some((Features::Data, out.owned().into2()));
                     }
-                    Features::RouterSync => {
-                        if let Some(out) = s.process(self.router_sync.pop_output(ctx)) {
-                            return Some((Features::RouterSync, out.owned().into2()));
-                        }
+                }
+                Features::RouterSync => {
+                    if let Some(out) = s.process(self.router_sync.pop_output(ctx)) {
+                        return Some((Features::RouterSync, out.owned().into2()));
                     }
-                    Features::Vpn => {
-                        if let Some(out) = s.process(self.vpn.pop_output(ctx)) {
-                            return Some((Features::Vpn, out.owned().into2()));
-                        }
+                }
+                Features::Vpn => {
+                    if let Some(out) = s.process(self.vpn.pop_output(ctx)) {
+                        return Some((Features::Vpn, out.owned().into2()));
                     }
-                    Features::DhtKv => {
-                        if let Some(out) = s.process(self.dht_kv.pop_output(ctx)) {
-                            return Some((Features::DhtKv, out.owned().into2()));
-                        }
+                }
+                Features::DhtKv => {
+                    if let Some(out) = s.process(self.dht_kv.pop_output(ctx)) {
+                        return Some((Features::DhtKv, out.owned().into2()));
                     }
-                    Features::PubSub => {
-                        if let Some(out) = s.process(self.pubsub.pop_output(ctx)) {
-                            return Some((Features::PubSub, out.owned().into2()));
-                        }
+                }
+                Features::PubSub => {
+                    if let Some(out) = s.process(self.pubsub.pop_output(ctx)) {
+                        return Some((Features::PubSub, out.owned().into2()));
                     }
                 }
             }

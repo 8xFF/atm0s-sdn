@@ -86,7 +86,7 @@ impl NeighbourConnection {
     pub fn disconnect(&mut self, now_ms: u64) {
         match &mut self.state {
             State::Connecting { .. } | State::Connected { .. } => {
-                log::info!("Sending disconnect request with remote {}", self.remote);
+                log::info!("[NeighbourConnection] Sending disconnect request with remote {}", self.remote);
                 self.state = State::Disconnecting { at_ms: now_ms };
                 self.output.push_back(self.generate_control(
                     now_ms,
@@ -97,7 +97,7 @@ impl NeighbourConnection {
                 ));
             }
             _ => {
-                log::warn!("Invalid state for performing disconnect request with remote {}", self.remote);
+                log::warn!("[NeighbourConnection] Invalid state for performing disconnect request with remote {}", self.remote);
             }
         }
     }
@@ -108,7 +108,7 @@ impl NeighbourConnection {
                 if *client && now_ms - *at_ms >= TIMEOUT_MS {
                     self.state = State::ConnectTimeout;
                     self.output.push_back(Output::Event(ConnectionEvent::ConnectTimeout));
-                    log::warn!("Connection timeout to {} after {} ms", self.remote, TIMEOUT_MS);
+                    log::warn!("[NeighbourConnection] Connection timeout to {} after {} ms", self.remote, TIMEOUT_MS);
                 } else if *client && now_ms - *at_ms >= RETRY_CMD_MS {
                     self.output.push_back(self.generate_control(
                         now_ms,
@@ -118,14 +118,15 @@ impl NeighbourConnection {
                             session: self.conn.session(),
                         },
                     ));
-                    log::info!("Resend connect request to {}, dest_node {}", self.remote, self.node);
+                    log::info!("[NeighbourConnection] Resend connect request to {}, dest_node {}", self.remote, self.node);
                 }
             }
             State::Connected { ping_seq, last_pong_ms, .. } => {
                 if now_ms - *last_pong_ms >= TIMEOUT_MS {
-                    log::warn!("Connection timeout to {} after a while not received pong, last {last_pong_ms}", self.remote);
+                    log::warn!("[NeighbourConnection] Connection timeout to {} after a while not received pong, last {last_pong_ms}", self.remote);
                     self.output.push_back(Output::Event(ConnectionEvent::Disconnected));
                 } else {
+                    log::debug!("[NeighbourConnection] Send ping to {}", self.remote);
                     *ping_seq += 1;
                     let cmd = NeighboursControlCmds::Ping {
                         session: self.conn.session(),
@@ -139,7 +140,7 @@ impl NeighbourConnection {
                 if now_ms - *at_ms >= TIMEOUT_MS {
                     self.state = State::Disconnected;
                     self.output.push_back(Output::Event(ConnectionEvent::Disconnected));
-                    log::warn!("Disconnect request timeout to {} after {} ms", self.remote, TIMEOUT_MS);
+                    log::warn!("[NeighbourConnection] Disconnect request timeout to {} after {} ms", self.remote, TIMEOUT_MS);
                 } else {
                     *at_ms = now_ms;
                     self.output.push_back(self.generate_control(
@@ -166,7 +167,7 @@ impl NeighbourConnection {
                             //check if we can replace the existing connection to accept the new one
                             if self.conn.session() >= session {
                                 log::warn!(
-                                    "Conflic state from {}, local session {}, remote session {} => switch to incoming",
+                                    "[NeighbourConnection] Conflic state from {}, local session {}, remote session {} => switch to incoming",
                                     self.remote,
                                     self.conn.session(),
                                     session
@@ -184,7 +185,7 @@ impl NeighbourConnection {
                             Ok(())
                         } else {
                             log::warn!(
-                                "Conflic state from {}, local session {}, remote session {} => don't switch to incoming",
+                                "[NeighbourConnection] Conflic state from {}, local session {}, remote session {} => don't switch to incoming",
                                 self.remote,
                                 self.conn.session(),
                                 session
@@ -192,11 +193,18 @@ impl NeighbourConnection {
                             return;
                         }
                     } else {
-                        log::warn!("Invalid state, should be Connecting for connect request from {}", self.remote);
+                        log::warn!("[NeighbourConnection] Invalid state, should be Connecting for connect request from {}", self.remote);
                         Err(NeighboursConnectError::InvalidState)
                     }
                 } else {
-                    log::warn!("Invalid from or to in connect request from {}, {} vs {}, {} vs {}", self.remote, self.local, to, self.node, from);
+                    log::warn!(
+                        "[NeighbourConnection] Invalid from or to in connect request from {}, {} vs {}, {} vs {}",
+                        self.remote,
+                        self.local,
+                        to,
+                        self.node,
+                        from
+                    );
                     Err(NeighboursConnectError::InvalidData)
                 };
                 self.output.push_back(self.generate_control(now_ms, NeighboursControlCmds::ConnectResponse { session, result }));
@@ -221,10 +229,10 @@ impl NeighbourConnection {
                             }
                         }
                     } else {
-                        log::warn!("Invalid state, should Connecting for connect response from {}", self.remote);
+                        log::warn!("[NeighbourConnection] Invalid state, should Connecting for connect response from {}", self.remote);
                     }
                 } else {
-                    log::warn!("Invalid session in connect response from {}", self.remote);
+                    log::warn!("[NeighbourConnection] Invalid session in connect response from {}", self.remote);
                 }
             }
             NeighboursControlCmds::Ping { session, seq, sent_ms } => {
@@ -232,10 +240,10 @@ impl NeighbourConnection {
                     if let State::Connected { .. } = &self.state {
                         self.output.push_back(self.generate_control(now_ms, NeighboursControlCmds::Pong { session, seq, sent_ms }));
                     } else {
-                        log::warn!("Invalid state, should be Connected for ping from {}", self.remote);
+                        log::warn!("[NeighbourConnection] Invalid state, should be Connected for ping from {}", self.remote);
                     }
                 } else {
-                    log::warn!("Invalid session in ping from {}", self.remote);
+                    log::warn!("[NeighbourConnection] Invalid session in ping from {}", self.remote);
                 }
             }
             NeighboursControlCmds::Pong { session, sent_ms, .. } => {
@@ -247,13 +255,13 @@ impl NeighbourConnection {
                             self.output.push_back(Output::Event(ConnectionEvent::Stats(stats.clone())));
                             log::trace!("Received pong from {} after {}", self.remote, stats.rtt_ms);
                         } else {
-                            log::warn!("Invalid sent_ms in pong from {}", self.remote);
+                            log::warn!("[NeighbourConnection] Invalid sent_ms in pong from {}", self.remote);
                         }
                     } else {
-                        log::warn!("Invalid state, should be Connected for ping from {}", self.remote);
+                        log::warn!("[NeighbourConnection] Invalid state, should be Connected for ping from {}", self.remote);
                     }
                 } else {
-                    log::warn!("Invalid session in ping from {}", self.remote);
+                    log::warn!("[NeighbourConnection] Invalid session in ping from {}", self.remote);
                 }
             }
             NeighboursControlCmds::DisconnectRequest { session, .. } => {
@@ -261,9 +269,9 @@ impl NeighbourConnection {
                     self.state = State::Disconnected;
                     self.output.push_back(self.generate_control(now_ms, NeighboursControlCmds::DisconnectResponse { session }));
                     self.output.push_back(Output::Event(ConnectionEvent::Disconnected));
-                    log::info!("Disconnect request from {}", self.remote);
+                    log::info!("[NeighbourConnection] Disconnect request from {}", self.remote);
                 } else {
-                    log::warn!("Invalid session in disconnect request from {}", self.remote);
+                    log::warn!("[NeighbourConnection] Invalid session in disconnect request from {}", self.remote);
                 }
             }
             NeighboursControlCmds::DisconnectResponse { session } => {
@@ -271,12 +279,12 @@ impl NeighbourConnection {
                     if let State::Disconnecting { .. } = self.state {
                         self.state = State::Disconnected;
                         self.output.push_back(Output::Event(ConnectionEvent::Disconnected));
-                        log::info!("Disconnected response from {}", self.remote);
+                        log::info!("[NeighbourConnection] Disconnected response from {}", self.remote);
                     } else {
-                        log::warn!("Invalid state, should be Disconnecting for disconnect response from {}", self.remote);
+                        log::warn!("[NeighbourConnection] Invalid state, should be Disconnecting for disconnect response from {}", self.remote);
                     }
                 } else {
-                    log::warn!("Invalid session in disconnect response from {}", self.remote);
+                    log::warn!("[NeighbourConnection] Invalid session in disconnect response from {}", self.remote);
                 }
             }
         }

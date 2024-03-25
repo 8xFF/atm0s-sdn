@@ -66,9 +66,6 @@ pub struct ControllerPlane<SC, SE, TC, TW> {
     features: FeatureManager,
     service_ctx: ServiceCtx,
     services: ServiceManager<SC, SE, TC, TW>,
-    // TODO may be we need stack style for optimize performance
-    // and support some case task output call other task
-    last_task: Option<TaskType>,
     switcher: TasksSwitcher<3>,
 }
 
@@ -94,13 +91,12 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
             features: FeatureManager::new(node_id, session, service_ids),
             service_ctx: ServiceCtx { node_id, session },
             services: ServiceManager::new(services),
-            last_task: None,
             switcher: TasksSwitcher::default(),
         }
     }
 
     pub fn on_tick(&mut self, now_ms: u64) {
-        self.last_task = None;
+        self.switcher.push_all();
         self.neighbours.on_tick(now_ms, self.tick_count);
         self.features.on_shared_input(&self.feature_ctx, now_ms, FeatureSharedInput::Tick(self.tick_count));
         self.services.on_shared_input(&self.service_ctx, now_ms, ServiceSharedInput::Tick(self.tick_count));
@@ -110,97 +106,85 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
     pub fn on_event(&mut self, now_ms: u64, event: Input<SC, TC>) {
         match event {
             Input::Ext(ExtIn::ConnectTo(addr)) => {
-                self.last_task = Some(TaskType::Neighbours);
+                self.switcher.push_last(TaskType::Neighbours as u8);
                 self.neighbours.on_input(now_ms, neighbours::Input::ConnectTo(addr));
             }
             Input::Ext(ExtIn::DisconnectFrom(node)) => {
-                self.last_task = Some(TaskType::Neighbours);
+                self.switcher.push_last(TaskType::Neighbours as u8);
                 self.neighbours.on_input(now_ms, neighbours::Input::DisconnectFrom(node));
             }
             Input::Ext(ExtIn::FeaturesControl(control)) => {
-                self.last_task = Some(TaskType::Feature);
+                self.switcher.push_last(TaskType::Feature as u8);
                 self.features
                     .on_input(&self.feature_ctx, now_ms, control.to_feature(), FeatureInput::Control(FeatureControlActor::Controller, control));
             }
             Input::Ext(ExtIn::ServicesControl(service, control)) => {
-                self.last_task = Some(TaskType::Service);
+                self.switcher.push_last(TaskType::Service as u8);
                 self.services
                     .on_input(&self.service_ctx, now_ms, service, ServiceInput::Control(ServiceControlActor::Controller, control));
             }
             Input::Control(LogicControl::NetNeighbour(remote, control)) => {
-                self.last_task = Some(TaskType::Neighbours);
+                self.switcher.push_last(TaskType::Neighbours as u8);
                 self.neighbours.on_input(now_ms, neighbours::Input::Control(remote, control));
             }
             Input::Control(LogicControl::Feature(to)) => {
-                self.last_task = Some(TaskType::Feature);
+                self.switcher.push_last(TaskType::Feature as u8);
                 self.features.on_input(&self.feature_ctx, now_ms, to.to_feature(), FeatureInput::FromWorker(to));
             }
             Input::Control(LogicControl::Service(service, to)) => {
-                self.last_task = Some(TaskType::Service);
+                self.switcher.push_last(TaskType::Service as u8);
                 self.services.on_input(&self.service_ctx, now_ms, service, ServiceInput::FromWorker(to));
             }
             Input::Control(LogicControl::NetRemote(feature, conn, msg)) => {
                 if let Some(ctx) = self.neighbours.conn(conn) {
-                    self.last_task = Some(TaskType::Feature);
+                    self.switcher.push_last(TaskType::Feature as u8);
                     self.features.on_input(&self.feature_ctx, now_ms, feature, FeatureInput::Net(ctx, msg));
                 }
             }
             Input::Control(LogicControl::NetLocal(feature, msg)) => {
-                self.last_task = Some(TaskType::Feature);
+                self.switcher.push_last(TaskType::Feature as u8);
                 self.features.on_input(&self.feature_ctx, now_ms, feature, FeatureInput::Local(msg));
             }
             Input::Control(LogicControl::ServiceEvent(service, event)) => {
-                self.last_task = Some(TaskType::Service);
+                self.switcher.push_last(TaskType::Service as u8);
                 self.services.on_input(&self.service_ctx, now_ms, service, ServiceInput::FeatureEvent(event));
             }
             Input::Control(LogicControl::FeaturesControl(actor, control)) => {
-                self.last_task = Some(TaskType::Feature);
+                self.switcher.push_last(TaskType::Feature as u8);
                 self.features.on_input(&self.feature_ctx, now_ms, control.to_feature(), FeatureInput::Control(actor, control));
             }
             Input::ShutdownRequest => {
-                self.last_task = Some(TaskType::Neighbours);
+                self.switcher.push_last(TaskType::Neighbours as u8);
                 self.neighbours.on_input(now_ms, neighbours::Input::ShutdownRequest);
             }
         }
     }
 
     pub fn pop_output(&mut self, now_ms: u64) -> Option<Output<SE, TW>> {
-        if let Some(last_task) = &self.last_task {
-            let res = match last_task {
-                TaskType::Neighbours => self.pop_neighbours(now_ms),
-                TaskType::Feature => self.pop_features(now_ms),
-                TaskType::Service => self.pop_services(now_ms),
-            };
-            if res.is_none() {
-                self.last_task = None;
-            }
-            res
-        } else {
-            while let Some(current) = self.switcher.current() {
-                match current.try_into().expect("Should convert to TaskType") {
-                    TaskType::Neighbours => {
-                        let out = self.pop_neighbours(now_ms);
-                        if let Some(out) = self.switcher.process(out) {
-                            return Some(out);
-                        }
+        while let Some(current) = self.switcher.current() {
+            match current.try_into().expect("Should convert to TaskType") {
+                TaskType::Neighbours => {
+                    let out = self.pop_neighbours(now_ms);
+                    if let Some(out) = self.switcher.process(out) {
+                        return Some(out);
                     }
-                    TaskType::Feature => {
-                        let out = self.pop_features(now_ms);
-                        if let Some(out) = self.switcher.process(out) {
-                            return Some(out);
-                        }
+                }
+                TaskType::Feature => {
+                    let out = self.pop_features(now_ms);
+                    if let Some(out) = self.switcher.process(out) {
+                        return Some(out);
                     }
-                    TaskType::Service => {
-                        let out = self.pop_services(now_ms);
-                        if let Some(out) = self.switcher.process(out) {
-                            return Some(out);
-                        }
+                }
+                TaskType::Service => {
+                    let out = self.pop_services(now_ms);
+                    if let Some(out) = self.switcher.process(out) {
+                        return Some(out);
                     }
                 }
             }
-
-            None
         }
+
+        None
     }
 
     fn pop_neighbours(&mut self, now_ms: u64) -> Option<Output<SE, TW>> {
@@ -208,7 +192,9 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
         match out {
             neighbours::Output::Control(remote, control) => Some(Output::Event(LogicEvent::NetNeighbour(remote, control))),
             neighbours::Output::Event(event) => {
+                self.switcher.push_last(TaskType::Feature as u8);
                 self.features.on_shared_input(&self.feature_ctx, now_ms, FeatureSharedInput::Connection(event.clone()));
+                self.switcher.push_last(TaskType::Service as u8);
                 self.services.on_shared_input(&self.service_ctx, now_ms, ServiceSharedInput::Connection(event.clone()));
                 match event {
                     ConnectionEvent::Connected(ctx, secure) => Some(Output::Event(LogicEvent::Pin(ctx.conn, ctx.node, ctx.remote, secure))),
@@ -226,11 +212,13 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
             FeatureOutput::ToWorker(is_broadcast, to) => Some(Output::Event(LogicEvent::Feature(is_broadcast, to))),
             FeatureOutput::Event(actor, event) => {
                 //TODO may be we need stack style for optimize performance
+                log::debug!("[Controller] send FeatureEvent to actor {:?}, event {:?}", actor, event);
                 match actor {
                     FeatureControlActor::Controller => Some(Output::Ext(ExtOut::FeaturesEvent(event))),
                     FeatureControlActor::Service(service) => {
+                        self.switcher.push_last(TaskType::Service as u8);
                         self.services.on_input(&self.service_ctx, now_ms, service, ServiceInput::FeatureEvent(event));
-                        None
+                        self.pop_services(now_ms)
                     }
                 }
             }
@@ -243,14 +231,14 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
                 Some(Output::Event(LogicEvent::NetRoute(feature, rule, ttl, buf)))
             }
             FeatureOutput::NeighboursConnectTo(addr) => {
-                //TODO may be we need stack style for optimize performance
+                self.switcher.push_last(TaskType::Neighbours as u8);
                 self.neighbours.on_input(now_ms, neighbours::Input::ConnectTo(addr));
-                None
+                self.pop_neighbours(now_ms)
             }
             FeatureOutput::NeighboursDisconnectFrom(node) => {
-                //TODO may be we need stack style for optimize performance
+                self.switcher.push_last(TaskType::Neighbours as u8);
                 self.neighbours.on_input(now_ms, neighbours::Input::DisconnectFrom(node));
-                None
+                self.pop_neighbours(now_ms)
             }
         }
     }
@@ -259,9 +247,10 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
         let (service, out) = self.services.pop_output(&self.service_ctx)?;
         match out {
             ServiceOutput::FeatureControl(control) => {
+                self.switcher.push_last(TaskType::Feature as u8);
                 self.features
                     .on_input(&self.feature_ctx, now_ms, control.to_feature(), FeatureInput::Control(FeatureControlActor::Service(service), control));
-                None
+                self.pop_features(now_ms)
             }
             ServiceOutput::Event(actor, event) => match actor {
                 ServiceControlActor::Controller => Some(Output::Ext(ExtOut::ServicesEvent(event))),

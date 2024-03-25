@@ -9,7 +9,6 @@ use crate::san_io_utils::TasksSwitcher;
 pub struct ServiceWorkerManager<ServiceControl, ServiceEvent, ToController, ToWorker> {
     services: [Option<Box<dyn ServiceWorker<FeaturesControl, FeaturesEvent, ServiceEvent, ToController, ToWorker>>>; 256],
     switcher: TasksSwitcher<256>,
-    last_input_service: Option<ServiceId>,
     _tmp: PhantomData<ServiceControl>,
 }
 
@@ -18,12 +17,12 @@ impl<ServiceControl, ServiceEvent, ToController, ToWorker> ServiceWorkerManager<
         Self {
             services: std::array::from_fn(|index| services.iter().find(|s| s.service_id() == index as u8).map(|s| s.create_worker())),
             switcher: TasksSwitcher::default(),
-            last_input_service: None,
             _tmp: PhantomData,
         }
     }
 
     pub fn on_tick(&mut self, ctx: &ServiceWorkerCtx, now: u64, tick_count: u64) {
+        self.switcher.push_all();
         for service in self.services.iter_mut() {
             if let Some(service) = service {
                 service.on_tick(ctx, now, tick_count);
@@ -39,29 +38,23 @@ impl<ServiceControl, ServiceEvent, ToController, ToWorker> ServiceWorkerManager<
         input: ServiceWorkerInput<FeaturesEvent, ToWorker>,
     ) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceEvent, ToController>> {
         let service = self.services[*id as usize].as_mut()?;
-        self.last_input_service = Some(id);
-        service.on_input(ctx, now, input)
+        let out = service.on_input(ctx, now, input);
+        if out.is_some() {
+            self.switcher.push_last(*id);
+        }
+        out
     }
 
     pub fn pop_output(&mut self, ctx: &ServiceWorkerCtx) -> Option<(ServiceId, ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceEvent, ToController>)> {
-        if let Some(last_service) = self.last_input_service {
-            let res = self.services[*last_service as usize].as_mut().map(|s| s.pop_output(ctx)).flatten();
-            if res.is_none() {
-                self.last_input_service = None;
-            }
-
-            res.map(|o| (last_service, o))
-        } else {
-            loop {
-                let s = &mut self.switcher;
-                let index = s.current()?;
-                if let Some(Some(service)) = self.services.get_mut(index) {
-                    if let Some(output) = s.process(service.pop_output(ctx)) {
-                        return Some(((index as u8).into(), output));
-                    }
-                } else {
-                    s.process::<()>(None);
+        loop {
+            let s = &mut self.switcher;
+            let index = s.current()?;
+            if let Some(Some(service)) = self.services.get_mut(index) {
+                if let Some(output) = s.process(service.pop_output(ctx)) {
+                    return Some(((index as u8).into(), output));
                 }
+            } else {
+                s.process::<()>(None);
             }
         }
     }

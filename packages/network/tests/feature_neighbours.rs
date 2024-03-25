@@ -29,10 +29,10 @@ fn feature_neighbours_two_nodes() {
 
     assert_eq!(
         sim.pop_res(),
-        Some((node1, ExtOut::FeaturesEvent(FeaturesEvent::Neighbours(neighbours::Event::Connected(node2, ConnId::from_out(0, 1000))))))
+        Some((node2, ExtOut::FeaturesEvent(FeaturesEvent::Neighbours(neighbours::Event::Connected(node1, ConnId::from_in(0, 1000))))))
     );
     assert_eq!(
         sim.pop_res(),
-        Some((node2, ExtOut::FeaturesEvent(FeaturesEvent::Neighbours(neighbours::Event::Connected(node1, ConnId::from_in(0, 1000))))))
+        Some((node1, ExtOut::FeaturesEvent(FeaturesEvent::Neighbours(neighbours::Event::Connected(node2, ConnId::from_out(0, 1000))))))
     );
 }
