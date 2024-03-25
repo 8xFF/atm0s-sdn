@@ -35,7 +35,7 @@ pub struct ControllerPlaneTask<SC, SE, TC, TW> {
     ticker: TimeTicker,
     timer: TimePivot,
     #[cfg(feature = "vpn")]
-    vpn_tun_device: Option<sans_io_runtime::backend::tun::TunDevice>,
+    _vpn_tun_device: Option<sans_io_runtime::backend::tun::TunDevice>,
 }
 
 impl<SC, SE, TC, TW> ControllerPlaneTask<SC, SE, TC, TW> {
@@ -47,7 +47,7 @@ impl<SC, SE, TC, TW> ControllerPlaneTask<SC, SE, TC, TW> {
             ticker: TimeTicker::build(1000),
             timer: TimePivot::build(),
             #[cfg(feature = "vpn")]
-            vpn_tun_device: cfg.vpn_tun_device,
+            _vpn_tun_device: cfg.vpn_tun_device,
         }
     }
 }

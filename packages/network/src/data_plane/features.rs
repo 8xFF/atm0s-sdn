@@ -23,7 +23,7 @@ pub struct FeatureWorkerManager {
     vpn: vpn::VpnFeatureWorker,
     dht_kv: dht_kv::DhtKvFeatureWorker,
     pubsub: pubsub::PubSubFeatureWorker,
-    switcher: TasksSwitcher<6>,
+    switcher: TasksSwitcher<u8, 6>,
 }
 
 impl FeatureWorkerManager {

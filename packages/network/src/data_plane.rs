@@ -77,7 +77,7 @@ pub struct DataPlane<SC, SE, TC, TW> {
     conns: HashMap<SocketAddr, DataPlaneConnection>,
     conns_reverse: HashMap<ConnId, SocketAddr>,
     queue_output: VecDeque<QueueOutput<SE, TC>>,
-    switcher: TasksSwitcher<2>,
+    switcher: TasksSwitcher<u8, 2>,
 }
 
 impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {

@@ -8,7 +8,7 @@ use crate::san_io_utils::TasksSwitcher;
 /// To manage the services we need to create an object that will hold the services
 pub struct ServiceWorkerManager<ServiceControl, ServiceEvent, ToController, ToWorker> {
     services: [Option<Box<dyn ServiceWorker<FeaturesControl, FeaturesEvent, ServiceEvent, ToController, ToWorker>>>; 256],
-    switcher: TasksSwitcher<256>,
+    switcher: TasksSwitcher<u8, 256>,
     _tmp: PhantomData<ServiceControl>,
 }
 
@@ -49,7 +49,7 @@ impl<ServiceControl, ServiceEvent, ToController, ToWorker> ServiceWorkerManager<
         loop {
             let s = &mut self.switcher;
             let index = s.current()?;
-            if let Some(Some(service)) = self.services.get_mut(index) {
+            if let Some(Some(service)) = self.services.get_mut(index as usize) {
                 if let Some(output) = s.process(service.pop_output(ctx)) {
                     return Some(((index as u8).into(), output));
                 }

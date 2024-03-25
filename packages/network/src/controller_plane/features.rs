@@ -21,7 +21,7 @@ pub struct FeatureManager {
     vpn: vpn::VpnFeature,
     dht_kv: dht_kv::DhtKvFeature,
     pubsub: pubsub::PubSubFeature,
-    switcher: TasksSwitcher<6>,
+    switcher: TasksSwitcher<u8, 6>,
 }
 
 impl FeatureManager {

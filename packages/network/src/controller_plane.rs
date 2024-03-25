@@ -47,10 +47,10 @@ enum TaskType {
     Service = SERVICES_ID,
 }
 
-impl TryFrom<usize> for TaskType {
+impl TryFrom<u8> for TaskType {
     type Error = ();
-    fn try_from(value: usize) -> Result<Self, Self::Error> {
-        match value as u8 {
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
             NEIGHBOURS_ID => Ok(Self::Neighbours),
             FEATURES_ID => Ok(Self::Feature),
             SERVICES_ID => Ok(Self::Service),
@@ -66,7 +66,7 @@ pub struct ControllerPlane<SC, SE, TC, TW> {
     features: FeatureManager,
     service_ctx: ServiceCtx,
     services: ServiceManager<SC, SE, TC, TW>,
-    switcher: TasksSwitcher<3>,
+    switcher: TasksSwitcher<u8, 3>,
 }
 
 impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {

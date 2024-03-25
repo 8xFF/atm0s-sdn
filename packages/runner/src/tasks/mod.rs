@@ -8,10 +8,11 @@ use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_network::{
     base::ServiceBuilder,
     features::{FeaturesControl, FeaturesEvent},
+    san_io_utils::TasksSwitcher,
     ExtIn, ExtOut,
 };
 use atm0s_sdn_router::shadow::ShadowRouterHistory;
-use sans_io_runtime::{Controller, Task, TaskGroupOutputsState, TaskInput, TaskOutput, WorkerInner, WorkerInnerInput, WorkerInnerOutput};
+use sans_io_runtime::{Controller, Task, TaskInput, TaskOutput, WorkerInner, WorkerInnerInput, WorkerInnerOutput};
 
 pub use self::data_plane::history::DataWorkerHistory;
 use self::{
@@ -66,8 +67,7 @@ pub struct SdnWorkerInner<SC, SE, TC, TW> {
     worker: u16,
     controller: Option<ControllerPlaneTask<SC, SE, TC, TW>>,
     data: DataPlaneTask<SC, SE, TC, TW>,
-    group_state: TaskGroupOutputsState<2>,
-    last_input_group: Option<u16>,
+    switcher: TasksSwitcher<u16, 2>,
     state: State,
 }
 
@@ -111,8 +111,7 @@ impl<SC, SE, TC: Debug, TW: Debug> WorkerInner<SdnExtIn<SC>, SdnExtOut<SE>, SdnC
                     #[cfg(feature = "vpn")]
                     vpn_tun_fd: cfg.vpn_tun_fd,
                 }),
-                group_state: TaskGroupOutputsState::default(),
-                last_input_group: None,
+                switcher: TasksSwitcher::default(),
                 state: State::Running,
             }
         } else {
@@ -129,8 +128,7 @@ impl<SC, SE, TC: Debug, TW: Debug> WorkerInner<SdnExtIn<SC>, SdnExtOut<SE>, SdnC
                     #[cfg(feature = "vpn")]
                     vpn_tun_fd: cfg.vpn_tun_fd,
                 }),
-                group_state: TaskGroupOutputsState::default(),
-                last_input_group: None,
+                switcher: TasksSwitcher::default(),
                 state: State::Running,
             }
         }
@@ -158,19 +156,19 @@ impl<SC, SE, TC: Debug, TW: Debug> WorkerInner<SdnExtIn<SC>, SdnExtOut<SE>, SdnC
     }
 
     fn on_tick<'a>(&mut self, now: Instant) -> Option<WorkerInnerOutput<'a, SdnExtOut<SE>, SdnChannel, SdnEvent<TC, TW>, SdnSpawnCfg>> {
-        self.last_input_group = None;
-        let gs = &mut self.group_state;
+        self.switcher.push_all();
+        let s = &mut self.switcher;
         loop {
-            match gs.current()? {
+            match s.current()? as u16 {
                 ControllerPlaneTask::<(), (), (), ()>::TYPE => {
-                    if let Some(out) = gs.process(self.controller.as_mut().map(|c| c.on_tick(now)).flatten()) {
-                        self.last_input_group = Some(ControllerPlaneTask::<(), (), (), ()>::TYPE);
+                    if let Some(out) = s.process(self.controller.as_mut().map(|c| c.on_tick(now)).flatten()) {
+                        s.push_last(ControllerPlaneTask::<(), (), (), ()>::TYPE);
                         return self.convert_controller_output(now, out);
                     }
                 }
                 DataPlaneTask::<(), (), (), ()>::TYPE => {
-                    if let Some(out) = gs.process(self.data.on_tick(now)) {
-                        self.last_input_group = Some(DataPlaneTask::<(), (), (), ()>::TYPE);
+                    if let Some(out) = s.process(self.data.on_tick(now)) {
+                        s.push_last(DataPlaneTask::<(), (), (), ()>::TYPE);
                         return Some(event_convert::data_plane::convert_output(self.worker, out));
                     }
                 }
@@ -184,43 +182,52 @@ impl<SC, SE, TC: Debug, TW: Debug> WorkerInner<SdnExtIn<SC>, SdnExtOut<SE>, SdnC
         now: Instant,
         event: WorkerInnerInput<'a, SdnExtIn<SC>, SdnChannel, SdnEvent<TC, TW>>,
     ) -> Option<WorkerInnerOutput<'a, SdnExtOut<SE>, SdnChannel, SdnEvent<TC, TW>, SdnSpawnCfg>> {
-        self.last_input_group = None;
         match event {
             WorkerInnerInput::Task(owner, event) => match owner.group_id()? {
                 ControllerPlaneTask::<(), (), (), ()>::TYPE => {
                     let event = event_convert::controller_plane::convert_input(event);
                     let out = self.controller.as_mut().map(|c| c.on_event(now, event)).flatten()?;
-                    self.last_input_group = Some(ControllerPlaneTask::<(), (), (), ()>::TYPE);
+                    self.switcher.push_last(ControllerPlaneTask::<(), (), (), ()>::TYPE);
                     self.convert_controller_output(now, out)
                 }
                 DataPlaneTask::<(), (), (), ()>::TYPE => {
                     let event = event_convert::data_plane::convert_input(event);
                     let out = self.data.on_event(now, event)?;
-                    self.last_input_group = Some(DataPlaneTask::<(), (), (), ()>::TYPE);
+                    self.switcher.push_last(DataPlaneTask::<(), (), (), ()>::TYPE);
                     Some(event_convert::data_plane::convert_output(self.worker, out))
                 }
                 _ => panic!("unknown task type"),
             },
             WorkerInnerInput::Ext(ext) => {
                 let out = self.controller.as_mut().map(|c| c.on_event(now, TaskInput::Ext(ext))).flatten()?;
-                self.last_input_group = Some(ControllerPlaneTask::<(), (), (), ()>::TYPE);
+                self.switcher.push_last(ControllerPlaneTask::<(), (), (), ()>::TYPE);
                 Some(event_convert::controller_plane::convert_output(self.worker, out))
             }
         }
     }
 
     fn pop_output<'a>(&mut self, now: Instant) -> Option<WorkerInnerOutput<'a, SdnExtOut<SE>, SdnChannel, SdnEvent<TC, TW>, SdnSpawnCfg>> {
-        match self.last_input_group? {
-            ControllerPlaneTask::<(), (), (), ()>::TYPE => {
-                let out = self.controller.as_mut().map(|c| c.pop_output(now)).flatten()?;
-                self.convert_controller_output(now, out)
+        while let Some(current) = self.switcher.current() {
+            match current {
+                ControllerPlaneTask::<(), (), (), ()>::TYPE => {
+                    let out = self.controller.as_mut().map(|c| c.pop_output(now)).flatten();
+                    if let Some(out) = self.switcher.process(out) {
+                        let out = self.convert_controller_output(now, out);
+                        if out.is_some() {
+                            return out;
+                        }
+                    }
+                }
+                DataPlaneTask::<(), (), (), ()>::TYPE => {
+                    let out = self.data.pop_output(now);
+                    if let Some(out) = self.switcher.process(out) {
+                        return Some(event_convert::data_plane::convert_output(self.worker, out));
+                    }
+                }
+                _ => panic!("unknown task type"),
             }
-            DataPlaneTask::<(), (), (), ()>::TYPE => {
-                let out = self.data.pop_output(now)?;
-                Some(event_convert::data_plane::convert_output(self.worker, out))
-            }
-            _ => panic!("unknown task type"),
         }
+        None
     }
 
     fn shutdown<'a>(&mut self, now: Instant) -> Option<WorkerInnerOutput<'a, SdnExtOut<SE>, SdnChannel, SdnEvent<TC, TW>, SdnSpawnCfg>> {
