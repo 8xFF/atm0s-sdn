@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 use atm0s_sdn_router::RouteRule;
-use base::{FeatureControlActor, NeighboursControl, SecureContext, ServiceId, Ttl};
+use base::{FeatureControlActor, NeighboursControl, NetIncomingMeta, NetOutgoingMeta, SecureContext, ServiceId, TransportMsgHeader, Ttl};
 pub use convert_enum;
 use features::{Features, FeaturesControl, FeaturesEvent, FeaturesToController, FeaturesToWorker};
 
@@ -36,8 +36,8 @@ pub enum LogicControl<TC> {
     Feature(FeaturesToController),
     Service(ServiceId, TC),
     NetNeighbour(SocketAddr, NeighboursControl),
-    NetRemote(Features, ConnId, Vec<u8>),
-    NetLocal(Features, Vec<u8>),
+    NetRemote(Features, ConnId, NetIncomingMeta, Vec<u8>),
+    NetLocal(Features, NetIncomingMeta, Vec<u8>),
     FeaturesControl(FeatureControlActor, FeaturesControl),
     ServiceEvent(ServiceId, FeaturesEvent),
 }
@@ -45,8 +45,8 @@ pub enum LogicControl<TC> {
 #[derive(Debug, Clone)]
 pub enum LogicEvent<TW> {
     NetNeighbour(SocketAddr, NeighboursControl),
-    NetDirect(Features, ConnId, Vec<u8>),
-    NetRoute(Features, RouteRule, Ttl, Vec<u8>),
+    NetDirect(Features, ConnId, NetOutgoingMeta, Vec<u8>),
+    NetRoute(Features, RouteRule, NetOutgoingMeta, Vec<u8>),
 
     Pin(ConnId, NodeId, SocketAddr, SecureContext),
     UnPin(ConnId),

@@ -135,15 +135,15 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
                 self.switcher.push_last(TaskType::Service as u8);
                 self.services.on_input(&self.service_ctx, now_ms, service, ServiceInput::FromWorker(to));
             }
-            Input::Control(LogicControl::NetRemote(feature, conn, msg)) => {
+            Input::Control(LogicControl::NetRemote(feature, conn, meta, msg)) => {
                 if let Some(ctx) = self.neighbours.conn(conn) {
                     self.switcher.push_last(TaskType::Feature as u8);
-                    self.features.on_input(&self.feature_ctx, now_ms, feature, FeatureInput::Net(ctx, msg));
+                    self.features.on_input(&self.feature_ctx, now_ms, feature, FeatureInput::Net(ctx, meta, msg));
                 }
             }
-            Input::Control(LogicControl::NetLocal(feature, msg)) => {
+            Input::Control(LogicControl::NetLocal(feature, meta, msg)) => {
                 self.switcher.push_last(TaskType::Feature as u8);
-                self.features.on_input(&self.feature_ctx, now_ms, feature, FeatureInput::Local(msg));
+                self.features.on_input(&self.feature_ctx, now_ms, feature, FeatureInput::Local(meta, msg));
             }
             Input::Control(LogicControl::ServiceEvent(service, event)) => {
                 self.switcher.push_last(TaskType::Service as u8);
@@ -222,9 +222,9 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
                     }
                 }
             }
-            FeatureOutput::SendDirect(conn, buf) => {
+            FeatureOutput::SendDirect(conn, meta, buf) => {
                 log::debug!("[ControllerPlane] SendDirect to conn: {:?}, len: {}", conn, buf.len());
-                Some(Output::Event(LogicEvent::NetDirect(feature, conn, buf)))
+                Some(Output::Event(LogicEvent::NetDirect(feature, conn, meta, buf)))
             }
             FeatureOutput::SendRoute(rule, ttl, buf) => {
                 log::debug!("[ControllerPlane] SendRoute to rule: {:?}, len: {}", rule, buf.len());

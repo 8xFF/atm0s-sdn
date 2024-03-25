@@ -3,10 +3,66 @@ use std::net::SocketAddr;
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 use atm0s_sdn_router::{shadow::ShadowRouter, RouteRule};
 
-use super::{ConnectionCtx, ConnectionEvent, GenericBuffer, GenericBufferMut, ServiceId, Ttl};
+use super::{ConnectionCtx, ConnectionEvent, GenericBuffer, GenericBufferMut, ServiceId, TransportMsgHeader, Ttl};
 
 ///
 ///
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct NetIncomingMeta {
+    pub source: Option<NodeId>,
+    pub ttl: Ttl,
+    pub meta: u8,
+}
+
+impl NetIncomingMeta {
+    pub fn new(source: Option<NodeId>, ttl: Ttl, meta: u8) -> Self {
+        Self { source, ttl, meta }
+    }
+}
+
+impl From<&TransportMsgHeader> for NetIncomingMeta {
+    fn from(value: &TransportMsgHeader) -> Self {
+        Self {
+            source: value.from_node,
+            ttl: Ttl(value.ttl),
+            meta: value.meta,
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct NetOutgoingMeta {
+    pub source: bool,
+    pub ttl: Ttl,
+    pub meta: u8,
+}
+
+impl NetOutgoingMeta {
+    pub fn new(source: bool, ttl: Ttl, meta: u8) -> Self {
+        Self { source, ttl, meta }
+    }
+
+    pub fn to_header(&self, feature: u8, rule: RouteRule, node_id: NodeId) -> TransportMsgHeader {
+        TransportMsgHeader::build(feature, self.meta, rule).set_ttl(*self.ttl).set_from_node(if self.source {
+            Some(node_id)
+        } else {
+            None
+        })
+    }
+
+    pub fn to_incoming(&self, node_id: NodeId) -> NetIncomingMeta {
+        NetIncomingMeta {
+            source: if self.source {
+                Some(node_id)
+            } else {
+                None
+            },
+            ttl: self.ttl,
+            meta: self.meta,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 pub enum FeatureControlActor {
@@ -24,17 +80,17 @@ pub enum FeatureSharedInput {
 pub enum FeatureInput<'a, Control, ToController> {
     FromWorker(ToController),
     Control(FeatureControlActor, Control),
-    Net(&'a ConnectionCtx, Vec<u8>),
-    Local(Vec<u8>),
+    Net(&'a ConnectionCtx, NetIncomingMeta, Vec<u8>),
+    Local(NetIncomingMeta, Vec<u8>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum FeatureOutput<Event, ToWorker> {
     /// First bool is flag for broadcast or not
     ToWorker(bool, ToWorker),
     Event(FeatureControlActor, Event),
-    SendDirect(ConnId, Vec<u8>),
-    SendRoute(RouteRule, Ttl, Vec<u8>),
+    SendDirect(ConnId, NetOutgoingMeta, Vec<u8>),
+    SendRoute(RouteRule, NetOutgoingMeta, Vec<u8>),
     NeighboursConnectTo(NodeAddr),
     NeighboursDisconnectFrom(NodeId),
 }
@@ -48,7 +104,7 @@ impl<'a, Event, ToWorker> FeatureOutput<Event, ToWorker> {
         match self {
             FeatureOutput::ToWorker(is_broadcast, to) => FeatureOutput::ToWorker(is_broadcast, to.into()),
             FeatureOutput::Event(actor, event) => FeatureOutput::Event(actor, event.into()),
-            FeatureOutput::SendDirect(conn, msg) => FeatureOutput::SendDirect(conn, msg),
+            FeatureOutput::SendDirect(conn, meta, msg) => FeatureOutput::SendDirect(conn, meta, msg),
             FeatureOutput::SendRoute(rule, ttl, buf) => FeatureOutput::SendRoute(rule, ttl, buf),
             FeatureOutput::NeighboursConnectTo(addr) => FeatureOutput::NeighboursConnectTo(addr),
             FeatureOutput::NeighboursDisconnectFrom(id) => FeatureOutput::NeighboursDisconnectFrom(id),
@@ -74,20 +130,20 @@ pub enum FeatureWorkerInput<'a, Control, ToWorker> {
     /// First bool is flag for broadcast or not
     FromController(bool, ToWorker),
     Control(FeatureControlActor, Control),
-    Network(ConnId, GenericBuffer<'a>),
-    Local(GenericBuffer<'a>),
+    Network(ConnId, NetIncomingMeta, GenericBuffer<'a>),
+    Local(NetIncomingMeta, GenericBuffer<'a>),
     TunPkt(GenericBufferMut<'a>),
 }
 
 #[derive(Clone)]
 pub enum FeatureWorkerOutput<'a, Control, Event, ToController> {
     ForwardControlToController(FeatureControlActor, Control),
-    ForwardNetworkToController(ConnId, Vec<u8>),
-    ForwardLocalToController(Vec<u8>),
+    ForwardNetworkToController(ConnId, NetIncomingMeta, Vec<u8>),
+    ForwardLocalToController(NetIncomingMeta, Vec<u8>),
     ToController(ToController),
     Event(FeatureControlActor, Event),
-    SendDirect(ConnId, Vec<u8>),
-    SendRoute(RouteRule, Ttl, Vec<u8>),
+    SendDirect(ConnId, NetOutgoingMeta, Vec<u8>),
+    SendRoute(RouteRule, NetOutgoingMeta, Vec<u8>),
     RawDirect(ConnId, GenericBuffer<'a>),
     RawBroadcast(Vec<ConnId>, GenericBuffer<'a>),
     RawDirect2(SocketAddr, GenericBuffer<'a>),
@@ -104,12 +160,12 @@ impl<'a, Control, Event, ToController> FeatureWorkerOutput<'a, Control, Event, T
     {
         match self {
             FeatureWorkerOutput::ForwardControlToController(actor, control) => FeatureWorkerOutput::ForwardControlToController(actor, control.into()),
-            FeatureWorkerOutput::ForwardNetworkToController(conn, msg) => FeatureWorkerOutput::ForwardNetworkToController(conn, msg),
-            FeatureWorkerOutput::ForwardLocalToController(buf) => FeatureWorkerOutput::ForwardLocalToController(buf),
+            FeatureWorkerOutput::ForwardNetworkToController(conn, header, msg) => FeatureWorkerOutput::ForwardNetworkToController(conn, header, msg),
+            FeatureWorkerOutput::ForwardLocalToController(header, buf) => FeatureWorkerOutput::ForwardLocalToController(header, buf),
             FeatureWorkerOutput::ToController(to) => FeatureWorkerOutput::ToController(to.into()),
             FeatureWorkerOutput::Event(actor, event) => FeatureWorkerOutput::Event(actor, event.into()),
-            FeatureWorkerOutput::SendDirect(conn, buf) => FeatureWorkerOutput::SendDirect(conn, buf),
-            FeatureWorkerOutput::SendRoute(route, ttl, buf) => FeatureWorkerOutput::SendRoute(route, ttl, buf),
+            FeatureWorkerOutput::SendDirect(conn, meta, buf) => FeatureWorkerOutput::SendDirect(conn, meta, buf),
+            FeatureWorkerOutput::SendRoute(route, meta, buf) => FeatureWorkerOutput::SendRoute(route, meta, buf),
             FeatureWorkerOutput::RawDirect(conn, buf) => FeatureWorkerOutput::RawDirect(conn, buf),
             FeatureWorkerOutput::RawBroadcast(conns, buf) => FeatureWorkerOutput::RawBroadcast(conns, buf),
             FeatureWorkerOutput::RawDirect2(conn, buf) => FeatureWorkerOutput::RawDirect2(conn, buf),
@@ -121,11 +177,11 @@ impl<'a, Control, Event, ToController> FeatureWorkerOutput<'a, Control, Event, T
     pub fn owned(self) -> FeatureWorkerOutput<'static, Control, Event, ToController> {
         match self {
             FeatureWorkerOutput::ForwardControlToController(actor, control) => FeatureWorkerOutput::ForwardControlToController(actor, control),
-            FeatureWorkerOutput::ForwardNetworkToController(conn, msg) => FeatureWorkerOutput::ForwardNetworkToController(conn, msg),
-            FeatureWorkerOutput::ForwardLocalToController(buf) => FeatureWorkerOutput::ForwardLocalToController(buf),
+            FeatureWorkerOutput::ForwardNetworkToController(conn, header, msg) => FeatureWorkerOutput::ForwardNetworkToController(conn, header, msg),
+            FeatureWorkerOutput::ForwardLocalToController(header, buf) => FeatureWorkerOutput::ForwardLocalToController(header, buf),
             FeatureWorkerOutput::ToController(to) => FeatureWorkerOutput::ToController(to),
             FeatureWorkerOutput::Event(actor, event) => FeatureWorkerOutput::Event(actor, event),
-            FeatureWorkerOutput::SendDirect(conn, buf) => FeatureWorkerOutput::SendDirect(conn, buf),
+            FeatureWorkerOutput::SendDirect(conn, meta, buf) => FeatureWorkerOutput::SendDirect(conn, meta, buf),
             FeatureWorkerOutput::SendRoute(route, ttl, buf) => FeatureWorkerOutput::SendRoute(route, ttl, buf),
             FeatureWorkerOutput::RawDirect(conn, buf) => FeatureWorkerOutput::RawDirect(conn, buf.owned()),
             FeatureWorkerOutput::RawBroadcast(conns, buf) => FeatureWorkerOutput::RawBroadcast(conns, buf.owned()),
@@ -149,21 +205,22 @@ pub trait FeatureWorker<SdkControl, SdkEvent, ToController, ToWorker> {
         now: u64,
         conn: ConnId,
         _remote: SocketAddr,
-        header_len: usize,
+        header: TransportMsgHeader,
         buf: GenericBuffer<'a>,
     ) -> Option<FeatureWorkerOutput<'a, SdkControl, SdkEvent, ToController>> {
-        self.on_input(ctx, now, FeatureWorkerInput::Network(conn, buf.sub_view(header_len..buf.len())))
+        let header_len = header.serialize_size();
+        self.on_input(ctx, now, FeatureWorkerInput::Network(conn, (&header).into(), buf.sub_view(header_len..buf.len())))
     }
     fn on_input<'a>(&mut self, _ctx: &mut FeatureWorkerContext, _now: u64, input: FeatureWorkerInput<'a, SdkControl, ToWorker>) -> Option<FeatureWorkerOutput<'a, SdkControl, SdkEvent, ToController>> {
         match input {
             FeatureWorkerInput::Control(actor, control) => Some(FeatureWorkerOutput::ForwardControlToController(actor, control)),
-            FeatureWorkerInput::Network(conn, buf) => Some(FeatureWorkerOutput::ForwardNetworkToController(conn, buf.to_vec())),
+            FeatureWorkerInput::Network(conn, header, buf) => Some(FeatureWorkerOutput::ForwardNetworkToController(conn, header, buf.to_vec())),
             FeatureWorkerInput::TunPkt(_buf) => None,
             FeatureWorkerInput::FromController(_, _) => {
                 log::warn!("No handler for FromController");
                 None
             }
-            FeatureWorkerInput::Local(buf) => Some(FeatureWorkerOutput::ForwardLocalToController(buf.to_vec())),
+            FeatureWorkerInput::Local(header, buf) => Some(FeatureWorkerOutput::ForwardLocalToController(header, buf.to_vec())),
         }
     }
     fn pop_output<'a>(&mut self, _ctx: &mut FeatureWorkerContext) -> Option<FeatureWorkerOutput<'a, SdkControl, SdkEvent, ToController>> {

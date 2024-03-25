@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use atm0s_sdn_network::{
-    base::{Service, ServiceBuilder, ServiceCtx, ServiceInput, ServiceOutput, ServiceSharedInput, ServiceWorker},
+    base::{NetIncomingMeta, NetOutgoingMeta, Service, ServiceBuilder, ServiceCtx, ServiceInput, ServiceOutput, ServiceSharedInput, ServiceWorker},
     features::{data, FeaturesControl, FeaturesEvent},
     ExtIn, ExtOut,
 };
@@ -81,10 +81,13 @@ fn feature_router_sync_single_node() {
 
     sim.control(
         node1,
-        ExtIn::FeaturesControl(FeaturesControl::Data(data::Control::SendRule(RouteRule::ToService(0), 10.into(), vec![1, 2, 3, 4]))),
+        ExtIn::FeaturesControl(FeaturesControl::Data(data::Control::SendRule(RouteRule::ToService(0), NetOutgoingMeta::default(), vec![1, 2, 3, 4]))),
     );
     sim.process(10);
-    assert_eq!(sim.pop_res(), Some((node1, ExtOut::FeaturesEvent(FeaturesEvent::Data(data::Event::Recv(vec![1, 2, 3, 4]))))));
+    assert_eq!(
+        sim.pop_res(),
+        Some((node1, ExtOut::FeaturesEvent(FeaturesEvent::Data(data::Event::Recv(NetIncomingMeta::default(), vec![1, 2, 3, 4])))))
+    );
 }
 
 #[test]

@@ -9,7 +9,7 @@ use atm0s_sdn_router::{RouteRule, ServiceBroadcastLevel};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    base::{ConnectionEvent, Service, ServiceBuilder, ServiceControlActor, ServiceCtx, ServiceInput, ServiceOutput, ServiceSharedInput, ServiceWorker, Ttl},
+    base::{ConnectionEvent, NetOutgoingMeta, Service, ServiceBuilder, ServiceControlActor, ServiceCtx, ServiceInput, ServiceOutput, ServiceSharedInput, ServiceWorker, Ttl},
     features::{data, FeaturesControl, FeaturesEvent},
 };
 
@@ -122,10 +122,10 @@ where
                     self.last_ping = now;
                     let msg = Message::Snapshot(ctx.node_id, self.conns.values().cloned().collect::<Vec<_>>());
                     let seq = self.broadcast_seq;
-                    self.broadcast_seq = self.broadcast_seq.saturating_add(1);
+                    self.broadcast_seq = self.broadcast_seq.wrapping_add(1);
                     self.queue.push_back(data_cmd(data::Control::SendRule(
                         RouteRule::ToServices(SERVICE_ID, ServiceBroadcastLevel::Global, seq),
-                        Ttl(NODE_PING_TTL),
+                        NetOutgoingMeta::new(false, Ttl(NODE_PING_TTL), 0),
                         bincode::serialize(&msg).expect("Should to bytes"),
                     )));
                 }
@@ -161,7 +161,7 @@ where
 
     fn on_input(&mut self, _ctx: &ServiceCtx, now: u64, input: ServiceInput<FeaturesEvent, SC, TC>) {
         match input {
-            ServiceInput::FeatureEvent(FeaturesEvent::Data(data::Event::Recv(buf))) => {
+            ServiceInput::FeatureEvent(FeaturesEvent::Data(data::Event::Recv(_meta, buf))) => {
                 if let Ok(msg) = bincode::deserialize::<Message>(&buf) {
                     match msg {
                         Message::Snapshot(from, conns) => {
@@ -264,7 +264,7 @@ mod test {
     use atm0s_sdn_router::{RouteRule, ServiceBroadcastLevel};
 
     use crate::{
-        base::{ConnectionCtx, ConnectionEvent, SecureContext, Service, ServiceCtx, ServiceInput, ServiceSharedInput, Ttl},
+        base::{ConnectionCtx, ConnectionEvent, NetIncomingMeta, NetOutgoingMeta, SecureContext, Service, ServiceCtx, ServiceInput, ServiceSharedInput, Ttl},
         features::{
             data::{Control as DataControl, Event as DataEvent},
             FeaturesEvent,
@@ -310,7 +310,7 @@ mod test {
             service.pop_output(&ctx),
             Some(data_cmd(DataControl::SendRule(
                 RouteRule::ToServices(SERVICE_ID, ServiceBroadcastLevel::Global, 0),
-                Ttl(NODE_PING_TTL),
+                NetOutgoingMeta::new(false, Ttl(NODE_PING_TTL), 0),
                 bincode::serialize(&Message::Snapshot(node_id, vec![])).expect("Should to bytes")
             )))
         );
@@ -320,7 +320,7 @@ mod test {
             service.pop_output(&ctx),
             Some(data_cmd(DataControl::SendRule(
                 RouteRule::ToServices(SERVICE_ID, ServiceBroadcastLevel::Global, 1),
-                Ttl(NODE_PING_TTL),
+                NetOutgoingMeta::new(false, Ttl(NODE_PING_TTL), 0),
                 bincode::serialize(&Message::Snapshot(node_id, vec![])).expect("Should to bytes")
             )))
         );
@@ -356,7 +356,7 @@ mod test {
 
         let snapshot = Message::Snapshot(node2, vec![]);
         let buf = bincode::serialize(&snapshot).expect("Should to bytes");
-        service.on_input(&ctx, 100, data_event(DataEvent::Recv(buf)));
+        service.on_input(&ctx, 100, data_event(DataEvent::Recv(NetIncomingMeta::new(None, NODE_PING_TTL.into(), 0), buf)));
 
         assert_eq!(service.network_nodes.len(), 1);
 

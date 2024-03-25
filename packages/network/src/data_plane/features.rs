@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 
 use atm0s_sdn_identity::ConnId;
 
-use crate::base::{FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer};
+use crate::base::{FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer, TransportMsgHeader};
 use crate::features::*;
 
 pub type FeaturesWorkerInput<'a> = FeatureWorkerInput<'a, FeaturesControl, FeaturesToWorker>;
@@ -23,7 +23,8 @@ pub struct FeatureWorkerManager {
     vpn: vpn::VpnFeatureWorker,
     dht_kv: dht_kv::DhtKvFeatureWorker,
     pubsub: pubsub::PubSubFeatureWorker,
-    switcher: TasksSwitcher<u8, 6>,
+    alias: alias::AliasFeatureWorker,
+    switcher: TasksSwitcher<u8, 7>,
 }
 
 impl FeatureWorkerManager {
@@ -35,6 +36,7 @@ impl FeatureWorkerManager {
             vpn: vpn::VpnFeatureWorker,
             dht_kv: dht_kv::DhtKvFeatureWorker::default(),
             pubsub: pubsub::PubSubFeatureWorker::new(),
+            alias: alias::AliasFeatureWorker::default(),
             switcher: TasksSwitcher::default(),
         }
     }
@@ -47,6 +49,7 @@ impl FeatureWorkerManager {
         self.vpn.on_tick(ctx, now_ms, tick_count);
         self.dht_kv.on_tick(ctx, now_ms, tick_count);
         self.pubsub.on_tick(ctx, now_ms, tick_count);
+        self.alias.on_tick(ctx, now_ms, tick_count);
     }
 
     pub fn on_network_raw<'a>(
@@ -56,16 +59,17 @@ impl FeatureWorkerManager {
         now_ms: u64,
         conn: ConnId,
         remote: SocketAddr,
-        header_len: usize,
+        header: TransportMsgHeader,
         buf: GenericBuffer<'a>,
     ) -> Option<FeaturesWorkerOutput<'a>> {
         let out = match feature {
-            Features::Neighbours => self.neighbours.on_network_raw(ctx, now_ms, conn, remote, header_len, buf).map(|a| a.into2()),
-            Features::Data => self.data.on_network_raw(ctx, now_ms, conn, remote, header_len, buf).map(|a| a.into2()),
-            Features::RouterSync => self.router_sync.on_network_raw(ctx, now_ms, conn, remote, header_len, buf).map(|a| a.into2()),
-            Features::Vpn => self.vpn.on_network_raw(ctx, now_ms, conn, remote, header_len, buf).map(|a| a.into2()),
-            Features::DhtKv => self.dht_kv.on_network_raw(ctx, now_ms, conn, remote, header_len, buf).map(|a| a.into2()),
-            Features::PubSub => self.pubsub.on_network_raw(ctx, now_ms, conn, remote, header_len, buf).map(|a| a.into2()),
+            Features::Neighbours => self.neighbours.on_network_raw(ctx, now_ms, conn, remote, header, buf).map(|a| a.into2()),
+            Features::Data => self.data.on_network_raw(ctx, now_ms, conn, remote, header, buf).map(|a| a.into2()),
+            Features::RouterSync => self.router_sync.on_network_raw(ctx, now_ms, conn, remote, header, buf).map(|a| a.into2()),
+            Features::Vpn => self.vpn.on_network_raw(ctx, now_ms, conn, remote, header, buf).map(|a| a.into2()),
+            Features::DhtKv => self.dht_kv.on_network_raw(ctx, now_ms, conn, remote, header, buf).map(|a| a.into2()),
+            Features::PubSub => self.pubsub.on_network_raw(ctx, now_ms, conn, remote, header, buf).map(|a| a.into2()),
+            Features::Alias => self.alias.on_network_raw(ctx, now_ms, conn, remote, header, buf).map(|a| a.into2()),
         };
         if out.is_some() {
             self.switcher.push_last(feature as u8);
@@ -82,6 +86,7 @@ impl FeatureWorkerManager {
                 FeaturesControl::Vpn(control) => self.vpn.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| a.into2()),
                 FeaturesControl::DhtKv(control) => self.dht_kv.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| a.into2()),
                 FeaturesControl::PubSub(control) => self.pubsub.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| a.into2()),
+                FeaturesControl::Alias(control) => self.alias.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| a.into2()),
             },
             FeatureWorkerInput::FromController(is_broadcast, to) => match to {
                 FeaturesToWorker::Neighbours(to) => self.neighbours.on_input(ctx, now_ms, FeatureWorkerInput::FromController(is_broadcast, to)).map(|a| a.into2()),
@@ -90,18 +95,20 @@ impl FeatureWorkerManager {
                 FeaturesToWorker::Vpn(to) => self.vpn.on_input(ctx, now_ms, FeatureWorkerInput::FromController(is_broadcast, to)).map(|a| a.into2()),
                 FeaturesToWorker::DhtKv(to) => self.dht_kv.on_input(ctx, now_ms, FeatureWorkerInput::FromController(is_broadcast, to)).map(|a| a.into2()),
                 FeaturesToWorker::PubSub(to) => self.pubsub.on_input(ctx, now_ms, FeatureWorkerInput::FromController(is_broadcast, to)).map(|a| a.into2()),
+                FeaturesToWorker::Alias(to) => self.alias.on_input(ctx, now_ms, FeatureWorkerInput::FromController(is_broadcast, to)).map(|a| a.into2()),
             },
-            FeatureWorkerInput::Network(_conn, _buf) => {
+            FeatureWorkerInput::Network(_conn, _header, _buf) => {
                 panic!("should call above on_network_raw")
             }
             FeatureWorkerInput::TunPkt(pkt) => self.vpn.on_input(ctx, now_ms, FeatureWorkerInput::TunPkt(pkt)).map(|a| a.into2()),
-            FeatureWorkerInput::Local(buf) => match feature {
-                Features::Neighbours => self.neighbours.on_input(ctx, now_ms, FeatureWorkerInput::Local(buf)).map(|a| a.into2()),
-                Features::Data => self.data.on_input(ctx, now_ms, FeatureWorkerInput::Local(buf)).map(|a| a.into2()),
-                Features::RouterSync => self.router_sync.on_input(ctx, now_ms, FeatureWorkerInput::Local(buf)).map(|a| a.into2()),
-                Features::Vpn => self.vpn.on_input(ctx, now_ms, FeatureWorkerInput::Local(buf)).map(|a| a.into2()),
-                Features::DhtKv => self.dht_kv.on_input(ctx, now_ms, FeatureWorkerInput::Local(buf)).map(|a| a.into2()),
-                Features::PubSub => self.pubsub.on_input(ctx, now_ms, FeatureWorkerInput::Local(buf)).map(|a| a.into2()),
+            FeatureWorkerInput::Local(header, buf) => match feature {
+                Features::Neighbours => self.neighbours.on_input(ctx, now_ms, FeatureWorkerInput::Local(header, buf)).map(|a| a.into2()),
+                Features::Data => self.data.on_input(ctx, now_ms, FeatureWorkerInput::Local(header, buf)).map(|a| a.into2()),
+                Features::RouterSync => self.router_sync.on_input(ctx, now_ms, FeatureWorkerInput::Local(header, buf)).map(|a| a.into2()),
+                Features::Vpn => self.vpn.on_input(ctx, now_ms, FeatureWorkerInput::Local(header, buf)).map(|a| a.into2()),
+                Features::DhtKv => self.dht_kv.on_input(ctx, now_ms, FeatureWorkerInput::Local(header, buf)).map(|a| a.into2()),
+                Features::PubSub => self.pubsub.on_input(ctx, now_ms, FeatureWorkerInput::Local(header, buf)).map(|a| a.into2()),
+                Features::Alias => self.alias.on_input(ctx, now_ms, FeatureWorkerInput::Local(header, buf)).map(|a| a.into2()),
             },
         };
         if out.is_some() {
@@ -142,6 +149,11 @@ impl FeatureWorkerManager {
                 Features::PubSub => {
                     if let Some(out) = s.process(self.pubsub.pop_output(ctx)) {
                         return Some((Features::PubSub, out.owned().into2()));
+                    }
+                }
+                Features::Alias => {
+                    if let Some(out) = s.process(self.alias.pop_output(ctx)) {
+                        return Some((Features::Alias, out.owned().into2()));
                     }
                 }
             }

@@ -1,8 +1,10 @@
+pub mod alias;
 pub mod data;
 pub mod dht_kv;
 pub mod neighbours;
 pub mod pubsub;
 pub mod router_sync;
+pub mod socket;
 pub mod vpn;
 
 ///
@@ -19,6 +21,7 @@ pub enum Features {
     Vpn = vpn::FEATURE_ID,
     DhtKv = dht_kv::FEATURE_ID,
     PubSub = pubsub::FEATURE_ID,
+    Alias = alias::FEATURE_ID,
 }
 
 impl TryFrom<u8> for Features {
@@ -32,6 +35,7 @@ impl TryFrom<u8> for Features {
             vpn::FEATURE_ID => Ok(Features::Vpn),
             dht_kv::FEATURE_ID => Ok(Features::DhtKv),
             pubsub::FEATURE_ID => Ok(Features::PubSub),
+            alias::FEATURE_ID => Ok(Features::Alias),
             _ => Err(()),
         }
     }
@@ -45,6 +49,7 @@ pub enum FeaturesControl {
     Vpn(vpn::Control),
     DhtKv(dht_kv::Control),
     PubSub(pubsub::Control),
+    Alias(alias::Control),
 }
 
 impl FeaturesControl {
@@ -56,6 +61,7 @@ impl FeaturesControl {
             Self::Vpn(_) => Features::Vpn,
             Self::DhtKv(_) => Features::DhtKv,
             Self::PubSub(_) => Features::PubSub,
+            Self::Alias(_) => Features::Alias,
         }
     }
 }
@@ -68,6 +74,7 @@ pub enum FeaturesEvent {
     Vpn(vpn::Event),
     DhtKv(dht_kv::Event),
     PubSub(pubsub::Event),
+    Alias(alias::Event),
 }
 
 #[derive(Debug, Clone, convert_enum::From)]
@@ -78,6 +85,7 @@ pub enum FeaturesToController {
     Vpn(vpn::ToController),
     DhtKv(dht_kv::ToController),
     PubSub(pubsub::ToController),
+    Alias(alias::ToController),
 }
 
 impl FeaturesToController {
@@ -89,6 +97,7 @@ impl FeaturesToController {
             Self::Vpn(_) => Features::Vpn,
             Self::DhtKv(_) => Features::DhtKv,
             Self::PubSub(_) => Features::PubSub,
+            Self::Alias(_) => Features::Alias,
         }
     }
 }
@@ -101,6 +110,7 @@ pub enum FeaturesToWorker {
     Vpn(vpn::ToWorker),
     DhtKv(dht_kv::ToWorker),
     PubSub(pubsub::ToWorker),
+    Alias(alias::ToWorker),
 }
 
 impl FeaturesToWorker {
@@ -112,6 +122,7 @@ impl FeaturesToWorker {
             Self::Vpn(_) => Features::Vpn,
             Self::DhtKv(_) => Features::DhtKv,
             Self::PubSub(_) => Features::PubSub,
+            Self::Alias(_) => Features::Alias,
         }
     }
 }

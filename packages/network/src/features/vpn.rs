@@ -65,7 +65,7 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for VpnFeatureWorker 
     fn on_input<'a>(&mut self, ctx: &mut FeatureWorkerContext, _now: u64, input: FeatureWorkerInput<'a, Control, ToWorker>) -> Option<FeatureWorkerOutput<'a, Control, Event, ToController>> {
         match input {
             FeatureWorkerInput::TunPkt(pkt) => self.process_tun(ctx, pkt),
-            FeatureWorkerInput::Network(_conn, pkt) => self.process_udp(ctx, pkt),
+            FeatureWorkerInput::Network(_conn, _header, pkt) => self.process_udp(ctx, pkt),
             _ => None,
         }
     }

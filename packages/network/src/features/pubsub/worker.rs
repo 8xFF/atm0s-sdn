@@ -6,7 +6,7 @@ use std::{
 use atm0s_sdn_identity::ConnId;
 use atm0s_sdn_router::RouterTable;
 
-use crate::base::{FeatureControlActor, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer};
+use crate::base::{FeatureControlActor, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer, TransportMsgHeader};
 
 use super::{
     msg::{PubsubMessage, RelayControl, RelayId},
@@ -49,7 +49,7 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWork
         _now: u64,
         _conn: ConnId,
         remote: SocketAddr,
-        _header_len: usize,
+        _header: TransportMsgHeader,
         buf: GenericBuffer<'a>,
     ) -> Option<FeatureWorkerOutput<'a, Control, Event, ToController>> {
         log::debug!("[PubSubWorker] on_network_raw from {}", remote);

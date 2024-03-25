@@ -9,7 +9,9 @@ use atm0s_sdn_router::{
     shadow::ShadowRouterDelta,
 };
 
-use crate::base::{ConnectionEvent, Feature, FeatureContext, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput};
+use crate::base::{
+    ConnectionEvent, Feature, FeatureContext, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, NetOutgoingMeta,
+};
 
 pub const FEATURE_ID: u8 = 2;
 pub const FEATURE_NAME: &str = "router_sync";
@@ -44,7 +46,7 @@ impl RouterSyncFeature {
 
     fn send_sync_to(router: &Router, queue: &mut VecDeque<FeatureOutput<Event, ToWorker>>, conn: ConnId, node: NodeId) {
         let sync = router.create_sync(node);
-        queue.push_back(FeatureOutput::SendDirect(conn, bincode::serialize(&sync).expect("").into()));
+        queue.push_back(FeatureOutput::SendDirect(conn, NetOutgoingMeta::default(), bincode::serialize(&sync).expect("").into()));
     }
 }
 
@@ -91,7 +93,7 @@ impl Feature<Control, Event, ToController, ToWorker> for RouterSyncFeature {
 
     fn on_input<'a>(&mut self, _ctx: &FeatureContext, _now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
         match input {
-            FeatureInput::Net(ctx, buf) => {
+            FeatureInput::Net(ctx, _header, buf) => {
                 if let Some((_node, _remote, metric)) = self.conns.get(&ctx.conn) {
                     if let Ok(sync) = bincode::deserialize::<RouterSync>(&buf) {
                         self.router.apply_sync(ctx.conn, metric.clone(), sync);
@@ -146,13 +148,13 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for RouterSyncFeature
     fn on_input<'a>(&mut self, ctx: &mut FeatureWorkerContext, _now: u64, input: FeatureWorkerInput<'a, Control, ToWorker>) -> Option<FeatureWorkerOutput<'a, Control, Event, ToController>> {
         match input {
             FeatureWorkerInput::Control(service, control) => Some(FeatureWorkerOutput::ForwardControlToController(service, control)),
-            FeatureWorkerInput::Network(conn, msg) => Some(FeatureWorkerOutput::ForwardNetworkToController(conn, msg.to_vec())),
+            FeatureWorkerInput::Network(conn, header, msg) => Some(FeatureWorkerOutput::ForwardNetworkToController(conn, header, msg.to_vec())),
             FeatureWorkerInput::FromController(_, delta) => {
                 log::debug!("[RouterSyncWorker] apply router delta {:?}", delta);
                 ctx.router.apply_delta(delta);
                 None
             }
-            FeatureWorkerInput::Local(_msg) => {
+            FeatureWorkerInput::Local(_header, _msg) => {
                 log::warn!("No handler for local message in {}", FEATURE_NAME);
                 None
             }

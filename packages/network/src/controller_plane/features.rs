@@ -21,7 +21,8 @@ pub struct FeatureManager {
     vpn: vpn::VpnFeature,
     dht_kv: dht_kv::DhtKvFeature,
     pubsub: pubsub::PubSubFeature,
-    switcher: TasksSwitcher<u8, 6>,
+    alias: alias::AliasFeature,
+    switcher: TasksSwitcher<u8, 7>,
 }
 
 impl FeatureManager {
@@ -33,6 +34,7 @@ impl FeatureManager {
             vpn: vpn::VpnFeature::default(),
             dht_kv: dht_kv::DhtKvFeature::new(node, session),
             pubsub: pubsub::PubSubFeature::new(),
+            alias: alias::AliasFeature::default(),
             switcher: TasksSwitcher::default(),
         }
     }
@@ -44,7 +46,8 @@ impl FeatureManager {
         self.router_sync.on_shared_input(ctx, now_ms, input.clone());
         self.dht_kv.on_shared_input(ctx, now_ms, input.clone());
         self.vpn.on_shared_input(ctx, now_ms, input.clone());
-        self.pubsub.on_shared_input(ctx, now_ms, input);
+        self.pubsub.on_shared_input(ctx, now_ms, input.clone());
+        self.alias.on_shared_input(ctx, now_ms, input);
     }
 
     pub fn on_input<'a>(&mut self, ctx: &FeatureContext, now_ms: u64, feature: Features, input: FeaturesInput<'a>) {
@@ -57,6 +60,7 @@ impl FeatureManager {
                 FeaturesToController::Vpn(to) => self.vpn.on_input(ctx, now_ms, FeatureInput::FromWorker(to)),
                 FeaturesToController::DhtKv(to) => self.dht_kv.on_input(ctx, now_ms, FeatureInput::FromWorker(to)),
                 FeaturesToController::PubSub(to) => self.pubsub.on_input(ctx, now_ms, FeatureInput::FromWorker(to)),
+                FeaturesToController::Alias(to) => self.alias.on_input(ctx, now_ms, FeatureInput::FromWorker(to)),
             },
             FeatureInput::Control(service, control) => match control {
                 FeaturesControl::Data(control) => self.data.on_input(ctx, now_ms, FeatureInput::Control(service, control)),
@@ -65,22 +69,25 @@ impl FeatureManager {
                 FeaturesControl::Vpn(control) => self.vpn.on_input(ctx, now_ms, FeatureInput::Control(service, control)),
                 FeaturesControl::DhtKv(control) => self.dht_kv.on_input(ctx, now_ms, FeatureInput::Control(service, control)),
                 FeaturesControl::PubSub(control) => self.pubsub.on_input(ctx, now_ms, FeatureInput::Control(service, control)),
+                FeaturesControl::Alias(control) => self.alias.on_input(ctx, now_ms, FeatureInput::Control(service, control)),
             },
-            FeatureInput::Net(con_ctx, buf) => match feature {
-                Features::Data => self.data.on_input(ctx, now_ms, FeatureInput::Net(con_ctx, buf)),
-                Features::Neighbours => self.neighbours.on_input(ctx, now_ms, FeatureInput::Net(con_ctx, buf)),
-                Features::RouterSync => self.router_sync.on_input(ctx, now_ms, FeatureInput::Net(con_ctx, buf)),
-                Features::Vpn => self.vpn.on_input(ctx, now_ms, FeatureInput::Net(con_ctx, buf)),
-                Features::DhtKv => self.dht_kv.on_input(ctx, now_ms, FeatureInput::Net(con_ctx, buf)),
-                Features::PubSub => self.pubsub.on_input(ctx, now_ms, FeatureInput::Net(con_ctx, buf)),
+            FeatureInput::Net(con_ctx, header, buf) => match feature {
+                Features::Data => self.data.on_input(ctx, now_ms, FeatureInput::Net(con_ctx, header, buf)),
+                Features::Neighbours => self.neighbours.on_input(ctx, now_ms, FeatureInput::Net(con_ctx, header, buf)),
+                Features::RouterSync => self.router_sync.on_input(ctx, now_ms, FeatureInput::Net(con_ctx, header, buf)),
+                Features::Vpn => self.vpn.on_input(ctx, now_ms, FeatureInput::Net(con_ctx, header, buf)),
+                Features::DhtKv => self.dht_kv.on_input(ctx, now_ms, FeatureInput::Net(con_ctx, header, buf)),
+                Features::PubSub => self.pubsub.on_input(ctx, now_ms, FeatureInput::Net(con_ctx, header, buf)),
+                Features::Alias => self.alias.on_input(ctx, now_ms, FeatureInput::Net(con_ctx, header, buf)),
             },
-            FeatureInput::Local(buf) => match feature {
-                Features::Data => self.data.on_input(ctx, now_ms, FeatureInput::Local(buf)),
-                Features::Neighbours => self.neighbours.on_input(ctx, now_ms, FeatureInput::Local(buf)),
-                Features::RouterSync => self.router_sync.on_input(ctx, now_ms, FeatureInput::Local(buf)),
-                Features::Vpn => self.vpn.on_input(ctx, now_ms, FeatureInput::Local(buf)),
-                Features::DhtKv => self.dht_kv.on_input(ctx, now_ms, FeatureInput::Local(buf)),
-                Features::PubSub => self.pubsub.on_input(ctx, now_ms, FeatureInput::Local(buf)),
+            FeatureInput::Local(header, buf) => match feature {
+                Features::Data => self.data.on_input(ctx, now_ms, FeatureInput::Local(header, buf)),
+                Features::Neighbours => self.neighbours.on_input(ctx, now_ms, FeatureInput::Local(header, buf)),
+                Features::RouterSync => self.router_sync.on_input(ctx, now_ms, FeatureInput::Local(header, buf)),
+                Features::Vpn => self.vpn.on_input(ctx, now_ms, FeatureInput::Local(header, buf)),
+                Features::DhtKv => self.dht_kv.on_input(ctx, now_ms, FeatureInput::Local(header, buf)),
+                Features::PubSub => self.pubsub.on_input(ctx, now_ms, FeatureInput::Local(header, buf)),
+                Features::Alias => self.alias.on_input(ctx, now_ms, FeatureInput::Local(header, buf)),
             },
         }
     }
@@ -117,6 +124,11 @@ impl FeatureManager {
                 Features::PubSub => {
                     if let Some(out) = s.process(self.pubsub.pop_output(ctx)) {
                         return Some((Features::PubSub, out.into2()));
+                    }
+                }
+                Features::Alias => {
+                    if let Some(out) = s.process(self.alias.pop_output(ctx)) {
+                        return Some((Features::Alias, out.into2()));
                     }
                 }
             }

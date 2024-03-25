@@ -12,8 +12,8 @@ use atm0s_sdn_router::{
 
 use crate::{
     base::{
-        FeatureControlActor, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer, GenericBufferMut, NeighboursControl, ServiceBuilder, ServiceControlActor, ServiceId,
-        ServiceWorkerCtx, ServiceWorkerInput, ServiceWorkerOutput, TransportMsg, TransportMsgHeader, Ttl,
+        FeatureControlActor, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer, GenericBufferMut, NeighboursControl, NetOutgoingMeta, ServiceBuilder, ServiceControlActor,
+        ServiceId, ServiceWorkerCtx, ServiceWorkerInput, ServiceWorkerOutput, TransportMsg, TransportMsgHeader, Ttl,
     },
     features::{Features, FeaturesControl, FeaturesEvent, FeaturesToController},
     san_io_utils::TasksSwitcher,
@@ -137,12 +137,13 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 let buf = (&control).try_into().ok()?;
                 Some(NetOutput::UdpPacket(remote, GenericBuffer::Vec(buf)).into())
             }
-            Input::Event(LogicEvent::NetDirect(feature, conn, buf)) => {
+            Input::Event(LogicEvent::NetDirect(feature, conn, meta, buf)) => {
                 let addr = self.conns_reverse.get(&conn)?;
-                let msg = TransportMsg::build(feature as u8, 0, RouteRule::Direct, &buf);
+                let header = meta.to_header(feature as u8, RouteRule::Direct, self.feature_ctx.node_id);
+                let msg = TransportMsg::build_raw(header, &buf);
                 Some(NetOutput::UdpPacket(*addr, msg.take().into()).into())
             }
-            Input::Event(LogicEvent::NetRoute(feature, rule, ttl, buf)) => self.outgoing_route(now_ms, feature, rule, ttl, buf),
+            Input::Event(LogicEvent::NetRoute(feature, rule, meta, buf)) => self.outgoing_route(now_ms, feature, rule, meta, buf),
             Input::Event(LogicEvent::Pin(conn, node, addr, secure)) => {
                 self.conns.insert(addr, DataPlaneConnection::new(node, conn, addr, secure));
                 self.conns_reverse.insert(conn, addr);
@@ -198,9 +199,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
             RouteAction::Local => {
                 let feature = header.feature.try_into().ok()?;
                 log::debug!("Incoming feature: {:?} from: {remote}", feature);
-                let out = self
-                    .features
-                    .on_network_raw(&mut self.feature_ctx, feature, now_ms, conn.conn(), remote, header.serialize_size(), buf.to_readonly())?;
+                let out = self.features.on_network_raw(&mut self.feature_ctx, feature, now_ms, conn.conn(), remote, header, buf.to_readonly())?;
                 Some(self.convert_features(now_ms, feature, out))
             }
             RouteAction::Next(remote) => {
@@ -218,10 +217,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 if local {
                     if let Ok(feature) = header.feature.try_into() {
                         log::debug!("Incoming broadcast feature: {:?} from: {remote}", feature);
-                        if let Some(out) = self
-                            .features
-                            .on_network_raw(&mut self.feature_ctx, feature, now_ms, conn.conn(), remote, header.serialize_size(), buf.clone())
-                        {
+                        if let Some(out) = self.features.on_network_raw(&mut self.feature_ctx, feature, now_ms, conn.conn(), remote, header, buf.clone()) {
                             self.queue_output.push_back(QueueOutput::Feature(feature, out.owned()));
                         }
                     }
@@ -231,7 +227,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
         }
     }
 
-    fn outgoing_route<'a>(&mut self, now_ms: u64, feature: Features, rule: RouteRule, ttl: Ttl, buf: Vec<u8>) -> Option<Output<'a, SE, TC>> {
+    fn outgoing_route<'a>(&mut self, now_ms: u64, feature: Features, rule: RouteRule, mut meta: NetOutgoingMeta, buf: Vec<u8>) -> Option<Output<'a, SE, TC>> {
         match self.feature_ctx.router.derive_action(&rule, Some(self.feature_ctx.node_id), None) {
             RouteAction::Reject => {
                 log::debug!("[DataPlane] outgoing route rule {:?} is rejected", rule);
@@ -239,22 +235,25 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
             }
             RouteAction::Local => {
                 log::debug!("[DataPlane] outgoing route rule {:?} is processed locally", rule);
-                let out = self.features.on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::Local(buf.into()))?;
+                let meta = meta.to_incoming(self.feature_ctx.node_id);
+                let out = self.features.on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::Local(meta, buf.into()))?;
                 Some(self.convert_features(now_ms, feature, out.owned()))
             }
             RouteAction::Next(remote) => {
                 log::debug!("[DataPlane] outgoing route rule {:?} is go with remote {remote}", rule);
-                let header = TransportMsgHeader::build(feature as u8, 0, rule).set_ttl(*ttl);
+                let header = meta.to_header(feature as u8, rule, self.feature_ctx.node_id);
                 let msg = TransportMsg::build_raw(header, &buf);
                 Some(NetOutput::UdpPacket(remote, msg.take().into()).into())
             }
             RouteAction::Broadcast(local, remotes) => {
                 log::debug!("[DataPlane] outgoing route rule {:?} is go with local {local} and remotes {:?}", rule, remotes);
+                meta.source = true; //Force enable source for broadcast
 
-                let header = TransportMsgHeader::build(feature as u8, 0, rule).set_ttl(*ttl).set_from_node(Some(self.feature_ctx.node_id));
+                let header = meta.to_header(feature as u8, rule, self.feature_ctx.node_id);
                 let msg = TransportMsg::build_raw(header, &buf);
                 if local {
-                    if let Some(out) = self.features.on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::Local(buf.into())) {
+                    let meta = meta.to_incoming(self.feature_ctx.node_id);
+                    if let Some(out) = self.features.on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::Local(meta, buf.into())) {
                         self.switcher.push_last(TaskType::Feature as u8);
                         self.queue_output.push_back(QueueOutput::Feature(feature, out.owned()));
                     }
@@ -270,8 +269,8 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
 
         match out {
             FeatureWorkerOutput::ForwardControlToController(service, control) => LogicControl::FeaturesControl(service, control).into(),
-            FeatureWorkerOutput::ForwardNetworkToController(conn, msg) => LogicControl::NetRemote(feature, conn, msg).into(),
-            FeatureWorkerOutput::ForwardLocalToController(buf) => LogicControl::NetLocal(feature, buf).into(),
+            FeatureWorkerOutput::ForwardNetworkToController(conn, header, msg) => LogicControl::NetRemote(feature, conn, header, msg).into(),
+            FeatureWorkerOutput::ForwardLocalToController(header, buf) => LogicControl::NetLocal(feature, header, buf).into(),
             FeatureWorkerOutput::ToController(control) => LogicControl::Feature(control).into(),
             FeatureWorkerOutput::Event(actor, event) => match actor {
                 FeatureControlActor::Controller => Output::Ext(ExtOut::FeaturesEvent(event)),
@@ -283,9 +282,10 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                     Output::Continue
                 }
             },
-            FeatureWorkerOutput::SendDirect(conn, buf) => {
+            FeatureWorkerOutput::SendDirect(conn, meta, buf) => {
                 if let Some(addr) = self.conns_reverse.get(&conn) {
-                    let msg = TransportMsg::build(feature as u8, 0, RouteRule::Direct, &buf);
+                    let header = meta.to_header(feature as u8, RouteRule::Direct, self.feature_ctx.node_id);
+                    let msg = TransportMsg::build_raw(header, &buf);
                     NetOutput::UdpPacket(*addr, msg.take().into()).into()
                 } else {
                     Output::Continue

@@ -23,7 +23,7 @@ impl<T: Copy + Eq + FromPrimitive + ToPrimitive, const TASKS: usize> TasksSwitch
     }
 
     /// Returns the current index of the task group, if it's not finished. Otherwise, returns None.
-    pub fn current(&mut self) -> Option<T> {
+    pub fn current(&self) -> Option<T> {
         self.stack.last().map(|x| *x)
     }
 
