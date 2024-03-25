@@ -55,6 +55,7 @@ We are working with some potential partners to integrate the network in real-wor
 - [x] Node Alias: Each node can have multiple alias
 - [x] Virtual Socket: Act as virtual UDP socket
 - [ ] Network accelerator by eBPF redirect
+- [ ] Authentication and Encryption
 
 ### Build-in services
 

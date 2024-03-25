@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 use atm0s_sdn_router::RouteRule;
-use base::{FeatureControlActor, NeighboursControl, NetIncomingMeta, NetOutgoingMeta, SecureContext, ServiceId, TransportMsgHeader, Ttl};
+use base::{FeatureControlActor, NeighboursControl, NetIncomingMeta, NetOutgoingMeta, SecureContext, ServiceId};
 pub use convert_enum;
 use features::{Features, FeaturesControl, FeaturesEvent, FeaturesToController, FeaturesToWorker};
 

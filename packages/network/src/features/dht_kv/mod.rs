@@ -8,7 +8,7 @@
 
 use atm0s_sdn_identity::NodeId;
 
-use crate::base::{Feature, FeatureContext, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker, NetOutgoingMeta, Ttl};
+use crate::base::{Feature, FeatureContext, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker, NetOutgoingMeta};
 
 use self::{
     internal::InternalOutput,
