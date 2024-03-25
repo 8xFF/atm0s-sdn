@@ -25,7 +25,7 @@
  </a>
 </p>
 
-# Atm0s SDN: Global-scaled Ultra-low latency Decentralized SDN
+# atm0s-sdn: Global-scaled Ultra-low latency Decentralized SDN
 
 A SAN I/O driven, open-source decentralized network infrastructure that can deliver high-quality data with minimal latency and efficient cost, similar to what Cloudflare achieves for their network.
 
@@ -33,109 +33,106 @@ For a deep dive into the technical aspects of network architecture, please refer
 
 ## Features
 
-  - Blazingly fast, powered by Rust.
-  - High availability by being fully distributed, with no central controller.
-  - Multi-zone support, high scalability.
-  - Definable Metric based Adaptive routing: cost, latency, .etc...
-  - Fixed size routing table.
-  - Designed with large scale built-in PubSub service.
-  - Automatic Network orchestration and discovery (also can be manual).
-  - High extendibility by using Network Service.
-  - Built-in features: PubSub, KeyValue, VPN.
-  - Cross platform: Linux, MacOs, Windows.
+- High availability by being fully distributed, with no central controller.
+- Multi-zone support, high scalability.
+- Metric based Adaptive routing: latency, bandwidth
+- Network orchestration and discovery (manual mode only).
+- High extendibility by using Network Service.
+- Built-in features: PubSub, KeyValue ..
+- Cross platform: Linux, MacOs.
+
+### Build-in features
+
+- [x] Router sync: automaticaly sync routing table between nodes for implementing Smart-Routing
+- [x] Pubsub: Publish/Subscribe
+- [x] DHT Multi-Map: Key-Value store
+- [x] Node Alias: Each node can have multiple alias
+- [x] Virtual Socket: Act as virtual UDP socket
+
+### Build-in services
+
+- [x] Visualization: show network structure
+- [x] Manual discovery: each node can set owner tags and interested tags. each node will trying to connect to other nodes that have the interested tags.
 
 ## Architecture
 
-Each node in the network is embedded with Geo-Location data inside its ID. A Node ID consists of multiple layers, and every node will have multiple routing tables, each corresponding to a layer.
+We split logic in to 2 parts: feature and service.
 
-  - Layer1: Geo1 Table (Zone level)
-  - Layer2: Geo2 Table (Country level)
-  - Layer3: Inner Geo Group Table (City level)
-  - Layer4: Inner Group Index Table (DC level)
+- Feature: is a high-level logic that can be used to build a network service. For example, PubSub, KeyValue, Virtual Socket ..
+- Service: is a extendable logic that can be used to build a custom logic. Each service can use all other features to build a custom logic.
 
-TODO: Graphics instead of bulletlist
-TODO: ARCHITECTURE.md with general information about: Project, System structure, Design philosophy, ...
+![Network Protocol](./docs/imgs/flow.excalidraw.png)
+
+For better in testing and developing we split library to 2 parts:
+
+- Network Protocol: implement in SANS-I/O style
+- Runner: for integrating with SANS-I/O runtime
+
 ## Getting started
 
-```bash
-cargo add 8xff-sdn
-```
+Project includes some example and a standalone node, which can be used to test the network.
 
-### Create a group chat application (Optional)
-You can refer to [the chat_example file here](examples/examples/chat_example.rs) to get started on the basis of building an application for the network.
-
-### Demo group chat application
-#### Running manual discovery multi nodes in a single device
-
-Start node1:
+Build from source:
 
 ```bash
-cargo run --example chat_example -- --node-id 0
+cd bin
+cargo build --release
 ```
 
-Start node2:
+Running first seed node as a network structure collector:
 
 ```bash
-cargo run --example chat_example --node-id 1 --neighbour /p2p/0/ip4/127.0.0.1/udp/50000
+cargo run -- --collector --local-tags demo --connect-tags demo --node-id 1 --udp-port 10001 --web-addr 0.0.0.0:3000
 ```
 
-In node1
-
-```shell
-> router
-[Registry 0] local services: [] remote services: [], nexts []
-[Table 0/3/0] slots: []
-[Table 0/2/0] slots: []
-[Table 0/1/0] slots: []
-[Table 0/0/0] slots: [1]
-# Join the room using join command with room id
-> join 1
-```
-
-In node2
-
-```shell
-> join 1
-> send hello
-```
-
-Now, node1 will receive a message from node2
-
-```shell
-Node 1 to room 1: hello
-```
-
-Available commands:
-  - `help`: Show available commands and description
-  - `router`: Print routing table
-  - `join`: Join a room
-  - `send`: Send a message to room
-  - `leave`: Leave joined room
-
-#### Running manual discovery multi nodes in multi devices
-
-It can also start chat-example in multi nodes and connect over LAN or Internet
-
-Start node1:
+Running second nodes and join to network with seed node (you need to replace with seed node IP if it running on another device):
 
 ```bash
-cargo run --example chat_example --node-id 0
+cargo run -- --local-tags demo --connect-tags mode --seeds 1@/ip4/127.0.0.1/udp/10001 --node-id 2 --udp-port 10002
 ```
 
-Start node2:
+Same with this, we can run more nodes and connect to the network. Remember change node-id and port for not conflict with other nodes.
 
-```bash
-cargo run --example chat_example --node-id 1 --neighbours /p2p/0/ip4/[IP_HERE]/udp/50000
-```
+Access to the web interface to see the network structure: [http://localhost:3000](http://localhost:3000)
 
+![Network Structure](./docs/imgs/visualization.png)
+
+You can also enable vpn feature in each node by add `--vpn` flag. After that, each node will be assigned with a private with rule: `10.33.33.{node_id % 8}`.
+
+## Benchmarks
+
+### Network optimizer
+
+We run 9 nodes accross Asia, Us, Europe with Digital Ocean and some local ISP in Vietnam and test the latency between each node. The result show that the network can speed up latency by maximum 48.5% compare to normal routing.
+
+Maximun optimized:
+
+|      | US    | EU     | ASIA |
+| ---- | ----- | ------ | ---- |
+| US   | 0     |        |      |
+| EU   | 3.40% | 0      |      |
+| ASIA | 48.5% | 28.30% | 47%  |
+
+Average optimized:
+
+|      | US    | EU    | ASIA |
+| ---- | ----- | ----- | ---- |
+| US   | 0     |       |      |
+| EU   | 0.40% | 0     |      |
+| ASIA | 11.6% | 9.50% | 3%   |
+
+We will test more in the future to get more accurate result with more cloud provider and local ISP.
+
+### Speeds
 
 ## Showcases
 
-  - Media Server: [Repo](https://github.com/8xFF/decentralized-media-server)
-  - VPN: [Repo](https://github.com/8xFF/atm0s-sdn/tree/master/packages/services/tun_tap)
-  - MiniRedis: [Repo](https://github.com/8xFF/atm0s-sdn/tree/master/packages/apps/redis)
+- Decentralized Media Server: [Repo](https://github.com/8xFF/atm0s-media-server)
+- Decentralized VPN: [Repo](https://github.com/8xFF/atm0s-sdn/tree/master/bin/)
+- Decentralized Reverse Proxy: [Repo](https://github.com/8xFF/atm0s-reverse-proxy)
 
 ## Contributing
+
 The project is continuously being improved and updated. We are always looking for ways to make it better, whether that's through optimizing performance, adding new features, or fixing bugs. We welcome contributions from the community and are always looking for new ideas and suggestions. If you find it interesting or believe it could be helpful, we welcome your contributions to the codebase or consider starring the repository to show your support and motivate our team!
 
 For more information, you can join our [Discord channel](https://discord.gg/qXr5zxsJWp)
