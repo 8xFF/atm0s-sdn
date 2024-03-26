@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = [
+    "quic-tunnel"
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace.dependencies]
+atm0s-sdn = { path = "../packages/runner" }
+tracing-subscriber = "0.3"
+signal-hook = "0.3"
+clap = { version = "4.4", features = ["derive", "env"] }
+tokio = { version = "1", features = ["full"] }
+log = "0.4"

@@ -1,0 +1,14 @@
+[package]
+name = "quic-tunnel"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+log.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+tokio.workspace = true
+atm0s-sdn.workspace = true
+signal-hook.workspace = true
+quinn = { version = "0.10", default-features = false, features = ["runtime-tokio", "log", "ring"] }
+quinn-plaintext = "0.2.0"
