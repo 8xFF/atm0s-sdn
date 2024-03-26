@@ -99,6 +99,7 @@ impl<SC, SE, TC: Debug, TW: Debug> WorkerInner<SdnExtIn<SC>, SdnExtOut<SE>, SdnC
                     session: controller.session,
                     tick_ms: controller.tick_ms,
                     services: cfg.services.clone(),
+                    history: cfg.history.clone(),
                     #[cfg(feature = "vpn")]
                     vpn_tun_device: controller.vpn_tun_device,
                 })),

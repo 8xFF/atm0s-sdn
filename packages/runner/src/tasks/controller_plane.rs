@@ -7,6 +7,7 @@ use atm0s_sdn_network::{
     features::{FeaturesControl, FeaturesEvent},
     ExtIn, ExtOut, LogicControl, LogicEvent,
 };
+use atm0s_sdn_router::shadow::ShadowRouterHistory;
 use rand::rngs::ThreadRng;
 use sans_io_runtime::{bus::BusEvent, Task, TaskInput, TaskOutput};
 
@@ -19,6 +20,7 @@ pub struct ControllerPlaneCfg<SC, SE, TC, TW> {
     pub node_id: NodeId,
     pub session: u64,
     pub tick_ms: u64,
+    pub history: Arc<dyn ShadowRouterHistory>,
     pub services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
     #[cfg(feature = "vpn")]
     pub vpn_tun_device: Option<sans_io_runtime::backend::tun::TunDevice>,
@@ -34,6 +36,7 @@ pub struct ControllerPlaneTask<SC, SE, TC, TW> {
     queue: VecDeque<TaskOutput<'static, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<TW>>>,
     ticker: TimeTicker,
     timer: TimePivot,
+    history: Arc<dyn ShadowRouterHistory>,
     #[cfg(feature = "vpn")]
     _vpn_tun_device: Option<sans_io_runtime::backend::tun::TunDevice>,
 }
@@ -46,6 +49,7 @@ impl<SC, SE, TC, TW> ControllerPlaneTask<SC, SE, TC, TW> {
             queue: VecDeque::from([TaskOutput::Bus(BusEvent::ChannelSubscribe(()))]),
             ticker: TimeTicker::build(1000),
             timer: TimePivot::build(),
+            history: cfg.history,
             #[cfg(feature = "vpn")]
             _vpn_tun_device: cfg.vpn_tun_device,
         }
@@ -59,6 +63,7 @@ impl<SC, SE, TC, TW> Task<ExtIn<SC>, ExtOut<SE>, ChannelIn, ChannelOut, EventIn<
     fn on_tick<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<TW>>> {
         if self.ticker.tick(now) {
             self.controller.on_tick(self.timer.timestamp_ms(now));
+            self.history.set_ts(self.timer.timestamp_ms(now));
         }
         self.pop_output(now)
     }
