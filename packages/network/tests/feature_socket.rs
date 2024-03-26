@@ -11,7 +11,6 @@ mod simulator;
 fn feature_socket_single_node() {
     let node1 = 1;
     let mut sim = NetworkSimulator::<(), (), (), ()>::new(0);
-    sim.enable_log(log::LevelFilter::Debug);
 
     let _addr1 = sim.add_node(TestNode::new(node1, 1234, vec![]));
 
