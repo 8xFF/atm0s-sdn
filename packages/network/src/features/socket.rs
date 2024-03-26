@@ -237,16 +237,19 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for SocketFeatureWork
         match input {
             FeatureWorkerInput::FromController(_, control) => match control {
                 ToWorker::BindSocket(port, actor) => {
+                    log::info!("[SocketFeatureWorker] BindSocket: {port}");
                     self.sockets.insert(port, Socket { target: None, actor });
                     None
                 }
                 ToWorker::ConnectSocket(port, dest_node, dest_port) => {
+                    log::info!("[SocketFeatureWorker] ConnectSocket: {port} => {dest_node}:{dest_port}");
                     if let Some(socket) = self.sockets.get_mut(&port) {
                         socket.target = Some((dest_node, dest_port));
                     }
                     None
                 }
                 ToWorker::UnbindSocket(port) => {
+                    log::info!("[SocketFeatureWorker] UnbindSocket: {port}");
                     self.sockets.remove(&port);
                     None
                 }
@@ -294,6 +297,7 @@ fn serialize_msg(buf: &mut [u8], src: u16, dest: u16, data: &[u8]) -> Option<usi
 
 fn deserialize_msg<'a>(buf: &'a [u8]) -> Option<(u16, u16, &'a [u8])> {
     if buf.len() < 4 {
+        log::debug!("[SocketFeature] Invalid message length: {}, min is 4 bytes", buf.len());
         return None;
     }
     let src = u16::from_be_bytes([buf[0], buf[1]]);

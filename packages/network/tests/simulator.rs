@@ -113,6 +113,8 @@ impl ShadowRouterHistory for SingleThreadDataWorkerHistory {
         }
         false
     }
+
+    fn set_ts(&self, _now: u64) {}
 }
 
 pub struct TestNode<SC, SE, TC, TW> {

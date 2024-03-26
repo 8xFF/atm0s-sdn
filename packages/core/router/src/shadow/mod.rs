@@ -14,6 +14,9 @@ pub trait ShadowRouterHistory: Send + Sync {
     /// This method will check if the broadcast message is already received or not
     /// If not received, it will cache the message and return true
     fn already_received_broadcast(&self, from: Option<NodeId>, service: u8, seq: u16) -> bool;
+
+    /// For set current time ms
+    fn set_ts(&self, now: u64);
 }
 
 #[derive(Debug, Clone)]
