@@ -53,8 +53,7 @@ pub async fn run_sdn(node_id: NodeId, udp_port: u16, seeds: Vec<NodeAddr>, worke
                     controller.send_to(Owner::worker(0), SdnExtIn::FeaturesControl(FeaturesControl::Socket(socket::Control::Bind(port))));
                 }
                 OutEvent::Pkt(pkt) => {
-                    //TODO process ecn
-                    let send = socket::Control::SendTo(pkt.local_port, pkt.remote, pkt.remote_port, pkt.data);
+                    let send = socket::Control::SendTo(pkt.local_port, pkt.remote, pkt.remote_port, pkt.data, pkt.meta);
                     controller.send_to(Owner::worker(0), SdnExtIn::FeaturesControl(FeaturesControl::Socket(send)));
                 }
                 OutEvent::Unbind(port) => {
@@ -65,13 +64,13 @@ pub async fn run_sdn(node_id: NodeId, udp_port: u16, seeds: Vec<NodeAddr>, worke
         while let Some(event) = controller.pop_event() {
             // log::info!("Event: {:?}", event);
             match event {
-                SdnExtOut::FeaturesEvent(FeaturesEvent::Socket(socket::Event::RecvFrom(local_port, remote, remote_port, data))) => {
+                SdnExtOut::FeaturesEvent(FeaturesEvent::Socket(socket::Event::RecvFrom(local_port, remote, remote_port, data, meta))) => {
                     if let Err(e) = tx.try_send(NetworkPkt {
                         local_port,
                         remote,
                         remote_port,
                         data,
-                        meta: 0, //TODO process ecn
+                        meta,
                     }) {
                         log::error!("Failed to send to tx: {:?}", e);
                     }

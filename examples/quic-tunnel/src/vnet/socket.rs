@@ -107,6 +107,8 @@ impl AsyncUdpSocket for VirtualUdpSocket {
 
 impl Drop for VirtualUdpSocket {
     fn drop(&mut self) {
-        self.close_socket_tx.send(self.port).expect("Should send success");
+        if let Err(e) = self.close_socket_tx.send(self.port) {
+            log::error!("Failed to send close socket: {:?}", e);
+        }
     }
 }
