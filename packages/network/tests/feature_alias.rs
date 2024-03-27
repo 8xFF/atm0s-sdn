@@ -92,6 +92,27 @@ fn feature_alias_single_node() {
 }
 
 #[test]
+fn feature_alias_timeout() {
+    let node1 = 1;
+    let mut sim = NetworkSimulator::<(), (), (), ()>::new(0);
+    sim.enable_log(log::LevelFilter::Debug);
+
+    let _addr1 = sim.add_node(TestNode::new(node1, 1234, vec![Arc::new(MockServiceBuilder)]));
+
+    sim.process(10);
+
+    let alias_v = 1000;
+    let service = 0;
+    let level = ServiceBroadcastLevel::Global;
+
+    sim.control(node1, ExtIn::FeaturesControl(FeaturesControl::Alias(alias::Control::Query { alias: alias_v, service, level })));
+    sim.process(10);
+    sim.process(alias::HINT_TIMEOUT_MS);
+    sim.process(alias::SCAN_TIMEOUT_MS);
+    assert_eq!(sim.pop_res(), Some((node1, ExtOut::FeaturesEvent(FeaturesEvent::Alias(alias::Event::QueryResult(alias_v, None))))));
+}
+
+#[test]
 fn feature_alias_two_nodes() {
     let node1 = 1;
     let node2 = 2;

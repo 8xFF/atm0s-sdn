@@ -8,8 +8,8 @@ use crate::base::{Feature, FeatureContext, FeatureControlActor, FeatureInput, Fe
 
 pub const FEATURE_ID: u8 = 6;
 pub const FEATURE_NAME: &str = "alias";
-const HINT_TIMEOUT_MS: u64 = 2000;
-const SCAN_TIMEOUT_MS: u64 = 5000;
+pub const HINT_TIMEOUT_MS: u64 = 2000;
+pub const SCAN_TIMEOUT_MS: u64 = 5000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Control {
@@ -44,11 +44,13 @@ pub enum Message {
     Found(u64, bool),
 }
 
+#[derive(Debug)]
 enum QueryState {
     CheckHint(NodeId, u64),
     Scan(u64),
 }
 
+#[derive(Debug)]
 struct QuerySlot {
     waiters: Vec<FeatureControlActor>,
     state: QueryState,
@@ -208,7 +210,7 @@ impl Feature<Control, Event, ToController, ToWorker> for AliasFeature {
                             }
                         }
                         QueryState::Scan(started_at) => {
-                            if now == *started_at + SCAN_TIMEOUT_MS {
+                            if now >= *started_at + SCAN_TIMEOUT_MS {
                                 timeout.push(*alias);
                             }
                         }
