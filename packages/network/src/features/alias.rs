@@ -8,8 +8,8 @@ use crate::base::{Feature, FeatureContext, FeatureControlActor, FeatureInput, Fe
 
 pub const FEATURE_ID: u8 = 6;
 pub const FEATURE_NAME: &str = "alias";
-const HINT_TIMEOUT_MS: u64 = 2000;
-const SCAN_TIMEOUT_MS: u64 = 5000;
+pub const HINT_TIMEOUT_MS: u64 = 2000;
+pub const SCAN_TIMEOUT_MS: u64 = 5000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Control {
@@ -21,6 +21,8 @@ pub enum Control {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FoundLocation {
     Local,
+    Notify(NodeId),
+    CachedHint(NodeId),
     RemoteHint(NodeId),
     RemoteScan(NodeId),
 }
@@ -44,11 +46,13 @@ pub enum Message {
     Found(u64, bool),
 }
 
+#[derive(Debug)]
 enum QueryState {
     CheckHint(NodeId, u64),
     Scan(u64),
 }
 
+#[derive(Debug)]
 struct QuerySlot {
     waiters: Vec<FeatureControlActor>,
     state: QueryState,
@@ -56,10 +60,16 @@ struct QuerySlot {
     level: ServiceBroadcastLevel,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct HintSlot {
+    node: NodeId,
+    ts: u64,
+}
+
 #[derive(Default)]
 pub struct AliasFeature {
     queries: HashMap<u64, QuerySlot>,
-    hint_slots: HashMap<u64, NodeId>,
+    hint_slots: HashMap<u64, HintSlot>,
     local_slots: HashMap<u64, u64>,
     queue: VecDeque<FeatureOutput<Event, ToWorker>>,
     scan_seq: u16,
@@ -82,18 +92,23 @@ impl AliasFeature {
                     if let Some(slot) = self.queries.get_mut(&alias) {
                         log::debug!("[AliasFeature] Alias {} is already in query state => push to wait queue", alias);
                         slot.waiters.push(actor);
-                    } else if let Some(node_id) = self.hint_slots.get(&alias) {
-                        log::debug!("[AliasFeature] Alias {alias} is not in query state but has hint {node_id} => check hint");
-                        self.queries.insert(
-                            alias,
-                            QuerySlot {
-                                waiters: vec![actor],
-                                state: QueryState::CheckHint(*node_id, now_ms),
-                                service,
-                                level,
-                            },
-                        );
-                        Self::send_to(&mut self.queue, RouteRule::ToNode(*node_id), Message::Check(alias));
+                    } else if let Some(slot) = self.hint_slots.get(&alias) {
+                        if slot.ts + HINT_TIMEOUT_MS >= now_ms {
+                            log::debug!("[AliasFeature] Alias {alias} is very newly added to hint {} => reuse", slot.node);
+                            self.queue.push_back(FeatureOutput::Event(actor, Event::QueryResult(alias, Some(FoundLocation::CachedHint(slot.node)))));
+                        } else {
+                            log::debug!("[AliasFeature] Alias {alias} is not in query state but has hint {} => check hint", slot.node);
+                            self.queries.insert(
+                                alias,
+                                QuerySlot {
+                                    waiters: vec![actor],
+                                    state: QueryState::CheckHint(slot.node, now_ms),
+                                    service,
+                                    level,
+                                },
+                            );
+                            Self::send_to(&mut self.queue, RouteRule::ToNode(slot.node), Message::Check(alias));
+                        }
                     } else {
                         log::debug!("[AliasFeature] Alias {alias} is not in query state and has no hint => scan");
                         self.queries.insert(
@@ -121,7 +136,12 @@ impl AliasFeature {
         log::debug!("[AliasFeature] Received message from {from}: {:?}", msg);
         match msg {
             Message::Notify(alias) => {
-                self.hint_slots.insert(alias, from);
+                self.hint_slots.insert(alias, HintSlot { node: from, ts: now_ms });
+                if let Some(slot) = self.queries.remove(&alias) {
+                    for actor in &slot.waiters {
+                        self.queue.push_back(FeatureOutput::Event(*actor, Event::QueryResult(alias, Some(FoundLocation::Notify(from)))));
+                    }
+                }
             }
             Message::Scan(alias) => {
                 if self.local_slots.contains_key(&alias) {
@@ -138,7 +158,7 @@ impl AliasFeature {
             }
             Message::Found(alias, found) => {
                 if found {
-                    self.hint_slots.insert(alias, from);
+                    self.hint_slots.insert(alias, HintSlot { node: from, ts: now_ms });
                 }
                 if let Some(slot) = self.queries.get_mut(&alias) {
                     match slot.state {
@@ -208,7 +228,7 @@ impl Feature<Control, Event, ToController, ToWorker> for AliasFeature {
                             }
                         }
                         QueryState::Scan(started_at) => {
-                            if now == *started_at + SCAN_TIMEOUT_MS {
+                            if now >= *started_at + SCAN_TIMEOUT_MS {
                                 timeout.push(*alias);
                             }
                         }
@@ -254,7 +274,7 @@ mod tests {
 
     use crate::{
         base::{Feature, FeatureContext, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput},
-        features::alias::{HINT_TIMEOUT_MS, SCAN_TIMEOUT_MS},
+        features::alias::{HintSlot, HINT_TIMEOUT_MS, SCAN_TIMEOUT_MS},
     };
 
     use super::{AliasFeature, Control, Event, FoundLocation, Message, ToWorker};
@@ -322,20 +342,42 @@ mod tests {
     }
 
     #[test]
+    fn found_cached_hint() {
+        let mut alias = AliasFeature::default();
+        let ctx = FeatureContext { node_id: 0, session: 0 };
+        let service = 1;
+        let level = ServiceBroadcastLevel::Global;
+
+        alias.hint_slots.insert(1000, HintSlot { node: 123, ts: 0 });
+
+        alias.on_input(
+            &ctx,
+            HINT_TIMEOUT_MS,
+            FeatureInput::Control(FeatureControlActor::Controller, Control::Query { alias: 1000, service, level }),
+        );
+
+        assert_eq!(
+            alias.pop_output(&ctx),
+            Some(FeatureOutput::Event(FeatureControlActor::Controller, Event::QueryResult(1000, Some(FoundLocation::CachedHint(123)))))
+        );
+        assert_eq!(alias.pop_output(&ctx), None);
+    }
+
+    #[test]
     fn found_remote_with_hint() {
         let mut alias = AliasFeature::default();
         let ctx = FeatureContext { node_id: 0, session: 0 };
         let service = 1;
         let level = ServiceBroadcastLevel::Global;
 
-        alias.hint_slots.insert(1000, 123);
+        alias.hint_slots.insert(1000, HintSlot { node: 123, ts: 0 });
 
-        alias.on_input(&ctx, 0, FeatureInput::Control(FeatureControlActor::Controller, Control::Query { alias: 1000, service, level }));
+        alias.on_input(&ctx, 10000, FeatureInput::Control(FeatureControlActor::Controller, Control::Query { alias: 1000, service, level }));
         assert_eq!(decode_msg(alias.pop_output(&ctx)), Some((RouteRule::ToNode(123), Message::Check(1000))));
         assert_eq!(alias.pop_output(&ctx), None);
 
         //simulate remote found
-        alias.process_remote(100, 123, Message::Found(1000, true));
+        alias.process_remote(10100, 123, Message::Found(1000, true));
 
         assert_eq!(
             alias.pop_output(&ctx),
@@ -372,21 +414,21 @@ mod tests {
         let service = 1;
         let level = ServiceBroadcastLevel::Global;
 
-        alias.hint_slots.insert(1000, 122);
+        alias.hint_slots.insert(1000, HintSlot { node: 122, ts: 0 });
 
-        alias.on_input(&ctx, 0, FeatureInput::Control(FeatureControlActor::Controller, Control::Query { alias: 1000, service, level }));
+        alias.on_input(&ctx, 10000, FeatureInput::Control(FeatureControlActor::Controller, Control::Query { alias: 1000, service, level }));
         assert_eq!(decode_msg(alias.pop_output(&ctx)), Some((RouteRule::ToNode(122), Message::Check(1000))));
         assert_eq!(alias.pop_output(&ctx), None);
 
         //simulate remote not found
-        alias.process_remote(100, 122, Message::Found(1000, false));
+        alias.process_remote(10100, 122, Message::Found(1000, false));
 
         // will fallback to scan
         assert_eq!(decode_msg(alias.pop_output(&ctx)), Some((RouteRule::ToServices(service, level, 0), Message::Scan(1000))));
         assert_eq!(alias.pop_output(&ctx), None);
 
         //simulate scan found
-        alias.process_remote(100, 123, Message::Found(1000, true));
+        alias.process_remote(10100, 123, Message::Found(1000, true));
 
         assert_eq!(
             alias.pop_output(&ctx),
@@ -402,21 +444,21 @@ mod tests {
         let service = 1;
         let level = ServiceBroadcastLevel::Global;
 
-        alias.hint_slots.insert(1000, 122);
+        alias.hint_slots.insert(1000, HintSlot { node: 122, ts: 0 });
 
-        alias.on_input(&ctx, 0, FeatureInput::Control(FeatureControlActor::Controller, Control::Query { alias: 1000, service, level }));
+        alias.on_input(&ctx, 10000, FeatureInput::Control(FeatureControlActor::Controller, Control::Query { alias: 1000, service, level }));
         assert_eq!(decode_msg(alias.pop_output(&ctx)), Some((RouteRule::ToNode(122), Message::Check(1000))));
         assert_eq!(alias.pop_output(&ctx), None);
 
         //simulate remote not found
-        alias.on_shared_input(&ctx, HINT_TIMEOUT_MS, FeatureSharedInput::Tick(0));
+        alias.on_shared_input(&ctx, 10000 + HINT_TIMEOUT_MS, FeatureSharedInput::Tick(0));
 
         // will fallback to scan
         assert_eq!(decode_msg(alias.pop_output(&ctx)), Some((RouteRule::ToServices(service, level, 0), Message::Scan(1000))));
         assert_eq!(alias.pop_output(&ctx), None);
 
         //simulate scan found
-        alias.process_remote(100, 123, Message::Found(1000, true));
+        alias.process_remote(10100 + HINT_TIMEOUT_MS, 123, Message::Found(1000, true));
 
         assert_eq!(
             alias.pop_output(&ctx),
@@ -425,7 +467,13 @@ mod tests {
         assert_eq!(alias.pop_output(&ctx), None);
 
         //after that hint should be saved
-        assert_eq!(alias.hint_slots.get(&1000), Some(&123));
+        assert_eq!(
+            alias.hint_slots.get(&1000),
+            Some(&HintSlot {
+                node: 123,
+                ts: 10100 + HINT_TIMEOUT_MS
+            })
+        );
     }
 
     #[test]
@@ -435,21 +483,21 @@ mod tests {
         let service = 1;
         let level = ServiceBroadcastLevel::Global;
 
-        alias.hint_slots.insert(1000, 122);
+        alias.hint_slots.insert(1000, HintSlot { node: 122, ts: 0 });
 
-        alias.on_input(&ctx, 0, FeatureInput::Control(FeatureControlActor::Controller, Control::Query { alias: 1000, service, level }));
+        alias.on_input(&ctx, 10000, FeatureInput::Control(FeatureControlActor::Controller, Control::Query { alias: 1000, service, level }));
         assert_eq!(decode_msg(alias.pop_output(&ctx)), Some((RouteRule::ToNode(122), Message::Check(1000))));
         assert_eq!(alias.pop_output(&ctx), None);
 
         //simulate remote not found
-        alias.on_shared_input(&ctx, HINT_TIMEOUT_MS, FeatureSharedInput::Tick(0));
+        alias.on_shared_input(&ctx, 10000 + HINT_TIMEOUT_MS, FeatureSharedInput::Tick(0));
 
         // will fallback to scan
         assert_eq!(decode_msg(alias.pop_output(&ctx)), Some((RouteRule::ToServices(service, level, 0), Message::Scan(1000))));
         assert_eq!(alias.pop_output(&ctx), None);
 
         //simulate scan found
-        alias.on_shared_input(&ctx, HINT_TIMEOUT_MS + SCAN_TIMEOUT_MS, FeatureSharedInput::Tick(1));
+        alias.on_shared_input(&ctx, 10000 + HINT_TIMEOUT_MS + SCAN_TIMEOUT_MS, FeatureSharedInput::Tick(1));
 
         assert_eq!(alias.pop_output(&ctx), Some(FeatureOutput::Event(FeatureControlActor::Controller, Event::QueryResult(1000, None))));
         assert_eq!(alias.pop_output(&ctx), None);
@@ -459,6 +507,6 @@ mod tests {
     fn handle_notify_from_remote() {
         let mut alias = AliasFeature::default();
         alias.process_remote(100, 123, Message::Notify(1000));
-        assert_eq!(alias.hint_slots.get(&1000), Some(&123));
+        assert_eq!(alias.hint_slots.get(&1000), Some(&HintSlot { node: 123, ts: 100 }));
     }
 }
