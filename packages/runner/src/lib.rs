@@ -2,6 +2,7 @@ pub use atm0s_sdn_identity::{ConnDirection, ConnId, NodeAddr, NodeAddrBuilder, N
 pub use atm0s_sdn_network::base;
 pub use atm0s_sdn_network::convert_enum;
 pub use atm0s_sdn_network::features;
+pub use atm0s_sdn_network::secure;
 pub use atm0s_sdn_network::services;
 pub use atm0s_sdn_router::ServiceBroadcastLevel;
 pub use sans_io_runtime;

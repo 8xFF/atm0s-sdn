@@ -4,6 +4,7 @@ use atm0s_sdn_network::{
         dht_kv::{Control, Key, Map, MapControl},
         FeaturesControl,
     },
+    secure::StaticKeyAuthorization,
     services::visualization,
 };
 use clap::{Parser, ValueEnum};
@@ -80,7 +81,8 @@ fn main() {
     let mut shutdown_wait = 0;
     let args = Args::parse();
     env_logger::builder().format_timestamp_millis().init();
-    let mut builder = SdnBuilder::<SC, SE, TC, TW>::new(args.node_id, args.udp_port, vec![]);
+    let auth = Arc::new(StaticKeyAuthorization::new(&args.password));
+    let mut builder = SdnBuilder::<SC, SE, TC, TW>::new(args.node_id, args.udp_port, vec![], auth);
 
     for seed in args.seeds {
         builder.add_seed(seed);

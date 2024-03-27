@@ -6,7 +6,7 @@ use std::{
 
 use atm0s_sdn_identity::{NodeAddr, NodeAddrBuilder, NodeId, Protocol};
 use atm0s_sdn_network::{
-    base::ServiceBuilder,
+    base::{Authorization, ServiceBuilder},
     features::{FeaturesControl, FeaturesEvent},
     services::{manual_discovery, visualization},
 };
@@ -16,6 +16,7 @@ use sans_io_runtime::{backend::Backend, Owner};
 use crate::tasks::{ControllerCfg, DataWorkerHistory, SdnController, SdnExtIn, SdnInnerCfg, SdnWorkerInner};
 
 pub struct SdnBuilder<SC, SE, TC, TW> {
+    auth: Arc<dyn Authorization + Send + Sync>,
     node_addr: NodeAddr,
     node_id: NodeId,
     session: u64,
@@ -38,7 +39,7 @@ where
     TC: 'static + Clone + Send + Sync,
     TW: 'static + Clone + Send + Sync,
 {
-    pub fn new(node_id: NodeId, udp_port: u16, custom_ip: Vec<SocketAddr>) -> Self {
+    pub fn new(node_id: NodeId, udp_port: u16, custom_ip: Vec<SocketAddr>, auth: Arc<dyn Authorization + Send + Sync>) -> Self {
         let mut addr_builder = NodeAddrBuilder::new(node_id);
         for (name, ip) in local_ip_address::list_afinet_netifas().expect("Should have local ip addresses") {
             match ip {
@@ -69,6 +70,7 @@ where
         log::info!("Created node on addr {}", node_addr);
 
         Self {
+            auth,
             node_addr,
             node_id,
             session: thread_rng().next_u64(),
@@ -157,7 +159,7 @@ where
                 history: history.clone(),
                 controller: Some(ControllerCfg {
                     session: self.session,
-                    password: "password".to_string(),
+                    auth: self.auth,
                     tick_ms: 1000,
                     #[cfg(feature = "vpn")]
                     vpn_tun_device: tun_device,

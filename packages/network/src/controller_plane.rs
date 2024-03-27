@@ -5,8 +5,8 @@ use rand::RngCore;
 
 use crate::{
     base::{
-        ConnectionEvent, FeatureContext, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, ServiceBuilder, ServiceControlActor, ServiceCtx, ServiceInput, ServiceOutput,
-        ServiceSharedInput,
+        Authorization, ConnectionEvent, FeatureContext, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, ServiceBuilder, ServiceControlActor, ServiceCtx, ServiceInput,
+        ServiceOutput, ServiceSharedInput,
     },
     features::{FeaturesControl, FeaturesEvent},
     san_io_utils::TasksSwitcher,
@@ -80,13 +80,19 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
     /// # Returns
     ///
     /// A new ControllerPlane
-    pub fn new(node_id: NodeId, session: u64, services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>, random: Box<dyn RngCore>) -> Self {
+    pub fn new(
+        node_id: NodeId,
+        session: u64,
+        services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
+        authorization: Arc<dyn Authorization>,
+        random: Box<dyn RngCore>,
+    ) -> Self {
         log::info!("Create ControllerPlane for node: {}, running session {}", node_id, session);
         let service_ids = services.iter().filter(|s| s.discoverable()).map(|s| s.service_id()).collect();
 
         Self {
             tick_count: 0,
-            neighbours: NeighboursManager::new(node_id, random),
+            neighbours: NeighboursManager::new(node_id, authorization, random),
             feature_ctx: FeatureContext { node_id, session },
             features: FeatureManager::new(node_id, session, service_ids),
             service_ctx: ServiceCtx { node_id, session },
@@ -188,7 +194,7 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
     }
 
     fn pop_neighbours(&mut self, now_ms: u64) -> Option<Output<SE, TW>> {
-        let out = self.neighbours.pop_output()?;
+        let out = self.neighbours.pop_output(now_ms)?;
         match out {
             neighbours::Output::Control(remote, control) => Some(Output::Event(LogicEvent::NetNeighbour(remote, control))),
             neighbours::Output::Event(event) => {

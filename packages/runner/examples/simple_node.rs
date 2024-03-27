@@ -1,5 +1,5 @@
 use atm0s_sdn_identity::{NodeAddr, NodeId};
-use atm0s_sdn_network::services::visualization;
+use atm0s_sdn_network::{secure::StaticKeyAuthorization, services::visualization};
 use clap::{Parser, ValueEnum};
 use sans_io_runtime::backend::{MioBackend, PollBackend, PollingBackend};
 use std::{
@@ -76,7 +76,8 @@ fn main() {
     let mut shutdown_wait = 0;
     let args = Args::parse();
     env_logger::builder().format_timestamp_millis().init();
-    let mut builder = SdnBuilder::<SC, SE, TC, TW>::new(args.node_id, args.udp_port, args.custom_addrs);
+    let auth = Arc::new(StaticKeyAuthorization::new(&args.password));
+    let mut builder = SdnBuilder::<SC, SE, TC, TW>::new(args.node_id, args.udp_port, args.custom_addrs, auth);
 
     builder.set_manual_discovery(args.local_tags, args.connect_tags);
 
