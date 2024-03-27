@@ -95,7 +95,6 @@ fn feature_alias_single_node() {
 fn feature_alias_timeout() {
     let node1 = 1;
     let mut sim = NetworkSimulator::<(), (), (), ()>::new(0);
-    sim.enable_log(log::LevelFilter::Debug);
 
     let _addr1 = sim.add_node(TestNode::new(node1, 1234, vec![Arc::new(MockServiceBuilder)]));
 
@@ -128,19 +127,20 @@ fn feature_alias_two_nodes() {
         sim.process(500);
     }
 
-    let alias = 1000;
+    let alias_v = 1000;
     let service = 0;
     let level = ServiceBroadcastLevel::Global;
 
-    sim.control(node1, ExtIn::FeaturesControl(FeaturesControl::Alias(alias::Control::Register { alias, service, level })));
+    sim.control(node1, ExtIn::FeaturesControl(FeaturesControl::Alias(alias::Control::Register { alias: alias_v, service, level })));
     sim.process(10);
-    sim.control(node2, ExtIn::FeaturesControl(FeaturesControl::Alias(alias::Control::Query { alias, service, level })));
+    sim.process(alias::HINT_TIMEOUT_MS);
+    sim.control(node2, ExtIn::FeaturesControl(FeaturesControl::Alias(alias::Control::Query { alias: alias_v, service, level })));
     sim.process(10);
     assert_eq!(
         sim.pop_res(),
         Some((
             node2,
-            ExtOut::FeaturesEvent(FeaturesEvent::Alias(alias::Event::QueryResult(alias, Some(FoundLocation::RemoteHint(node1)))))
+            ExtOut::FeaturesEvent(FeaturesEvent::Alias(alias::Event::QueryResult(alias_v, Some(FoundLocation::RemoteHint(node1)))))
         ))
     );
 }
