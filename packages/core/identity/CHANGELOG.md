@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-identity-v0.2.0...atm0s-sdn-identity-v0.3.0) - 2024-03-27
+
+### Other
+- BREAKING CHANGE: Migrate sans io runtime ([#144](https://github.com/8xFF/atm0s-sdn/pull/144))
+
 ## [0.2.0](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-identity-v0.1.2...atm0s-sdn-identity-v0.2.0) - 2023-12-27
 
 ### Added

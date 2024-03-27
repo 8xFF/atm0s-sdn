@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-v0.1.10...atm0s-sdn-v0.2.0) - 2024-03-27
+
+### Added
+- history timeout and some logs ([#150](https://github.com/8xFF/atm0s-sdn/pull/150))
+- meta in virtual socket for implement enc, quic-tunnel example ([#149](https://github.com/8xFF/atm0s-sdn/pull/149))
+
+### Fixed
+- alias only timeout in very rare cases bug ([#151](https://github.com/8xFF/atm0s-sdn/pull/151))
+
+### Other
+- BREAKING CHANGE: Migrate sans io runtime ([#144](https://github.com/8xFF/atm0s-sdn/pull/144))
+
 ## [0.1.10](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-v0.1.9...atm0s-sdn-v0.1.10) - 2024-02-21
 
 ### Other
