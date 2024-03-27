@@ -21,6 +21,7 @@ pub enum Control {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FoundLocation {
     Local,
+    Notify(NodeId),
     CachedHint(NodeId),
     RemoteHint(NodeId),
     RemoteScan(NodeId),
@@ -136,6 +137,11 @@ impl AliasFeature {
         match msg {
             Message::Notify(alias) => {
                 self.hint_slots.insert(alias, HintSlot { node: from, ts: now_ms });
+                if let Some(slot) = self.queries.remove(&alias) {
+                    for actor in &slot.waiters {
+                        self.queue.push_back(FeatureOutput::Event(*actor, Event::QueryResult(alias, Some(FoundLocation::Notify(from)))));
+                    }
+                }
             }
             Message::Scan(alias) => {
                 if self.local_slots.contains_key(&alias) {
