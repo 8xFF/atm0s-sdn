@@ -107,7 +107,12 @@ impl Feature<Control, Event, ToController, ToWorker> for DhtKvFeature {
                     self.internal.on_remote(now_ms, cmd)
                 }
             }
-            FeatureInput::Net(_conn, _header, buf) => {
+            FeatureInput::Net(_conn, meta, buf) => {
+                if !meta.secure {
+                    //only allow secure message
+                    log::warn!("[DhtKv] reject unsecure message");
+                    return;
+                }
                 if let Ok(cmd) = bincode::deserialize(&buf) {
                     self.internal.on_remote(now_ms, cmd)
                 }
@@ -119,7 +124,11 @@ impl Feature<Control, Event, ToController, ToWorker> for DhtKvFeature {
     fn pop_output<'a>(&mut self, _ctx: &FeatureContext) -> Option<FeatureOutput<Event, ToWorker>> {
         match self.internal.pop_action()? {
             InternalOutput::Local(service, event) => Some(FeatureOutput::Event(service, event)),
-            InternalOutput::Remote(rule, cmd) => Some(FeatureOutput::SendRoute(rule, NetOutgoingMeta::default(), bincode::serialize(&cmd).expect("Should to bytes"))),
+            InternalOutput::Remote(rule, cmd) => Some(FeatureOutput::SendRoute(
+                rule,
+                NetOutgoingMeta::new(false, Default::default(), 0, true),
+                bincode::serialize(&cmd).expect("Should to bytes"),
+            )),
         }
     }
 }

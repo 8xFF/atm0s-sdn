@@ -2,7 +2,11 @@ use atm0s_sdn_identity::NodeId;
 use bincode::Options;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+use super::Authorization;
+
+const MSG_TIMEOUT_MS: u64 = 10000;
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum NeighboursConnectError {
     AlreadyConnected,
     InvalidSignature,
@@ -10,16 +14,16 @@ pub enum NeighboursConnectError {
     InvalidState,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum NeighboursDisconnectReason {
     Shutdown,
     Other,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum NeighboursControlCmds {
-    ConnectRequest { from: NodeId, to: NodeId, session: u64 },
-    ConnectResponse { session: u64, result: Result<(), NeighboursConnectError> },
+    ConnectRequest { to: NodeId, session: u64, handshake: Vec<u8> },
+    ConnectResponse { session: u64, result: Result<Vec<u8>, NeighboursConnectError> },
     Ping { session: u64, seq: u64, sent_ms: u64 },
     Pong { session: u64, seq: u64, sent_ms: u64 },
     DisconnectRequest { session: u64, reason: NeighboursDisconnectReason },
@@ -28,9 +32,26 @@ pub enum NeighboursControlCmds {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NeighboursControl {
-    pub ts: u64,
-    pub cmd: NeighboursControlCmds,
+    pub from: NodeId,
+    pub cmd: Vec<u8>,
     pub signature: Vec<u8>,
+}
+
+impl NeighboursControl {
+    pub fn validate(&self, now: u64, auth: &dyn Authorization) -> Result<NeighboursControlCmds, ()> {
+        auth.validate(self.from, &self.cmd, &self.signature).ok_or(())?;
+        let (ts, cmd) = bincode::DefaultOptions::new().with_limit(1499).deserialize::<(u64, NeighboursControlCmds)>(&self.cmd).map_err(|_| ())?;
+        if ts + MSG_TIMEOUT_MS < now {
+            return Err(());
+        }
+        Ok(cmd)
+    }
+
+    pub fn build(now: u64, from: NodeId, cmd: NeighboursControlCmds, auth: &dyn Authorization) -> Self {
+        let cmd = bincode::DefaultOptions::new().with_limit(1499).serialize(&(now, cmd)).unwrap();
+        let signature = auth.sign(&cmd);
+        Self { from, cmd, signature }
+    }
 }
 
 impl TryFrom<&[u8]> for NeighboursControl {
@@ -53,5 +74,25 @@ impl TryInto<Vec<u8>> for &NeighboursControl {
         buf.push(255);
         bincode::DefaultOptions::new().with_limit(1499).serialize_into(&mut buf, &self).map_err(|_| ())?;
         Ok(buf)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::secure::StaticKeyAuthorization;
+
+    use super::*;
+
+    #[test]
+    fn test_neighbours_control() {
+        let auth = StaticKeyAuthorization::new("demo_key");
+        let cmd = NeighboursControlCmds::Ping {
+            session: 1000,
+            seq: 100,
+            sent_ms: 100,
+        };
+        let control = NeighboursControl::build(0, 1, cmd.clone(), &auth);
+        assert_eq!(control.validate(0, &auth), Ok(cmd));
+        assert_eq!(control.validate(MSG_TIMEOUT_MS + 1, &auth), Err(()));
     }
 }

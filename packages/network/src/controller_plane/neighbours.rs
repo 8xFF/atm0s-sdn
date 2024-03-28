@@ -1,11 +1,12 @@
 use std::{
     collections::{HashMap, VecDeque},
     net::{IpAddr, SocketAddr},
+    sync::Arc,
 };
 
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId, Protocol};
 
-use crate::base::{self, ConnectionCtx, NeighboursControl, NeighboursControlCmds, SecureContext};
+use crate::base::{self, Authorization, ConnectionCtx, HandshakeBuilder, NeighboursControl, NeighboursControlCmds, SecureContext};
 
 use self::connection::{ConnectionEvent, NeighbourConnection};
 
@@ -30,17 +31,21 @@ pub struct NeighboursManager {
     neighbours: HashMap<ConnId, ConnectionCtx>,
     queue: VecDeque<Output>,
     shutdown: bool,
+    authorization: Arc<dyn Authorization>,
+    handshake_builder: Arc<dyn HandshakeBuilder>,
     random: Box<dyn rand::RngCore>,
 }
 
 impl NeighboursManager {
-    pub fn new(node_id: NodeId, random: Box<dyn rand::RngCore>) -> Self {
+    pub fn new(node_id: NodeId, authorization: Arc<dyn Authorization>, handshake_builder: Arc<dyn HandshakeBuilder>, random: Box<dyn rand::RngCore>) -> Self {
         Self {
             node_id,
             connections: HashMap::new(),
             neighbours: HashMap::new(),
             queue: VecDeque::new(),
             shutdown: false,
+            authorization,
+            handshake_builder,
             random,
         }
     }
@@ -66,7 +71,7 @@ impl NeighboursManager {
                     }
                     log::info!("[Neighbours] Sending connect request to {}, dest_node {}", remote, dest_node);
                     let session_id = self.random.next_u64();
-                    let conn = NeighbourConnection::new_outgoing(self.node_id, dest_node, session_id, remote, now_ms);
+                    let conn = NeighbourConnection::new_outgoing(self.handshake_builder.clone(), self.node_id, dest_node, session_id, remote, now_ms);
                     self.connections.insert(remote, conn);
                 }
             }
@@ -78,14 +83,22 @@ impl NeighboursManager {
                 }
             }
             Input::Control(addr, control) => {
+                let cmd: NeighboursControlCmds = match control.validate(now_ms, &*self.authorization) {
+                    Ok(cmd) => cmd,
+                    Err(_) => {
+                        log::warn!("[Neighbours] Invalid control from {:?}", addr);
+                        return;
+                    }
+                };
+
                 log::debug!("[NeighboursManager] received Control(addr: {:?}, control: {:?})", addr, control);
                 if let Some(conn) = self.connections.get_mut(&addr) {
-                    conn.on_input(now_ms, control);
+                    conn.on_input(now_ms, control.from, cmd);
                 } else {
-                    match &control.cmd {
-                        NeighboursControlCmds::ConnectRequest { from, to: _, session } => {
-                            let mut conn = NeighbourConnection::new_incoming(self.node_id, *from, *session, addr, now_ms);
-                            conn.on_input(now_ms, control);
+                    match cmd {
+                        NeighboursControlCmds::ConnectRequest { session, .. } => {
+                            let mut conn = NeighbourConnection::new_incoming(self.handshake_builder.clone(), self.node_id, control.from, session, addr, now_ms);
+                            conn.on_input(now_ms, control.from, cmd);
                             self.connections.insert(addr, conn);
                         }
                         _ => {
@@ -106,7 +119,7 @@ impl NeighboursManager {
         }
     }
 
-    pub fn pop_output(&mut self) -> Option<Output> {
+    pub fn pop_output(&mut self, now_ms: u64) -> Option<Output> {
         if let Some(output) = self.queue.pop_front() {
             return Some(output);
         }
@@ -117,10 +130,10 @@ impl NeighboursManager {
                 match output {
                     connection::Output::Event(event) => {
                         let event = match event {
-                            ConnectionEvent::Connected => {
+                            ConnectionEvent::Connected(encryptor, decryptor) => {
                                 let ctx = conn.ctx();
                                 self.neighbours.insert(ctx.conn, ctx.clone());
-                                Some(base::ConnectionEvent::Connected(ctx, SecureContext {}))
+                                Some(base::ConnectionEvent::Connected(ctx, SecureContext { encryptor, decryptor }))
                             }
                             ConnectionEvent::ConnectError(_) => {
                                 to_remove.push(*remote);
@@ -145,9 +158,9 @@ impl NeighboursManager {
                             self.queue.push_back(Output::Event(event));
                         }
                     }
-                    connection::Output::Net(remote, control) => {
-                        log::debug!("[NeighboursManager] pop_output Net(remote: {:?}, control: {:?})", remote, control);
-                        self.queue.push_back(Output::Control(remote, control));
+                    connection::Output::Net(remote, cmd) => {
+                        log::debug!("[NeighboursManager] pop_output Net(remote: {:?}, cmd: {:?})", remote, cmd);
+                        self.queue.push_back(Output::Control(remote, NeighboursControl::build(now_ms, self.node_id, cmd, &*self.authorization)));
                     }
                 }
             }

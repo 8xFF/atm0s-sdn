@@ -12,6 +12,7 @@ pub mod base;
 pub mod controller_plane;
 pub mod data_plane;
 pub mod features;
+pub mod secure;
 pub mod services;
 
 pub mod san_io_utils;
@@ -45,7 +46,7 @@ pub enum LogicControl<TC> {
 #[derive(Debug, Clone)]
 pub enum LogicEvent<TW> {
     NetNeighbour(SocketAddr, NeighboursControl),
-    NetDirect(Features, ConnId, NetOutgoingMeta, Vec<u8>),
+    NetDirect(Features, SocketAddr, ConnId, NetOutgoingMeta, Vec<u8>),
     NetRoute(Features, RouteRule, NetOutgoingMeta, Vec<u8>),
 
     Pin(ConnId, NodeId, SocketAddr, SecureContext),

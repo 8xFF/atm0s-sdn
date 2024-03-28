@@ -1,4 +1,5 @@
 use atm0s_sdn::sans_io_runtime::Owner;
+use atm0s_sdn::secure::StaticKeyAuthorization;
 use atm0s_sdn::services::visualization;
 use atm0s_sdn::tasks::{SdnExtIn, SdnExtOut};
 use atm0s_sdn::{
@@ -241,6 +242,7 @@ async fn main() {
     tracing_subscriber::fmt::init();
     let mut builder = SdnBuilder::<SC, SE, TC, TW>::new(args.node_id, args.udp_port, args.custom_addrs);
 
+    builder.set_authorization(StaticKeyAuthorization::new(&args.password));
     builder.set_manual_discovery(args.local_tags, args.connect_tags);
 
     if args.vpn {

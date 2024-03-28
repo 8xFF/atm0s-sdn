@@ -13,11 +13,12 @@ pub struct NetIncomingMeta {
     pub source: Option<NodeId>,
     pub ttl: Ttl,
     pub meta: u8,
+    pub secure: bool,
 }
 
 impl NetIncomingMeta {
-    pub fn new(source: Option<NodeId>, ttl: Ttl, meta: u8) -> Self {
-        Self { source, ttl, meta }
+    pub fn new(source: Option<NodeId>, ttl: Ttl, meta: u8, secure: bool) -> Self {
+        Self { source, ttl, meta, secure }
     }
 }
 
@@ -27,6 +28,7 @@ impl From<&TransportMsgHeader> for NetIncomingMeta {
             source: value.from_node,
             ttl: Ttl(value.ttl),
             meta: value.meta,
+            secure: value.encrypt,
         }
     }
 }
@@ -36,19 +38,23 @@ pub struct NetOutgoingMeta {
     pub source: bool,
     pub ttl: Ttl,
     pub meta: u8,
+    pub secure: bool,
 }
 
 impl NetOutgoingMeta {
-    pub fn new(source: bool, ttl: Ttl, meta: u8) -> Self {
-        Self { source, ttl, meta }
+    pub fn new(source: bool, ttl: Ttl, meta: u8, secure: bool) -> Self {
+        Self { source, ttl, meta, secure }
     }
 
     pub fn to_header(&self, feature: u8, rule: RouteRule, node_id: NodeId) -> TransportMsgHeader {
-        TransportMsgHeader::build(feature, self.meta, rule).set_ttl(*self.ttl).set_from_node(if self.source {
-            Some(node_id)
-        } else {
-            None
-        })
+        TransportMsgHeader::build(feature, self.meta, rule)
+            .set_ttl(*self.ttl)
+            .set_from_node(if self.source {
+                Some(node_id)
+            } else {
+                None
+            })
+            .set_encrypt(self.secure)
     }
 
     pub fn to_incoming(&self, node_id: NodeId) -> NetIncomingMeta {
@@ -60,6 +66,7 @@ impl NetOutgoingMeta {
             },
             ttl: self.ttl,
             meta: self.meta,
+            secure: self.secure,
         }
     }
 }
@@ -206,10 +213,11 @@ pub trait FeatureWorker<SdkControl, SdkEvent, ToController, ToWorker> {
         conn: ConnId,
         _remote: SocketAddr,
         header: TransportMsgHeader,
-        buf: GenericBuffer<'a>,
+        mut buf: GenericBuffer<'a>,
     ) -> Option<FeatureWorkerOutput<'a, SdkControl, SdkEvent, ToController>> {
         let header_len = header.serialize_size();
-        self.on_input(ctx, now, FeatureWorkerInput::Network(conn, (&header).into(), buf.sub_view(header_len..buf.len())))
+        buf.pop_front(header_len).expect("Buffer should bigger or equal header");
+        self.on_input(ctx, now, FeatureWorkerInput::Network(conn, (&header).into(), buf))
     }
     fn on_input<'a>(&mut self, _ctx: &mut FeatureWorkerContext, _now: u64, input: FeatureWorkerInput<'a, SdkControl, ToWorker>) -> Option<FeatureWorkerOutput<'a, SdkControl, SdkEvent, ToController>> {
         match input {

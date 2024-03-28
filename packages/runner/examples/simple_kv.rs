@@ -4,6 +4,7 @@ use atm0s_sdn_network::{
         dht_kv::{Control, Key, Map, MapControl},
         FeaturesControl,
     },
+    secure::StaticKeyAuthorization,
     services::visualization,
 };
 use clap::{Parser, ValueEnum};
@@ -81,6 +82,7 @@ fn main() {
     let args = Args::parse();
     env_logger::builder().format_timestamp_millis().init();
     let mut builder = SdnBuilder::<SC, SE, TC, TW>::new(args.node_id, args.udp_port, vec![]);
+    builder.set_authorization(StaticKeyAuthorization::new(&args.password));
 
     for seed in args.seeds {
         builder.add_seed(seed);

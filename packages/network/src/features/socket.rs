@@ -51,7 +51,7 @@ pub struct SocketFeature {
 impl SocketFeature {
     fn send_to(&mut self, src: u16, dest_node: NodeId, dest_port: u16, data: Vec<u8>, meta: u8) {
         if let Some(size) = serialize_msg(&mut self.temp, src, dest_port, &data) {
-            let meta: NetOutgoingMeta = NetOutgoingMeta::new(true, Default::default(), meta);
+            let meta: NetOutgoingMeta = NetOutgoingMeta::new(true, Default::default(), meta, false);
             self.queue.push_back(FeatureOutput::SendRoute(RouteRule::ToNode(dest_node), meta, self.temp[..size].to_vec()));
         }
     }
@@ -276,7 +276,7 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for SocketFeatureWork
                 };
 
                 let size = serialize_msg(&mut self.buf, port, dest_port, &data)?;
-                let outgoing_meta = NetOutgoingMeta::new(true, Ttl::default(), meta);
+                let outgoing_meta = NetOutgoingMeta::new(true, Ttl::default(), meta, false);
                 Some(FeatureWorkerOutput::SendRoute(RouteRule::ToNode(dest_node), outgoing_meta, self.buf[0..size].to_vec()))
             }
             FeatureWorkerInput::Local(meta, buf) | FeatureWorkerInput::Network(_, meta, buf) => self.process_incoming(meta.source?, &buf, meta.meta),

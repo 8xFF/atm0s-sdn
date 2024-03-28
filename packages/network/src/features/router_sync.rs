@@ -46,7 +46,11 @@ impl RouterSyncFeature {
 
     fn send_sync_to(router: &Router, queue: &mut VecDeque<FeatureOutput<Event, ToWorker>>, conn: ConnId, node: NodeId) {
         let sync = router.create_sync(node);
-        queue.push_back(FeatureOutput::SendDirect(conn, NetOutgoingMeta::default(), bincode::serialize(&sync).expect("").into()));
+        queue.push_back(FeatureOutput::SendDirect(
+            conn,
+            NetOutgoingMeta::new(false, 1.into(), 0, true),
+            bincode::serialize(&sync).expect("").into(),
+        ));
     }
 }
 
@@ -93,7 +97,11 @@ impl Feature<Control, Event, ToController, ToWorker> for RouterSyncFeature {
 
     fn on_input<'a>(&mut self, _ctx: &FeatureContext, _now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
         match input {
-            FeatureInput::Net(ctx, _header, buf) => {
+            FeatureInput::Net(ctx, meta, buf) => {
+                if !meta.secure {
+                    log::warn!("[RouterSync] reject unsecure message");
+                    return;
+                }
                 if let Some((_node, _remote, metric)) = self.conns.get(&ctx.conn) {
                     if let Ok(sync) = bincode::deserialize::<RouterSync>(&buf) {
                         self.router.apply_sync(ctx.conn, metric.clone(), sync);

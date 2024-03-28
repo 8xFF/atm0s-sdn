@@ -43,7 +43,7 @@ impl VpnFeatureWorker {
         if dest == ctx.node_id {
             //This is for me, just echo back
             rewrite_tun_pkt(&mut pkt);
-            Some(FeatureWorkerOutput::TunPkt(pkt.to_readonly()))
+            Some(FeatureWorkerOutput::TunPkt(pkt.freeze()))
         } else {
             match ctx.router.path_to_node(dest) {
                 RouteAction::Next(remote) => {

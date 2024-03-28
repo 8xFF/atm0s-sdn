@@ -6,7 +6,7 @@ use std::{fmt::Debug, sync::Arc, time::Instant};
 
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_network::{
-    base::ServiceBuilder,
+    base::{Authorization, HandshakeBuilder, ServiceBuilder},
     features::{FeaturesControl, FeaturesEvent},
     san_io_utils::TasksSwitcher,
     ExtIn, ExtOut,
@@ -39,7 +39,8 @@ pub enum SdnEvent<TC, TW> {
 
 pub struct ControllerCfg {
     pub session: u64,
-    pub password: String,
+    pub auth: Arc<dyn Authorization>,
+    pub handshake: Arc<dyn HandshakeBuilder>,
     pub tick_ms: u64,
     #[cfg(feature = "vpn")]
     pub vpn_tun_device: Option<sans_io_runtime::backend::tun::TunDevice>,
@@ -96,6 +97,8 @@ impl<SC, SE, TC: Debug, TW: Debug> WorkerInner<SdnExtIn<SC>, SdnExtOut<SE>, SdnC
                 worker,
                 controller: Some(ControllerPlaneTask::build(ControllerPlaneCfg {
                     node_id: cfg.node_id,
+                    auth: controller.auth,
+                    handshake: controller.handshake,
                     session: controller.session,
                     tick_ms: controller.tick_ms,
                     services: cfg.services.clone(),
