@@ -22,8 +22,8 @@ pub enum NeighboursDisconnectReason {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum NeighboursControlCmds {
-    ConnectRequest { to: NodeId, session: u64 },
-    ConnectResponse { session: u64, result: Result<(), NeighboursConnectError> },
+    ConnectRequest { to: NodeId, session: u64, handshake: Vec<u8> },
+    ConnectResponse { session: u64, result: Result<Vec<u8>, NeighboursConnectError> },
     Ping { session: u64, seq: u64, sent_ms: u64 },
     Pong { session: u64, seq: u64, sent_ms: u64 },
     DisconnectRequest { session: u64, reason: NeighboursDisconnectReason },

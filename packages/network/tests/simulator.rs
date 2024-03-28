@@ -12,7 +12,7 @@ use std::{collections::VecDeque, net::IpAddr};
 use atm0s_sdn_identity::{NodeAddr, NodeAddrBuilder, NodeId, Protocol};
 use atm0s_sdn_network::base::ServiceBuilder;
 use atm0s_sdn_network::features::{FeaturesControl, FeaturesEvent};
-use atm0s_sdn_network::secure::StaticKeyAuthorization;
+use atm0s_sdn_network::secure::{HandshakeBuilderXDA, StaticKeyAuthorization};
 use atm0s_sdn_network::{
     base::{GenericBuffer, GenericBufferMut},
     controller_plane::{self, ControllerPlane},
@@ -128,8 +128,9 @@ impl<SC, SE, TC, TW> TestNode<SC, SE, TC, TW> {
     pub fn new(node_id: NodeId, session: u64, services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>) -> Self {
         let _log = AutoContext::new(node_id);
         let auth = Arc::new(StaticKeyAuthorization::new("demo-key"));
+        let handshake = Arc::new(HandshakeBuilderXDA);
         let rd = Box::new(StepRng::new(1000, 5));
-        let controller = ControllerPlane::new(node_id, session, services.clone(), auth, rd);
+        let controller = ControllerPlane::new(node_id, session, services.clone(), auth, handshake, rd);
         let worker = DataPlane::new(node_id, services, Arc::new(SingleThreadDataWorkerHistory::default()));
         Self { node_id, controller, worker }
     }

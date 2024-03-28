@@ -2,7 +2,7 @@ use std::{collections::VecDeque, sync::Arc, time::Instant};
 
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_network::{
-    base::{Authorization, ServiceBuilder},
+    base::{Authorization, HandshakeBuilder, ServiceBuilder},
     controller_plane::{ControllerPlane, Input as ControllerInput, Output as ControllerOutput},
     features::{FeaturesControl, FeaturesEvent},
     ExtIn, ExtOut, LogicControl, LogicEvent,
@@ -21,6 +21,7 @@ pub struct ControllerPlaneCfg<SC, SE, TC, TW> {
     pub session: u64,
     pub tick_ms: u64,
     pub auth: Arc<dyn Authorization>,
+    pub handshake: Arc<dyn HandshakeBuilder>,
     pub history: Arc<dyn ShadowRouterHistory>,
     pub services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
     #[cfg(feature = "vpn")]
@@ -46,7 +47,7 @@ impl<SC, SE, TC, TW> ControllerPlaneTask<SC, SE, TC, TW> {
     pub fn build(cfg: ControllerPlaneCfg<SC, SE, TC, TW>) -> Self {
         Self {
             node_id: cfg.node_id,
-            controller: ControllerPlane::new(cfg.node_id, cfg.session, cfg.services, cfg.auth, Box::new(ThreadRng::default())),
+            controller: ControllerPlane::new(cfg.node_id, cfg.session, cfg.services, cfg.auth, cfg.handshake, Box::new(ThreadRng::default())),
             queue: VecDeque::from([TaskOutput::Bus(BusEvent::ChannelSubscribe(()))]),
             ticker: TimeTicker::build(1000),
             timer: TimePivot::build(),

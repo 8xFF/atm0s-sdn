@@ -5,8 +5,8 @@ use rand::RngCore;
 
 use crate::{
     base::{
-        Authorization, ConnectionEvent, FeatureContext, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, ServiceBuilder, ServiceControlActor, ServiceCtx, ServiceInput,
-        ServiceOutput, ServiceSharedInput,
+        Authorization, ConnectionEvent, FeatureContext, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, HandshakeBuilder, ServiceBuilder, ServiceControlActor, ServiceCtx,
+        ServiceInput, ServiceOutput, ServiceSharedInput,
     },
     features::{FeaturesControl, FeaturesEvent},
     san_io_utils::TasksSwitcher,
@@ -85,6 +85,7 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
         session: u64,
         services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
         authorization: Arc<dyn Authorization>,
+        handshake_builder: Arc<dyn HandshakeBuilder>,
         random: Box<dyn RngCore>,
     ) -> Self {
         log::info!("Create ControllerPlane for node: {}, running session {}", node_id, session);
@@ -92,7 +93,7 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
 
         Self {
             tick_count: 0,
-            neighbours: NeighboursManager::new(node_id, authorization, random),
+            neighbours: NeighboursManager::new(node_id, authorization, handshake_builder, random),
             feature_ctx: FeatureContext { node_id, session },
             features: FeatureManager::new(node_id, session, service_ids),
             service_ctx: ServiceCtx { node_id, session },

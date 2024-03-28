@@ -1,24 +1,35 @@
-use std::{collections::VecDeque, net::SocketAddr};
+use std::{collections::VecDeque, net::SocketAddr, sync::Arc};
 
 use atm0s_sdn_identity::{ConnId, NodeId};
 
-use crate::base::{ConnectionCtx, ConnectionStats, NeighboursConnectError, NeighboursControlCmds, NeighboursDisconnectReason};
+use crate::base::{ConnectionCtx, ConnectionStats, Decryptor, Encryptor, HandshakeBuilder, HandshakeRequester, NeighboursConnectError, NeighboursControlCmds, NeighboursDisconnectReason};
 
 const INIT_RTT_MS: u32 = 1000;
 const RETRY_CMD_MS: u64 = 1000;
 const TIMEOUT_MS: u64 = 10000;
 
 enum State {
-    Connecting { at_ms: u64, client: bool },
+    Connecting {
+        at_ms: u64,
+        requester: Option<Box<dyn HandshakeRequester>>,
+    },
     ConnectError(NeighboursConnectError),
     ConnectTimeout,
-    Connected { last_pong_ms: u64, ping_seq: u64, stats: ConnectionStats },
-    Disconnecting { at_ms: u64 },
+    Connected {
+        last_pong_ms: u64,
+        ping_seq: u64,
+        stats: ConnectionStats,
+        encryptor: Box<dyn Encryptor>,
+        decryptor: Box<dyn Decryptor>,
+    },
+    Disconnecting {
+        at_ms: u64,
+    },
     Disconnected,
 }
 
 pub enum ConnectionEvent {
-    Connected,
+    Connected(Box<dyn Encryptor>, Box<dyn Decryptor>),
     ConnectError(NeighboursConnectError),
     ConnectTimeout,
     Stats(ConnectionStats),
@@ -37,23 +48,30 @@ pub struct NeighbourConnection {
     remote: SocketAddr,
     state: State,
     output: VecDeque<Output>,
+    handshake_builder: Arc<dyn HandshakeBuilder>,
 }
 
 impl NeighbourConnection {
-    pub fn new_outgoing(local: NodeId, node: NodeId, session: u64, remote: SocketAddr, now_ms: u64) -> Self {
-        let state = State::Connecting { at_ms: now_ms, client: true };
+    pub fn new_outgoing(handshake_builder: Arc<dyn HandshakeBuilder>, local: NodeId, node: NodeId, session: u64, remote: SocketAddr, now_ms: u64) -> Self {
+        let requester = handshake_builder.requester();
+        let handshake = requester.create_public_request().expect("Should have handshake");
+        let state = State::Connecting {
+            at_ms: now_ms,
+            requester: Some(requester),
+        };
         Self {
             conn: ConnId::from_out(0, session),
             local,
             node,
             remote,
             state,
-            output: VecDeque::from([Output::Net(remote, NeighboursControlCmds::ConnectRequest { to: node, session })]),
+            output: VecDeque::from([Output::Net(remote, NeighboursControlCmds::ConnectRequest { to: node, session, handshake })]),
+            handshake_builder,
         }
     }
 
-    pub fn new_incoming(local: NodeId, node: NodeId, session: u64, remote: SocketAddr, now_ms: u64) -> Self {
-        let state: State = State::Connecting { at_ms: now_ms, client: false };
+    pub fn new_incoming(handshake_builder: Arc<dyn HandshakeBuilder>, local: NodeId, node: NodeId, session: u64, remote: SocketAddr, now_ms: u64) -> Self {
+        let state: State = State::Connecting { at_ms: now_ms, requester: None };
         Self {
             conn: ConnId::from_in(0, session),
             local,
@@ -61,6 +79,7 @@ impl NeighbourConnection {
             remote,
             state,
             output: VecDeque::new(),
+            handshake_builder,
         }
     }
 
@@ -94,17 +113,28 @@ impl NeighbourConnection {
 
     pub fn on_tick(&mut self, now_ms: u64) {
         match &mut self.state {
-            State::Connecting { at_ms, client } => {
-                if *client && now_ms - *at_ms >= TIMEOUT_MS {
-                    self.state = State::ConnectTimeout;
-                    self.output.push_back(Output::Event(ConnectionEvent::ConnectTimeout));
-                    log::warn!("[NeighbourConnection] Connection timeout to {} after {} ms", self.remote, TIMEOUT_MS);
-                } else if *client && now_ms - *at_ms >= RETRY_CMD_MS {
-                    self.output.push_back(self.generate_control(NeighboursControlCmds::ConnectRequest {
-                        to: self.node,
-                        session: self.conn.session(),
-                    }));
-                    log::info!("[NeighbourConnection] Resend connect request to {}, dest_node {}", self.remote, self.node);
+            State::Connecting { at_ms, requester } => {
+                if let Some(requester) = requester {
+                    if now_ms - *at_ms >= TIMEOUT_MS {
+                        self.state = State::ConnectTimeout;
+                        self.output.push_back(Output::Event(ConnectionEvent::ConnectTimeout));
+                        log::warn!("[NeighbourConnection] Connection timeout to {} after {} ms", self.remote, TIMEOUT_MS);
+                    } else if now_ms - *at_ms >= RETRY_CMD_MS {
+                        if let Ok(request_buf) = requester.create_public_request() {
+                            self.output.push_back(self.generate_control(NeighboursControlCmds::ConnectRequest {
+                                to: self.node,
+                                session: self.conn.session(),
+                                handshake: request_buf,
+                            }));
+                            log::info!("[NeighbourConnection] Resend connect request to {}, dest_node {}", self.remote, self.node);
+                        } else {
+                            log::warn!(
+                                "[NeighbourConnection] Cannot create handshake for resending connect request to {}, dest_node {}",
+                                self.remote,
+                                self.node
+                            );
+                        }
+                    }
                 }
             }
             State::Connected { ping_seq, last_pong_ms, .. } => {
@@ -143,10 +173,10 @@ impl NeighbourConnection {
     pub fn on_input(&mut self, now_ms: u64, from: NodeId, cmd: NeighboursControlCmds) {
         // TODO checking signature here
         match cmd {
-            NeighboursControlCmds::ConnectRequest { to, session } => {
+            NeighboursControlCmds::ConnectRequest { to, session, handshake } => {
                 let result = if self.local == to && self.node == from {
-                    if let State::Connecting { client, .. } = self.state {
-                        if !client || self.conn.session() >= session {
+                    if let State::Connecting { requester, .. } = &mut self.state {
+                        if requester.is_none() || self.conn.session() >= session {
                             //check if we can replace the existing connection to accept the new one
                             if self.conn.session() >= session {
                                 log::warn!(
@@ -158,14 +188,22 @@ impl NeighbourConnection {
                                 self.switch_to_incoming(session);
                             }
 
-                            self.state = State::Connected {
-                                last_pong_ms: now_ms,
-                                ping_seq: 0,
-                                stats: ConnectionStats { rtt_ms: INIT_RTT_MS },
-                            };
-                            self.output.push_back(Output::Event(ConnectionEvent::Connected));
-                            log::info!("Connected to {} as incoming conn", self.remote);
-                            Ok(())
+                            let mut responder = self.handshake_builder.responder();
+                            match responder.process_public_request(&handshake) {
+                                Ok((encryptor, decryptor, response)) => {
+                                    self.output.push_back(Output::Event(ConnectionEvent::Connected(encryptor.clone_box(), decryptor.clone_box())));
+                                    self.state = State::Connected {
+                                        last_pong_ms: now_ms,
+                                        ping_seq: 0,
+                                        stats: ConnectionStats { rtt_ms: INIT_RTT_MS },
+                                        encryptor,
+                                        decryptor,
+                                    };
+                                    log::info!("Connected to {} as incoming conn", self.remote);
+                                    Ok(response)
+                                }
+                                Err(_) => Err(NeighboursConnectError::InvalidData),
+                            }
                         } else {
                             log::warn!(
                                 "[NeighbourConnection] Conflic state from {}, local session {}, remote session {} => don't switch to incoming",
@@ -194,18 +232,32 @@ impl NeighbourConnection {
             }
             NeighboursControlCmds::ConnectResponse { session, result } => {
                 if session == self.conn.session() {
-                    if let State::Connecting { .. } = self.state {
-                        match result {
-                            Ok(()) => {
-                                self.state = State::Connected {
-                                    last_pong_ms: now_ms,
-                                    ping_seq: 0,
-                                    stats: ConnectionStats { rtt_ms: INIT_RTT_MS },
-                                };
-                                self.output.push_back(Output::Event(ConnectionEvent::Connected));
-                                log::info!("Connected to {} as outgoing conn", self.remote);
+                    if let State::Connecting { requester, .. } = &mut self.state {
+                        match (requester, result) {
+                            (Some(requester), Ok(handshake_res)) => match requester.process_public_response(&handshake_res) {
+                                Ok((encryptor, decryptor)) => {
+                                    self.output.push_back(Output::Event(ConnectionEvent::Connected(encryptor.clone_box(), decryptor.clone_box())));
+                                    self.state = State::Connected {
+                                        last_pong_ms: now_ms,
+                                        ping_seq: 0,
+                                        stats: ConnectionStats { rtt_ms: INIT_RTT_MS },
+                                        encryptor,
+                                        decryptor,
+                                    };
+                                    log::info!("Connected to {} as outgoing conn", self.remote);
+                                }
+                                Err(e) => {
+                                    log::warn!("Connect response from  {} but handshake error {:?}", self.remote, e);
+                                    self.state = State::ConnectError(NeighboursConnectError::InvalidData);
+                                    self.output.push_back(Output::Event(ConnectionEvent::ConnectError(NeighboursConnectError::InvalidData)));
+                                }
+                            },
+                            (None, Ok(_)) => {
+                                log::warn!("Connect response from  {} but wrong state, handshake requester not found", self.remote);
+                                self.state = State::ConnectError(NeighboursConnectError::InvalidData);
+                                self.output.push_back(Output::Event(ConnectionEvent::ConnectError(NeighboursConnectError::InvalidData)));
                             }
-                            Err(err) => {
+                            (_, Err(err)) => {
                                 log::warn!("Connect response error from {}: {:?}", self.remote, err);
                                 self.state = State::ConnectError(err);
                                 self.output.push_back(Output::Event(ConnectionEvent::ConnectError(err)));

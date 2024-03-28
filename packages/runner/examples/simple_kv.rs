@@ -81,8 +81,8 @@ fn main() {
     let mut shutdown_wait = 0;
     let args = Args::parse();
     env_logger::builder().format_timestamp_millis().init();
-    let auth = Arc::new(StaticKeyAuthorization::new(&args.password));
-    let mut builder = SdnBuilder::<SC, SE, TC, TW>::new(args.node_id, args.udp_port, vec![], auth);
+    let mut builder = SdnBuilder::<SC, SE, TC, TW>::new(args.node_id, args.udp_port, vec![]);
+    builder.set_authorization(StaticKeyAuthorization::new(&args.password));
 
     for seed in args.seeds {
         builder.add_seed(seed);

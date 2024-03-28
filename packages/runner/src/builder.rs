@@ -6,9 +6,7 @@ use std::{
 
 use atm0s_sdn_identity::{NodeAddr, NodeAddrBuilder, NodeId, Protocol};
 use atm0s_sdn_network::{
-    base::{Authorization, ServiceBuilder},
-    features::{FeaturesControl, FeaturesEvent},
-    services::{manual_discovery, visualization},
+    base::{Authorization, HandshakeBuilder, ServiceBuilder}, features::{FeaturesControl, FeaturesEvent}, secure::{HandshakeBuilderXDA, StaticKeyAuthorization}, services::{manual_discovery, visualization}
 };
 use rand::{thread_rng, RngCore};
 use sans_io_runtime::{backend::Backend, Owner};
@@ -16,7 +14,8 @@ use sans_io_runtime::{backend::Backend, Owner};
 use crate::tasks::{ControllerCfg, DataWorkerHistory, SdnController, SdnExtIn, SdnInnerCfg, SdnWorkerInner};
 
 pub struct SdnBuilder<SC, SE, TC, TW> {
-    auth: Arc<dyn Authorization + Send + Sync>,
+    auth: Option<Arc<dyn Authorization>>,
+    handshake: Option<Arc<dyn HandshakeBuilder>>,
     node_addr: NodeAddr,
     node_id: NodeId,
     session: u64,
@@ -39,7 +38,7 @@ where
     TC: 'static + Clone + Send + Sync,
     TW: 'static + Clone + Send + Sync,
 {
-    pub fn new(node_id: NodeId, udp_port: u16, custom_ip: Vec<SocketAddr>, auth: Arc<dyn Authorization + Send + Sync>) -> Self {
+    pub fn new(node_id: NodeId, udp_port: u16, custom_ip: Vec<SocketAddr>) -> Self {
         let mut addr_builder = NodeAddrBuilder::new(node_id);
         for (name, ip) in local_ip_address::list_afinet_netifas().expect("Should have local ip addresses") {
             match ip {
@@ -70,7 +69,8 @@ where
         log::info!("Created node on addr {}", node_addr);
 
         Self {
-            auth,
+            auth: None,
+            handshake: None,
             node_addr,
             node_id,
             session: thread_rng().next_u64(),
@@ -93,6 +93,16 @@ where
 
     pub fn add_seed(&mut self, addr: NodeAddr) {
         self.seeds.push(addr);
+    }
+
+    /// Setting authorization
+    pub fn set_authorization<A: Authorization + 'static>(&mut self, auth: A) {
+        self.auth = Some(Arc::new(auth));
+    }
+
+    /// Setting handshake
+    pub fn set_handshake<H: HandshakeBuilder + 'static>(&mut self, handshake: H) {
+        self.handshake = Some(Arc::new(handshake));
     }
 
     /// Setting visualization collector mode
@@ -159,7 +169,8 @@ where
                 history: history.clone(),
                 controller: Some(ControllerCfg {
                     session: self.session,
-                    auth: self.auth,
+                    auth: self.auth.unwrap_or_else(|| Arc::new(StaticKeyAuthorization::new("unsecure"))),
+                    handshake: self.handshake.unwrap_or_else(|| Arc::new(HandshakeBuilderXDA)),
                     tick_ms: 1000,
                     #[cfg(feature = "vpn")]
                     vpn_tun_device: tun_device,

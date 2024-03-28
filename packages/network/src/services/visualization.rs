@@ -264,7 +264,7 @@ mod test {
     use atm0s_sdn_router::{RouteRule, ServiceBroadcastLevel};
 
     use crate::{
-        base::{ConnectionCtx, ConnectionEvent, NetIncomingMeta, NetOutgoingMeta, SecureContext, Service, ServiceCtx, ServiceInput, ServiceSharedInput, Ttl},
+        base::{ConnectionCtx, ConnectionEvent, MockDecryptor, MockEncryptor, NetIncomingMeta, NetOutgoingMeta, SecureContext, Service, ServiceCtx, ServiceInput, ServiceSharedInput, Ttl},
         features::{
             data::{Control as DataControl, Event as DataEvent},
             FeaturesEvent,
@@ -285,7 +285,10 @@ mod test {
                 node,
                 remote: SocketAddr::from(([127, 0, 0, 1], 1234)),
             },
-            SecureContext {},
+            SecureContext {
+                encryptor: Box::new(MockEncryptor::new()),
+                decryptor: Box::new(MockDecryptor::new()),
+            },
         )
     }
 
