@@ -1,4 +1,7 @@
-use std::fmt::Debug;
+use std::{
+    fmt::Debug,
+    ops::{Deref, DerefMut},
+};
 
 use aes_gcm::{
     aead::{AeadMutInPlace, Buffer},
@@ -7,7 +10,7 @@ use aes_gcm::{
 use rand::rngs::OsRng;
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
-use crate::base::{DecryptionError, Decryptor, EncryptionError, Encryptor, HandshakeBuilder, HandshakeError, HandshakeRequester, HandshakeResponder};
+use crate::base::{DecryptionError, Decryptor, EncryptionError, Encryptor, GenericBufferMut, HandshakeBuilder, HandshakeError, HandshakeRequester, HandshakeResponder};
 
 const MSG_TIMEOUT_MS: u64 = 5000; // after 5 seconds message is considered expired
 
@@ -69,6 +72,7 @@ impl HandshakeResponder for HandshakeResponderXDA {
 }
 
 struct EncryptorXDA {
+    key: Vec<u8>,
     aes: Aes256Gcm,
 }
 
@@ -81,41 +85,42 @@ impl Debug for EncryptorXDA {
 impl EncryptorXDA {
     pub fn new(shared_key: &[u8; 32]) -> Self {
         let key = Key::<Aes256Gcm>::from_slice(shared_key);
-        Self { aes: Aes256Gcm::new(&key) }
+        Self {
+            key: shared_key.to_vec(),
+            aes: Aes256Gcm::new(&key),
+        }
     }
 }
 
 impl Encryptor for EncryptorXDA {
-    fn encrypt(&mut self, now_ms: u64, data: &[u8], out: &mut [u8]) -> Result<usize, EncryptionError> {
+    fn encrypt<'a>(&mut self, now_ms: u64, buf: &mut GenericBufferMut<'a>) -> Result<(), EncryptionError> {
         let mut nonce = Aes256Gcm::generate_nonce(&mut OsRng);
         nonce[4..].copy_from_slice(&now_ms.to_be_bytes());
-        out[0..12].copy_from_slice(&nonce);
-        out[12..(12 + data.len())].copy_from_slice(data);
-        let mut buf = SimpleMutBuf::new(&mut out[12..], data.len());
-        self.aes.encrypt_in_place(&nonce, &[], &mut buf).map_err(|_| EncryptionError::EncryptFailed)?;
-        Ok(12 + buf.len())
-    }
-
-    fn encrypt_vec(&mut self, now_ms: u64, data: &[u8]) -> Result<Vec<u8>, EncryptionError> {
-        let mut out = vec![0u8; 12 + 16 + data.len()];
-        let len = self.encrypt(now_ms, data, &mut out)?;
-        out.truncate(len);
-        Ok(out)
+        self.aes.encrypt_in_place(&nonce, &[], buf).map_err(|_| EncryptionError::EncryptFailed)?;
+        buf.extend_from_slice(&nonce).map_err(|_| EncryptionError::EncryptFailed)?;
+        Ok(())
     }
 
     fn clone_box(&self) -> Box<dyn Encryptor> {
-        Box::new(Self { aes: self.aes.clone() })
+        Box::new(Self {
+            aes: self.aes.clone(),
+            key: self.key.clone(),
+        })
     }
 }
 
 struct DecryptorXDA {
+    key: Vec<u8>,
     aes: Aes256Gcm,
 }
 
 impl DecryptorXDA {
     pub fn new(shared_key: &[u8; 32]) -> Self {
         let key = Key::<Aes256Gcm>::from_slice(shared_key);
-        Self { aes: Aes256Gcm::new(&key) }
+        Self {
+            key: shared_key.to_vec(),
+            aes: Aes256Gcm::new(&key),
+        }
     }
 }
 
@@ -126,84 +131,64 @@ impl Debug for DecryptorXDA {
 }
 
 impl Decryptor for DecryptorXDA {
-    fn decrypt(&mut self, now_ms: u64, data: &[u8], out: &mut [u8]) -> Result<usize, DecryptionError> {
-        if data.len() < 12 {
+    fn decrypt<'a>(&mut self, now_ms: u64, data: &mut GenericBufferMut<'a>) -> Result<(), DecryptionError> {
+        let nonce = if let Some(nonce) = data.pop_back(12) {
+            nonce.to_vec()
+        } else {
             return Err(DecryptionError::TooSmall);
-        }
-        let nonce = Nonce::from_slice(&data[..12]);
-        let sent_ts = u64::from_be_bytes(data[4..12].try_into().expect("should be 8 bytes"));
+        };
+        let sent_ts = u64::from_be_bytes(nonce[4..12].try_into().expect("should be 8 bytes"));
         if sent_ts + MSG_TIMEOUT_MS < now_ms {
             return Err(DecryptionError::TooOld);
         }
-        out[..(data.len() - 12)].copy_from_slice(&data[12..data.len()]);
-        let mut encrypted_buf = SimpleMutBuf::new(out, data.len() - 12);
-        self.aes.decrypt_in_place(nonce, &[], &mut encrypted_buf).map_err(|_| DecryptionError::TooSmall)?;
-        Ok(encrypted_buf.len())
-    }
-
-    fn decrypt_vec(&mut self, now_ms: u64, data: &[u8]) -> Result<Vec<u8>, DecryptionError> {
-        let mut out = vec![0u8; data.len()];
-        let len = self.decrypt(now_ms, data, &mut out)?;
-        out.truncate(len);
-        Ok(out)
-    }
-
-    fn clone_box(&self) -> Box<dyn Decryptor> {
-        Box::new(Self { aes: self.aes.clone() })
-    }
-}
-
-struct SimpleMutBuf<'a> {
-    buf: &'a mut [u8],
-    len: usize,
-}
-
-impl<'a> SimpleMutBuf<'a> {
-    fn new(value: &'a mut [u8], len: usize) -> Self {
-        Self { buf: value, len }
-    }
-}
-
-impl<'a> Buffer for SimpleMutBuf<'a> {
-    fn extend_from_slice(&mut self, other: &[u8]) -> aes_gcm::aead::Result<()> {
-        if self.buf.len() < self.len + other.len() {
-            println!("Buffer is too small {}, {} extend with {}", self.buf.len(), self.len, other.len());
-            return Err(aes_gcm::aead::Error);
-        }
-        self.buf[self.len..(self.len + other.len())].copy_from_slice(other);
-        self.len += other.len();
+        let nonce = Nonce::from_slice(&nonce);
+        self.aes.decrypt_in_place(nonce, &[], data).map_err(|_| DecryptionError::DecryptError)?;
         Ok(())
     }
 
+    fn clone_box(&self) -> Box<dyn Decryptor> {
+        Box::new(Self {
+            aes: self.aes.clone(),
+            key: self.key.clone(),
+        })
+    }
+}
+
+impl<'a> Buffer for GenericBufferMut<'a> {
+    fn extend_from_slice(&mut self, other: &[u8]) -> aes_gcm::aead::Result<()> {
+        self.extend(other).ok_or(aes_gcm::aead::Error)
+    }
+
     fn truncate(&mut self, len: usize) {
-        println!("Truncate to {} from {}", len, self.len);
-        self.len = len;
+        GenericBufferMut::truncate(self, len).expect("Should truncate ok");
     }
 
     fn len(&self) -> usize {
-        self.len
+        self.deref().len()
     }
 
     fn is_empty(&self) -> bool {
-        self.len == 0
+        self.deref().is_empty()
     }
 }
 
-impl<'a> AsRef<[u8]> for SimpleMutBuf<'a> {
+impl<'a> AsRef<[u8]> for GenericBufferMut<'a> {
     fn as_ref(&self) -> &[u8] {
-        &self.buf[0..self.len]
+        self.deref()
     }
 }
 
-impl<'a> AsMut<[u8]> for SimpleMutBuf<'a> {
+impl<'a> AsMut<[u8]> for GenericBufferMut<'a> {
     fn as_mut(&mut self) -> &mut [u8] {
-        &mut self.buf[0..self.len]
+        self.deref_mut()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::base::{HandshakeRequester, HandshakeResponder};
+    use std::ops::Deref;
+
+    use crate::base::{GenericBufferMut, HandshakeRequester, HandshakeResponder};
 
     use super::{HandshakeRequesterXDA, HandshakeResponderXDA};
 
@@ -217,13 +202,17 @@ mod tests {
 
         let msg = [1, 2, 3, 4];
 
-        let encrypted = s_encrypt.encrypt_vec(123, &msg).expect("Should ok");
-        let decrypted = c_decrypt.decrypt_vec(124, &encrypted).expect("Should ok");
-        assert_eq!(decrypted, msg);
+        let mut buf1 = GenericBufferMut::create_from_slice(&msg, 0, 1000);
+        s_encrypt.encrypt(123, &mut buf1).expect("Should ok");
+        assert_ne!(buf1.len(), msg.len());
+        c_decrypt.decrypt(124, &mut buf1).expect("Should ok");
+        assert_eq!(buf1.deref(), msg);
 
-        let encrypted = c_encrypt.encrypt_vec(123, &msg).expect("Should ok");
-        let decrypted = s_decrypt.decrypt_vec(124, &encrypted).expect("Should ok");
-        assert_eq!(decrypted, msg);
+        let mut buf2 = GenericBufferMut::create_from_slice(&msg, 0, 1000);
+        c_encrypt.encrypt(123, &mut buf2).expect("Should ok");
+        assert_ne!(buf2.len(), msg.len());
+        s_decrypt.decrypt(124, &mut buf2).expect("Should ok");
+        assert_eq!(buf2.deref(), msg);
     }
 
     #[test]
@@ -234,17 +223,20 @@ mod tests {
         let (mut s_encrypt, _s_decrypt, res) = server.process_public_request(client.create_public_request().expect("").as_slice()).expect("Should ok");
         let (_c_encrypt, mut c_decrypt) = client.process_public_response(res.as_slice()).expect("Should ok");
 
-        let encrypted1 = s_encrypt.encrypt_vec(123, &[0, 0, 0, 1]).expect("Should ok");
-        let encrypted2 = s_encrypt.encrypt_vec(124, &[0, 0, 0, 2]).expect("Should ok");
-        let encrypted3 = s_encrypt.encrypt_vec(125, &[0, 0, 0, 3]).expect("Should ok");
+        let mut buf1 = GenericBufferMut::create_from_slice(&[0, 0, 0, 1], 0, 1000);
+        s_encrypt.encrypt(123, &mut buf1).expect("Should ok");
+        let mut buf2 = GenericBufferMut::create_from_slice(&[0, 0, 0, 2], 0, 1000);
+        s_encrypt.encrypt(123, &mut buf2).expect("Should ok");
+        let mut buf3 = GenericBufferMut::create_from_slice(&[0, 0, 0, 3], 0, 1000);
+        s_encrypt.encrypt(123, &mut buf3).expect("Should ok");
 
-        let decrypted1 = c_decrypt.decrypt_vec(123, &encrypted1).expect("Should ok");
-        let decrypted3 = c_decrypt.decrypt_vec(125, &encrypted3).expect("Should ok");
-        let decrypted2 = c_decrypt.decrypt_vec(124, &encrypted2).expect("Should ok");
+        c_decrypt.decrypt(123, &mut buf1).expect("Should ok");
+        c_decrypt.decrypt(123, &mut buf2).expect("Should ok");
+        c_decrypt.decrypt(123, &mut buf3).expect("Should ok");
 
-        assert_eq!(decrypted1, [0, 0, 0, 1]);
-        assert_eq!(decrypted2, [0, 0, 0, 2]);
-        assert_eq!(decrypted3, [0, 0, 0, 3]);
+        assert_eq!(buf1.deref(), &[0, 0, 0, 1]);
+        assert_eq!(buf2.deref(), &[0, 0, 0, 2]);
+        assert_eq!(buf3.deref(), &[0, 0, 0, 3]);
     }
 
     #[test]
@@ -272,9 +264,10 @@ mod tests {
         for i in 0..1024 {
             let value: u32 = i;
             let msg = value.to_be_bytes();
-            let encrypted = s_enc_threads[i as usize % ENC_THREADS].encrypt_vec(i as u64, &msg).expect("Should ok");
-            let decrypted = c_dec_threads[i as usize % DEC_THREADS].decrypt_vec(i as u64, &encrypted).expect("Should ok");
-            assert_eq!(decrypted, msg);
+            let mut buf = GenericBufferMut::create_from_slice(&msg, 0, 1000);
+            s_enc_threads[i as usize % ENC_THREADS].encrypt(i as u64, &mut buf).expect("Should ok");
+            c_dec_threads[i as usize % DEC_THREADS].decrypt(i as u64, &mut buf).expect("Should ok");
+            assert_eq!(buf.deref(), msg);
         }
     }
 }

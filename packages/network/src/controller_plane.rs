@@ -231,7 +231,7 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
             }
             FeatureOutput::SendDirect(conn, meta, buf) => {
                 log::debug!("[ControllerPlane] SendDirect to conn: {:?}, len: {}", conn, buf.len());
-                Some(Output::Event(LogicEvent::NetDirect(feature, conn, meta, buf)))
+                Some(Output::Event(LogicEvent::NetDirect(feature, self.neighbours.conn(conn)?.remote, conn, meta, buf)))
             }
             FeatureOutput::SendRoute(rule, ttl, buf) => {
                 log::debug!("[ControllerPlane] SendRoute to rule: {:?}, len: {}", rule, buf.len());

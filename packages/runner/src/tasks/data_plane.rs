@@ -200,7 +200,15 @@ impl<SC, SE, TC: Debug, TW: Debug> Task<(), ExtOut<SE>, ChannelIn, ChannelOut, E
 
 fn convert_buf1<'a>(buf1: GenericBuffer<'a>) -> Buffer<'a> {
     match buf1 {
-        GenericBuffer::Vec(buf) => Buffer::Vec(buf),
-        GenericBuffer::Ref(buf) => Buffer::Ref(buf),
+        GenericBuffer::Vec(mut buf, start, end) => {
+            if start == 0 {
+                //TODO optimize in this case of Vec
+                buf.truncate(end);
+                Buffer::Vec(buf)
+            } else {
+                Buffer::Vec(buf[start..end].to_vec())
+            }
+        },
+        GenericBuffer::Ref(buf, start, end) => Buffer::Ref(&buf[start..end]),
     }
 }

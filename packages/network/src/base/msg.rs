@@ -80,6 +80,10 @@ pub struct TransportMsgHeader {
 }
 
 impl TransportMsgHeader {
+    pub fn is_secure(first_byte: u8) -> bool {
+        first_byte & 0b0010_0000 != 0
+    }
+
     /// Builds a message with the given service_id, route rule.
     pub fn new() -> Self {
         Self {
@@ -421,6 +425,7 @@ impl TryFrom<&[u8]> for TransportMsg {
     }
 }
 
+#[allow(unused_assignments)]
 impl TryFrom<&[u8]> for TransportMsgHeader {
     type Error = TransportMsgHeaderError;
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {

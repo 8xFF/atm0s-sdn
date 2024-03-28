@@ -125,7 +125,7 @@ where
                     self.broadcast_seq = self.broadcast_seq.wrapping_add(1);
                     self.queue.push_back(data_cmd(data::Control::SendRule(
                         RouteRule::ToServices(SERVICE_ID, ServiceBroadcastLevel::Global, seq),
-                        NetOutgoingMeta::new(false, Ttl(NODE_PING_TTL), 0),
+                        NetOutgoingMeta::new(false, Ttl(NODE_PING_TTL), 0, true),
                         bincode::serialize(&msg).expect("Should to bytes"),
                     )));
                 }
@@ -161,7 +161,11 @@ where
 
     fn on_input(&mut self, _ctx: &ServiceCtx, now: u64, input: ServiceInput<FeaturesEvent, SC, TC>) {
         match input {
-            ServiceInput::FeatureEvent(FeaturesEvent::Data(data::Event::Recv(_meta, buf))) => {
+            ServiceInput::FeatureEvent(FeaturesEvent::Data(data::Event::Recv(meta, buf))) => {
+                if !meta.secure {
+                    log::warn!("[Visualization] reject unsecure message");
+                    return;
+                }
                 if let Ok(msg) = bincode::deserialize::<Message>(&buf) {
                     match msg {
                         Message::Snapshot(from, conns) => {
@@ -313,7 +317,7 @@ mod test {
             service.pop_output(&ctx),
             Some(data_cmd(DataControl::SendRule(
                 RouteRule::ToServices(SERVICE_ID, ServiceBroadcastLevel::Global, 0),
-                NetOutgoingMeta::new(false, Ttl(NODE_PING_TTL), 0),
+                NetOutgoingMeta::new(false, Ttl(NODE_PING_TTL), 0, true),
                 bincode::serialize(&Message::Snapshot(node_id, vec![])).expect("Should to bytes")
             )))
         );
@@ -323,7 +327,7 @@ mod test {
             service.pop_output(&ctx),
             Some(data_cmd(DataControl::SendRule(
                 RouteRule::ToServices(SERVICE_ID, ServiceBroadcastLevel::Global, 1),
-                NetOutgoingMeta::new(false, Ttl(NODE_PING_TTL), 0),
+                NetOutgoingMeta::new(false, Ttl(NODE_PING_TTL), 0, true),
                 bincode::serialize(&Message::Snapshot(node_id, vec![])).expect("Should to bytes")
             )))
         );
@@ -359,7 +363,7 @@ mod test {
 
         let snapshot = Message::Snapshot(node2, vec![]);
         let buf = bincode::serialize(&snapshot).expect("Should to bytes");
-        service.on_input(&ctx, 100, data_event(DataEvent::Recv(NetIncomingMeta::new(None, NODE_PING_TTL.into(), 0), buf)));
+        service.on_input(&ctx, 100, data_event(DataEvent::Recv(NetIncomingMeta::new(None, NODE_PING_TTL.into(), 0, true), buf)));
 
         assert_eq!(service.network_nodes.len(), 1);
 

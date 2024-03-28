@@ -66,6 +66,7 @@ enum TaskType {
 enum QueueOutput<SE, TC> {
     Feature(Features, FeatureWorkerOutput<'static, FeaturesControl, FeaturesEvent, FeaturesToController>),
     Service(ServiceId, ServiceWorkerOutput<FeaturesControl, FeaturesEvent, SE, TC>),
+    Net(NetOutput<'static>),
 }
 
 pub struct DataPlane<SC, SE, TC, TW> {
@@ -114,6 +115,9 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
     pub fn on_event<'a>(&mut self, now_ms: u64, event: Input<'a, TW>) -> Option<Output<'a, SE, TC>> {
         match event {
             Input::Net(NetInput::UdpPacket(remote, buf)) => {
+                if buf.is_empty() {
+                    return None;
+                }
                 if let Ok(control) = NeighboursControl::try_from(&*buf) {
                     Some(LogicControl::NetNeighbour(remote, control).into())
                 } else {
@@ -134,14 +138,14 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 Some(self.convert_services(now_ms, service, out))
             }
             Input::Event(LogicEvent::NetNeighbour(remote, control)) => {
-                let buf = (&control).try_into().ok()?;
-                Some(NetOutput::UdpPacket(remote, GenericBuffer::Vec(buf)).into())
+                let buf: Result<Vec<u8>, _> = (&control).try_into();
+                Some(NetOutput::UdpPacket(remote, GenericBuffer::from(buf.ok()?)).into())
             }
-            Input::Event(LogicEvent::NetDirect(feature, conn, meta, buf)) => {
-                let addr = self.conns_reverse.get(&conn)?;
+            Input::Event(LogicEvent::NetDirect(feature, remote, _conn, meta, buf)) => {
                 let header = meta.to_header(feature as u8, RouteRule::Direct, self.feature_ctx.node_id);
+                let conn = self.conns.get_mut(&remote)?;
                 let msg = TransportMsg::build_raw(header, &buf);
-                Some(NetOutput::UdpPacket(*addr, msg.take().into()).into())
+                Self::build_send_to_from_mut(now_ms, conn, remote, msg.take().into()).map(|e| e.into())
             }
             Input::Event(LogicEvent::NetRoute(feature, rule, meta, buf)) => self.outgoing_route(now_ms, feature, rule, meta, buf),
             Input::Event(LogicEvent::Pin(conn, node, addr, secure)) => {
@@ -165,6 +169,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
             return match out {
                 QueueOutput::Feature(feature, out) => Some(self.convert_features(now_ms, feature, out)),
                 QueueOutput::Service(service, out) => Some(self.convert_services(now_ms, service, out)),
+                QueueOutput::Net(out) => Some(Output::Net(out)),
             };
         };
 
@@ -190,7 +195,10 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
     }
 
     fn incoming_route<'a>(&mut self, now_ms: u64, remote: SocketAddr, mut buf: GenericBufferMut<'a>) -> Option<Output<'a, SE, TC>> {
-        let conn = self.conns.get(&remote)?;
+        let conn = self.conns.get_mut(&remote)?;
+        if TransportMsgHeader::is_secure(buf[0]) {
+            conn.decrypt_if_need(now_ms, &mut buf)?;
+        }
         let header = TransportMsgHeader::try_from(&buf as &[u8]).ok()?;
         let action = self.feature_ctx.router.derive_action(&header.route, header.from_node, Some(conn.node()));
         log::debug!("[DataPlame] Incoming rule: {:?} from: {remote}, node {:?} => action {:?}", header.route, header.from_node, action);
@@ -206,23 +214,23 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 if !TransportMsgHeader::decrease_ttl(&mut buf) {
                     log::debug!("TTL is 0, drop packet");
                 }
-                Some(NetOutput::UdpPacket(remote, buf.to_readonly()).into())
+                let target_conn = self.conns.get_mut(&remote)?;
+                Self::build_send_to_from_mut(now_ms, target_conn, remote, buf).map(|e| e.into())
             }
             RouteAction::Broadcast(local, remotes) => {
                 if !TransportMsgHeader::decrease_ttl(&mut buf) {
                     log::debug!("TTL is 0, drop packet");
                     return None;
                 }
-                let buf = buf.to_readonly();
                 if local {
                     if let Ok(feature) = header.feature.try_into() {
                         log::debug!("Incoming broadcast feature: {:?} from: {remote}", feature);
-                        if let Some(out) = self.features.on_network_raw(&mut self.feature_ctx, feature, now_ms, conn.conn(), remote, header, buf.clone()) {
+                        if let Some(out) = self.features.on_network_raw(&mut self.feature_ctx, feature, now_ms, conn.conn(), remote, header, buf.copy_readonly()) {
                             self.queue_output.push_back(QueueOutput::Feature(feature, out.owned()));
                         }
                     }
                 }
-                Some(NetOutput::UdpPackets(remotes, buf).into())
+                self.build_send_to_multi_from_mut(now_ms, remotes, buf).map(|e: NetOutput<'_>| e.into())
             }
         }
     }
@@ -243,7 +251,8 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 log::debug!("[DataPlane] outgoing route rule {:?} is go with remote {remote}", rule);
                 let header = meta.to_header(feature as u8, rule, self.feature_ctx.node_id);
                 let msg = TransportMsg::build_raw(header, &buf);
-                Some(NetOutput::UdpPacket(remote, msg.take().into()).into())
+                let conn = self.conns.get_mut(&remote)?;
+                Self::build_send_to_from_mut(now_ms, conn, remote, msg.take().into()).map(|e| e.into())
             }
             RouteAction::Broadcast(local, remotes) => {
                 log::debug!("[DataPlane] outgoing route rule {:?} is go with local {local} and remotes {:?}", rule, remotes);
@@ -258,8 +267,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                         self.queue_output.push_back(QueueOutput::Feature(feature, out.owned()));
                     }
                 }
-
-                Some(NetOutput::UdpPackets(remotes, msg.take().into()).into())
+                self.build_send_to_multi_from_mut(now_ms, remotes, msg.take().into()).map(|e| e.into())
             }
         }
     }
@@ -284,9 +292,10 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
             },
             FeatureWorkerOutput::SendDirect(conn, meta, buf) => {
                 if let Some(addr) = self.conns_reverse.get(&conn) {
+                    let conn = self.conns.get_mut(addr).expect("Should have");
                     let header = meta.to_header(feature as u8, RouteRule::Direct, self.feature_ctx.node_id);
                     let msg = TransportMsg::build_raw(header, &buf);
-                    NetOutput::UdpPacket(*addr, msg.take().into()).into()
+                    Self::build_send_to_from_mut(now_ms, conn, *addr, msg.take().into()).expect("Should have output").into()
                 } else {
                     Output::Continue
                 }
@@ -301,17 +310,24 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
             }
             FeatureWorkerOutput::RawDirect(conn, buf) => {
                 if let Some(addr) = self.conns_reverse.get(&conn) {
-                    NetOutput::UdpPacket(*addr, buf).into()
+                    let conn = self.conns.get_mut(addr).expect("Should have conn");
+                    Self::build_send_to(now_ms, conn, *addr, buf).expect("Should ok for convert RawDirect").into()
                 } else {
                     Output::Continue
                 }
             }
             FeatureWorkerOutput::RawBroadcast(conns, buf) => {
                 let addrs = conns.iter().filter_map(|conn| self.conns_reverse.get(conn)).cloned().collect();
-                NetOutput::UdpPackets(addrs, buf).into()
+                self.build_send_to_multi(now_ms, addrs, buf).map(|e| e.into()).unwrap_or(Output::Continue)
             }
-            FeatureWorkerOutput::RawDirect2(addr, buf) => NetOutput::UdpPacket(addr, buf).into(),
-            FeatureWorkerOutput::RawBroadcast2(addrs, buf) => NetOutput::UdpPackets(addrs, buf).into(),
+            FeatureWorkerOutput::RawDirect2(addr, buf) => {
+                if let Some(conn) = self.conns.get_mut(&addr) {
+                    Self::build_send_to(now_ms, conn, addr, buf).expect("Should ok for convert RawDirect2").into()
+                } else {
+                    Output::Continue
+                }
+            }
+            FeatureWorkerOutput::RawBroadcast2(addrs, buf) => self.build_send_to_multi(now_ms, addrs, buf).map(|e| e.into()).unwrap_or(Output::Continue),
             FeatureWorkerOutput::TunPkt(pkt) => NetOutput::TunPacket(pkt).into(),
         }
     }
@@ -336,6 +352,50 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
             ServiceWorkerOutput::Event(actor, event) => match actor {
                 ServiceControlActor::Controller => Output::Ext(ExtOut::ServicesEvent(event)),
             },
+        }
+    }
+
+    fn build_send_to_from_mut<'a>(now: u64, conn: &mut DataPlaneConnection, remote: SocketAddr, mut buf: GenericBufferMut<'a>) -> Option<NetOutput<'a>> {
+        conn.encrypt_if_need(now, &mut buf)?;
+        let after = buf.to_readonly();
+        Some(NetOutput::UdpPacket(remote, after))
+    }
+
+    fn build_send_to_multi_from_mut<'a>(&mut self, now: u64, mut remotes: Vec<SocketAddr>, mut buf: GenericBufferMut<'a>) -> Option<NetOutput<'a>> {
+        if TransportMsgHeader::is_secure(buf[0]) {
+            let first = remotes.pop()?;
+            for remote in remotes {
+                if let Some(conn) = self.conns.get_mut(&remote) {
+                    let mut buf = GenericBufferMut::create_from_slice(&buf, 0, 12 + 16);
+                    if let Some(_) = conn.encrypt_if_need(now, &mut buf) {
+                        let out = NetOutput::UdpPacket(remote, buf.to_readonly());
+                        self.queue_output.push_back(QueueOutput::Net(out));
+                    }
+                }
+            }
+            let conn = self.conns.get_mut(&first)?;
+            conn.encrypt_if_need(now, &mut buf)?;
+            Some(NetOutput::UdpPacket(first, buf.to_readonly()))
+        } else {
+            Some(NetOutput::UdpPackets(remotes, buf.to_readonly()))
+        }
+    }
+
+    fn build_send_to_multi<'a>(&mut self, now: u64, remotes: Vec<SocketAddr>, buf: GenericBuffer<'a>) -> Option<NetOutput<'a>> {
+        if TransportMsgHeader::is_secure(buf[0]) {
+            let buf = GenericBufferMut::create_from_slice(&buf, 0, 12 + 16);
+            self.build_send_to_multi_from_mut(now, remotes, buf)
+        } else {
+            Some(NetOutput::UdpPackets(remotes, buf))
+        }
+    }
+
+    fn build_send_to<'a>(now: u64, conn: &mut DataPlaneConnection, remote: SocketAddr, buf: GenericBuffer<'a>) -> Option<NetOutput<'a>> {
+        if TransportMsgHeader::is_secure(buf[0]) {
+            let buf = GenericBufferMut::create_from_slice(&buf, 0, 12 + 16);
+            Self::build_send_to_from_mut(now, conn, remote, buf)
+        } else {
+            Some(NetOutput::UdpPacket(remote, buf))
         }
     }
 }

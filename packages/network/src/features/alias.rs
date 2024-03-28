@@ -200,7 +200,7 @@ impl AliasFeature {
 
     fn send_to(queue: &mut VecDeque<FeatureOutput<Event, ToWorker>>, rule: RouteRule, msg: Message) {
         let msg = bincode::serialize(&msg).expect("Should to bytes");
-        queue.push_back(FeatureOutput::SendRoute(rule, NetOutgoingMeta::new(true, Ttl::default(), 0), msg));
+        queue.push_back(FeatureOutput::SendRoute(rule, NetOutgoingMeta::new(true, Ttl::default(), 0, true), msg));
     }
 
     fn gen_seq(scan_seq: &mut u16) -> u16 {
@@ -250,10 +250,16 @@ impl Feature<Control, Event, ToController, ToWorker> for AliasFeature {
     fn on_input<'a>(&mut self, _ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
         match input {
             FeatureInput::Control(actor, control) => self.process_control(now_ms, actor, control),
-            FeatureInput::Local(meta, msg) | FeatureInput::Net(_, meta, msg) => match (meta.source, bincode::deserialize::<Message>(&msg)) {
-                (Some(from), Ok(msg)) => self.process_remote(now_ms, from, msg),
-                _ => {}
-            },
+            FeatureInput::Local(meta, msg) | FeatureInput::Net(_, meta, msg) => {
+                if !meta.secure {
+                    log::warn!("[AliasFeature] reject unsecure message");
+                    return;
+                }
+                match (meta.source, bincode::deserialize::<Message>(&msg)) {
+                    (Some(from), Ok(msg)) => self.process_remote(now_ms, from, msg),
+                    _ => {}
+                }
+            }
             _ => {}
         }
     }

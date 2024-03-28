@@ -2,6 +2,8 @@ use std::fmt::Debug;
 
 use atm0s_sdn_identity::NodeId;
 
+use super::GenericBufferMut;
+
 #[derive(Debug, Clone)]
 pub struct SecureContext {
     pub(crate) encryptor: Box<dyn Encryptor>,
@@ -41,8 +43,7 @@ pub enum EncryptionError {
 
 #[mockall::automock]
 pub trait Encryptor: Debug + Send + Sync {
-    fn encrypt(&mut self, now_ms: u64, data: &[u8], out: &mut [u8]) -> Result<usize, EncryptionError>;
-    fn encrypt_vec(&mut self, now_ms: u64, data: &[u8]) -> Result<Vec<u8>, EncryptionError>;
+    fn encrypt<'a>(&mut self, now_ms: u64, data: &mut GenericBufferMut<'a>) -> Result<(), EncryptionError>;
     fn clone_box(&self) -> Box<dyn Encryptor>;
 }
 
@@ -56,12 +57,12 @@ impl Clone for Box<dyn Encryptor> {
 pub enum DecryptionError {
     TooSmall,
     TooOld,
+    DecryptError,
 }
 
 #[mockall::automock]
 pub trait Decryptor: Debug + Send + Sync {
-    fn decrypt(&mut self, now_ms: u64, data: &[u8], out: &mut [u8]) -> Result<usize, DecryptionError>;
-    fn decrypt_vec(&mut self, now_ms: u64, data: &[u8]) -> Result<Vec<u8>, DecryptionError>;
+    fn decrypt<'a>(&mut self, now_ms: u64, data: &mut GenericBufferMut<'a>) -> Result<(), DecryptionError>;
     fn clone_box(&self) -> Box<dyn Decryptor>;
 }
 
