@@ -35,7 +35,7 @@ impl DataPlaneConnection {
         }
         buf.ensure_back(12 + 16); //TODO remove magic numbers
         buf.move_front_right(1);
-        self.secure.encryptor.encrypt(now, buf).expect("Should encrypt");
+        self.secure.encryptor.encrypt(now, buf).ok()?;
         buf.move_front_left(1);
         Some(())
     }
@@ -49,7 +49,7 @@ impl DataPlaneConnection {
             return Some(());
         }
         buf.move_front_right(1);
-        self.secure.decryptor.decrypt(now, buf).expect("Should decrupt");
+        self.secure.decryptor.decrypt(now, buf).ok()?;
         buf.move_front_left(1);
         Some(())
     }
