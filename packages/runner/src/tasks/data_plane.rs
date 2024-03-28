@@ -1,14 +1,10 @@
 use std::{
-    collections::VecDeque,
-    fmt::Debug,
-    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
-    sync::Arc,
-    time::Instant,
+    collections::VecDeque, fmt::Debug, net::{Ipv4Addr, SocketAddr, SocketAddrV4}, ops::Deref, sync::Arc, time::Instant
 };
 
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_network::{
-    base::{GenericBuffer, ServiceBuilder},
+    base::{GenericBuffer, ReadOnlyBuffer, ServiceBuilder},
     data_plane::{DataPlane, Input as DataPlaneInput, NetInput, NetOutput, Output as DataPlaneOutput},
     features::{FeaturesControl, FeaturesEvent},
     ExtOut, LogicControl, LogicEvent,
@@ -199,16 +195,16 @@ impl<SC, SE, TC: Debug, TW: Debug> Task<(), ExtOut<SE>, ChannelIn, ChannelOut, E
 }
 
 fn convert_buf1<'a>(buf1: GenericBuffer<'a>) -> Buffer<'a> {
-    match buf1 {
-        GenericBuffer::Vec(mut buf, start, end) => {
-            if start == 0 {
-                //TODO optimize in this case of Vec
-                buf.truncate(end);
+    match buf1.buf {
+        ReadOnlyBuffer::Ref(buf) => Buffer::Ref(&buf[buf1.range.clone()]),
+        ReadOnlyBuffer::Vec(mut buf) => {
+            if buf1.range.start == 0 {
+                buf.truncate(buf1.range.end);
                 Buffer::Vec(buf)
             } else {
-                Buffer::Vec(buf[start..end].to_vec())
+                //TODO optimize this case for avoiding copy
+                Buffer::Vec(buf[buf1.range.clone()].to_vec())
             }
-        },
-        GenericBuffer::Ref(buf, start, end) => Buffer::Ref(&buf[start..end]),
+        }
     }
 }

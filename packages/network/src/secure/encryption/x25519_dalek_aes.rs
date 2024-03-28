@@ -156,7 +156,8 @@ impl Decryptor for DecryptorXDA {
 
 impl<'a> Buffer for GenericBufferMut<'a> {
     fn extend_from_slice(&mut self, other: &[u8]) -> aes_gcm::aead::Result<()> {
-        self.extend(other).ok_or(aes_gcm::aead::Error)
+        self.push_back(other);
+        Ok(())
     }
 
     fn truncate(&mut self, len: usize) {
@@ -202,13 +203,13 @@ mod tests {
 
         let msg = [1, 2, 3, 4];
 
-        let mut buf1 = GenericBufferMut::create_from_slice(&msg, 0, 1000);
+        let mut buf1 = GenericBufferMut::build(&msg, 0, 1000);
         s_encrypt.encrypt(123, &mut buf1).expect("Should ok");
         assert_ne!(buf1.len(), msg.len());
         c_decrypt.decrypt(124, &mut buf1).expect("Should ok");
         assert_eq!(buf1.deref(), msg);
 
-        let mut buf2 = GenericBufferMut::create_from_slice(&msg, 0, 1000);
+        let mut buf2 = GenericBufferMut::build(&msg, 0, 1000);
         c_encrypt.encrypt(123, &mut buf2).expect("Should ok");
         assert_ne!(buf2.len(), msg.len());
         s_decrypt.decrypt(124, &mut buf2).expect("Should ok");
@@ -223,11 +224,11 @@ mod tests {
         let (mut s_encrypt, _s_decrypt, res) = server.process_public_request(client.create_public_request().expect("").as_slice()).expect("Should ok");
         let (_c_encrypt, mut c_decrypt) = client.process_public_response(res.as_slice()).expect("Should ok");
 
-        let mut buf1 = GenericBufferMut::create_from_slice(&[0, 0, 0, 1], 0, 1000);
+        let mut buf1 = GenericBufferMut::build(&[0, 0, 0, 1], 0, 1000);
         s_encrypt.encrypt(123, &mut buf1).expect("Should ok");
-        let mut buf2 = GenericBufferMut::create_from_slice(&[0, 0, 0, 2], 0, 1000);
+        let mut buf2 = GenericBufferMut::build(&[0, 0, 0, 2], 0, 1000);
         s_encrypt.encrypt(123, &mut buf2).expect("Should ok");
-        let mut buf3 = GenericBufferMut::create_from_slice(&[0, 0, 0, 3], 0, 1000);
+        let mut buf3 = GenericBufferMut::build(&[0, 0, 0, 3], 0, 1000);
         s_encrypt.encrypt(123, &mut buf3).expect("Should ok");
 
         c_decrypt.decrypt(123, &mut buf1).expect("Should ok");
@@ -264,7 +265,7 @@ mod tests {
         for i in 0..1024 {
             let value: u32 = i;
             let msg = value.to_be_bytes();
-            let mut buf = GenericBufferMut::create_from_slice(&msg, 0, 1000);
+            let mut buf = GenericBufferMut::build(&msg, 0, 1000);
             s_enc_threads[i as usize % ENC_THREADS].encrypt(i as u64, &mut buf).expect("Should ok");
             c_dec_threads[i as usize % DEC_THREADS].decrypt(i as u64, &mut buf).expect("Should ok");
             assert_eq!(buf.deref(), msg);

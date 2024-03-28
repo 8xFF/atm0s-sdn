@@ -207,7 +207,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
             RouteAction::Local => {
                 let feature = header.feature.try_into().ok()?;
                 log::debug!("Incoming feature: {:?} from: {remote}", feature);
-                let out = self.features.on_network_raw(&mut self.feature_ctx, feature, now_ms, conn.conn(), remote, header, buf.to_readonly())?;
+                let out = self.features.on_network_raw(&mut self.feature_ctx, feature, now_ms, conn.conn(), remote, header, buf.freeze())?;
                 Some(self.convert_features(now_ms, feature, out))
             }
             RouteAction::Next(remote) => {
@@ -357,7 +357,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
 
     fn build_send_to_from_mut<'a>(now: u64, conn: &mut DataPlaneConnection, remote: SocketAddr, mut buf: GenericBufferMut<'a>) -> Option<NetOutput<'a>> {
         conn.encrypt_if_need(now, &mut buf)?;
-        let after = buf.to_readonly();
+        let after = buf.freeze();
         Some(NetOutput::UdpPacket(remote, after))
     }
 
@@ -366,24 +366,24 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
             let first = remotes.pop()?;
             for remote in remotes {
                 if let Some(conn) = self.conns.get_mut(&remote) {
-                    let mut buf = GenericBufferMut::create_from_slice(&buf, 0, 12 + 16);
+                    let mut buf = GenericBufferMut::build(&buf, 0, 12 + 16);
                     if let Some(_) = conn.encrypt_if_need(now, &mut buf) {
-                        let out = NetOutput::UdpPacket(remote, buf.to_readonly());
+                        let out = NetOutput::UdpPacket(remote, buf.freeze());
                         self.queue_output.push_back(QueueOutput::Net(out));
                     }
                 }
             }
             let conn = self.conns.get_mut(&first)?;
             conn.encrypt_if_need(now, &mut buf)?;
-            Some(NetOutput::UdpPacket(first, buf.to_readonly()))
+            Some(NetOutput::UdpPacket(first, buf.freeze()))
         } else {
-            Some(NetOutput::UdpPackets(remotes, buf.to_readonly()))
+            Some(NetOutput::UdpPackets(remotes, buf.freeze()))
         }
     }
 
     fn build_send_to_multi<'a>(&mut self, now: u64, remotes: Vec<SocketAddr>, buf: GenericBuffer<'a>) -> Option<NetOutput<'a>> {
         if TransportMsgHeader::is_secure(buf[0]) {
-            let buf = GenericBufferMut::create_from_slice(&buf, 0, 12 + 16);
+            let buf = GenericBufferMut::build(&buf, 0, 12 + 16);
             self.build_send_to_multi_from_mut(now, remotes, buf)
         } else {
             Some(NetOutput::UdpPackets(remotes, buf))
@@ -392,7 +392,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
 
     fn build_send_to<'a>(now: u64, conn: &mut DataPlaneConnection, remote: SocketAddr, buf: GenericBuffer<'a>) -> Option<NetOutput<'a>> {
         if TransportMsgHeader::is_secure(buf[0]) {
-            let buf = GenericBufferMut::create_from_slice(&buf, 0, 12 + 16);
+            let buf = GenericBufferMut::build(&buf, 0, 12 + 16);
             Self::build_send_to_from_mut(now, conn, remote, buf)
         } else {
             Some(NetOutput::UdpPacket(remote, buf))

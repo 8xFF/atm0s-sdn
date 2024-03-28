@@ -108,7 +108,8 @@ impl Feature<Control, Event, ToController, ToWorker> for DhtKvFeature {
                 }
             }
             FeatureInput::Net(_conn, meta, buf) => {
-                if !meta.secure { //only allow secure message
+                if !meta.secure {
+                    //only allow secure message
                     log::warn!("[DhtKv] reject unsecure message");
                     return;
                 }
