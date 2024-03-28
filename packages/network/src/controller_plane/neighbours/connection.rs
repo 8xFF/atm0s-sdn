@@ -171,7 +171,6 @@ impl NeighbourConnection {
     }
 
     pub fn on_input(&mut self, now_ms: u64, from: NodeId, cmd: NeighboursControlCmds) {
-        // TODO checking signature here
         match cmd {
             NeighboursControlCmds::ConnectRequest { to, session, handshake } => {
                 let result = if self.local == to && self.node == from {
