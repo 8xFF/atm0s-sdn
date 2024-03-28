@@ -19,8 +19,6 @@ enum State {
         last_pong_ms: u64,
         ping_seq: u64,
         stats: ConnectionStats,
-        encryptor: Box<dyn Encryptor>,
-        decryptor: Box<dyn Decryptor>,
     },
     Disconnecting {
         at_ms: u64,
@@ -190,13 +188,11 @@ impl NeighbourConnection {
                             let mut responder = self.handshake_builder.responder();
                             match responder.process_public_request(&handshake) {
                                 Ok((encryptor, decryptor, response)) => {
-                                    self.output.push_back(Output::Event(ConnectionEvent::Connected(encryptor.clone_box(), decryptor.clone_box())));
+                                    self.output.push_back(Output::Event(ConnectionEvent::Connected(encryptor, decryptor)));
                                     self.state = State::Connected {
                                         last_pong_ms: now_ms,
                                         ping_seq: 0,
                                         stats: ConnectionStats { rtt_ms: INIT_RTT_MS },
-                                        encryptor,
-                                        decryptor,
                                     };
                                     log::info!("Connected to {} as incoming conn", self.remote);
                                     Ok(response)
@@ -235,13 +231,11 @@ impl NeighbourConnection {
                         match (requester, result) {
                             (Some(requester), Ok(handshake_res)) => match requester.process_public_response(&handshake_res) {
                                 Ok((encryptor, decryptor)) => {
-                                    self.output.push_back(Output::Event(ConnectionEvent::Connected(encryptor.clone_box(), decryptor.clone_box())));
+                                    self.output.push_back(Output::Event(ConnectionEvent::Connected(encryptor, decryptor)));
                                     self.state = State::Connected {
                                         last_pong_ms: now_ms,
                                         ping_seq: 0,
                                         stats: ConnectionStats { rtt_ms: INIT_RTT_MS },
-                                        encryptor,
-                                        decryptor,
                                     };
                                     log::info!("Connected to {} as outgoing conn", self.remote);
                                 }
