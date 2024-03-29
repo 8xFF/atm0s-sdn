@@ -6,7 +6,10 @@ use std::{
 
 use atm0s_sdn_identity::{NodeAddr, NodeAddrBuilder, NodeId, Protocol};
 use atm0s_sdn_network::{
-    base::{Authorization, HandshakeBuilder, ServiceBuilder}, features::{FeaturesControl, FeaturesEvent}, secure::{HandshakeBuilderXDA, StaticKeyAuthorization}, services::{manual_discovery, visualization}
+    base::{Authorization, HandshakeBuilder, ServiceBuilder},
+    features::{FeaturesControl, FeaturesEvent},
+    secure::{HandshakeBuilderXDA, StaticKeyAuthorization},
+    services::{manual_discovery, visualization},
 };
 use rand::{thread_rng, RngCore};
 use sans_io_runtime::{backend::Backend, Owner};
