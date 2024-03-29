@@ -22,7 +22,7 @@ pub struct ConnectionCtx {
     pub remote: SocketAddr,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConnectionStats {
     pub rtt_ms: u32,
 }

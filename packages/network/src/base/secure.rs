@@ -22,16 +22,19 @@ pub enum HandshakeError {
     InvalidPublicKey,
 }
 
+#[mockall::automock]
 pub trait HandshakeBuilder: Send + Sync {
     fn requester(&self) -> Box<dyn HandshakeRequester>;
     fn responder(&self) -> Box<dyn HandshakeResponder>;
 }
 
+#[mockall::automock]
 pub trait HandshakeRequester {
     fn create_public_request(&self) -> Result<Vec<u8>, HandshakeError>;
     fn process_public_response(&mut self, response: &[u8]) -> Result<(Box<dyn Encryptor>, Box<dyn Decryptor>), HandshakeError>;
 }
 
+#[mockall::automock]
 pub trait HandshakeResponder {
     fn process_public_request(&mut self, request: &[u8]) -> Result<(Box<dyn Encryptor>, Box<dyn Decryptor>, Vec<u8>), HandshakeError>;
 }
