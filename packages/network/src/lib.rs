@@ -15,8 +15,6 @@ pub mod features;
 pub mod secure;
 pub mod services;
 
-pub mod san_io_utils;
-
 #[derive(Debug, Clone, convert_enum::From)]
 pub enum ExtIn<ServicesControl> {
     ConnectTo(NodeAddr),

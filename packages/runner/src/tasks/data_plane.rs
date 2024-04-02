@@ -2,7 +2,6 @@ use std::{
     collections::VecDeque,
     fmt::Debug,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
-    ops::Deref,
     sync::Arc,
     time::Instant,
 };
