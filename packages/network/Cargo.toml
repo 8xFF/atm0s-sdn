@@ -11,6 +11,7 @@ license = "MIT"
 atm0s-sdn-utils = { path = "../core/utils", version = "0.1.1" }
 atm0s-sdn-identity = { path = "../core/identity", version = "0.2.0" }
 atm0s-sdn-router = { path = "../core/router", version = "0.1.4" }
+sans-io-runtime = { workspace = true, default-features = false }
 rand = { workspace = true }
 mockall = { workspace = true }
 convert-enum = "0.1.0"

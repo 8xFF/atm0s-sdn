@@ -27,12 +27,18 @@ fn feature_neighbours_two_nodes() {
         sim.process(500);
     }
 
+    let mut out = vec![];
+    while let Some((node, out_event)) = sim.pop_res() {
+        out.push((node, out_event));
+    }
+
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+
     assert_eq!(
-        sim.pop_res(),
-        Some((node2, ExtOut::FeaturesEvent(FeaturesEvent::Neighbours(neighbours::Event::Connected(node1, ConnId::from_in(0, 1000))))))
-    );
-    assert_eq!(
-        sim.pop_res(),
-        Some((node1, ExtOut::FeaturesEvent(FeaturesEvent::Neighbours(neighbours::Event::Connected(node2, ConnId::from_out(0, 1000))))))
+        out,
+        vec![
+            (node1, ExtOut::FeaturesEvent(FeaturesEvent::Neighbours(neighbours::Event::Connected(node2, ConnId::from_out(0, 1000))))),
+            (node2, ExtOut::FeaturesEvent(FeaturesEvent::Neighbours(neighbours::Event::Connected(node1, ConnId::from_in(0, 1000))))),
+        ]
     );
 }

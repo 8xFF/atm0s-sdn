@@ -2,6 +2,7 @@ use std::{
     fmt::Debug,
     net::{IpAddr, SocketAddr},
     sync::Arc,
+    time::Duration,
 };
 
 use atm0s_sdn_identity::{NodeAddr, NodeAddrBuilder, NodeId, Protocol};
@@ -165,6 +166,7 @@ where
 
         let mut controller = SdnController::default();
         controller.add_worker::<_, SdnWorkerInner<SC, SE, TC, TW>, B>(
+            Duration::from_millis(1000),
             SdnInnerCfg {
                 node_id: self.node_id,
                 udp_port: self.udp_port,
@@ -186,6 +188,7 @@ where
 
         for _ in 1..workers {
             controller.add_worker::<_, SdnWorkerInner<SC, SE, TC, TW>, B>(
+                Duration::from_millis(1000),
                 SdnInnerCfg {
                     node_id: self.node_id,
                     udp_port: self.udp_port,

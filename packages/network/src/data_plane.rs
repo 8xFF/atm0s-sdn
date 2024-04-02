@@ -9,6 +9,7 @@ use atm0s_sdn_router::{
     shadow::{ShadowRouter, ShadowRouterHistory},
     RouteAction, RouteRule, RouterTable,
 };
+use sans_io_runtime::TaskSwitcher;
 
 use crate::{
     base::{
@@ -16,7 +17,6 @@ use crate::{
         ServiceId, ServiceWorkerCtx, ServiceWorkerInput, ServiceWorkerOutput, TransportMsg, TransportMsgHeader,
     },
     features::{Features, FeaturesControl, FeaturesEvent, FeaturesToController},
-    san_io_utils::TasksSwitcher,
     ExtOut, LogicControl, LogicEvent,
 };
 
@@ -78,7 +78,7 @@ pub struct DataPlane<SC, SE, TC, TW> {
     conns: HashMap<SocketAddr, DataPlaneConnection>,
     conns_reverse: HashMap<ConnId, SocketAddr>,
     queue_output: VecDeque<QueueOutput<SE, TC>>,
-    switcher: TasksSwitcher<u8, 2>,
+    switcher: TaskSwitcher,
 }
 
 impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
@@ -97,7 +97,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
             conns: HashMap::new(),
             conns_reverse: HashMap::new(),
             queue_output: VecDeque::new(),
-            switcher: TasksSwitcher::default(),
+            switcher: TaskSwitcher::new(2),
         }
     }
 
@@ -106,7 +106,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
     }
 
     pub fn on_tick<'a>(&mut self, now_ms: u64) {
-        self.switcher.push_all();
+        self.switcher.queue_flag_all();
         self.features.on_tick(&mut self.feature_ctx, now_ms, self.tick_count);
         self.services.on_tick(&mut self.service_ctx, now_ms, self.tick_count);
         self.tick_count += 1;
@@ -173,17 +173,17 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
             };
         };
 
-        while let Some(current) = self.switcher.current() {
+        while let Some(current) = self.switcher.queue_current() {
             match current {
                 0 => {
                     let out = self.features.pop_output(&mut self.feature_ctx);
-                    if let Some((feature, out)) = self.switcher.process(out) {
+                    if let Some((feature, out)) = self.switcher.queue_process(out) {
                         return Some(self.convert_features(now_ms, feature, out));
                     }
                 }
                 1 => {
                     let out = self.services.pop_output(&mut self.service_ctx);
-                    if let Some((feature, out)) = self.switcher.process(out) {
+                    if let Some((feature, out)) = self.switcher.queue_process(out) {
                         return Some(self.convert_services(now_ms, feature, out));
                     }
                 }
@@ -263,7 +263,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 if local {
                     let meta = meta.to_incoming(self.feature_ctx.node_id);
                     if let Some(out) = self.features.on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::Local(meta, buf.into())) {
-                        self.switcher.push_last(TaskType::Feature as u8);
+                        self.switcher.queue_flag_task(TaskType::Feature as usize);
                         self.queue_output.push_back(QueueOutput::Feature(feature, out.owned()));
                     }
                 }
@@ -273,7 +273,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
     }
 
     fn convert_features<'a>(&mut self, now_ms: u64, feature: Features, out: FeatureWorkerOutput<'a, FeaturesControl, FeaturesEvent, FeaturesToController>) -> Output<'a, SE, TC> {
-        self.switcher.push_last(TaskType::Feature as u8);
+        self.switcher.queue_flag_task(TaskType::Feature as usize);
 
         match out {
             FeatureWorkerOutput::ForwardControlToController(service, control) => LogicControl::FeaturesControl(service, control).into(),
@@ -284,7 +284,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 FeatureControlActor::Controller => Output::Ext(ExtOut::FeaturesEvent(event)),
                 FeatureControlActor::Service(service) => {
                     if let Some(out) = self.services.on_input(&mut self.service_ctx, now_ms, service, ServiceWorkerInput::FeatureEvent(event)) {
-                        self.switcher.push_last(TaskType::Service as u8);
+                        self.switcher.queue_flag_task(TaskType::Service as usize);
                         self.queue_output.push_back(QueueOutput::Service(service, out));
                     }
                     Output::Continue
@@ -333,7 +333,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
     }
 
     fn convert_services<'a>(&mut self, now_ms: u64, service: ServiceId, out: ServiceWorkerOutput<FeaturesControl, FeaturesEvent, SE, TC>) -> Output<'a, SE, TC> {
-        self.switcher.push_last(TaskType::Service as u8);
+        self.switcher.queue_flag_task(TaskType::Service as usize);
 
         match out {
             ServiceWorkerOutput::ForwardFeatureEventToController(event) => LogicControl::ServiceEvent(service, event).into(),
@@ -344,7 +344,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                     .features
                     .on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::Control(FeatureControlActor::Service(service), control))
                 {
-                    self.switcher.push_last(TaskType::Feature as u8);
+                    self.switcher.queue_flag_task(TaskType::Feature as usize);
                     self.queue_output.push_back(QueueOutput::Feature(feature, out));
                 }
                 Output::Continue

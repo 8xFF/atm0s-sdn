@@ -1,14 +1,13 @@
 use std::net::SocketAddr;
 
 use atm0s_sdn_identity::ConnId;
+use sans_io_runtime::TaskSwitcher;
 
 use crate::base::{FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer, TransportMsgHeader};
 use crate::features::*;
 
 pub type FeaturesWorkerInput<'a> = FeatureWorkerInput<'a, FeaturesControl, FeaturesToWorker>;
 pub type FeaturesWorkerOutput<'a> = FeatureWorkerOutput<'a, FeaturesControl, FeaturesEvent, FeaturesToController>;
-
-use crate::san_io_utils::TasksSwitcher;
 
 ///
 /// FeatureWorkerManager is a manager for all features
@@ -25,7 +24,7 @@ pub struct FeatureWorkerManager {
     pubsub: pubsub::PubSubFeatureWorker,
     alias: alias::AliasFeatureWorker,
     socket: socket::SocketFeatureWorker,
-    switcher: TasksSwitcher<u8, 8>,
+    switcher: TaskSwitcher,
 }
 
 impl FeatureWorkerManager {
@@ -39,12 +38,12 @@ impl FeatureWorkerManager {
             pubsub: pubsub::PubSubFeatureWorker::new(),
             alias: alias::AliasFeatureWorker::default(),
             socket: socket::SocketFeatureWorker::default(),
-            switcher: TasksSwitcher::default(),
+            switcher: TaskSwitcher::new(8),
         }
     }
 
     pub fn on_tick(&mut self, ctx: &mut FeatureWorkerContext, now_ms: u64, tick_count: u64) {
-        self.switcher.push_all();
+        self.switcher.queue_flag_all();
         self.neighbours.on_tick(ctx, now_ms, tick_count);
         self.data.on_tick(ctx, now_ms, tick_count);
         self.router_sync.on_tick(ctx, now_ms, tick_count);
@@ -76,7 +75,7 @@ impl FeatureWorkerManager {
             Features::Socket => self.socket.on_network_raw(ctx, now_ms, conn, remote, header, buf).map(|a| a.into2()),
         };
         if out.is_some() {
-            self.switcher.push_last(feature as u8);
+            self.switcher.queue_flag_task(feature as usize);
         }
         out
     }
@@ -119,7 +118,7 @@ impl FeatureWorkerManager {
             },
         };
         if out.is_some() {
-            self.switcher.push_last(feature as u8);
+            self.switcher.queue_flag_task(feature as usize);
         }
         out
     }
@@ -127,44 +126,44 @@ impl FeatureWorkerManager {
     pub fn pop_output(&mut self, ctx: &mut FeatureWorkerContext) -> Option<(Features, FeaturesWorkerOutput<'static>)> {
         loop {
             let s = &mut self.switcher;
-            match (s.current()? as u8).try_into().ok()? {
+            match (s.queue_current()? as u8).try_into().ok()? {
                 Features::Neighbours => {
-                    if let Some(out) = s.process(self.neighbours.pop_output(ctx)) {
+                    if let Some(out) = s.queue_process(self.neighbours.pop_output(ctx)) {
                         return Some((Features::Neighbours, out.owned().into2()));
                     }
                 }
                 Features::Data => {
-                    if let Some(out) = s.process(self.data.pop_output(ctx)) {
+                    if let Some(out) = s.queue_process(self.data.pop_output(ctx)) {
                         return Some((Features::Data, out.owned().into2()));
                     }
                 }
                 Features::RouterSync => {
-                    if let Some(out) = s.process(self.router_sync.pop_output(ctx)) {
+                    if let Some(out) = s.queue_process(self.router_sync.pop_output(ctx)) {
                         return Some((Features::RouterSync, out.owned().into2()));
                     }
                 }
                 Features::Vpn => {
-                    if let Some(out) = s.process(self.vpn.pop_output(ctx)) {
+                    if let Some(out) = s.queue_process(self.vpn.pop_output(ctx)) {
                         return Some((Features::Vpn, out.owned().into2()));
                     }
                 }
                 Features::DhtKv => {
-                    if let Some(out) = s.process(self.dht_kv.pop_output(ctx)) {
+                    if let Some(out) = s.queue_process(self.dht_kv.pop_output(ctx)) {
                         return Some((Features::DhtKv, out.owned().into2()));
                     }
                 }
                 Features::PubSub => {
-                    if let Some(out) = s.process(self.pubsub.pop_output(ctx)) {
+                    if let Some(out) = s.queue_process(self.pubsub.pop_output(ctx)) {
                         return Some((Features::PubSub, out.owned().into2()));
                     }
                 }
                 Features::Alias => {
-                    if let Some(out) = s.process(self.alias.pop_output(ctx)) {
+                    if let Some(out) = s.queue_process(self.alias.pop_output(ctx)) {
                         return Some((Features::Alias, out.owned().into2()));
                     }
                 }
                 Features::Socket => {
-                    if let Some(out) = s.process(self.socket.pop_output(ctx)) {
+                    if let Some(out) = s.queue_process(self.socket.pop_output(ctx)) {
                         return Some((Features::Socket, out.owned().into2()));
                     }
                 }
