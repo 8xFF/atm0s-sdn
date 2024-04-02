@@ -173,3 +173,35 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for RouterSyncFeature
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use atm0s_sdn_router::core::{Metric, RegistrySync, RouterSync, TableSync};
+
+    #[test]
+    fn router_sync_should_fit_udp() {
+        const MAX_SIZE: usize = 1200;
+        const NUMBER_SERVICES: usize = 2;
+        const NUMBER_NEIGHBORS: usize = 10;
+        const NUMBER_NODE_PATH: u32 = 3;
+
+        let mut service_sync = RegistrySync(vec![]);
+        let mut table_sync = [None, None, None, None];
+
+        for _ in 0..NUMBER_SERVICES {
+            service_sync.0.push((rand::random(), Metric::new(0, (0..NUMBER_NODE_PATH).into_iter().collect::<Vec<_>>(), 0)));
+        }
+
+        for i in 0..4 {
+            let mut table = TableSync(vec![]);
+            for _ in 0..NUMBER_NEIGHBORS {
+                table.0.push((rand::random(), Metric::new(0, (0..NUMBER_NODE_PATH).into_iter().collect::<Vec<_>>(), 0)));
+            }
+            table_sync[i] = Some(table);
+        }
+
+        let sync = RouterSync(service_sync, table_sync);
+        let sync_msg_len = bincode::serialize(&sync).expect("").len();
+        assert!(sync_msg_len <= MAX_SIZE, "SYNC msg not fit in UDP {} vs {}", sync_msg_len, MAX_SIZE);
+    }
+}
