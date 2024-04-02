@@ -6,7 +6,7 @@ mod table;
 
 pub use self::registry::{Registry, RegistryDelta, RegistryDestDelta, RegistrySync};
 pub use self::router::{Router, RouterDelta, RouterSync};
-pub use self::table::{DestDelta, Metric, Path, TableDelta, BANDWIDTH_LIMIT};
+pub use self::table::{DestDelta, Metric, Path, TableDelta, TableSync, BANDWIDTH_LIMIT};
 
 #[derive(PartialEq, Debug)]
 pub enum ServiceDestination {
