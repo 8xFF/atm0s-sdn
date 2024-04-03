@@ -23,4 +23,4 @@ parking_lot = "0.12"
 env_logger = "0.11"
 clap = { version = "4.4", features = ["derive", "env"] }
 mockall = "0.12.1"
-sans-io-runtime = { git = "https://github.com/giangndm/sans-io-runtime.git", rev = "c2d0c78ae5bfa7ab9c7942a7333a21a439fc5edb"}
+sans-io-runtime = { git = "https://github.com/8xff/sans-io-runtime.git", rev = "c2d0c78ae5bfa7ab9c7942a7333a21a439fc5edb"}
