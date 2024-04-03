@@ -23,7 +23,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       RUST_BACKTRACE: 1
- 
+
     strategy:
       matrix:
         build:
@@ -140,6 +140,10 @@ jobs:
           use-cross: ${{ matrix.cross }}
           command: build
           args: --verbose --release --package ${{ env.APP_NAME }} --target ${{ matrix.target }}
+
+      - name: Rename file
+        run: |
+          mv ./target/${{ matrix.target }}/release/${{ env.APP_NAME }} ${{ env.APP_NAME }}-${{ matrix.target }}
 
       - name: Upload Artifact to Summary
         uses: actions/upload-artifact@v4
