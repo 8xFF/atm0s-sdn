@@ -10,7 +10,7 @@ use aes_gcm::{
 use rand::rngs::OsRng;
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
-use crate::base::{DecryptionError, Decryptor, EncryptionError, Encryptor, GenericBufferMut, HandshakeBuilder, HandshakeError, HandshakeRequester, HandshakeResponder};
+use crate::base::{BufferMut, DecryptionError, Decryptor, EncryptionError, Encryptor, HandshakeBuilder, HandshakeError, HandshakeRequester, HandshakeResponder};
 
 const MSG_TIMEOUT_MS: u64 = 5000; // after 5 seconds message is considered expired
 
@@ -93,11 +93,11 @@ impl EncryptorXDA {
 }
 
 impl Encryptor for EncryptorXDA {
-    fn encrypt<'a>(&mut self, now_ms: u64, buf: &mut GenericBufferMut<'a>) -> Result<(), EncryptionError> {
+    fn encrypt<'a>(&mut self, now_ms: u64, buf: &mut BufferMut<'a>) -> Result<(), EncryptionError> {
         let mut nonce = Aes256Gcm::generate_nonce(&mut OsRng);
         nonce[4..].copy_from_slice(&now_ms.to_be_bytes());
-        self.aes.encrypt_in_place(&nonce, &[], buf).map_err(|_| EncryptionError::EncryptFailed)?;
-        buf.extend_from_slice(&nonce).map_err(|_| EncryptionError::EncryptFailed)?;
+        self.aes.encrypt_in_place(&nonce, &[], &mut BufferMut2(buf)).map_err(|_| EncryptionError::EncryptFailed)?;
+        buf.push_back(&nonce);
         Ok(())
     }
 
@@ -131,7 +131,7 @@ impl Debug for DecryptorXDA {
 }
 
 impl Decryptor for DecryptorXDA {
-    fn decrypt<'a>(&mut self, now_ms: u64, data: &mut GenericBufferMut<'a>) -> Result<(), DecryptionError> {
+    fn decrypt<'a>(&mut self, now_ms: u64, data: &mut BufferMut<'a>) -> Result<(), DecryptionError> {
         let nonce = if let Some(nonce) = data.pop_back(12) {
             nonce.to_vec()
         } else {
@@ -142,7 +142,7 @@ impl Decryptor for DecryptorXDA {
             return Err(DecryptionError::TooOld);
         }
         let nonce = Nonce::from_slice(&nonce);
-        self.aes.decrypt_in_place(nonce, &[], data).map_err(|_| DecryptionError::DecryptError)?;
+        self.aes.decrypt_in_place(nonce, &[], &mut BufferMut2(data)).map_err(|_| DecryptionError::DecryptError)?;
         Ok(())
     }
 
@@ -154,34 +154,36 @@ impl Decryptor for DecryptorXDA {
     }
 }
 
-impl<'a> Buffer for GenericBufferMut<'a> {
+struct BufferMut2<'a, 'b>(&'a mut BufferMut<'b>);
+
+impl<'a, 'b> Buffer for BufferMut2<'a, 'b> {
     fn extend_from_slice(&mut self, other: &[u8]) -> aes_gcm::aead::Result<()> {
-        self.push_back(other);
+        self.0.push_back(other);
         Ok(())
     }
 
     fn truncate(&mut self, len: usize) {
-        GenericBufferMut::truncate(self, len).expect("Should truncate ok");
+        BufferMut::truncate(self.0, len).expect("Should truncate ok");
     }
 
     fn len(&self) -> usize {
-        self.deref().len()
+        self.0.deref().len()
     }
 
     fn is_empty(&self) -> bool {
-        self.deref().is_empty()
+        self.0.deref().is_empty()
     }
 }
 
-impl<'a> AsRef<[u8]> for GenericBufferMut<'a> {
+impl<'a, 'b> AsRef<[u8]> for BufferMut2<'a, 'b> {
     fn as_ref(&self) -> &[u8] {
-        self.deref()
+        self.0.deref()
     }
 }
 
-impl<'a> AsMut<[u8]> for GenericBufferMut<'a> {
+impl<'a, 'b> AsMut<[u8]> for BufferMut2<'a, 'b> {
     fn as_mut(&mut self) -> &mut [u8] {
-        self.deref_mut()
+        self.0.deref_mut()
     }
 }
 
@@ -189,7 +191,7 @@ impl<'a> AsMut<[u8]> for GenericBufferMut<'a> {
 mod tests {
     use std::ops::Deref;
 
-    use crate::base::{GenericBufferMut, HandshakeRequester, HandshakeResponder};
+    use crate::base::{BufferMut, HandshakeRequester, HandshakeResponder};
 
     use super::{HandshakeRequesterXDA, HandshakeResponderXDA};
 
@@ -203,13 +205,13 @@ mod tests {
 
         let msg = [1, 2, 3, 4];
 
-        let mut buf1 = GenericBufferMut::build(&msg, 0, 1000);
+        let mut buf1 = BufferMut::build(&msg, 0, 1000);
         s_encrypt.encrypt(123, &mut buf1).expect("Should ok");
         assert_ne!(buf1.len(), msg.len());
         c_decrypt.decrypt(124, &mut buf1).expect("Should ok");
         assert_eq!(buf1.deref(), msg);
 
-        let mut buf2 = GenericBufferMut::build(&msg, 0, 1000);
+        let mut buf2 = BufferMut::build(&msg, 0, 1000);
         c_encrypt.encrypt(123, &mut buf2).expect("Should ok");
         assert_ne!(buf2.len(), msg.len());
         s_decrypt.decrypt(124, &mut buf2).expect("Should ok");
@@ -224,11 +226,11 @@ mod tests {
         let (mut s_encrypt, _s_decrypt, res) = server.process_public_request(client.create_public_request().expect("").as_slice()).expect("Should ok");
         let (_c_encrypt, mut c_decrypt) = client.process_public_response(res.as_slice()).expect("Should ok");
 
-        let mut buf1 = GenericBufferMut::build(&[0, 0, 0, 1], 0, 1000);
+        let mut buf1 = BufferMut::build(&[0, 0, 0, 1], 0, 1000);
         s_encrypt.encrypt(123, &mut buf1).expect("Should ok");
-        let mut buf2 = GenericBufferMut::build(&[0, 0, 0, 2], 0, 1000);
+        let mut buf2 = BufferMut::build(&[0, 0, 0, 2], 0, 1000);
         s_encrypt.encrypt(123, &mut buf2).expect("Should ok");
-        let mut buf3 = GenericBufferMut::build(&[0, 0, 0, 3], 0, 1000);
+        let mut buf3 = BufferMut::build(&[0, 0, 0, 3], 0, 1000);
         s_encrypt.encrypt(123, &mut buf3).expect("Should ok");
 
         c_decrypt.decrypt(123, &mut buf1).expect("Should ok");
@@ -265,7 +267,7 @@ mod tests {
         for i in 0..1024 {
             let value: u32 = i;
             let msg = value.to_be_bytes();
-            let mut buf = GenericBufferMut::build(&msg, 0, 1000);
+            let mut buf = BufferMut::build(&msg, 0, 1000);
             s_enc_threads[i as usize % ENC_THREADS].encrypt(i as u64, &mut buf).expect("Should ok");
             c_dec_threads[i as usize % DEC_THREADS].decrypt(i as u64, &mut buf).expect("Should ok");
             assert_eq!(buf.deref(), msg);

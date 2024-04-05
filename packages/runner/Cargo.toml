@@ -10,8 +10,7 @@ license = "MIT"
 
 [dependencies]
 thiserror = { workspace = true }
-sans-io-runtime = { workspace = true, features = ["poll-backend", "polling-backend", "mio-backend", "udp"] }
-# sans-io-runtime = { path = "../../../sans-io-runtime", features = ["poll-backend", "polling-backend", "mio-backend", "udp"]}
+sans-io-runtime = { workspace = true, features = ["poll-backend", "polling-backend", "udp"] }
 atm0s-sdn-identity = { path = "../core/identity", version = "0.2.0" }
 atm0s-sdn-router = { path = "../core/router", version = "0.1.4" }
 atm0s-sdn-network = { path = "../network", version = "0.3.1" }

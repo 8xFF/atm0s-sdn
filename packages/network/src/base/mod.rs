@@ -1,4 +1,3 @@
-mod buf;
 mod control;
 mod feature;
 mod msg;
@@ -8,10 +7,10 @@ mod service;
 use std::net::SocketAddr;
 
 use atm0s_sdn_identity::{ConnId, NodeId};
-pub use buf::*;
 pub use control::*;
 pub use feature::*;
 pub use msg::*;
+pub use sans_io_runtime::{Buffer, BufferMut};
 pub use secure::*;
 pub use service::*;
 

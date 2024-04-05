@@ -1,7 +1,7 @@
 use atm0s_sdn_identity::{NodeId, NodeIdType};
 use atm0s_sdn_router::{RouteAction, RouteRule, RouterTable};
 
-use crate::base::{Feature, FeatureContext, FeatureInput, FeatureOutput, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer, GenericBufferMut, TransportMsg};
+use crate::base::{Buffer, BufferMut, Feature, FeatureContext, FeatureInput, FeatureOutput, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, TransportMsg};
 
 pub const FEATURE_ID: u8 = 3;
 pub const FEATURE_NAME: &str = "vpn";
@@ -34,7 +34,7 @@ impl Feature<Control, Event, ToController, ToWorker> for VpnFeature {
 pub struct VpnFeatureWorker;
 
 impl VpnFeatureWorker {
-    fn process_tun<'a>(&mut self, ctx: &FeatureWorkerContext, mut pkt: GenericBufferMut<'a>) -> Option<FeatureWorkerOutput<'a, Control, Event, ToController>> {
+    fn process_tun<'a>(&mut self, ctx: &FeatureWorkerContext, mut pkt: BufferMut<'a>) -> Option<FeatureWorkerOutput<'a, Control, Event, ToController>> {
         #[cfg(any(target_os = "macos", target_os = "ios"))]
         let to_ip = &pkt[20..24];
         #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -56,7 +56,7 @@ impl VpnFeatureWorker {
         }
     }
 
-    fn process_udp<'a>(&self, _ctx: &FeatureWorkerContext, pkt: GenericBuffer<'a>) -> Option<FeatureWorkerOutput<'a, Control, Event, ToController>> {
+    fn process_udp<'a>(&self, _ctx: &FeatureWorkerContext, pkt: Buffer<'a>) -> Option<FeatureWorkerOutput<'a, Control, Event, ToController>> {
         Some(FeatureWorkerOutput::TunPkt(pkt))
     }
 }

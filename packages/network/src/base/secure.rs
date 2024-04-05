@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use atm0s_sdn_identity::NodeId;
 
-use super::GenericBufferMut;
+use super::BufferMut;
 
 #[derive(Debug, Clone)]
 pub struct SecureContext {
@@ -46,7 +46,7 @@ pub enum EncryptionError {
 
 #[mockall::automock]
 pub trait Encryptor: Debug + Send + Sync {
-    fn encrypt<'a>(&mut self, now_ms: u64, data: &mut GenericBufferMut<'a>) -> Result<(), EncryptionError>;
+    fn encrypt<'a>(&mut self, now_ms: u64, data: &mut BufferMut<'a>) -> Result<(), EncryptionError>;
     fn clone_box(&self) -> Box<dyn Encryptor>;
 }
 
@@ -65,7 +65,7 @@ pub enum DecryptionError {
 
 #[mockall::automock]
 pub trait Decryptor: Debug + Send + Sync {
-    fn decrypt<'a>(&mut self, now_ms: u64, data: &mut GenericBufferMut<'a>) -> Result<(), DecryptionError>;
+    fn decrypt<'a>(&mut self, now_ms: u64, data: &mut BufferMut<'a>) -> Result<(), DecryptionError>;
     fn clone_box(&self) -> Box<dyn Decryptor>;
 }
 

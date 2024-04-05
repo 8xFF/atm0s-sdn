@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 use atm0s_sdn_router::{shadow::ShadowRouter, RouteRule};
 
-use super::{ConnectionCtx, ConnectionEvent, GenericBuffer, GenericBufferMut, ServiceId, TransportMsgHeader, Ttl};
+use super::{Buffer, BufferMut, ConnectionCtx, ConnectionEvent, ServiceId, TransportMsgHeader, Ttl};
 
 ///
 ///
@@ -138,9 +138,9 @@ pub enum FeatureWorkerInput<'a, Control, ToWorker> {
     /// First bool is flag for broadcast or not
     FromController(bool, ToWorker),
     Control(FeatureControlActor, Control),
-    Network(ConnId, NetIncomingMeta, GenericBuffer<'a>),
-    Local(NetIncomingMeta, GenericBuffer<'a>),
-    TunPkt(GenericBufferMut<'a>),
+    Network(ConnId, NetIncomingMeta, Buffer<'a>),
+    Local(NetIncomingMeta, Buffer<'a>),
+    TunPkt(BufferMut<'a>),
 }
 
 #[derive(Clone)]
@@ -152,11 +152,11 @@ pub enum FeatureWorkerOutput<'a, Control, Event, ToController> {
     Event(FeatureControlActor, Event),
     SendDirect(ConnId, NetOutgoingMeta, Vec<u8>),
     SendRoute(RouteRule, NetOutgoingMeta, Vec<u8>),
-    RawDirect(ConnId, GenericBuffer<'a>),
-    RawBroadcast(Vec<ConnId>, GenericBuffer<'a>),
-    RawDirect2(SocketAddr, GenericBuffer<'a>),
-    RawBroadcast2(Vec<SocketAddr>, GenericBuffer<'a>),
-    TunPkt(GenericBuffer<'a>),
+    RawDirect(ConnId, Buffer<'a>),
+    RawBroadcast(Vec<ConnId>, Buffer<'a>),
+    RawDirect2(SocketAddr, Buffer<'a>),
+    RawBroadcast2(Vec<SocketAddr>, Buffer<'a>),
+    TunPkt(Buffer<'a>),
 }
 
 impl<'a, Control, Event, ToController> FeatureWorkerOutput<'a, Control, Event, ToController> {
@@ -214,7 +214,7 @@ pub trait FeatureWorker<SdkControl, SdkEvent, ToController, ToWorker> {
         conn: ConnId,
         _remote: SocketAddr,
         header: TransportMsgHeader,
-        mut buf: GenericBuffer<'a>,
+        mut buf: Buffer<'a>,
     ) -> Option<FeatureWorkerOutput<'a, SdkControl, SdkEvent, ToController>> {
         let header_len = header.serialize_size();
         buf.pop_front(header_len).expect("Buffer should bigger or equal header");

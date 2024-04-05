@@ -14,7 +14,7 @@ use atm0s_sdn_network::base::ServiceBuilder;
 use atm0s_sdn_network::features::{FeaturesControl, FeaturesEvent};
 use atm0s_sdn_network::secure::{HandshakeBuilderXDA, StaticKeyAuthorization};
 use atm0s_sdn_network::{
-    base::{GenericBuffer, GenericBufferMut},
+    base::{Buffer, BufferMut},
     controller_plane::{self, ControllerPlane},
     data_plane::{self, DataPlane},
     ExtIn, ExtOut,
@@ -74,16 +74,16 @@ impl Drop for AutoContext {
 #[derive(Debug)]
 pub enum TestNodeIn<'a, SC> {
     Ext(ExtIn<SC>),
-    Udp(SocketAddr, GenericBufferMut<'a>),
+    Udp(SocketAddr, BufferMut<'a>),
     #[allow(unused)]
-    Tun(GenericBufferMut<'a>),
+    Tun(BufferMut<'a>),
 }
 
 #[derive(Debug)]
 pub enum TestNodeOut<'a, SE> {
     Ext(ExtOut<SE>),
-    Udp(Vec<SocketAddr>, GenericBuffer<'a>),
-    Tun(GenericBuffer<'a>),
+    Udp(Vec<SocketAddr>, Buffer<'a>),
+    Tun(Buffer<'a>),
 }
 
 pub fn build_addr(node_id: NodeId) -> NodeAddr {

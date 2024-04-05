@@ -4,7 +4,7 @@ use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_router::RouteRule;
 
 use crate::base::{
-    Feature, FeatureContext, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer,
+    Buffer, Feature, FeatureContext, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput,
     NetOutgoingMeta, TransportMsgHeader, Ttl,
 };
 
@@ -228,7 +228,7 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for SocketFeatureWork
         _conn: atm0s_sdn_identity::ConnId,
         _remote: std::net::SocketAddr,
         header: TransportMsgHeader,
-        buf: GenericBuffer<'a>,
+        buf: Buffer<'a>,
     ) -> Option<FeatureWorkerOutput<'a, Control, Event, ToController>> {
         self.process_incoming(header.from_node?, &(&buf)[header.serialize_size()..], header.meta)
     }

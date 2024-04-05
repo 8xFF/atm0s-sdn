@@ -1,11 +1,11 @@
 use std::fmt::Debug;
 
 use atm0s_sdn_network::{ExtIn, ExtOut};
-use sans_io_runtime::{bus::BusEvent, Owner, Task, TaskInput, TaskOutput, WorkerInnerOutput};
+use sans_io_runtime::{bus::BusEvent, TaskInput, TaskOutput, WorkerInnerOutput};
 
 use crate::tasks::{
-    controller_plane::{self, ControllerPlaneTask},
-    data_plane, SdnChannel, SdnEvent, SdnExtIn, SdnExtOut, SdnSpawnCfg,
+    controller_plane::{self},
+    data_plane, SdnChannel, SdnEvent, SdnExtIn, SdnExtOut, SdnOwner, SdnSpawnCfg,
 };
 
 ///
@@ -31,17 +31,11 @@ pub fn convert_input<'a, SC, SE, TC, TW>(
 pub fn convert_output<'a, SC, SE, TC: Debug, TW: Debug>(
     worker: u16,
     event: TaskOutput<ExtOut<SE>, controller_plane::ChannelIn, controller_plane::ChannelOut, controller_plane::EventOut<SE, TW>>,
-) -> WorkerInnerOutput<'a, SdnExtOut<SE>, SdnChannel, SdnEvent<SC, SE, TC, TW>, SdnSpawnCfg> {
+) -> WorkerInnerOutput<'a, SdnOwner, SdnExtOut<SE>, SdnChannel, SdnEvent<SC, SE, TC, TW>, SdnSpawnCfg> {
     match event {
         TaskOutput::Ext(ext) => WorkerInnerOutput::Ext(true, ext),
-        TaskOutput::Bus(BusEvent::ChannelSubscribe(channel)) => WorkerInnerOutput::Task(
-            Owner::group(worker, ControllerPlaneTask::<(), (), (), ()>::TYPE),
-            TaskOutput::Bus(BusEvent::ChannelSubscribe(SdnChannel::ControllerPlane(channel))),
-        ),
-        TaskOutput::Bus(BusEvent::ChannelUnsubscribe(channel)) => WorkerInnerOutput::Task(
-            Owner::group(worker, ControllerPlaneTask::<(), (), (), ()>::TYPE),
-            TaskOutput::Bus(BusEvent::ChannelUnsubscribe(SdnChannel::ControllerPlane(channel))),
-        ),
+        TaskOutput::Bus(BusEvent::ChannelSubscribe(channel)) => WorkerInnerOutput::Task(SdnOwner::Controller, TaskOutput::Bus(BusEvent::ChannelSubscribe(SdnChannel::ControllerPlane(channel)))),
+        TaskOutput::Bus(BusEvent::ChannelUnsubscribe(channel)) => WorkerInnerOutput::Task(SdnOwner::Controller, TaskOutput::Bus(BusEvent::ChannelUnsubscribe(SdnChannel::ControllerPlane(channel)))),
         TaskOutput::Bus(BusEvent::ChannelPublish(_, safe, event)) => {
             let channel = match event.dest() {
                 atm0s_sdn_network::LogicEventDest::Broadcast => SdnChannel::DataPlane(data_plane::ChannelIn::Broadcast),
@@ -50,7 +44,7 @@ pub fn convert_output<'a, SC, SE, TC: Debug, TW: Debug>(
             };
 
             WorkerInnerOutput::Task(
-                Owner::group(worker, ControllerPlaneTask::<(), (), (), ()>::TYPE),
+                SdnOwner::Controller,
                 TaskOutput::Bus(BusEvent::ChannelPublish(channel, safe, SdnEvent::DataPlane(data_plane::EventIn::FromController(event)))),
             )
         }

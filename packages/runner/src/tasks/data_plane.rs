@@ -8,13 +8,13 @@ use std::{
 
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_network::{
-    base::{GenericBuffer, ReadOnlyBuffer, ServiceBuilder},
+    base::ServiceBuilder,
     data_plane::{CrossWorker, DataPlane, Input as DataPlaneInput, NetInput, NetOutput, Output as DataPlaneOutput},
     features::{FeaturesControl, FeaturesEvent},
     ExtOut, LogicControl, LogicEvent,
 };
 use atm0s_sdn_router::shadow::ShadowRouterHistory;
-use sans_io_runtime::{bus::BusEvent, Buffer, NetIncoming, NetOutgoing, Task, TaskInput, TaskOutput};
+use sans_io_runtime::{bus::BusEvent, NetIncoming, NetOutgoing, Task, TaskInput, TaskOutput};
 
 use crate::time::TimePivot;
 
@@ -87,22 +87,19 @@ impl<SC, SE, TC, TW> DataPlaneTask<SC, SE, TC, TW> {
     fn convert_output<'a>(&mut self, _now: Instant, output: DataPlaneOutput<'a, SC, SE, TC>) -> Option<TaskOutput<'a, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<SC, SE, TC>>> {
         match output {
             DataPlaneOutput::Worker(worker, event) => Some(TaskOutput::Bus(BusEvent::ChannelPublish((), true, EventOut::ToWorker(worker, event)))),
-            DataPlaneOutput::Net(NetOutput::UdpPacket(to, buf)) => Some(TaskOutput::Net(NetOutgoing::UdpPacket {
+            DataPlaneOutput::Net(NetOutput::UdpPacket(to, data)) => Some(TaskOutput::Net(NetOutgoing::UdpPacket {
                 slot: self.backend_udp_slot,
                 to,
-                data: convert_buf1(buf),
+                data,
             })),
             #[cfg(feature = "vpn")]
-            DataPlaneOutput::Net(NetOutput::TunPacket(buf)) => Some(TaskOutput::Net(NetOutgoing::TunPacket {
-                slot: self.backend_tun_slot,
-                data: convert_buf1(buf),
-            })),
+            DataPlaneOutput::Net(NetOutput::TunPacket(data)) => Some(TaskOutput::Net(NetOutgoing::TunPacket { slot: self.backend_tun_slot, data })),
             #[cfg(not(feature = "vpn"))]
             DataPlaneOutput::Net(NetOutput::TunPacket(_)) => None,
-            DataPlaneOutput::Net(NetOutput::UdpPackets(to, buf)) => Some(TaskOutput::Net(NetOutgoing::UdpPackets {
+            DataPlaneOutput::Net(NetOutput::UdpPackets(to, data)) => Some(TaskOutput::Net(NetOutgoing::UdpPackets {
                 slot: self.backend_udp_slot,
                 to,
-                data: convert_buf1(buf),
+                data,
             })),
             DataPlaneOutput::Control(bus) => Some(TaskOutput::Bus(BusEvent::ChannelPublish((), true, EventOut::ToController(bus)))),
             DataPlaneOutput::ShutdownResponse => {
@@ -207,20 +204,5 @@ impl<SC, SE, TC: Debug, TW: Debug> Task<(), ExtOut<SE>, ChannelIn, ChannelOut, E
     fn shutdown<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<SC, SE, TC>>> {
         let output = self.data_plane.on_event(self.timer.timestamp_ms(now), DataPlaneInput::ShutdownRequest)?;
         self.try_process_output(now, output)
-    }
-}
-
-fn convert_buf1<'a>(buf1: GenericBuffer<'a>) -> Buffer<'a> {
-    match buf1.buf {
-        ReadOnlyBuffer::Ref(buf) => Buffer::Ref(&buf[buf1.range.clone()]),
-        ReadOnlyBuffer::Vec(mut buf) => {
-            if buf1.range.start == 0 {
-                buf.truncate(buf1.range.end);
-                Buffer::Vec(buf)
-            } else {
-                //TODO optimize this case for avoiding copy
-                Buffer::Vec(buf[buf1.range.clone()].to_vec())
-            }
-        }
     }
 }

@@ -6,7 +6,7 @@ use std::{
 use atm0s_sdn_identity::ConnId;
 use atm0s_sdn_router::RouterTable;
 
-use crate::base::{FeatureControlActor, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer, TransportMsgHeader};
+use crate::base::{Buffer, FeatureControlActor, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, TransportMsgHeader};
 
 use super::{
     msg::{PubsubMessage, RelayControl, RelayId},
@@ -50,7 +50,7 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWork
         _conn: ConnId,
         remote: SocketAddr,
         _header: TransportMsgHeader,
-        buf: GenericBuffer<'a>,
+        buf: Buffer<'a>,
     ) -> Option<FeatureWorkerOutput<'a, Control, Event, ToController>> {
         log::debug!("[PubSubWorker] on_network_raw from {}", remote);
         let msg = PubsubMessage::try_from(&buf as &[u8]).ok()?;
@@ -73,7 +73,7 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWork
                         let control = PubsubMessage::Data(relay_id, data);
                         let size: usize = control.write_to(&mut self.buf)?;
                         //TODO avoid copy
-                        Some(FeatureWorkerOutput::RawBroadcast2(relay.remotes.clone(), GenericBuffer::from(self.buf[0..size].to_vec())))
+                        Some(FeatureWorkerOutput::RawBroadcast2(relay.remotes.clone(), Buffer::from(self.buf[0..size].to_vec())))
                     } else {
                         //TODO avoid push temp to queue
                         self.queue.pop_front()
@@ -103,28 +103,28 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWork
                     let control = PubsubMessage::Control(relay_id, RelayControl::Sub(uuid));
                     let size: usize = control.write_to(&mut self.buf)?;
                     //TODO avoid copy
-                    Some(FeatureWorkerOutput::RawDirect2(dest, GenericBuffer::from(self.buf[0..size].to_vec())))
+                    Some(FeatureWorkerOutput::RawDirect2(dest, Buffer::from(self.buf[0..size].to_vec())))
                 }
                 RelayWorkerControl::SendUnsub(uuid, remote) => {
                     log::debug!("[PubsubWorker] SendUnsub for {:?} to {:?}", relay_id, remote);
                     let control = PubsubMessage::Control(relay_id, RelayControl::Unsub(uuid));
                     let size: usize = control.write_to(&mut self.buf)?;
                     //TODO avoid copy
-                    Some(FeatureWorkerOutput::RawDirect2(remote, GenericBuffer::from(self.buf[0..size].to_vec())))
+                    Some(FeatureWorkerOutput::RawDirect2(remote, Buffer::from(self.buf[0..size].to_vec())))
                 }
                 RelayWorkerControl::SendSubOk(uuid, remote) => {
                     log::debug!("[PubsubWorker] SendSubOk for {:?} to {:?}", relay_id, remote);
                     let control = PubsubMessage::Control(relay_id, RelayControl::SubOK(uuid));
                     let size: usize = control.write_to(&mut self.buf)?;
                     //TODO avoid copy
-                    Some(FeatureWorkerOutput::RawDirect2(remote, GenericBuffer::from(self.buf[0..size].to_vec())))
+                    Some(FeatureWorkerOutput::RawDirect2(remote, Buffer::from(self.buf[0..size].to_vec())))
                 }
                 RelayWorkerControl::SendUnsubOk(uuid, remote) => {
                     log::debug!("[PubsubWorker] SendUnsubOk for {:?} to {:?}", relay_id, remote);
                     let control = PubsubMessage::Control(relay_id, RelayControl::UnsubOK(uuid));
                     let size: usize = control.write_to(&mut self.buf)?;
                     //TODO avoid copy
-                    Some(FeatureWorkerOutput::RawDirect2(remote, GenericBuffer::from(self.buf[0..size].to_vec())))
+                    Some(FeatureWorkerOutput::RawDirect2(remote, Buffer::from(self.buf[0..size].to_vec())))
                 }
                 RelayWorkerControl::SendRouteChanged => {
                     let relay = self.relays.get(&relay_id)?;
@@ -133,7 +133,7 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWork
                         let control = PubsubMessage::Control(relay_id, RelayControl::RouteChanged(*uuid));
                         let size: usize = control.write_to(&mut self.buf)?;
                         //TODO avoid copy
-                        self.queue.push_back(FeatureWorkerOutput::RawDirect2(*addr, GenericBuffer::from(self.buf[0..size].to_vec())));
+                        self.queue.push_back(FeatureWorkerOutput::RawDirect2(*addr, Buffer::from(self.buf[0..size].to_vec())));
                     }
                     self.queue.pop_front()
                 }
@@ -225,7 +225,7 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWork
                 let control = PubsubMessage::Data(relay_id, data);
                 let size: usize = control.write_to(&mut self.buf)?;
                 //TODO avoid copy
-                Some(FeatureWorkerOutput::RawBroadcast2(relay.remotes.clone(), GenericBuffer::from(self.buf[0..size].to_vec())))
+                Some(FeatureWorkerOutput::RawBroadcast2(relay.remotes.clone(), Buffer::from(self.buf[0..size].to_vec())))
             }
             FeatureWorkerInput::Control(actor, control) => match control {
                 Control(channel, ChannelControl::PubData(data)) => {
@@ -241,7 +241,7 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWork
                         let control = PubsubMessage::Data(relay_id, data);
                         let size: usize = control.write_to(&mut self.buf)?;
                         //TODO avoid copy
-                        Some(FeatureWorkerOutput::RawBroadcast2(relay.remotes.clone(), GenericBuffer::from(self.buf[0..size].to_vec())))
+                        Some(FeatureWorkerOutput::RawBroadcast2(relay.remotes.clone(), Buffer::from(self.buf[0..size].to_vec())))
                     } else {
                         //TODO avoid push temp to queue
                         self.queue.pop_front()

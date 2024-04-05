@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use atm0s_sdn_identity::ConnId;
 use sans_io_runtime::TaskSwitcher;
 
-use crate::base::{FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer, TransportMsgHeader};
+use crate::base::{Buffer, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, TransportMsgHeader};
 use crate::features::*;
 
 pub type FeaturesWorkerInput<'a> = FeatureWorkerInput<'a, FeaturesControl, FeaturesToWorker>;
@@ -62,7 +62,7 @@ impl FeatureWorkerManager {
         conn: ConnId,
         remote: SocketAddr,
         header: TransportMsgHeader,
-        buf: GenericBuffer<'a>,
+        buf: Buffer<'a>,
     ) -> Option<FeaturesWorkerOutput<'a>> {
         let out = match feature {
             Features::Neighbours => self.neighbours.on_network_raw(ctx, now_ms, conn, remote, header, buf).map(|a| a.into2()),
