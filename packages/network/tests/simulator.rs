@@ -131,7 +131,7 @@ impl<SC, SE, TC, TW> TestNode<SC, SE, TC, TW> {
         let handshake = Arc::new(HandshakeBuilderXDA);
         let rd = Box::new(StepRng::new(1000, 5));
         let controller = ControllerPlane::new(node_id, session, services.clone(), auth, handshake, rd);
-        let worker = DataPlane::new(node_id, services, Arc::new(SingleThreadDataWorkerHistory::default()));
+        let worker = DataPlane::new(0, node_id, services, Arc::new(SingleThreadDataWorkerHistory::default()));
         Self { node_id, controller, worker }
     }
 
@@ -202,7 +202,7 @@ impl<SC, SE, TC, TW> TestNode<SC, SE, TC, TW> {
         }
     }
 
-    fn process_worker_output<'a>(&mut self, now: u64, output: data_plane::Output<'a, SE, TC>) -> Option<TestNodeOut<'a, SE>> {
+    fn process_worker_output<'a>(&mut self, now: u64, output: data_plane::Output<'a, SC, SE, TC>) -> Option<TestNodeOut<'a, SE>> {
         match output {
             data_plane::Output::Ext(out) => Some(TestNodeOut::Ext(out)),
             data_plane::Output::Control(control) => {
@@ -217,6 +217,7 @@ impl<SC, SE, TC, TW> TestNode<SC, SE, TC, TW> {
             },
             data_plane::Output::ShutdownResponse => None,
             data_plane::Output::Continue => None,
+            data_plane::Output::Worker(_worker, _event) => panic!("should not happen"),
         }
     }
 }

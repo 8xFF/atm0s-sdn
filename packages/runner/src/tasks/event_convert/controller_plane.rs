@@ -13,7 +13,9 @@ use crate::tasks::{
 /// This function will convert the input from SDN into Plane task input.
 /// It only accept bus events from the SDN task.
 ///
-pub fn convert_input<'a, SC, TC, TW>(event: TaskInput<'a, SdnExtIn<SC>, SdnChannel, SdnEvent<TC, TW>>) -> TaskInput<'a, ExtIn<SC>, controller_plane::ChannelIn, controller_plane::EventIn<TC>> {
+pub fn convert_input<'a, SC, SE, TC, TW>(
+    event: TaskInput<'a, SdnExtIn<SC>, SdnChannel, SdnEvent<SC, SE, TC, TW>>,
+) -> TaskInput<'a, ExtIn<SC>, controller_plane::ChannelIn, controller_plane::EventIn<SC, TC>> {
     match event {
         TaskInput::Bus(_, SdnEvent::ControllerPlane(event)) => TaskInput::Bus((), event),
         TaskInput::Ext(ext) => TaskInput::Ext(ext),
@@ -26,10 +28,10 @@ pub fn convert_input<'a, SC, TC, TW>(event: TaskInput<'a, SdnExtIn<SC>, SdnChann
 /// This function will convert the output from the Plane task into the output for the SDN task.
 /// It only accept bus events from the Plane task.
 ///
-pub fn convert_output<'a, SE, TC: Debug, TW: Debug>(
+pub fn convert_output<'a, SC, SE, TC: Debug, TW: Debug>(
     worker: u16,
-    event: TaskOutput<ExtOut<SE>, controller_plane::ChannelIn, controller_plane::ChannelOut, controller_plane::EventOut<TW>>,
-) -> WorkerInnerOutput<'a, SdnExtOut<SE>, SdnChannel, SdnEvent<TC, TW>, SdnSpawnCfg> {
+    event: TaskOutput<ExtOut<SE>, controller_plane::ChannelIn, controller_plane::ChannelOut, controller_plane::EventOut<SE, TW>>,
+) -> WorkerInnerOutput<'a, SdnExtOut<SE>, SdnChannel, SdnEvent<SC, SE, TC, TW>, SdnSpawnCfg> {
     match event {
         TaskOutput::Ext(ext) => WorkerInnerOutput::Ext(true, ext),
         TaskOutput::Bus(BusEvent::ChannelSubscribe(channel)) => WorkerInnerOutput::Task(
@@ -41,16 +43,15 @@ pub fn convert_output<'a, SE, TC: Debug, TW: Debug>(
             TaskOutput::Bus(BusEvent::ChannelUnsubscribe(SdnChannel::ControllerPlane(channel))),
         ),
         TaskOutput::Bus(BusEvent::ChannelPublish(_, safe, event)) => {
-            let channel = if event.is_broadcast() {
-                log::debug!("Broadcast to all workers {:?}", event);
-                SdnChannel::DataPlane(data_plane::ChannelIn::Broadcast)
-            } else {
-                SdnChannel::DataPlane(data_plane::ChannelIn::Worker(0))
+            let channel = match event.dest() {
+                atm0s_sdn_network::LogicEventDest::Broadcast => SdnChannel::DataPlane(data_plane::ChannelIn::Broadcast),
+                atm0s_sdn_network::LogicEventDest::Any => SdnChannel::DataPlane(data_plane::ChannelIn::Worker(0)),
+                atm0s_sdn_network::LogicEventDest::Worker(worker) => SdnChannel::DataPlane(data_plane::ChannelIn::Worker(worker)),
             };
 
             WorkerInnerOutput::Task(
                 Owner::group(worker, ControllerPlaneTask::<(), (), (), ()>::TYPE),
-                TaskOutput::Bus(BusEvent::ChannelPublish(channel, safe, SdnEvent::DataPlane(event))),
+                TaskOutput::Bus(BusEvent::ChannelPublish(channel, safe, SdnEvent::DataPlane(data_plane::EventIn::FromController(event)))),
             )
         }
         _ => panic!("Invalid output type from ControllerPlane"),

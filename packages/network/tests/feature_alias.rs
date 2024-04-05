@@ -36,7 +36,7 @@ impl Service<FeaturesControl, FeaturesEvent, (), (), (), ()> for MockService {
 
 struct MockServiceWorker;
 
-impl ServiceWorker<FeaturesControl, FeaturesEvent, (), (), ()> for MockServiceWorker {
+impl ServiceWorker<FeaturesControl, FeaturesEvent, (), (), (), ()> for MockServiceWorker {
     fn service_id(&self) -> u8 {
         0
     }
@@ -61,7 +61,7 @@ impl ServiceBuilder<FeaturesControl, FeaturesEvent, (), (), (), ()> for MockServ
         Box::new(MockService)
     }
 
-    fn create_worker(&self) -> Box<dyn ServiceWorker<FeaturesControl, FeaturesEvent, (), (), ()>> {
+    fn create_worker(&self) -> Box<dyn ServiceWorker<FeaturesControl, FeaturesEvent, (), (), (), ()>> {
         Box::new(MockServiceWorker)
     }
 }

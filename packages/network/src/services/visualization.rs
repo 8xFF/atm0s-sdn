@@ -207,7 +207,7 @@ where
 
 pub struct VisualizationServiceWorker {}
 
-impl<SE, TC, TW> ServiceWorker<FeaturesControl, FeaturesEvent, SE, TC, TW> for VisualizationServiceWorker {
+impl<SC, SE, TC, TW> ServiceWorker<FeaturesControl, FeaturesEvent, SC, SE, TC, TW> for VisualizationServiceWorker {
     fn service_id(&self) -> u8 {
         SERVICE_ID
     }
@@ -255,7 +255,7 @@ where
         Box::new(VisualizationService::new())
     }
 
-    fn create_worker(&self) -> Box<dyn ServiceWorker<FeaturesControl, FeaturesEvent, SE, TC, TW>> {
+    fn create_worker(&self) -> Box<dyn ServiceWorker<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>> {
         Box::new(VisualizationServiceWorker {})
     }
 }

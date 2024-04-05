@@ -22,7 +22,7 @@ mod services;
 #[derive(Debug, Clone, convert_enum::From)]
 pub enum Input<SC, TC> {
     Ext(ExtIn<SC>),
-    Control(LogicControl<TC>),
+    Control(LogicControl<SC, TC>),
     #[convert_enum(optout)]
     ShutdownRequest,
 }
@@ -30,7 +30,7 @@ pub enum Input<SC, TC> {
 #[derive(Debug, Clone, convert_enum::From)]
 pub enum Output<SE, TW> {
     Ext(ExtOut<SE>),
-    Event(LogicEvent<TW>),
+    Event(LogicEvent<SE, TW>),
     #[convert_enum(optout)]
     ShutdownSuccess,
 }
@@ -156,6 +156,10 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
                 self.switcher.queue_flag_task(TaskType::Service as usize);
                 self.services.on_input(&self.service_ctx, now_ms, service, ServiceInput::FeatureEvent(event));
             }
+            Input::Control(LogicControl::ServicesControl(actor, service, control)) => {
+                self.switcher.queue_flag_task(TaskType::Service as usize);
+                self.services.on_input(&self.service_ctx, now_ms, service, ServiceInput::Control(actor, control));
+            }
             Input::Control(LogicControl::FeaturesControl(actor, control)) => {
                 self.switcher.queue_flag_task(TaskType::Feature as usize);
                 self.features.on_input(&self.feature_ctx, now_ms, control.to_feature(), FeatureInput::Control(actor, control));
@@ -222,6 +226,7 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
                 log::debug!("[Controller] send FeatureEvent to actor {:?}, event {:?}", actor, event);
                 match actor {
                     FeatureControlActor::Controller => Some(Output::Ext(ExtOut::FeaturesEvent(event))),
+                    FeatureControlActor::Worker(worker) => Some(Output::Event(LogicEvent::ExtFeaturesEvent(worker, event))),
                     FeatureControlActor::Service(service) => {
                         self.switcher.queue_flag_task(TaskType::Service as usize);
                         self.services.on_input(&self.service_ctx, now_ms, service, ServiceInput::FeatureEvent(event));
@@ -261,6 +266,7 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
             }
             ServiceOutput::Event(actor, event) => match actor {
                 ServiceControlActor::Controller => Some(Output::Ext(ExtOut::ServicesEvent(event))),
+                ServiceControlActor::Worker(worker) => Some(Output::Event(LogicEvent::ExtServicesEvent(worker, service, event))),
             },
             ServiceOutput::BroadcastWorkers(to) => Some(Output::Event(LogicEvent::Service(service, to))),
         }

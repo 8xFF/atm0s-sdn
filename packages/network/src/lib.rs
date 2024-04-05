@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 use atm0s_sdn_router::RouteRule;
-use base::{FeatureControlActor, NeighboursControl, NetIncomingMeta, NetOutgoingMeta, SecureContext, ServiceId};
+use base::{FeatureControlActor, NeighboursControl, NetIncomingMeta, NetOutgoingMeta, SecureContext, ServiceControlActor, ServiceId};
 pub use convert_enum;
 use features::{Features, FeaturesControl, FeaturesEvent, FeaturesToController, FeaturesToWorker};
 
@@ -31,18 +31,19 @@ pub enum ExtOut<ServicesEvent> {
 }
 
 #[derive(Debug, Clone)]
-pub enum LogicControl<TC> {
+pub enum LogicControl<ServicesControl, TC> {
     Feature(FeaturesToController),
     Service(ServiceId, TC),
     NetNeighbour(SocketAddr, NeighboursControl),
     NetRemote(Features, ConnId, NetIncomingMeta, Vec<u8>),
     NetLocal(Features, NetIncomingMeta, Vec<u8>),
     FeaturesControl(FeatureControlActor, FeaturesControl),
+    ServicesControl(ServiceControlActor, ServiceId, ServicesControl),
     ServiceEvent(ServiceId, FeaturesEvent),
 }
 
 #[derive(Debug, Clone)]
-pub enum LogicEvent<TW> {
+pub enum LogicEvent<SE, TW> {
     NetNeighbour(SocketAddr, NeighboursControl),
     NetDirect(Features, SocketAddr, ConnId, NetOutgoingMeta, Vec<u8>),
     NetRoute(Features, RouteRule, NetOutgoingMeta, Vec<u8>),
@@ -52,16 +53,31 @@ pub enum LogicEvent<TW> {
     /// first bool is flag for broadcast or not
     Feature(bool, FeaturesToWorker),
     Service(ServiceId, TW),
+    /// first u16 is worker id
+    ExtFeaturesEvent(u16, FeaturesEvent),
+    /// first u16 is worker id
+    ExtServicesEvent(u16, ServiceId, SE),
 }
 
-impl<TW> LogicEvent<TW> {
-    pub fn is_broadcast(&self) -> bool {
+pub enum LogicEventDest {
+    Broadcast,
+    Any,
+    Worker(u16),
+}
+
+impl<SE, TW> LogicEvent<SE, TW> {
+    pub fn dest(&self) -> LogicEventDest {
         match self {
-            LogicEvent::Pin(..) => true,
-            LogicEvent::UnPin(..) => true,
-            LogicEvent::Feature(is_broadcast, ..) => *is_broadcast,
-            LogicEvent::Service(..) => true,
-            _ => false,
+            LogicEvent::Pin(..) => LogicEventDest::Broadcast,
+            LogicEvent::UnPin(..) => LogicEventDest::Broadcast,
+            LogicEvent::Service(..) => LogicEventDest::Broadcast,
+            LogicEvent::Feature(true, ..) => LogicEventDest::Broadcast,
+            LogicEvent::Feature(false, ..) => LogicEventDest::Any,
+            LogicEvent::NetNeighbour(_, _) => LogicEventDest::Any,
+            LogicEvent::NetDirect(_, _, _, _, _) => LogicEventDest::Any,
+            LogicEvent::NetRoute(_, _, _, _) => LogicEventDest::Any,
+            LogicEvent::ExtFeaturesEvent(worker, _) => LogicEventDest::Worker(*worker),
+            LogicEvent::ExtServicesEvent(worker, _, _) => LogicEventDest::Worker(*worker),
         }
     }
 }

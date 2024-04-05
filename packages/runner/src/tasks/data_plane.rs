@@ -9,7 +9,7 @@ use std::{
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_network::{
     base::{GenericBuffer, ReadOnlyBuffer, ServiceBuilder},
-    data_plane::{DataPlane, Input as DataPlaneInput, NetInput, NetOutput, Output as DataPlaneOutput},
+    data_plane::{CrossWorker, DataPlane, Input as DataPlaneInput, NetInput, NetOutput, Output as DataPlaneOutput},
     features::{FeaturesControl, FeaturesEvent},
     ExtOut, LogicControl, LogicEvent,
 };
@@ -28,8 +28,15 @@ pub enum ChannelIn {
 
 pub type ChannelOut = ();
 
-pub type EventIn<TW> = LogicEvent<TW>;
-pub type EventOut<TC> = LogicControl<TC>;
+#[derive(Debug, Clone)]
+pub enum EventIn<SE, TW> {
+    FromWorker(CrossWorker<SE>),
+    FromController(LogicEvent<SE, TW>),
+}
+pub enum EventOut<SC, SE, TC> {
+    ToWorker(u16, CrossWorker<SE>),
+    ToController(LogicControl<SC, TC>),
+}
 
 pub struct DataPlaneCfg<SC, SE, TC, TW> {
     pub history: Arc<dyn ShadowRouterHistory>,
@@ -50,7 +57,7 @@ pub struct DataPlaneTask<SC, SE, TC, TW> {
     timer: TimePivot,
     #[cfg(feature = "vpn")]
     backend_tun_slot: usize,
-    queue: VecDeque<TaskOutput<'static, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<TC>>>,
+    queue: VecDeque<TaskOutput<'static, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<SC, SE, TC>>>,
 }
 
 impl<SC, SE, TC, TW> DataPlaneTask<SC, SE, TC, TW> {
@@ -68,7 +75,7 @@ impl<SC, SE, TC, TW> DataPlaneTask<SC, SE, TC, TW> {
         Self {
             node_id: cfg.node_id,
             worker: cfg.worker,
-            data_plane: DataPlane::new(cfg.node_id, cfg.services, cfg.history),
+            data_plane: DataPlane::new(cfg.worker, cfg.node_id, cfg.services, cfg.history),
             backend_udp_slot: 0,
             timer: TimePivot::build(),
             #[cfg(feature = "vpn")]
@@ -77,8 +84,9 @@ impl<SC, SE, TC, TW> DataPlaneTask<SC, SE, TC, TW> {
         }
     }
 
-    fn convert_output<'a>(&mut self, _now: Instant, output: DataPlaneOutput<'a, SE, TC>) -> Option<TaskOutput<'a, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<TC>>> {
+    fn convert_output<'a>(&mut self, _now: Instant, output: DataPlaneOutput<'a, SC, SE, TC>) -> Option<TaskOutput<'a, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<SC, SE, TC>>> {
         match output {
+            DataPlaneOutput::Worker(worker, event) => Some(TaskOutput::Bus(BusEvent::ChannelPublish((), true, EventOut::ToWorker(worker, event)))),
             DataPlaneOutput::Net(NetOutput::UdpPacket(to, buf)) => Some(TaskOutput::Net(NetOutgoing::UdpPacket {
                 slot: self.backend_udp_slot,
                 to,
@@ -96,7 +104,7 @@ impl<SC, SE, TC, TW> DataPlaneTask<SC, SE, TC, TW> {
                 to,
                 data: convert_buf1(buf),
             })),
-            DataPlaneOutput::Control(bus) => Some(TaskOutput::Bus(BusEvent::ChannelPublish((), true, bus))),
+            DataPlaneOutput::Control(bus) => Some(TaskOutput::Bus(BusEvent::ChannelPublish((), true, EventOut::ToController(bus)))),
             DataPlaneOutput::ShutdownResponse => {
                 self.queue.push_back(TaskOutput::Net(NetOutgoing::UdpUnlisten { slot: self.backend_udp_slot }));
                 self.queue.push_back(TaskOutput::Bus(BusEvent::ChannelUnsubscribe(ChannelIn::Broadcast)));
@@ -109,7 +117,7 @@ impl<SC, SE, TC, TW> DataPlaneTask<SC, SE, TC, TW> {
         }
     }
 
-    fn try_process_output<'a>(&mut self, now: Instant, output: DataPlaneOutput<'a, SE, TC>) -> Option<TaskOutput<'a, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<TC>>> {
+    fn try_process_output<'a>(&mut self, now: Instant, output: DataPlaneOutput<'a, SC, SE, TC>) -> Option<TaskOutput<'a, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<SC, SE, TC>>> {
         let out = self.convert_output(now, output);
         if out.is_some() {
             return out;
@@ -117,7 +125,7 @@ impl<SC, SE, TC, TW> DataPlaneTask<SC, SE, TC, TW> {
         self.pop_output_direct(now)
     }
 
-    fn pop_output_direct<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<TC>>> {
+    fn pop_output_direct<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<SC, SE, TC>>> {
         // self.pop_output_direct(now)
         let now_ms = self.timer.timestamp_ms(now);
         loop {
@@ -130,11 +138,11 @@ impl<SC, SE, TC, TW> DataPlaneTask<SC, SE, TC, TW> {
     }
 }
 
-impl<SC, SE, TC: Debug, TW: Debug> Task<(), ExtOut<SE>, ChannelIn, ChannelOut, EventIn<TW>, EventOut<TC>> for DataPlaneTask<SC, SE, TC, TW> {
+impl<SC, SE, TC: Debug, TW: Debug> Task<(), ExtOut<SE>, ChannelIn, ChannelOut, EventIn<SE, TW>, EventOut<SC, SE, TC>> for DataPlaneTask<SC, SE, TC, TW> {
     /// The type identifier for the task.
     const TYPE: u16 = 1;
 
-    fn on_tick<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<TC>>> {
+    fn on_tick<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<SC, SE, TC>>> {
         if let Some(out) = self.queue.pop_front() {
             return Some(out);
         }
@@ -144,7 +152,7 @@ impl<SC, SE, TC: Debug, TW: Debug> Task<(), ExtOut<SE>, ChannelIn, ChannelOut, E
         self.pop_output(now)
     }
 
-    fn on_event<'a>(&mut self, now: Instant, input: TaskInput<'a, (), ChannelIn, EventIn<TW>>) -> Option<TaskOutput<'a, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<TC>>> {
+    fn on_event<'a>(&mut self, now: Instant, input: TaskInput<'a, (), ChannelIn, EventIn<SE, TW>>) -> Option<TaskOutput<'a, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<SC, SE, TC>>> {
         match input {
             TaskInput::Ext(_) => None,
             TaskInput::Net(net) => match net {
@@ -177,14 +185,18 @@ impl<SC, SE, TC: Debug, TW: Debug> Task<(), ExtOut<SE>, ChannelIn, ChannelOut, E
                 #[cfg(not(feature = "vpn"))]
                 NetIncoming::TunPacket { .. } => None,
             },
-            TaskInput::Bus(_, event) => {
+            TaskInput::Bus(_, EventIn::FromController(event)) => {
                 let output = self.data_plane.on_event(self.timer.timestamp_ms(now), DataPlaneInput::Event(event))?;
+                self.try_process_output(now, output)
+            }
+            TaskInput::Bus(_, EventIn::FromWorker(event)) => {
+                let output = self.data_plane.on_event(self.timer.timestamp_ms(now), DataPlaneInput::Worker(event))?;
                 self.try_process_output(now, output)
             }
         }
     }
 
-    fn pop_output<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<TC>>> {
+    fn pop_output<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<SC, SE, TC>>> {
         if let Some(output) = self.queue.pop_front() {
             return Some(output);
         }
@@ -192,7 +204,7 @@ impl<SC, SE, TC: Debug, TW: Debug> Task<(), ExtOut<SE>, ChannelIn, ChannelOut, E
         self.pop_output_direct(now)
     }
 
-    fn shutdown<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<TC>>> {
+    fn shutdown<'a>(&mut self, now: Instant) -> Option<TaskOutput<'a, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<SC, SE, TC>>> {
         let output = self.data_plane.on_event(self.timer.timestamp_ms(now), DataPlaneInput::ShutdownRequest)?;
         self.try_process_output(now, output)
     }

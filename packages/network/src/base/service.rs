@@ -10,6 +10,7 @@ simple_pub_type!(ServiceId, u8);
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 pub enum ServiceControlActor {
     Controller,
+    Worker(u16),
 }
 
 #[derive(Debug, Clone)]
@@ -48,12 +49,14 @@ pub trait Service<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, 
 
 /// Second part is Worker, which is running inside each data plane workers.
 
-pub enum ServiceWorkerInput<FeaturesEvent, ToWorker> {
+pub enum ServiceWorkerInput<FeaturesEvent, ServiceControl, ToWorker> {
+    Control(ServiceControlActor, ServiceControl),
     FromController(ToWorker),
     FeatureEvent(FeaturesEvent),
 }
 
-pub enum ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceEvent, ToController> {
+pub enum ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController> {
+    ForwardControlToController(ServiceControlActor, ServiceControl),
     ForwardFeatureEventToController(FeaturesEvent),
     ToController(ToController),
     FeatureControl(FeaturesControl),
@@ -64,7 +67,7 @@ pub struct ServiceWorkerCtx {
     pub node_id: NodeId,
 }
 
-pub trait ServiceWorker<FeaturesControl, FeaturesEvent, ServiceEvent, ToController, ToWorker> {
+pub trait ServiceWorker<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker> {
     fn service_id(&self) -> u8;
     fn service_name(&self) -> &str;
     fn on_tick(&mut self, _ctx: &ServiceWorkerCtx, _now: u64, _tick_count: u64) {}
@@ -72,9 +75,10 @@ pub trait ServiceWorker<FeaturesControl, FeaturesEvent, ServiceEvent, ToControll
         &mut self,
         _ctx: &ServiceWorkerCtx,
         _now: u64,
-        input: ServiceWorkerInput<FeaturesEvent, ToWorker>,
-    ) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceEvent, ToController>> {
+        input: ServiceWorkerInput<FeaturesEvent, ServiceControl, ToWorker>,
+    ) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController>> {
         match input {
+            ServiceWorkerInput::Control(actor, control) => Some(ServiceWorkerOutput::ForwardControlToController(actor, control)),
             ServiceWorkerInput::FeatureEvent(event) => Some(ServiceWorkerOutput::ForwardFeatureEventToController(event)),
             ServiceWorkerInput::FromController(_) => {
                 log::warn!("No handler for FromController in {}", self.service_name());
@@ -82,7 +86,7 @@ pub trait ServiceWorker<FeaturesControl, FeaturesEvent, ServiceEvent, ToControll
             }
         }
     }
-    fn pop_output(&mut self, _ctx: &ServiceWorkerCtx) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceEvent, ToController>> {
+    fn pop_output(&mut self, _ctx: &ServiceWorkerCtx) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController>> {
         None
     }
 }
@@ -94,5 +98,5 @@ pub trait ServiceBuilder<FeaturesControl, FeaturesEvent, ServiceControl, Service
         true
     }
     fn create(&self) -> Box<dyn Service<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>;
-    fn create_worker(&self) -> Box<dyn ServiceWorker<FeaturesControl, FeaturesEvent, ServiceEvent, ToController, ToWorker>>;
+    fn create_worker(&self) -> Box<dyn ServiceWorker<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>;
 }

@@ -74,6 +74,7 @@ impl NetOutgoingMeta {
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 pub enum FeatureControlActor {
     Controller,
+    Worker(u16),
     Service(ServiceId),
 }
 

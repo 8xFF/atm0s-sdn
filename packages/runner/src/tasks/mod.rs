@@ -19,7 +19,7 @@ use self::{
     data_plane::{DataPlaneCfg, DataPlaneTask},
 };
 
-pub type SdnController<SC, SE, TC, TW> = Controller<SdnExtIn<SC>, SdnExtOut<SE>, SdnSpawnCfg, SdnChannel, SdnEvent<TC, TW>, 1024>;
+pub type SdnController<SC, SE, TC, TW> = Controller<SdnExtIn<SC>, SdnExtOut<SE>, SdnSpawnCfg, SdnChannel, SdnEvent<SC, SE, TC, TW>, 1024>;
 
 pub type SdnExtIn<SC> = ExtIn<SC>;
 pub type SdnExtOut<SE> = ExtOut<SE>;
@@ -31,9 +31,9 @@ pub enum SdnChannel {
 }
 
 #[derive(Debug, Clone)]
-pub enum SdnEvent<TC, TW> {
-    ControllerPlane(controller_plane::EventIn<TC>),
-    DataPlane(data_plane::EventIn<TW>),
+pub enum SdnEvent<SC, SE, TC, TW> {
+    ControllerPlane(controller_plane::EventIn<SC, TC>),
+    DataPlane(data_plane::EventIn<SE, TW>),
 }
 
 pub struct ControllerCfg {
@@ -75,8 +75,8 @@ impl<SC, SE, TC: Debug, TW: Debug> SdnWorkerInner<SC, SE, TC, TW> {
     fn convert_controller_output<'a>(
         &mut self,
         now: Instant,
-        event: TaskOutput<'a, ExtOut<SE>, controller_plane::ChannelIn, controller_plane::ChannelOut, controller_plane::EventOut<TW>>,
-    ) -> Option<WorkerInnerOutput<'a, SdnExtOut<SE>, SdnChannel, SdnEvent<TC, TW>, SdnSpawnCfg>> {
+        event: TaskOutput<'a, ExtOut<SE>, controller_plane::ChannelIn, controller_plane::ChannelOut, controller_plane::EventOut<SE, TW>>,
+    ) -> Option<WorkerInnerOutput<'a, SdnExtOut<SE>, SdnChannel, SdnEvent<SC, SE, TC, TW>, SdnSpawnCfg>> {
         match event {
             TaskOutput::Destroy => {
                 self.state = State::Shutdowned;
@@ -88,7 +88,7 @@ impl<SC, SE, TC: Debug, TW: Debug> SdnWorkerInner<SC, SE, TC, TW> {
     }
 }
 
-impl<SC, SE, TC: Debug, TW: Debug> WorkerInner<SdnExtIn<SC>, SdnExtOut<SE>, SdnChannel, SdnEvent<TC, TW>, SdnInnerCfg<SC, SE, TC, TW>, SdnSpawnCfg> for SdnWorkerInner<SC, SE, TC, TW> {
+impl<SC, SE, TC: Debug, TW: Debug> WorkerInner<SdnExtIn<SC>, SdnExtOut<SE>, SdnChannel, SdnEvent<SC, SE, TC, TW>, SdnInnerCfg<SC, SE, TC, TW>, SdnSpawnCfg> for SdnWorkerInner<SC, SE, TC, TW> {
     fn build(worker: u16, cfg: SdnInnerCfg<SC, SE, TC, TW>) -> Self {
         if let Some(controller) = cfg.controller {
             log::info!("Create controller worker");
@@ -158,7 +158,7 @@ impl<SC, SE, TC: Debug, TW: Debug> WorkerInner<SdnExtIn<SC>, SdnExtOut<SE>, SdnC
         todo!("Spawn not implemented")
     }
 
-    fn on_tick<'a>(&mut self, now: Instant) -> Option<WorkerInnerOutput<'a, SdnExtOut<SE>, SdnChannel, SdnEvent<TC, TW>, SdnSpawnCfg>> {
+    fn on_tick<'a>(&mut self, now: Instant) -> Option<WorkerInnerOutput<'a, SdnExtOut<SE>, SdnChannel, SdnEvent<SC, SE, TC, TW>, SdnSpawnCfg>> {
         let s = &mut self.switcher;
         loop {
             match s.looper_current(now)? as u16 {
@@ -180,8 +180,8 @@ impl<SC, SE, TC: Debug, TW: Debug> WorkerInner<SdnExtIn<SC>, SdnExtOut<SE>, SdnC
     fn on_event<'a>(
         &mut self,
         now: Instant,
-        event: WorkerInnerInput<'a, SdnExtIn<SC>, SdnChannel, SdnEvent<TC, TW>>,
-    ) -> Option<WorkerInnerOutput<'a, SdnExtOut<SE>, SdnChannel, SdnEvent<TC, TW>, SdnSpawnCfg>> {
+        event: WorkerInnerInput<'a, SdnExtIn<SC>, SdnChannel, SdnEvent<SC, SE, TC, TW>>,
+    ) -> Option<WorkerInnerOutput<'a, SdnExtOut<SE>, SdnChannel, SdnEvent<SC, SE, TC, TW>, SdnSpawnCfg>> {
         match event {
             WorkerInnerInput::Task(owner, event) => match owner.group_id()? {
                 ControllerPlaneTask::<(), (), (), ()>::TYPE => {
@@ -206,7 +206,7 @@ impl<SC, SE, TC: Debug, TW: Debug> WorkerInner<SdnExtIn<SC>, SdnExtOut<SE>, SdnC
         }
     }
 
-    fn pop_output<'a>(&mut self, now: Instant) -> Option<WorkerInnerOutput<'a, SdnExtOut<SE>, SdnChannel, SdnEvent<TC, TW>, SdnSpawnCfg>> {
+    fn pop_output<'a>(&mut self, now: Instant) -> Option<WorkerInnerOutput<'a, SdnExtOut<SE>, SdnChannel, SdnEvent<SC, SE, TC, TW>, SdnSpawnCfg>> {
         while let Some(current) = self.switcher.queue_current() {
             match current as u16 {
                 ControllerPlaneTask::<(), (), (), ()>::TYPE => {
@@ -230,7 +230,7 @@ impl<SC, SE, TC: Debug, TW: Debug> WorkerInner<SdnExtIn<SC>, SdnExtOut<SE>, SdnC
         None
     }
 
-    fn shutdown<'a>(&mut self, now: Instant) -> Option<WorkerInnerOutput<'a, SdnExtOut<SE>, SdnChannel, SdnEvent<TC, TW>, SdnSpawnCfg>> {
+    fn shutdown<'a>(&mut self, now: Instant) -> Option<WorkerInnerOutput<'a, SdnExtOut<SE>, SdnChannel, SdnEvent<SC, SE, TC, TW>, SdnSpawnCfg>> {
         if !matches!(self.state, State::Running) {
             return None;
         }
