@@ -288,7 +288,7 @@ async fn main() {
         }
         while let Some(event) = controller.pop_event() {
             match event {
-                SdnExtOut::ServicesEvent(event) => match event {
+                SdnExtOut::ServicesEvent(_service, event) => match event {
                     visualization::Event::GotAll(all) => {
                         log::info!("Got all: {:?}", all);
                         ctx.lock().await.set_snapshot(all);

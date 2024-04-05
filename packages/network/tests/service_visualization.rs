@@ -11,18 +11,21 @@ use crate::simulator::{node_to_addr, NetworkSimulator, TestNode};
 mod simulator;
 
 fn node_changed(node: NodeId, remotes: &[(NodeId, ConnId)]) -> ExtOut<Event> {
-    ExtOut::ServicesEvent(Event::NodeChanged(
-        node,
-        remotes
-            .iter()
-            .map(|(n, c)| ConnectionInfo {
-                conn: *c,
-                dest: *n,
-                remote: node_to_addr(*n),
-                rtt_ms: 0,
-            })
-            .collect(),
-    ))
+    ExtOut::ServicesEvent(
+        visualization::SERVICE_ID.into(),
+        Event::NodeChanged(
+            node,
+            remotes
+                .iter()
+                .map(|(n, c)| ConnectionInfo {
+                    conn: *c,
+                    dest: *n,
+                    remote: node_to_addr(*n),
+                    rtt_ms: 0,
+                })
+                .collect(),
+        ),
+    )
 }
 
 #[test]
@@ -41,8 +44,8 @@ fn service_visualization_simple() {
         sim.process(1000);
     }
 
-    assert_eq!(sim.pop_res(), Some((node1, ExtOut::ServicesEvent(Event::GotAll(vec![])))));
-    assert_eq!(sim.pop_res(), Some((node1, ExtOut::ServicesEvent(Event::NodeChanged(node1, vec![])))));
+    assert_eq!(sim.pop_res(), Some((node1, ExtOut::ServicesEvent(visualization::SERVICE_ID.into(), Event::GotAll(vec![])))));
+    assert_eq!(sim.pop_res(), Some((node1, ExtOut::ServicesEvent(visualization::SERVICE_ID.into(), Event::NodeChanged(node1, vec![])))));
 
     sim.control(node1, ExtIn::ConnectTo(addr2));
 
@@ -79,10 +82,10 @@ fn service_visualization_multi_collectors() {
         sim.process(1000);
     }
 
-    assert_eq!(sim.pop_res(), Some((node1, ExtOut::ServicesEvent(Event::GotAll(vec![])))));
-    assert_eq!(sim.pop_res(), Some((node2, ExtOut::ServicesEvent(Event::GotAll(vec![])))));
-    assert_eq!(sim.pop_res(), Some((node1, ExtOut::ServicesEvent(Event::NodeChanged(node1, vec![])))));
-    assert_eq!(sim.pop_res(), Some((node2, ExtOut::ServicesEvent(Event::NodeChanged(node2, vec![])))));
+    assert_eq!(sim.pop_res(), Some((node1, ExtOut::ServicesEvent(visualization::SERVICE_ID.into(), Event::GotAll(vec![])))));
+    assert_eq!(sim.pop_res(), Some((node2, ExtOut::ServicesEvent(visualization::SERVICE_ID.into(), Event::GotAll(vec![])))));
+    assert_eq!(sim.pop_res(), Some((node1, ExtOut::ServicesEvent(visualization::SERVICE_ID.into(), Event::NodeChanged(node1, vec![])))));
+    assert_eq!(sim.pop_res(), Some((node2, ExtOut::ServicesEvent(visualization::SERVICE_ID.into(), Event::NodeChanged(node2, vec![])))));
 
     sim.control(node1, ExtIn::ConnectTo(addr2));
     sim.control(node2, ExtIn::ConnectTo(addr3));
@@ -107,7 +110,7 @@ fn service_visualization_multi_collectors() {
 
     let get_key = |a: &ExtOut<Event>| -> u32 {
         match a {
-            ExtOut::ServicesEvent(Event::NodeChanged(node, _)) => *node,
+            ExtOut::ServicesEvent(_service, Event::NodeChanged(node, _)) => *node,
             _ => panic!("Unexpected event: {:?}", a),
         }
     };

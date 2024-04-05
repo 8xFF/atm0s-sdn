@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::VecDeque, sync::Arc};
 
 use atm0s_sdn_identity::NodeId;
 use rand::RngCore;
@@ -20,9 +20,9 @@ mod neighbours;
 mod services;
 
 #[derive(Debug, Clone, convert_enum::From)]
-pub enum Input<SC, TC> {
+pub enum Input<SC, SE, TC> {
     Ext(ExtIn<SC>),
-    Control(LogicControl<SC, TC>),
+    Control(LogicControl<SC, SE, TC>),
     #[convert_enum(optout)]
     ShutdownRequest,
 }
@@ -67,6 +67,7 @@ pub struct ControllerPlane<SC, SE, TC, TW> {
     service_ctx: ServiceCtx,
     services: ServiceManager<SC, SE, TC, TW>,
     switcher: TaskSwitcher,
+    queue: VecDeque<Output<SE, TW>>,
 }
 
 impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
@@ -99,6 +100,7 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
             service_ctx: ServiceCtx { node_id, session },
             services: ServiceManager::new(services),
             switcher: TaskSwitcher::new(3), //3 types: Neighbours, Feature, Service
+            queue: VecDeque::new(),
         }
     }
 
@@ -110,7 +112,7 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
         self.tick_count += 1;
     }
 
-    pub fn on_event(&mut self, now_ms: u64, event: Input<SC, TC>) {
+    pub fn on_event(&mut self, now_ms: u64, event: Input<SC, SE, TC>) {
         match event {
             Input::Ext(ExtIn::ConnectTo(addr)) => {
                 self.switcher.queue_flag_task(TaskType::Neighbours as usize);
@@ -164,6 +166,12 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
                 self.switcher.queue_flag_task(TaskType::Feature as usize);
                 self.features.on_input(&self.feature_ctx, now_ms, control.to_feature(), FeatureInput::Control(actor, control));
             }
+            Input::Control(LogicControl::ExtFeaturesEvent(event)) => {
+                self.queue.push_back(Output::Ext(ExtOut::FeaturesEvent(event)));
+            }
+            Input::Control(LogicControl::ExtServicesEvent(service, event)) => {
+                self.queue.push_back(Output::Ext(ExtOut::ServicesEvent(service, event)));
+            }
             Input::ShutdownRequest => {
                 self.switcher.queue_flag_task(TaskType::Neighbours as usize);
                 self.neighbours.on_input(now_ms, neighbours::Input::ShutdownRequest);
@@ -172,6 +180,10 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
     }
 
     pub fn pop_output(&mut self, now_ms: u64) -> Option<Output<SE, TW>> {
+        while let Some(out) = self.queue.pop_front() {
+            return Some(out);
+        }
+
         while let Some(current) = self.switcher.queue_current() {
             match (current as u8).try_into().expect("Should convert to TaskType") {
                 TaskType::Neighbours => {
@@ -265,7 +277,7 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
                 self.pop_features(now_ms)
             }
             ServiceOutput::Event(actor, event) => match actor {
-                ServiceControlActor::Controller => Some(Output::Ext(ExtOut::ServicesEvent(event))),
+                ServiceControlActor::Controller => Some(Output::Ext(ExtOut::ServicesEvent(service, event))),
                 ServiceControlActor::Worker(worker) => Some(Output::Event(LogicEvent::ExtServicesEvent(worker, service, event))),
             },
             ServiceOutput::BroadcastWorkers(to) => Some(Output::Event(LogicEvent::Service(service, to))),

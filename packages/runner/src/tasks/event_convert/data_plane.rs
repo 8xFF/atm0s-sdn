@@ -25,7 +25,6 @@ pub fn convert_input<'a, SC, SE, TC, TW>(event: TaskInput<'a, SdnExtIn<SC>, SdnC
 /// It only accept bus events from the Plane task.
 ///
 pub fn convert_output<'a, SC, SE, TC, TW>(
-    worker: u16,
     event: TaskOutput<'a, ExtOut<SE>, data_plane::ChannelIn, data_plane::ChannelOut, data_plane::EventOut<SC, SE, TC>>,
 ) -> WorkerInnerOutput<'a, SdnOwner, SdnExtOut<SE>, SdnChannel, SdnEvent<SC, SE, TC, TW>, SdnSpawnCfg> {
     match event {

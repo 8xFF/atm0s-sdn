@@ -58,7 +58,7 @@ pub enum NetOutput<'a> {
 pub enum Output<'a, SC, SE, TC> {
     Ext(ExtOut<SE>),
     Net(NetOutput<'a>),
-    Control(LogicControl<SC, TC>),
+    Control(LogicControl<SC, SE, TC>),
     #[convert_enum(optout)]
     Worker(u16, CrossWorker<SE>),
     #[convert_enum(optout)]
@@ -135,18 +135,18 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 }
                 ExtIn::FeaturesControl(control) => {
                     let feature: Features = control.to_feature();
-                    let actor = FeatureControlActor::Controller;
+                    let actor = FeatureControlActor::Worker(self.worker_id);
                     let out = self.features.on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::Control(actor, control))?;
                     Some(self.convert_features(now_ms, feature, out))
                 }
                 ExtIn::ServicesControl(service, control) => {
-                    let actor = ServiceControlActor::Controller;
+                    let actor = ServiceControlActor::Worker(self.worker_id);
                     let out = self.services.on_input(&mut self.service_ctx, now_ms, service, ServiceWorkerInput::Control(actor, control))?;
                     Some(self.convert_services(now_ms, service, out))
                 }
             },
             Input::Worker(CrossWorker::Feature(event)) => Some(Output::Ext(ExtOut::FeaturesEvent(event))),
-            Input::Worker(CrossWorker::Service(_service, event)) => Some(Output::Ext(ExtOut::ServicesEvent(event))),
+            Input::Worker(CrossWorker::Service(service, event)) => Some(Output::Ext(ExtOut::ServicesEvent(service, event))),
             Input::Net(NetInput::UdpPacket(remote, buf)) => {
                 if buf.is_empty() {
                     return None;
@@ -174,9 +174,9 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 assert_eq!(self.worker_id, worker);
                 Some(Output::Ext(ExtOut::FeaturesEvent(event)))
             }
-            Input::Event(LogicEvent::ExtServicesEvent(worker, _service, event)) => {
+            Input::Event(LogicEvent::ExtServicesEvent(worker, service, event)) => {
                 assert_eq!(self.worker_id, worker);
-                Some(Output::Ext(ExtOut::ServicesEvent(event)))
+                Some(Output::Ext(ExtOut::ServicesEvent(service, event)))
             }
             Input::Event(LogicEvent::NetNeighbour(remote, control)) => {
                 let buf: Result<Vec<u8>, _> = (&control).try_into();
@@ -322,7 +322,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
             FeatureWorkerOutput::ForwardLocalToController(header, buf) => LogicControl::NetLocal(feature, header, buf).into(),
             FeatureWorkerOutput::ToController(control) => LogicControl::Feature(control).into(),
             FeatureWorkerOutput::Event(actor, event) => match actor {
-                FeatureControlActor::Controller => Output::Ext(ExtOut::FeaturesEvent(event)),
+                FeatureControlActor::Controller => Output::Control(LogicControl::ExtFeaturesEvent(event)),
                 FeatureControlActor::Worker(worker) => {
                     if self.worker_id == worker {
                         Output::Ext(ExtOut::FeaturesEvent(event))
@@ -399,10 +399,10 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 }
             }
             ServiceWorkerOutput::Event(actor, event) => match actor {
-                ServiceControlActor::Controller => Output::Ext(ExtOut::ServicesEvent(event)),
+                ServiceControlActor::Controller => Output::Control(LogicControl::ExtServicesEvent(service, event)),
                 ServiceControlActor::Worker(worker) => {
                     if self.worker_id == worker {
-                        Output::Ext(ExtOut::ServicesEvent(event))
+                        Output::Ext(ExtOut::ServicesEvent(service, event))
                     } else {
                         Output::Worker(worker, CrossWorker::Service(service, event))
                     }

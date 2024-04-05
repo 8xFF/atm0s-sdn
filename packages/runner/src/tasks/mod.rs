@@ -38,7 +38,7 @@ pub enum SdnChannel {
 
 #[derive(Debug, Clone)]
 pub enum SdnEvent<SC, SE, TC, TW> {
-    ControllerPlane(controller_plane::EventIn<SC, TC>),
+    ControllerPlane(controller_plane::EventIn<SC, SE, TC>),
     DataPlane(data_plane::EventIn<SE, TW>),
 }
 
@@ -87,9 +87,9 @@ impl<SC, SE, TC: Debug, TW: Debug> SdnWorkerInner<SC, SE, TC, TW> {
             TaskOutput::Destroy => {
                 self.state = State::Shutdowned;
                 log::info!("Controller plane task destroyed => will destroy data plane task");
-                Some(event_convert::data_plane::convert_output(self.worker, self.data.shutdown(now)?))
+                Some(event_convert::data_plane::convert_output(self.data.shutdown(now)?))
             }
-            _ => Some(event_convert::controller_plane::convert_output(self.worker, event)),
+            _ => Some(event_convert::controller_plane::convert_output(event)),
         }
     }
 }
@@ -177,7 +177,7 @@ impl<SC, SE, TC: Debug, TW: Debug> WorkerInner<SdnOwner, SdnExtIn<SC>, SdnExtOut
                 }
                 DataPlaneTask::<(), (), (), ()>::TYPE => {
                     if let Some(out) = s.looper_process(self.data.on_tick(now)) {
-                        return Some(event_convert::data_plane::convert_output(self.worker, out));
+                        return Some(event_convert::data_plane::convert_output(out));
                     }
                 }
                 _ => panic!("unknown task type"),
@@ -202,13 +202,13 @@ impl<SC, SE, TC: Debug, TW: Debug> WorkerInner<SdnOwner, SdnExtIn<SC>, SdnExtOut
                     let event = event_convert::data_plane::convert_input(event);
                     let out = self.data.on_event(now, event)?;
                     self.switcher.queue_flag_task(DataPlaneTask::<(), (), (), ()>::TYPE as usize);
-                    Some(event_convert::data_plane::convert_output(self.worker, out))
+                    Some(event_convert::data_plane::convert_output(out))
                 }
             },
             WorkerInnerInput::Ext(ext) => {
                 let out = self.controller.as_mut().map(|c| c.on_event(now, TaskInput::Ext(ext))).flatten()?;
                 self.switcher.queue_flag_task(ControllerPlaneTask::<(), (), (), ()>::TYPE as usize);
-                Some(event_convert::controller_plane::convert_output(self.worker, out))
+                Some(event_convert::controller_plane::convert_output(out))
             }
         }
     }
@@ -228,7 +228,7 @@ impl<SC, SE, TC: Debug, TW: Debug> WorkerInner<SdnOwner, SdnExtIn<SC>, SdnExtOut
                 DataPlaneTask::<(), (), (), ()>::TYPE => {
                     let out = self.data.pop_output(now);
                     if let Some(out) = self.switcher.queue_process(out) {
-                        return Some(event_convert::data_plane::convert_output(self.worker, out));
+                        return Some(event_convert::data_plane::convert_output(out));
                     }
                 }
                 _ => panic!("unknown task type"),
@@ -248,7 +248,7 @@ impl<SC, SE, TC: Debug, TW: Debug> WorkerInner<SdnOwner, SdnExtIn<SC>, SdnExtOut
             self.convert_controller_output(now, out)
         } else {
             self.state = State::Shutdowned;
-            Some(event_convert::data_plane::convert_output(self.worker, self.data.shutdown(now)?))
+            Some(event_convert::data_plane::convert_output(self.data.shutdown(now)?))
         }
     }
 }

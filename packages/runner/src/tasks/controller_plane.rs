@@ -28,7 +28,7 @@ pub struct ControllerPlaneCfg<SC, SE, TC, TW> {
     pub vpn_tun_device: Option<sans_io_runtime::backend::tun::TunDevice>,
 }
 
-pub type EventIn<SC, TC> = LogicControl<SC, TC>;
+pub type EventIn<SC, SE, TC> = LogicControl<SC, SE, TC>;
 pub type EventOut<SE, TW> = LogicEvent<SE, TW>;
 
 pub struct ControllerPlaneTask<SC, SE, TC, TW> {
@@ -58,7 +58,7 @@ impl<SC, SE, TC, TW> ControllerPlaneTask<SC, SE, TC, TW> {
     }
 }
 
-impl<SC, SE, TC, TW> Task<ExtIn<SC>, ExtOut<SE>, ChannelIn, ChannelOut, EventIn<SC, TC>, EventOut<SE, TW>> for ControllerPlaneTask<SC, SE, TC, TW> {
+impl<SC, SE, TC, TW> Task<ExtIn<SC>, ExtOut<SE>, ChannelIn, ChannelOut, EventIn<SC, SE, TC>, EventOut<SE, TW>> for ControllerPlaneTask<SC, SE, TC, TW> {
     /// The type identifier for the task.
     const TYPE: u16 = 0;
 
@@ -70,7 +70,7 @@ impl<SC, SE, TC, TW> Task<ExtIn<SC>, ExtOut<SE>, ChannelIn, ChannelOut, EventIn<
         self.pop_output(now)
     }
 
-    fn on_event<'a>(&mut self, now: Instant, input: TaskInput<'a, ExtIn<SC>, ChannelIn, EventIn<SC, TC>>) -> Option<TaskOutput<'a, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<SE, TW>>> {
+    fn on_event<'a>(&mut self, now: Instant, input: TaskInput<'a, ExtIn<SC>, ChannelIn, EventIn<SC, SE, TC>>) -> Option<TaskOutput<'a, ExtOut<SE>, ChannelIn, ChannelOut, EventOut<SE, TW>>> {
         let now_ms = self.timer.timestamp_ms(now);
         match input {
             TaskInput::Bus(_, event) => {

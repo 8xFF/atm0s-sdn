@@ -35,7 +35,7 @@ pub enum EventIn<SE, TW> {
 }
 pub enum EventOut<SC, SE, TC> {
     ToWorker(u16, CrossWorker<SE>),
-    ToController(LogicControl<SC, TC>),
+    ToController(LogicControl<SC, SE, TC>),
 }
 
 pub struct DataPlaneCfg<SC, SE, TC, TW> {

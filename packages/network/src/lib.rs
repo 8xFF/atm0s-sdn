@@ -27,19 +27,21 @@ pub enum ExtIn<ServicesControl> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExtOut<ServicesEvent> {
     FeaturesEvent(FeaturesEvent),
-    ServicesEvent(ServicesEvent),
+    ServicesEvent(ServiceId, ServicesEvent),
 }
 
 #[derive(Debug, Clone)]
-pub enum LogicControl<ServicesControl, TC> {
+pub enum LogicControl<SC, SE, TC> {
     Feature(FeaturesToController),
     Service(ServiceId, TC),
     NetNeighbour(SocketAddr, NeighboursControl),
     NetRemote(Features, ConnId, NetIncomingMeta, Vec<u8>),
     NetLocal(Features, NetIncomingMeta, Vec<u8>),
     FeaturesControl(FeatureControlActor, FeaturesControl),
-    ServicesControl(ServiceControlActor, ServiceId, ServicesControl),
+    ServicesControl(ServiceControlActor, ServiceId, SC),
     ServiceEvent(ServiceId, FeaturesEvent),
+    ExtFeaturesEvent(FeaturesEvent),
+    ExtServicesEvent(ServiceId, SE),
 }
 
 #[derive(Debug, Clone)]
