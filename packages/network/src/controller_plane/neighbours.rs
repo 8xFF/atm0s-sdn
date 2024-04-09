@@ -91,7 +91,7 @@ impl NeighboursManager {
                     }
                 };
 
-                log::debug!("[NeighboursManager] received Control(addr: {:?}, control: {:?})", addr, control);
+                log::debug!("[NeighboursManager] received Control(addr: {:?}, cmd: {:?})", addr, cmd);
                 if let Some(conn) = self.connections.get_mut(&addr) {
                     conn.on_input(now_ms, control.from, cmd);
                 } else {

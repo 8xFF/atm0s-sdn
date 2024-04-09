@@ -59,6 +59,14 @@ impl TryFrom<u8> for TaskType {
     }
 }
 
+pub struct ControllerPlaneCfg<SC, SE, TC, TW> {
+    pub session: u64,
+    pub services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
+    pub authorization: Arc<dyn Authorization>,
+    pub handshake_builder: Arc<dyn HandshakeBuilder>,
+    pub random: Box<dyn RngCore>,
+}
+
 pub struct ControllerPlane<SC, SE, TC, TW> {
     tick_count: u64,
     neighbours: NeighboursManager,
@@ -81,30 +89,24 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
     /// # Returns
     ///
     /// A new ControllerPlane
-    pub fn new(
-        node_id: NodeId,
-        session: u64,
-        services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
-        authorization: Arc<dyn Authorization>,
-        handshake_builder: Arc<dyn HandshakeBuilder>,
-        random: Box<dyn RngCore>,
-    ) -> Self {
-        log::info!("Create ControllerPlane for node: {}, running session {}", node_id, session);
-        let service_ids = services.iter().filter(|s| s.discoverable()).map(|s| s.service_id()).collect();
+    pub fn new(node_id: NodeId, cfg: ControllerPlaneCfg<SC, SE, TC, TW>) -> Self {
+        log::info!("Create ControllerPlane for node: {}, running session {}", node_id, cfg.session);
+        let service_ids = cfg.services.iter().filter(|s| s.discoverable()).map(|s| s.service_id()).collect();
 
         Self {
             tick_count: 0,
-            neighbours: NeighboursManager::new(node_id, authorization, handshake_builder, random),
-            feature_ctx: FeatureContext { node_id, session },
-            features: FeatureManager::new(node_id, session, service_ids),
-            service_ctx: ServiceCtx { node_id, session },
-            services: ServiceManager::new(services),
+            neighbours: NeighboursManager::new(node_id, cfg.authorization, cfg.handshake_builder, cfg.random),
+            feature_ctx: FeatureContext { node_id, session: cfg.session },
+            features: FeatureManager::new(node_id, cfg.session, service_ids),
+            service_ctx: ServiceCtx { node_id, session: cfg.session },
+            services: ServiceManager::new(cfg.services),
             switcher: TaskSwitcher::new(3), //3 types: Neighbours, Feature, Service
             queue: VecDeque::new(),
         }
     }
 
     pub fn on_tick(&mut self, now_ms: u64) {
+        log::debug!("[ControllerPlane] on_tick: {}", now_ms);
         self.switcher.queue_flag_all();
         self.neighbours.on_tick(now_ms, self.tick_count);
         self.features.on_shared_input(&self.feature_ctx, now_ms, FeatureSharedInput::Tick(self.tick_count));
@@ -211,21 +213,26 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
     }
 
     fn pop_neighbours(&mut self, now_ms: u64) -> Option<Output<SE, TW>> {
-        let out = self.neighbours.pop_output(now_ms)?;
-        match out {
-            neighbours::Output::Control(remote, control) => Some(Output::Event(LogicEvent::NetNeighbour(remote, control))),
-            neighbours::Output::Event(event) => {
-                self.switcher.queue_flag_task(TaskType::Feature as usize);
-                self.features.on_shared_input(&self.feature_ctx, now_ms, FeatureSharedInput::Connection(event.clone()));
-                self.switcher.queue_flag_task(TaskType::Service as usize);
-                self.services.on_shared_input(&self.service_ctx, now_ms, ServiceSharedInput::Connection(event.clone()));
-                match event {
-                    ConnectionEvent::Connected(ctx, secure) => Some(Output::Event(LogicEvent::Pin(ctx.conn, ctx.node, ctx.remote, secure))),
-                    ConnectionEvent::Stats(_ctx, _stats) => None,
-                    ConnectionEvent::Disconnected(ctx) => Some(Output::Event(LogicEvent::UnPin(ctx.conn))),
+        loop {
+            let out = self.neighbours.pop_output(now_ms)?;
+            let out = match out {
+                neighbours::Output::Control(remote, control) => Some(Output::Event(LogicEvent::NetNeighbour(remote, control))),
+                neighbours::Output::Event(event) => {
+                    self.switcher.queue_flag_task(TaskType::Feature as usize);
+                    self.features.on_shared_input(&self.feature_ctx, now_ms, FeatureSharedInput::Connection(event.clone()));
+                    self.switcher.queue_flag_task(TaskType::Service as usize);
+                    self.services.on_shared_input(&self.service_ctx, now_ms, ServiceSharedInput::Connection(event.clone()));
+                    match event {
+                        ConnectionEvent::Connected(ctx, secure) => Some(Output::Event(LogicEvent::Pin(ctx.conn, ctx.node, ctx.remote, secure))),
+                        ConnectionEvent::Stats(_ctx, _stats) => None,
+                        ConnectionEvent::Disconnected(ctx) => Some(Output::Event(LogicEvent::UnPin(ctx.conn))),
+                    }
                 }
+                neighbours::Output::ShutdownResponse => Some(Output::ShutdownSuccess),
+            };
+            if out.is_some() {
+                return out;
             }
-            neighbours::Output::ShutdownResponse => Some(Output::ShutdownSuccess),
         }
     }
 

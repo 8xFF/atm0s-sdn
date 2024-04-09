@@ -11,18 +11,20 @@ use std::{collections::VecDeque, net::IpAddr};
 
 use atm0s_sdn_identity::{NodeAddr, NodeAddrBuilder, NodeId, Protocol};
 use atm0s_sdn_network::base::ServiceBuilder;
+use atm0s_sdn_network::controller_plane::ControllerPlaneCfg;
+use atm0s_sdn_network::data_plane::DataPlaneCfg;
 use atm0s_sdn_network::features::{FeaturesControl, FeaturesEvent};
 use atm0s_sdn_network::secure::{HandshakeBuilderXDA, StaticKeyAuthorization};
+use atm0s_sdn_network::worker::{SdnWorker, SdnWorkerCfg, SdnWorkerInput, SdnWorkerOutput};
 use atm0s_sdn_network::{
     base::{Buffer, BufferMut},
-    controller_plane::{self, ControllerPlane},
-    data_plane::{self, DataPlane},
-    ExtIn, ExtOut,
+    data_plane, ExtIn, ExtOut,
 };
 use atm0s_sdn_router::shadow::ShadowRouterHistory;
 use log::{LevelFilter, Metadata, Record};
 use parking_lot::Mutex;
 use rand::rngs::mock::StepRng;
+use sans_io_runtime::TaskSwitcher;
 
 static CONTEXT_LOGGER: ContextLogger = ContextLogger { node: Mutex::new(None) };
 
@@ -84,6 +86,7 @@ pub enum TestNodeOut<'a, SE> {
     Ext(ExtOut<SE>),
     Udp(Vec<SocketAddr>, Buffer<'a>),
     Tun(Buffer<'a>),
+    Continue,
 }
 
 pub fn build_addr(node_id: NodeId) -> NodeAddr {
@@ -101,10 +104,10 @@ struct SingleThreadDataWorkerHistory {
 
 impl ShadowRouterHistory for SingleThreadDataWorkerHistory {
     fn already_received_broadcast(&self, from: Option<NodeId>, service: u8, seq: u16) -> bool {
-        log::debug!("Check already_received_broadcast from {:?} service {} seq {}", from, service, seq);
         let mut map = self.map.lock();
         let mut queue = self.queue.lock();
         if map.contains_key(&(from, service, seq)) {
+            log::debug!("already_received_broadcast from {:?} service {} seq {}", from, service, seq);
             return true;
         }
         map.insert((from, service, seq), true);
@@ -120,19 +123,33 @@ impl ShadowRouterHistory for SingleThreadDataWorkerHistory {
 
 pub struct TestNode<SC, SE, TC, TW> {
     node_id: NodeId,
-    controller: ControllerPlane<SC, SE, TC, TW>,
-    worker: DataPlane<SC, SE, TC, TW>,
+    worker: SdnWorker<SC, SE, TC, TW>,
 }
 
 impl<SC, SE, TC, TW> TestNode<SC, SE, TC, TW> {
     pub fn new(node_id: NodeId, session: u64, services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>) -> Self {
         let _log = AutoContext::new(node_id);
-        let auth = Arc::new(StaticKeyAuthorization::new("demo-key"));
-        let handshake = Arc::new(HandshakeBuilderXDA);
-        let rd = Box::new(StepRng::new(1000, 5));
-        let controller = ControllerPlane::new(node_id, session, services.clone(), auth, handshake, rd);
-        let worker = DataPlane::new(0, node_id, services, Arc::new(SingleThreadDataWorkerHistory::default()));
-        Self { node_id, controller, worker }
+        let authorization: Arc<StaticKeyAuthorization> = Arc::new(StaticKeyAuthorization::new("demo-key"));
+        let handshake_builder = Arc::new(HandshakeBuilderXDA);
+        let random = Box::new(StepRng::new(1000, 5));
+        Self {
+            node_id,
+            worker: SdnWorker::new(SdnWorkerCfg {
+                node_id,
+                controller: Some(ControllerPlaneCfg {
+                    session,
+                    services: services.clone(),
+                    authorization,
+                    handshake_builder,
+                    random,
+                }),
+                data: DataPlaneCfg {
+                    worker_id: 0,
+                    services,
+                    history: Arc::new(SingleThreadDataWorkerHistory::default()),
+                },
+            }),
+        }
     }
 
     pub fn node_id(&self) -> NodeId {
@@ -143,81 +160,55 @@ impl<SC, SE, TC, TW> TestNode<SC, SE, TC, TW> {
         build_addr(self.node_id)
     }
 
-    pub fn tick(&mut self, now: u64) {
+    pub fn tick<'a>(&mut self, now: u64) -> Option<TestNodeOut<'a, SE>> {
         let _log = AutoContext::new(self.node_id);
-        self.controller.on_tick(now);
-        self.worker.on_tick(now);
+        let out = self.worker.on_tick(now)?;
+        Some(self.process_worker_output(now, out))
     }
 
     pub fn on_input<'a>(&mut self, now: u64, input: TestNodeIn<'a, SC>) -> Option<TestNodeOut<'a, SE>> {
         let _log = AutoContext::new(self.node_id);
         match input {
             TestNodeIn::Ext(ext_in) => {
-                self.controller.on_event(now, controller_plane::Input::Ext(ext_in));
-                let out = self.controller.pop_output(now)?;
-                self.process_controller_output(now, out)
+                let out = self.worker.on_event(now, SdnWorkerInput::Ext(ext_in))?;
+                Some(self.process_worker_output(now, out))
             }
             TestNodeIn::Udp(addr, buf) => {
-                let out = self.worker.on_event(now, data_plane::Input::Net(data_plane::NetInput::UdpPacket(addr, buf)))?;
-                self.process_worker_output(now, out)
+                let out = self.worker.on_event(now, SdnWorkerInput::Net(data_plane::NetInput::UdpPacket(addr, buf)))?;
+                Some(self.process_worker_output(now, out))
             }
             TestNodeIn::Tun(buf) => {
-                let out = self.worker.on_event(now, data_plane::Input::Net(data_plane::NetInput::TunPacket(buf)))?;
-                self.process_worker_output(now, out)
+                let out = self.worker.on_event(now, SdnWorkerInput::Net(data_plane::NetInput::TunPacket(buf)))?;
+                Some(self.process_worker_output(now, out))
             }
         }
     }
 
     pub fn pop_output<'a>(&mut self, now: u64) -> Option<TestNodeOut<'a, SE>> {
         let _log = AutoContext::new(self.node_id);
-        let mut keep_running = true;
-        while keep_running {
-            keep_running = false;
-
-            if let Some(output) = self.controller.pop_output(now) {
-                keep_running = true;
-                if let Some(out) = self.process_controller_output(now, output) {
-                    return Some(out);
-                }
-            }
-
-            if let Some(output) = self.worker.pop_output(now) {
-                keep_running = true;
-                if let Some(out) = self.process_worker_output(now, output) {
-                    return Some(out);
-                }
-            }
-        }
-        None
+        let output = self.worker.pop_output(now)?;
+        Some(self.process_worker_output(now, output))
     }
 
-    fn process_controller_output<'a>(&mut self, now: u64, output: controller_plane::Output<SE, TW>) -> Option<TestNodeOut<'a, SE>> {
+    fn process_worker_output<'a>(&mut self, now: u64, output: SdnWorkerOutput<'a, SC, SE, TC, TW>) -> TestNodeOut<'a, SE> {
         match output {
-            controller_plane::Output::Event(e) => {
-                let output = self.worker.on_event(now, data_plane::Input::Event(e))?;
-                self.process_worker_output(now, output)
+            SdnWorkerOutput::Ext(ext) => {
+                log::info!("Process output event");
+                TestNodeOut::Ext(ext)
             }
-            controller_plane::Output::Ext(out) => Some(TestNodeOut::Ext(out)),
-            controller_plane::Output::ShutdownSuccess => None,
-        }
-    }
-
-    fn process_worker_output<'a>(&mut self, now: u64, output: data_plane::Output<'a, SC, SE, TC>) -> Option<TestNodeOut<'a, SE>> {
-        match output {
-            data_plane::Output::Ext(out) => Some(TestNodeOut::Ext(out)),
-            data_plane::Output::Control(control) => {
-                self.controller.on_event(now, controller_plane::Input::Control(control));
-                let output = self.controller.pop_output(now)?;
-                self.process_controller_output(now, output)
+            SdnWorkerOutput::ExtWorker(_) => todo!(),
+            SdnWorkerOutput::Net(data_plane::NetOutput::UdpPacket(dest, data)) => TestNodeOut::Udp(vec![dest], data),
+            SdnWorkerOutput::Net(data_plane::NetOutput::UdpPackets(dests, data)) => TestNodeOut::Udp(dests, data),
+            SdnWorkerOutput::Net(data_plane::NetOutput::TunPacket(data)) => TestNodeOut::Tun(data),
+            SdnWorkerOutput::Bus(bus) => {
+                if let Some(out) = self.worker.on_event(now, SdnWorkerInput::Bus(bus)) {
+                    self.process_worker_output(now, out)
+                } else {
+                    TestNodeOut::Continue
+                }
             }
-            data_plane::Output::Net(out) => match out {
-                data_plane::NetOutput::UdpPacket(dest, buf) => Some(TestNodeOut::Udp(vec![dest], buf)),
-                data_plane::NetOutput::UdpPackets(dest, buf) => Some(TestNodeOut::Udp(dest, buf)),
-                data_plane::NetOutput::TunPacket(buf) => Some(TestNodeOut::Tun(buf)),
-            },
-            data_plane::Output::ShutdownResponse => None,
-            data_plane::Output::Continue => None,
-            data_plane::Output::Worker(_worker, _event) => panic!("should not happen"),
+            SdnWorkerOutput::ShutdownResponse => todo!(),
+            SdnWorkerOutput::Continue => TestNodeOut::Continue,
         }
     }
 }
@@ -236,6 +227,7 @@ pub struct NetworkSimulator<SC, SE, TC: Clone, TW: Clone> {
     output: VecDeque<(NodeId, ExtOut<SE>)>,
     nodes: Vec<TestNode<SC, SE, TC, TW>>,
     nodes_index: HashMap<NodeId, usize>,
+    switcher: TaskSwitcher,
 }
 
 impl<SC: Debug, SE, TC: Clone, TW: Clone> NetworkSimulator<SC, SE, TC, TW> {
@@ -246,6 +238,7 @@ impl<SC: Debug, SE, TC: Clone, TW: Clone> NetworkSimulator<SC, SE, TC, TW> {
             output: VecDeque::new(),
             nodes: Vec::new(),
             nodes_index: HashMap::new(),
+            switcher: TaskSwitcher::new(0),
         }
     }
 
@@ -268,78 +261,62 @@ impl<SC: Debug, SE, TC: Clone, TW: Clone> NetworkSimulator<SC, SE, TC, TW> {
         self.nodes_index.insert(node.node_id(), index);
         let addr = node.addr();
         self.nodes.push(node);
+        self.switcher.set_tasks(self.nodes.len());
         addr
     }
 
     pub fn process(&mut self, delta: u64) {
         self.clock_ms += delta;
         log::debug!("Tick {} ms", self.clock_ms);
-        for node in self.nodes.iter_mut() {
-            node.tick(self.clock_ms);
+        for i in 0..self.nodes.len() {
+            let node_id = self.nodes[i].node_id();
+            if let Some(out) = self.nodes[i].tick(self.clock_ms) {
+                self.process_out(self.clock_ms, node_id, out);
+            }
         }
-
-        self.pop_outputs();
 
         if !self.input.is_empty() {
             while let Some((node, input)) = self.input.pop_front() {
-                self.process_input(node, TestNodeIn::Ext(input));
-            }
-
-            self.pop_outputs();
-        }
-    }
-
-    fn process_input<'a>(&mut self, node: NodeId, input: TestNodeIn<'a, SC>) -> Option<()> {
-        let index = self.nodes_index.get(&node).expect("Node not found");
-        let output = self.nodes[*index].on_input(self.clock_ms, input)?;
-        match output {
-            TestNodeOut::Ext(out) => {
-                self.output.push_back((node, out));
-                Some(())
-            }
-            TestNodeOut::Udp(dests, data) => {
-                let source_addr = node_to_addr(node);
-                for dest in dests {
-                    let dest_node = addr_to_node(dest);
-                    self.process_input(dest_node, TestNodeIn::Udp(source_addr, data.clone_mut()));
-                }
-                Some(())
-            }
-            TestNodeOut::Tun(_) => todo!(),
-        }
-    }
-
-    fn pop_outputs(&mut self) {
-        let mut keep_running = true;
-        while keep_running {
-            keep_running = false;
-            for index in 0..self.nodes.len() {
-                let node = self.nodes[index].node_id();
-                if self.pop_output(node).is_some() {
-                    keep_running = true;
+                let node_index = *self.nodes_index.get(&node).expect("Node not found");
+                if let Some(out) = self.nodes[node_index].on_input(self.clock_ms, TestNodeIn::Ext(input)) {
+                    self.process_out(self.clock_ms, node, out);
                 }
             }
         }
+
+        self.switcher.queue_flag_all();
+        self.pop_outputs(self.clock_ms);
     }
 
-    fn pop_output<'a>(&mut self, node: NodeId) -> Option<()> {
-        let index = self.nodes_index.get(&node).expect("Node not found");
-        let output = self.nodes[*index].pop_output(self.clock_ms)?;
-        match output {
+    fn pop_outputs(&mut self, now: u64) {
+        while let Some(index) = self.switcher.queue_current() {
+            let node = self.nodes[index].node_id();
+            if let Some(out) = self.switcher.queue_process(self.nodes[index].pop_output(now)) {
+                self.process_out(now, node, out);
+            }
+        }
+    }
+
+    fn process_out(&mut self, now: u64, node: NodeId, out: TestNodeOut<SE>) {
+        let node_index = *self.nodes_index.get(&node).expect("Node not found");
+        self.switcher.queue_flag_task(node_index);
+        match out {
             TestNodeOut::Ext(out) => {
                 self.output.push_back((node, out));
-                Some(())
             }
             TestNodeOut::Udp(dests, data) => {
                 let source_addr = node_to_addr(node);
                 for dest in dests {
                     log::debug!("Send UDP packet from {} to {}, buf len {}", source_addr, dest, data.len());
                     let dest_node = addr_to_node(dest);
-                    self.process_input(dest_node, TestNodeIn::Udp(source_addr, data.clone_mut()));
+                    let dest_index = *self.nodes_index.get(&dest_node).expect("Node not found");
+                    if let Some(out) = self.nodes[dest_index].on_input(now, TestNodeIn::Udp(source_addr, data.clone_mut())) {
+                        self.process_out(now, dest_node, out);
+                    }
                 }
-                Some(())
             }
             TestNodeOut::Tun(_) => todo!(),
+            TestNodeOut::Continue => {}
         }
     }
 }

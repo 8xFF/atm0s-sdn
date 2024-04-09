@@ -14,6 +14,7 @@ pub mod data_plane;
 pub mod features;
 pub mod secure;
 pub mod services;
+pub mod worker;
 
 #[derive(Debug, Clone, convert_enum::From)]
 pub enum ExtIn<ServicesControl> {

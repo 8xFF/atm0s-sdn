@@ -79,6 +79,12 @@ enum QueueOutput<SC, SE, TC> {
     Net(NetOutput<'static>),
 }
 
+pub struct DataPlaneCfg<SC, SE, TC, TW> {
+    pub worker_id: u16,
+    pub services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
+    pub history: Arc<dyn ShadowRouterHistory>,
+}
+
 pub struct DataPlane<SC, SE, TC, TW> {
     tick_count: u64,
     worker_id: u16,
@@ -93,19 +99,19 @@ pub struct DataPlane<SC, SE, TC, TW> {
 }
 
 impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
-    pub fn new(worker_id: u16, node_id: NodeId, services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>, history: Arc<dyn ShadowRouterHistory>) -> Self {
+    pub fn new(node_id: NodeId, cfg: DataPlaneCfg<SC, SE, TC, TW>) -> Self {
         log::info!("Create DataPlane for node: {}", node_id);
 
         Self {
-            worker_id,
+            worker_id: cfg.worker_id,
             tick_count: 0,
             feature_ctx: FeatureWorkerContext {
                 node_id,
-                router: ShadowRouter::new(node_id, history),
+                router: ShadowRouter::new(node_id, cfg.history),
             },
             features: FeatureWorkerManager::new(),
             service_ctx: ServiceWorkerCtx { node_id },
-            services: ServiceWorkerManager::new(services),
+            services: ServiceWorkerManager::new(cfg.services),
             conns: HashMap::new(),
             conns_reverse: HashMap::new(),
             queue_output: VecDeque::new(),
@@ -118,6 +124,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
     }
 
     pub fn on_tick<'a>(&mut self, now_ms: u64) {
+        log::debug!("[DataPlane] on_tick: {}", now_ms);
         self.switcher.queue_flag_all();
         self.features.on_tick(&mut self.feature_ctx, now_ms, self.tick_count);
         self.services.on_tick(&mut self.service_ctx, now_ms, self.tick_count);
@@ -242,7 +249,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
         }
         let header = TransportMsgHeader::try_from(&buf as &[u8]).ok()?;
         let action = self.feature_ctx.router.derive_action(&header.route, header.from_node, Some(conn.node()));
-        log::debug!("[DataPlame] Incoming rule: {:?} from: {remote}, node {:?} => action {:?}", header.route, header.from_node, action);
+        log::debug!("[DataPlane] Incoming rule: {:?} from: {remote}, node {:?} => action {:?}", header.route, header.from_node, action);
         match action {
             RouteAction::Reject => None,
             RouteAction::Local => {
@@ -271,7 +278,11 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                         }
                     }
                 }
-                self.build_send_to_multi_from_mut(now_ms, remotes, buf).map(|e: NetOutput<'_>| e.into())
+                if remotes.is_empty() {
+                    self.pop_output(now_ms).map(|e| e.into())
+                } else {
+                    self.build_send_to_multi_from_mut(now_ms, remotes, buf).map(|e: NetOutput<'_>| e.into())
+                }
             }
         }
     }

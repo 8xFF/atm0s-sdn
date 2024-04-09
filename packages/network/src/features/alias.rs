@@ -94,7 +94,7 @@ impl AliasFeature {
                         slot.waiters.push(actor);
                     } else if let Some(slot) = self.hint_slots.get(&alias) {
                         if slot.ts + HINT_TIMEOUT_MS >= now_ms {
-                            log::debug!("[AliasFeature] Alias {alias} is very newly added to hint {} => reuse", slot.node);
+                            log::debug!("[AliasFeature] Alias {alias} is very newly added ({} vs now {}) to hint {} => reuse", slot.ts, now_ms, slot.node);
                             self.queue.push_back(FeatureOutput::Event(actor, Event::QueryResult(alias, Some(FoundLocation::CachedHint(slot.node)))));
                         } else {
                             log::debug!("[AliasFeature] Alias {alias} is not in query state but has hint {} => check hint", slot.node);
