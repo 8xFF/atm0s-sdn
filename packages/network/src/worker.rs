@@ -7,6 +7,7 @@ use crate::{
     ExtIn, ExtOut, LogicControl, LogicEvent, LogicEventDest,
 };
 
+#[derive(Debug, Clone)]
 pub enum SdnWorkerBusEvent<SC, SE, TC, TW> {
     Control(LogicControl<SC, SE, TC>),
     Workers(LogicEvent<SE, TW>),
@@ -21,6 +22,7 @@ pub enum SdnWorkerInput<'a, SC, SE, TC, TW> {
     ShutdownRequest,
 }
 
+#[derive(Debug)]
 pub enum SdnWorkerOutput<'a, SC, SE, TC, TW> {
     Ext(ExtOut<SE>),
     ExtWorker(ExtOut<SE>),
@@ -53,6 +55,17 @@ impl<SC, SE, TC, TW> SdnWorker<SC, SE, TC, TW> {
         }
     }
 
+    pub fn tasks(&self) -> usize {
+        let mut tasks = 0;
+        if self.controller.is_some() {
+            tasks += 1;
+        }
+        if !self.data_shutdown {
+            tasks += 1;
+        }
+        tasks
+    }
+
     pub fn on_tick<'a>(&mut self, now_ms: u64) -> Option<SdnWorkerOutput<'a, SC, SE, TC, TW>> {
         self.switcher.queue_flag_all();
         self.data.on_tick(now_ms);
@@ -69,7 +82,7 @@ impl<SC, SE, TC, TW> SdnWorker<SC, SE, TC, TW> {
     pub fn on_event<'a>(&mut self, now_ms: u64, input: SdnWorkerInput<'a, SC, SE, TC, TW>) -> Option<SdnWorkerOutput<'a, SC, SE, TC, TW>> {
         match input {
             SdnWorkerInput::Ext(ext) => {
-                let controller = self.controller.as_mut().expect("Should have controller");
+                let controller: &mut ControllerPlane<SC, SE, TC, TW> = self.controller.as_mut().expect("Should have controller");
                 controller.on_event(now_ms, controller_plane::Input::Ext(ext));
                 let out = controller.pop_output(now_ms)?;
                 Some(self.process_controller_out(now_ms, out))

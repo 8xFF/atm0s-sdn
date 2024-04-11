@@ -77,7 +77,7 @@ impl Drop for AutoContext {
 pub enum TestNodeIn<'a, SC> {
     Ext(ExtIn<SC>),
     Udp(SocketAddr, BufferMut<'a>),
-    #[allow(unused)]
+    #[cfg(feature = "vpn")]
     Tun(BufferMut<'a>),
 }
 
@@ -85,6 +85,7 @@ pub enum TestNodeIn<'a, SC> {
 pub enum TestNodeOut<'a, SE> {
     Ext(ExtOut<SE>),
     Udp(Vec<SocketAddr>, Buffer<'a>),
+    #[cfg(feature = "vpn")]
     Tun(Buffer<'a>),
     Continue,
 }
@@ -177,6 +178,7 @@ impl<SC, SE, TC, TW> TestNode<SC, SE, TC, TW> {
                 let out = self.worker.on_event(now, SdnWorkerInput::Net(data_plane::NetInput::UdpPacket(addr, buf)))?;
                 Some(self.process_worker_output(now, out))
             }
+            #[cfg(feature = "vpn")]
             TestNodeIn::Tun(buf) => {
                 let out = self.worker.on_event(now, SdnWorkerInput::Net(data_plane::NetInput::TunPacket(buf)))?;
                 Some(self.process_worker_output(now, out))
@@ -199,6 +201,7 @@ impl<SC, SE, TC, TW> TestNode<SC, SE, TC, TW> {
             SdnWorkerOutput::ExtWorker(_) => todo!(),
             SdnWorkerOutput::Net(data_plane::NetOutput::UdpPacket(dest, data)) => TestNodeOut::Udp(vec![dest], data),
             SdnWorkerOutput::Net(data_plane::NetOutput::UdpPackets(dests, data)) => TestNodeOut::Udp(dests, data),
+            #[cfg(feature = "vpn")]
             SdnWorkerOutput::Net(data_plane::NetOutput::TunPacket(data)) => TestNodeOut::Tun(data),
             SdnWorkerOutput::Bus(bus) => {
                 if let Some(out) = self.worker.on_event(now, SdnWorkerInput::Bus(bus)) {
@@ -315,6 +318,7 @@ impl<SC: Debug, SE, TC: Clone, TW: Clone> NetworkSimulator<SC, SE, TC, TW> {
                     }
                 }
             }
+            #[cfg(feature = "vpn")]
             TestNodeOut::Tun(_) => todo!(),
             TestNodeOut::Continue => {}
         }

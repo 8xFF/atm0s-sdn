@@ -166,6 +166,7 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for RouterSyncFeature
                 log::warn!("No handler for local message in {}", FEATURE_NAME);
                 None
             }
+            #[cfg(feature = "vpn")]
             FeatureWorkerInput::TunPkt(_buf) => {
                 log::warn!("No handler for tun packet in {}", FEATURE_NAME);
                 None

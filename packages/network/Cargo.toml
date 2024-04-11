@@ -32,6 +32,6 @@ env_logger = { workspace = true }
 atm0s-sdn-router = { path = "../core/router", version = "0.1.4" }
 
 [features]
-default = ["vpn", "fuzz"]
+default = ["fuzz"]
 vpn = []
 fuzz = []

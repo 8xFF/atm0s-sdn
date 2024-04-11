@@ -15,7 +15,10 @@ use atm0s_sdn_network::{
 use rand::{thread_rng, RngCore};
 use sans_io_runtime::backend::Backend;
 
-use crate::tasks::{ControllerCfg, DataWorkerHistory, SdnController, SdnExtIn, SdnInnerCfg, SdnOwner, SdnWorkerInner};
+use crate::{
+    history::DataWorkerHistory,
+    worker_inner::{ControllerCfg, SdnController, SdnExtIn, SdnInnerCfg, SdnOwner, SdnWorkerInner},
+};
 
 pub struct SdnBuilder<SC, SE, TC, TW> {
     auth: Option<Arc<dyn Authorization>>,

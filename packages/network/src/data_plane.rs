@@ -29,6 +29,7 @@ mod services;
 #[derive(Debug)]
 pub enum NetInput<'a> {
     UdpPacket(SocketAddr, BufferMut<'a>),
+    #[cfg(feature = "vpn")]
     TunPacket(BufferMut<'a>),
 }
 
@@ -51,6 +52,7 @@ pub enum Input<'a, SC, SE, TW> {
 pub enum NetOutput<'a> {
     UdpPacket(SocketAddr, Buffer<'a>),
     UdpPackets(Vec<SocketAddr>, Buffer<'a>),
+    #[cfg(feature = "vpn")]
     TunPacket(Buffer<'a>),
 }
 
@@ -164,6 +166,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                     self.incoming_route(now_ms, remote, buf)
                 }
             }
+            #[cfg(feature = "vpn")]
             Input::Net(NetInput::TunPacket(pkt)) => {
                 let out = self.features.on_input(&mut self.feature_ctx, Features::Vpn, now_ms, FeatureWorkerInput::TunPkt(pkt))?;
                 Some(self.convert_features(now_ms, Features::Vpn, out))
@@ -387,6 +390,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 }
             }
             FeatureWorkerOutput::RawBroadcast2(addrs, buf) => self.build_send_to_multi(now_ms, addrs, buf).map(|e| e.into()).unwrap_or(Output::Continue),
+            #[cfg(feature = "vpn")]
             FeatureWorkerOutput::TunPkt(pkt) => NetOutput::TunPacket(pkt).into(),
         }
     }

@@ -105,6 +105,7 @@ impl FeatureWorkerManager {
             FeatureWorkerInput::Network(_conn, _header, _buf) => {
                 panic!("should call above on_network_raw")
             }
+            #[cfg(feature = "vpn")]
             FeatureWorkerInput::TunPkt(pkt) => self.vpn.on_input(ctx, now_ms, FeatureWorkerInput::TunPkt(pkt)).map(|a| a.into2()),
             FeatureWorkerInput::Local(header, buf) => match feature {
                 Features::Neighbours => self.neighbours.on_input(ctx, now_ms, FeatureWorkerInput::Local(header, buf)).map(|a| a.into2()),
