@@ -8,7 +8,7 @@ use crate::base::{ConnectionEvent, Feature, FeatureContext, FeatureControlActor,
 use self::source_hint::SourceHintLogic;
 
 use super::{
-    msg::{ChannelId, RelayControl, RelayId, SourceHint},
+    msg::{ChannelId, Feedback, RelayControl, RelayId, SourceHint},
     ChannelControl, ChannelEvent, Control, Event, RelayWorkerControl, ToController, ToWorker,
 };
 
@@ -16,6 +16,7 @@ pub const RELAY_TIMEOUT: u64 = 10_000;
 pub const RELAY_STICKY_MS: u64 = 5 * 60 * 1000; //sticky route path in 5 minutes
 
 mod consumers;
+mod feedbacks;
 mod local_relay;
 mod remote_relay;
 mod source_hint;
@@ -28,11 +29,15 @@ use remote_relay::RemoteRelay;
 pub enum GenericRelayOutput {
     ToWorker(RelayWorkerControl),
     RouteChanged(FeatureControlActor),
+    Feedback(Vec<FeatureControlActor>, Feedback),
 }
 
 pub trait GenericRelay {
     fn on_tick(&mut self, now: u64);
+    fn on_pub_start(&mut self, actor: FeatureControlActor);
+    fn on_pub_stop(&mut self, actor: FeatureControlActor);
     fn on_local_sub(&mut self, now: u64, actor: FeatureControlActor);
+    fn on_local_feedback(&mut self, now: u64, actor: FeatureControlActor, feedback: Feedback);
     fn on_local_unsub(&mut self, now: u64, actor: FeatureControlActor);
     fn on_remote(&mut self, now: u64, remote: SocketAddr, control: RelayControl);
     fn conn_disconnected(&mut self, now: u64, remote: SocketAddr);
@@ -91,11 +96,22 @@ impl PubSubFeature {
                 }
             }
             ChannelControl::PubStart => {
+                let relay_id = RelayId(channel, ctx.node_id);
+                let relay = self.get_relay(ctx, relay_id, true).expect("Should create");
+                relay.on_pub_start(actor);
+                Self::pop_single_relay(relay_id, self.relays.get_mut(&relay_id).expect("Should have"), &mut self.queue);
+
                 let sh = self.get_source_hint(ctx.node_id, ctx.session, channel, true).expect("Should create");
                 sh.on_local(now, actor, source_hint::LocalCmd::Register);
                 self.pop_single_source_hint(ctx, now, channel);
             }
             ChannelControl::PubStop => {
+                let relay_id = RelayId(channel, ctx.node_id);
+                if let Some(relay) = self.relays.get_mut(&relay_id) {
+                    relay.on_pub_stop(actor);
+                    Self::pop_single_relay(relay_id, self.relays.get_mut(&relay_id).expect("Should have"), &mut self.queue);
+                }
+
                 if let Some(sh) = self.get_source_hint(ctx.node_id, ctx.session, channel, false) {
                     sh.on_local(now, actor, source_hint::LocalCmd::Unregister);
                     self.pop_single_source_hint(ctx, now, channel);
@@ -107,6 +123,17 @@ impl PubSubFeature {
                 log::debug!("[PubSubFeatureController] Sub for {:?} from {:?}", relay_id, actor);
                 relay.on_local_sub(now, actor);
                 Self::pop_single_relay(relay_id, self.relays.get_mut(&relay_id).expect("Should have"), &mut self.queue);
+            }
+            ChannelControl::FeedbackAuto(fb) => {
+                if let Some(sh) = self.get_source_hint(ctx.node_id, ctx.session, channel, false) {
+                    for source in sh.sources() {
+                        let relay_id = RelayId(channel, source);
+                        let relay = self.get_relay(ctx, relay_id, true).expect("Should create");
+                        log::debug!("[PubSubFeatureController] Feedback for {:?} from {:?}", relay_id, actor);
+                        relay.on_local_feedback(now, actor, fb);
+                        Self::pop_single_relay(relay_id, self.relays.get_mut(&relay_id).expect("Should have"), &mut self.queue);
+                    }
+                }
             }
             ChannelControl::UnsubSource(source) => {
                 let relay_id = RelayId(channel, source);
@@ -179,10 +206,16 @@ impl PubSubFeature {
 
     fn pop_single_relay(relay_id: RelayId, relay: &mut Box<dyn GenericRelay>, queue: &mut VecDeque<FeatureOutput<Event, ToWorker>>) {
         while let Some(control) = relay.pop_output() {
-            queue.push_back(match control {
-                GenericRelayOutput::ToWorker(control) => FeatureOutput::ToWorker(true, ToWorker::RelayControl(relay_id, control)),
-                GenericRelayOutput::RouteChanged(actor) => FeatureOutput::Event(actor, Event(relay_id.0, ChannelEvent::RouteChanged(relay_id.1))),
-            });
+            match control {
+                GenericRelayOutput::ToWorker(control) => queue.push_back(FeatureOutput::ToWorker(true, ToWorker::RelayControl(relay_id, control))),
+                GenericRelayOutput::RouteChanged(actor) => queue.push_back(FeatureOutput::Event(actor, Event(relay_id.0, ChannelEvent::RouteChanged(relay_id.1)))),
+                GenericRelayOutput::Feedback(actors, fb) => {
+                    log::debug!("[PubsubController] Feedback for {:?} {:?} to actors {:?}", relay_id, fb, actors);
+                    for actor in actors {
+                        queue.push_back(FeatureOutput::Event(actor, Event(relay_id.0, ChannelEvent::FeedbackData(fb.clone()))));
+                    }
+                }
+            };
         }
     }
 

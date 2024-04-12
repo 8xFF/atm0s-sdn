@@ -1,6 +1,6 @@
 use atm0s_sdn_network::{
     features::{
-        pubsub::{ChannelControl, ChannelEvent, ChannelId, Control, Event},
+        pubsub::{ChannelControl, ChannelEvent, ChannelId, Control, Event, Feedback},
         FeaturesControl, FeaturesEvent,
     },
     ExtIn, ExtOut,
@@ -37,7 +37,7 @@ fn feature_pubsub_manual_single_node() {
 }
 
 #[test]
-fn feature_pubsub_auto_single_nodo() {
+fn feature_pubsub_auto_single_node() {
     let node_id = 1;
     let mut sim = NetworkSimulator::<(), (), (), ()>::new(0);
     sim.add_node(TestNode::new(node_id, 1234, vec![]));
@@ -53,6 +53,12 @@ fn feature_pubsub_auto_single_nodo() {
     sim.control(node_id, control(Control(channel, ChannelControl::PubData(value.clone()))));
     sim.process(1);
     assert_eq!(sim.pop_res(), Some((node_id, event(Event(channel, ChannelEvent::SourceData(node_id, value.clone()))))));
+    assert_eq!(sim.pop_res(), None);
+
+    log::info!("Simulate feedback source now");
+    sim.control(node_id, control(Control(channel, ChannelControl::FeedbackAuto(Feedback::simple(0, 10, 1000, 2000)))));
+    sim.process(2000); //after that tick feedback will timeout
+    assert_eq!(sim.pop_res(), Some((node_id, event(Event(channel, ChannelEvent::FeedbackData(Feedback::simple(0, 10, 1000, 2000)))))));
     assert_eq!(sim.pop_res(), None);
 
     sim.control(node_id, control(Control(channel, ChannelControl::UnsubAuto)));
@@ -116,6 +122,12 @@ fn feature_pubsub_auto_two_nodes() {
     sim.control(node2, control(Control(channel, ChannelControl::PubData(value.clone()))));
     sim.process(1);
     assert_eq!(sim.pop_res(), Some((node1, event(Event(channel, ChannelEvent::SourceData(node2, value.clone()))))));
+    assert_eq!(sim.pop_res(), None);
+
+    log::info!("Simulate feedback source now");
+    sim.control(node1, control(Control(channel, ChannelControl::FeedbackAuto(Feedback::simple(0, 10, 1000, 2000)))));
+    sim.process(2000); //after that tick feedback will timeout
+    assert_eq!(sim.pop_res(), Some((node2, event(Event(channel, ChannelEvent::FeedbackData(Feedback::simple(0, 10, 1000, 2000)))))));
     assert_eq!(sim.pop_res(), None);
 
     sim.control(node1, control(Control(channel, ChannelControl::UnsubAuto)));
@@ -188,6 +200,12 @@ fn feature_pubsub_auto_three_nodes() {
     assert_eq!(sim.pop_res(), Some((node1, event(Event(channel, ChannelEvent::SourceData(node3, value.clone()))))));
     assert_eq!(sim.pop_res(), None);
 
+    log::info!("Simulate feedback source now");
+    sim.control(node1, control(Control(channel, ChannelControl::FeedbackAuto(Feedback::simple(0, 10, 1000, 2000)))));
+    sim.process(2000); //after that tick feedback will timeout
+    assert_eq!(sim.pop_res(), Some((node3, event(Event(channel, ChannelEvent::FeedbackData(Feedback::simple(0, 10, 1000, 2000)))))));
+    assert_eq!(sim.pop_res(), None);
+
     sim.control(node1, control(Control(channel, ChannelControl::UnsubAuto)));
     sim.process(1);
     sim.control(node3, control(Control(channel, ChannelControl::PubData(value))));
@@ -225,6 +243,12 @@ fn feature_pubsub_auto_three_nodes_sub_after_start() {
     sim.control(node3, control(Control(channel, ChannelControl::PubData(value.clone()))));
     sim.process(1);
     assert_eq!(sim.pop_res(), Some((node1, event(Event(channel, ChannelEvent::SourceData(node3, value.clone()))))));
+    assert_eq!(sim.pop_res(), None);
+
+    log::info!("Simulate feedback source now");
+    sim.control(node1, control(Control(channel, ChannelControl::FeedbackAuto(Feedback::simple(0, 10, 1000, 2000)))));
+    sim.process(2000); //after that tick feedback will timeout
+    assert_eq!(sim.pop_res(), Some((node3, event(Event(channel, ChannelEvent::FeedbackData(Feedback::simple(0, 10, 1000, 2000)))))));
     assert_eq!(sim.pop_res(), None);
 
     sim.control(node1, control(Control(channel, ChannelControl::UnsubAuto)));

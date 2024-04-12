@@ -11,7 +11,7 @@ mod msg;
 mod worker;
 
 pub use controller::PubSubFeature;
-pub use msg::ChannelId;
+pub use msg::{ChannelId, Feedback};
 pub use worker::PubSubFeatureWorker;
 
 pub const FEATURE_ID: u8 = 5;
@@ -20,6 +20,7 @@ pub const FEATURE_NAME: &str = "pubsub";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChannelControl {
     SubAuto,
+    FeedbackAuto(Feedback),
     UnsubAuto,
     SubSource(NodeId),
     UnsubSource(NodeId),
@@ -35,6 +36,7 @@ pub struct Control(pub ChannelId, pub ChannelControl);
 pub enum ChannelEvent {
     RouteChanged(NodeId),
     SourceData(NodeId, Vec<u8>),
+    FeedbackData(Feedback),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,6 +49,7 @@ pub enum RelayWorkerControl {
     SendSubOk(u64, SocketAddr),
     SendUnsubOk(u64, SocketAddr),
     SendRouteChanged,
+    SendFeedback(Feedback, SocketAddr),
     RouteSetSource(SocketAddr),
     RouteDelSource(SocketAddr),
     RouteSetLocal(FeatureControlActor),

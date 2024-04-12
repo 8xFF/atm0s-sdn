@@ -65,6 +65,15 @@ impl SourceHintLogic {
         }
     }
 
+    /// return sources as local and remote sources
+    pub fn sources(&self) -> Vec<NodeId> {
+        if self.local_sources.is_empty() {
+            self.remote_sources.keys().cloned().collect()
+        } else {
+            self.remote_sources.keys().chain(std::iter::once(&self.node_id)).cloned().collect()
+        }
+    }
+
     pub fn on_tick(&mut self, now_ms: u64) {
         let mut timeout_subscribes = vec![];
         for (remote, last_tick) in &self.remote_subscribers {

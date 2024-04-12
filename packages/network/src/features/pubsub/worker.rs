@@ -109,6 +109,13 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWork
                     //TODO avoid copy
                     Some(FeatureWorkerOutput::RawDirect2(dest, Buffer::from(self.buf[0..size].to_vec())))
                 }
+                RelayWorkerControl::SendFeedback(fb, remote) => {
+                    log::debug!("[PubsubWorker] SendFeedback for {:?} to {:?}", relay_id, remote);
+                    let control = PubsubMessage::Control(relay_id, RelayControl::Feedback(fb));
+                    let size: usize = control.write_to(&mut self.buf)?;
+                    //TODO avoid copy
+                    Some(FeatureWorkerOutput::RawDirect2(remote, Buffer::from(self.buf[0..size].to_vec())))
+                }
                 RelayWorkerControl::SendUnsub(uuid, remote) => {
                     log::debug!("[PubsubWorker] SendUnsub for {:?} to {:?}", relay_id, remote);
                     let control = PubsubMessage::Control(relay_id, RelayControl::Unsub(uuid));
