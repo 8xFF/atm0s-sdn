@@ -4,7 +4,7 @@ use atm0s_sdn_identity::NodeId;
 
 use crate::base::FeatureControlActor;
 
-use self::msg::{RelayControl, RelayId};
+use self::msg::{RelayControl, RelayId, SourceHint};
 
 mod controller;
 mod msg;
@@ -19,9 +19,13 @@ pub const FEATURE_NAME: &str = "pubsub";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChannelControl {
+    SubAuto,
+    UnsubAuto,
     SubSource(NodeId),
     UnsubSource(NodeId),
+    PubStart,
     PubData(Vec<u8>),
+    PubStop,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,11 +70,13 @@ impl RelayWorkerControl {
 
 #[derive(Debug, Clone)]
 pub enum ToWorker {
-    RelayWorkerControl(RelayId, RelayWorkerControl),
+    RelayControl(RelayId, RelayWorkerControl),
+    SourceHint(ChannelId, Option<SocketAddr>, SourceHint),
     RelayData(RelayId, Vec<u8>),
 }
 
 #[derive(Debug, Clone)]
 pub enum ToController {
-    RemoteControl(SocketAddr, RelayId, RelayControl),
+    RelayControl(SocketAddr, RelayId, RelayControl),
+    SourceHint(SocketAddr, ChannelId, SourceHint),
 }

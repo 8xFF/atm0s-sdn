@@ -48,6 +48,15 @@ impl NetOutgoingMeta {
         Self { source, ttl, meta, secure }
     }
 
+    pub fn secure() -> Self {
+        Self {
+            source: false,
+            ttl: Ttl::default(),
+            meta: 0,
+            secure: true,
+        }
+    }
+
     pub fn to_header(&self, feature: u8, rule: RouteRule, node_id: NodeId) -> TransportMsgHeader {
         TransportMsgHeader::build(feature, self.meta, rule)
             .set_ttl(*self.ttl)

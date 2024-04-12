@@ -30,6 +30,38 @@ impl RelayControl {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum SourceHint {
+    /// This is used to notify a source is new or still alive.
+    /// This message is send to next hop and relayed to all subscribers except sender.
+    Register {
+        source: NodeId,
+        to_root: bool,
+    },
+    /// This is used to notify a source is ended.
+    /// This message is send to next hop and relayed to all subscribers except sender.
+    Unregister {
+        source: NodeId,
+        to_root: bool,
+    },
+    Subscribe(u64),
+    SubscribeOk(u64),
+    Unsubscribe(u64),
+    UnsubscribeOk(u64),
+    /// This is used when a new subscriber is added, it is like a snapshot for faster initing state.
+    Sources(Vec<NodeId>),
+}
+
+impl SourceHint {
+    pub fn should_create(&self) -> bool {
+        match self {
+            SourceHint::Register { .. } => true,
+            SourceHint::Subscribe(_) => true,
+            _ => false,
+        }
+    }
+}
+
 pub enum PubsubMessageError {
     TransportError(TransportMsgHeaderError),
     DeserializeError,
@@ -38,6 +70,7 @@ pub enum PubsubMessageError {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum PubsubMessage {
     Control(RelayId, RelayControl),
+    SourceHint(ChannelId, SourceHint),
     Data(RelayId, Vec<u8>),
 }
 

@@ -4,7 +4,7 @@ use std::{
 };
 
 use atm0s_sdn_identity::ConnId;
-use atm0s_sdn_router::RouterTable;
+use atm0s_sdn_router::{RouteAction, RouterTable};
 
 use crate::base::{Buffer, FeatureControlActor, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, TransportMsgHeader};
 
@@ -56,8 +56,12 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWork
         let msg = PubsubMessage::try_from(&buf as &[u8]).ok()?;
         match msg {
             PubsubMessage::Control(relay_id, control) => {
-                log::debug!("[PubSubWorker] received PubsubMessage::Control({:?}, {:?})", relay_id, control);
-                Some(FeatureWorkerOutput::ToController(ToController::RemoteControl(remote, relay_id, control)))
+                log::debug!("[PubSubWorker] received PubsubMessage::RelayControl({:?}, {:?})", relay_id, control);
+                Some(FeatureWorkerOutput::ToController(ToController::RelayControl(remote, relay_id, control)))
+            }
+            PubsubMessage::SourceHint(channel, control) => {
+                log::debug!("[PubSubWorker] received PubsubMessage::SourceHint({:?}, {:?})", channel, control);
+                Some(FeatureWorkerOutput::ToController(ToController::SourceHint(remote, channel, control)))
             }
             PubsubMessage::Data(relay_id, data) => {
                 log::debug!("[PubSubWorker] received PubsubMessage::Data({:?}, size {})", relay_id, data.len());
@@ -88,7 +92,7 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWork
 
     fn on_input<'a>(&mut self, ctx: &mut FeatureWorkerContext, _now: u64, input: FeatureWorkerInput<'a, Control, ToWorker>) -> Option<FeatureWorkerOutput<'a, Control, Event, ToController>> {
         match input {
-            FeatureWorkerInput::FromController(_, ToWorker::RelayWorkerControl(relay_id, control)) => match control {
+            FeatureWorkerInput::FromController(_, ToWorker::RelayControl(relay_id, control)) => match control {
                 RelayWorkerControl::SendSub(uuid, remote) => {
                     let dest = if let Some(remote) = remote {
                         log::debug!("[PubsubWorker] SendSub for {:?} to {}", relay_id, remote);
@@ -216,6 +220,23 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWork
                     None
                 }
             },
+            FeatureWorkerInput::FromController(_, ToWorker::SourceHint(channel, remote, data)) => {
+                if let Some(remote) = remote {
+                    let control = PubsubMessage::SourceHint(channel, data);
+                    let size = control.write_to(&mut self.buf)?;
+                    Some(FeatureWorkerOutput::RawDirect2(remote, Buffer::from(self.buf[0..size].to_vec())))
+                } else {
+                    let next = ctx.router.path_to_key(*channel as u32);
+                    match next {
+                        RouteAction::Next(remote) => {
+                            let control = PubsubMessage::SourceHint(channel, data);
+                            let size = control.write_to(&mut self.buf)?;
+                            Some(FeatureWorkerOutput::RawDirect2(remote, Buffer::from(self.buf[0..size].to_vec())))
+                        }
+                        _ => None,
+                    }
+                }
+            }
             FeatureWorkerInput::FromController(_, ToWorker::RelayData(relay_id, data)) => {
                 let relay = self.relays.get(&relay_id)?;
                 if relay.remotes.is_empty() {
