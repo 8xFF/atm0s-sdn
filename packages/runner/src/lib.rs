@@ -1,12 +1,17 @@
 pub use atm0s_sdn_identity::{ConnDirection, ConnId, NodeAddr, NodeAddrBuilder, NodeId, NodeIdType, Protocol};
-pub use atm0s_sdn_network::base;
-use atm0s_sdn_network::base::ServiceId;
+pub use atm0s_sdn_network::controller_plane::ControllerPlaneCfg;
 pub use atm0s_sdn_network::convert_enum;
-pub use atm0s_sdn_network::features;
+pub use atm0s_sdn_network::data_plane::DataPlaneCfg;
 use atm0s_sdn_network::features::FeaturesControl;
-pub use atm0s_sdn_network::secure;
-pub use atm0s_sdn_network::services;
-pub use atm0s_sdn_router::ServiceBroadcastLevel;
+pub use atm0s_sdn_network::{
+    base, features, secure, services,
+    worker::{SdnWorker, SdnWorkerBusEvent, SdnWorkerCfg, SdnWorkerInput, SdnWorkerOutput},
+};
+pub use atm0s_sdn_network::{
+    base::ServiceId,
+    data_plane::{NetInput, NetOutput},
+};
+pub use atm0s_sdn_router::{shadow::ShadowRouterHistory, ServiceBroadcastLevel};
 pub use sans_io_runtime;
 
 mod builder;
@@ -16,7 +21,8 @@ mod worker_inner;
 
 pub use builder::SdnBuilder;
 pub use history::DataWorkerHistory;
-pub use worker_inner::{SdnChannel, SdnController, SdnExtIn, SdnExtOut, SdnOwner};
+pub use time::{TimePivot, TimeTicker};
+pub use worker_inner::{SdnChannel, SdnController, SdnEvent, SdnExtIn, SdnExtOut, SdnOwner};
 
 pub trait SdnControllerUtils<SC> {
     fn connect_to(&mut self, addr: NodeAddr);

@@ -64,10 +64,10 @@ impl PubSubFeature {
     fn get_relay(&mut self, ctx: &FeatureContext, relay_id: RelayId, auto_create: bool) -> Option<&mut Box<dyn GenericRelay>> {
         if !self.relays.contains_key(&relay_id) && auto_create {
             let relay: Box<dyn GenericRelay> = if ctx.node_id == relay_id.1 {
-                log::info!("[PubSubFeatureController] Creating new LocalRelay: {}", relay_id.0);
+                log::info!("[PubSubFeatureController] Creating new LocalRelay: {:?}", relay_id);
                 Box::new(LocalRelay::default())
             } else {
-                log::info!("[PubSubFeatureController] Creating new RemoteController: {:?}", relay_id);
+                log::info!("[PubSubFeatureController] Creating new RemoteRelay: {:?}", relay_id);
                 Box::new(RemoteRelay::new(ctx.session))
             };
             self.relays.insert(relay_id, relay);
@@ -77,6 +77,7 @@ impl PubSubFeature {
 
     fn get_source_hint(&mut self, node_id: NodeId, session: u64, channel: ChannelId, auto_create: bool) -> Option<&mut SourceHintLogic> {
         if !self.source_hints.contains_key(&channel) && auto_create {
+            log::info!("[PubSubFeatureController] Creating new SourceHintLogic: {}", channel);
             self.source_hints.insert(channel, SourceHintLogic::new(node_id, session));
         }
         self.source_hints.get_mut(&channel)
@@ -85,17 +86,20 @@ impl PubSubFeature {
     fn on_local(&mut self, ctx: &FeatureContext, now: u64, actor: FeatureControlActor, channel: ChannelId, control: ChannelControl) {
         match control {
             ChannelControl::SubAuto => {
+                log::info!("[PubSubFeatureController] SubAuto for {} from {:?}", channel, actor);
                 let sh = self.get_source_hint(ctx.node_id, ctx.session, channel, true).expect("Should create");
                 sh.on_local(now, actor, source_hint::LocalCmd::Subscribe);
                 self.pop_single_source_hint(ctx, now, channel);
             }
             ChannelControl::UnsubAuto => {
+                log::info!("[PubSubFeatureController] UnsubAuto for {} from {:?}", channel, actor);
                 if let Some(sh) = self.get_source_hint(ctx.node_id, ctx.session, channel, false) {
                     sh.on_local(now, actor, source_hint::LocalCmd::Unsubscribe);
                     self.pop_single_source_hint(ctx, now, channel);
                 }
             }
             ChannelControl::PubStart => {
+                log::info!("[PubSubFeatureController] PubStart for {} from {:?}", channel, actor);
                 let relay_id = RelayId(channel, ctx.node_id);
                 let relay = self.get_relay(ctx, relay_id, true).expect("Should create");
                 relay.on_pub_start(actor);
@@ -106,6 +110,7 @@ impl PubSubFeature {
                 self.pop_single_source_hint(ctx, now, channel);
             }
             ChannelControl::PubStop => {
+                log::info!("[PubSubFeatureController] PubStop for {} from {:?}", channel, actor);
                 let relay_id = RelayId(channel, ctx.node_id);
                 if let Some(relay) = self.relays.get_mut(&relay_id) {
                     relay.on_pub_stop(actor);
@@ -118,6 +123,7 @@ impl PubSubFeature {
                 }
             }
             ChannelControl::SubSource(source) => {
+                log::info!("[PubSubFeatureController] SubSource(source) for {} from {:?}", channel, actor);
                 let relay_id = RelayId(channel, source);
                 let relay = self.get_relay(ctx, relay_id, true).expect("Should create");
                 log::debug!("[PubSubFeatureController] Sub for {:?} from {:?}", relay_id, actor);
@@ -136,6 +142,7 @@ impl PubSubFeature {
                 }
             }
             ChannelControl::UnsubSource(source) => {
+                log::info!("[PubSubFeatureController] UnsubSource(source) for {} from {:?}", channel, actor);
                 let relay_id = RelayId(channel, source);
                 if let Some(relay) = self.relays.get_mut(&relay_id) {
                     log::debug!("[PubSubFeatureController] Unsub for {:?} from {:?}", relay_id, actor);

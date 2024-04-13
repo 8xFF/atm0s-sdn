@@ -15,3 +15,6 @@ env_logger = "0.11.3"
 log.workspace = true
 faster-stun = "1.0.2"
 clap.workspace = true
+serde = "1.0.197"
+bincode = "1.3.3"
+rand = "0.8.5"

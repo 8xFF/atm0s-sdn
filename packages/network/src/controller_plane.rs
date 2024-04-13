@@ -106,7 +106,7 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
     }
 
     pub fn on_tick(&mut self, now_ms: u64) {
-        log::debug!("[ControllerPlane] on_tick: {}", now_ms);
+        log::trace!("[ControllerPlane] on_tick: {}", now_ms);
         self.switcher.queue_flag_all();
         self.neighbours.on_tick(now_ms, self.tick_count);
         self.features.on_shared_input(&self.feature_ctx, now_ms, FeatureSharedInput::Tick(self.tick_count));

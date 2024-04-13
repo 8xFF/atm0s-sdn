@@ -76,6 +76,7 @@ impl Drop for AutoContext {
 #[derive(Debug)]
 pub enum TestNodeIn<'a, SC> {
     Ext(ExtIn<SC>),
+    ExtWorker(ExtIn<SC>),
     Udp(SocketAddr, BufferMut<'a>),
     #[cfg(feature = "vpn")]
     Tun(BufferMut<'a>),
@@ -84,6 +85,7 @@ pub enum TestNodeIn<'a, SC> {
 #[derive(Debug)]
 pub enum TestNodeOut<'a, SE> {
     Ext(ExtOut<SE>),
+    ExtWorker(ExtOut<SE>),
     Udp(Vec<SocketAddr>, Buffer<'a>),
     #[cfg(feature = "vpn")]
     Tun(Buffer<'a>),
@@ -127,7 +129,7 @@ pub struct TestNode<SC, SE, TC, TW> {
     worker: SdnWorker<SC, SE, TC, TW>,
 }
 
-impl<SC, SE, TC, TW> TestNode<SC, SE, TC, TW> {
+impl<SC: Debug, SE: Debug, TC: Debug, TW: Debug> TestNode<SC, SE, TC, TW> {
     pub fn new(node_id: NodeId, session: u64, services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>) -> Self {
         let _log = AutoContext::new(node_id);
         let authorization: Arc<StaticKeyAuthorization> = Arc::new(StaticKeyAuthorization::new("demo-key"));
@@ -137,6 +139,7 @@ impl<SC, SE, TC, TW> TestNode<SC, SE, TC, TW> {
             node_id,
             worker: SdnWorker::new(SdnWorkerCfg {
                 node_id,
+                tick_ms: 1,
                 controller: Some(ControllerPlaneCfg {
                     session,
                     services: services.clone(),
@@ -174,6 +177,10 @@ impl<SC, SE, TC, TW> TestNode<SC, SE, TC, TW> {
                 let out = self.worker.on_event(now, SdnWorkerInput::Ext(ext_in))?;
                 Some(self.process_worker_output(now, out))
             }
+            TestNodeIn::ExtWorker(ext_in) => {
+                let out = self.worker.on_event(now, SdnWorkerInput::ExtWorker(ext_in))?;
+                Some(self.process_worker_output(now, out))
+            }
             TestNodeIn::Udp(addr, buf) => {
                 let out = self.worker.on_event(now, SdnWorkerInput::Net(data_plane::NetInput::UdpPacket(addr, buf)))?;
                 Some(self.process_worker_output(now, out))
@@ -194,11 +201,8 @@ impl<SC, SE, TC, TW> TestNode<SC, SE, TC, TW> {
 
     fn process_worker_output<'a>(&mut self, now: u64, output: SdnWorkerOutput<'a, SC, SE, TC, TW>) -> TestNodeOut<'a, SE> {
         match output {
-            SdnWorkerOutput::Ext(ext) => {
-                log::info!("Process output event");
-                TestNodeOut::Ext(ext)
-            }
-            SdnWorkerOutput::ExtWorker(_) => todo!(),
+            SdnWorkerOutput::Ext(ext) => TestNodeOut::Ext(ext),
+            SdnWorkerOutput::ExtWorker(ext) => TestNodeOut::ExtWorker(ext),
             SdnWorkerOutput::Net(data_plane::NetOutput::UdpPacket(dest, data)) => TestNodeOut::Udp(vec![dest], data),
             SdnWorkerOutput::Net(data_plane::NetOutput::UdpPackets(dests, data)) => TestNodeOut::Udp(dests, data),
             #[cfg(feature = "vpn")]
@@ -227,18 +231,22 @@ pub fn node_to_addr(node: NodeId) -> SocketAddr {
 pub struct NetworkSimulator<SC, SE, TC: Clone, TW: Clone> {
     clock_ms: u64,
     input: VecDeque<(NodeId, ExtIn<SC>)>,
+    input_worker: VecDeque<(NodeId, ExtIn<SC>)>,
     output: VecDeque<(NodeId, ExtOut<SE>)>,
+    output_worker: VecDeque<(NodeId, ExtOut<SE>)>,
     nodes: Vec<TestNode<SC, SE, TC, TW>>,
     nodes_index: HashMap<NodeId, usize>,
     switcher: TaskSwitcher,
 }
 
-impl<SC: Debug, SE, TC: Clone, TW: Clone> NetworkSimulator<SC, SE, TC, TW> {
+impl<SC: Debug, SE: Debug, TC: Debug + Clone, TW: Debug + Clone> NetworkSimulator<SC, SE, TC, TW> {
     pub fn new(started_ms: u64) -> Self {
         Self {
             clock_ms: started_ms,
             input: VecDeque::new(),
             output: VecDeque::new(),
+            input_worker: VecDeque::new(),
+            output_worker: VecDeque::new(),
             nodes: Vec::new(),
             nodes_index: HashMap::new(),
             switcher: TaskSwitcher::new(0),
@@ -257,6 +265,14 @@ impl<SC: Debug, SE, TC: Clone, TW: Clone> NetworkSimulator<SC, SE, TC, TW> {
 
     pub fn pop_res(&mut self) -> Option<(NodeId, ExtOut<SE>)> {
         self.output.pop_front()
+    }
+
+    pub fn control_worker(&mut self, node: NodeId, control: ExtIn<SC>) {
+        self.input_worker.push_back((node, control));
+    }
+
+    pub fn pop_res_worker(&mut self) -> Option<(NodeId, ExtOut<SE>)> {
+        self.output_worker.pop_front()
     }
 
     pub fn add_node(&mut self, node: TestNode<SC, SE, TC, TW>) -> NodeAddr {
@@ -278,12 +294,17 @@ impl<SC: Debug, SE, TC: Clone, TW: Clone> NetworkSimulator<SC, SE, TC, TW> {
             }
         }
 
-        if !self.input.is_empty() {
-            while let Some((node, input)) = self.input.pop_front() {
-                let node_index = *self.nodes_index.get(&node).expect("Node not found");
-                if let Some(out) = self.nodes[node_index].on_input(self.clock_ms, TestNodeIn::Ext(input)) {
-                    self.process_out(self.clock_ms, node, out);
-                }
+        while let Some((node, input)) = self.input.pop_front() {
+            let node_index = *self.nodes_index.get(&node).expect("Node not found");
+            if let Some(out) = self.nodes[node_index].on_input(self.clock_ms, TestNodeIn::Ext(input)) {
+                self.process_out(self.clock_ms, node, out);
+            }
+        }
+
+        while let Some((node, input)) = self.input_worker.pop_front() {
+            let node_index = *self.nodes_index.get(&node).expect("Node not found");
+            if let Some(out) = self.nodes[node_index].on_input(self.clock_ms, TestNodeIn::ExtWorker(input)) {
+                self.process_out(self.clock_ms, node, out);
             }
         }
 
@@ -306,6 +327,9 @@ impl<SC: Debug, SE, TC: Clone, TW: Clone> NetworkSimulator<SC, SE, TC, TW> {
         match out {
             TestNodeOut::Ext(out) => {
                 self.output.push_back((node, out));
+            }
+            TestNodeOut::ExtWorker(out) => {
+                self.output_worker.push_back((node, out));
             }
             TestNodeOut::Udp(dests, data) => {
                 let source_addr = node_to_addr(node);

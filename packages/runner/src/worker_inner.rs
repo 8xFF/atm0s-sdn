@@ -38,7 +38,7 @@ pub enum SdnChannel {
     Worker(u16),
 }
 
-type SdnEvent<SC, SE, TC, TW> = SdnWorkerBusEvent<SC, SE, TC, TW>;
+pub type SdnEvent<SC, SE, TC, TW> = SdnWorkerBusEvent<SC, SE, TC, TW>;
 
 pub struct ControllerCfg {
     pub session: u64,
@@ -51,6 +51,7 @@ pub struct ControllerCfg {
 
 pub struct SdnInnerCfg<SC, SE, TC, TW> {
     pub node_id: NodeId,
+    pub tick_ms: u64,
     pub udp_port: u16,
     pub controller: Option<ControllerCfg>,
     pub services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
@@ -80,7 +81,7 @@ pub struct SdnWorkerInner<SC, SE, TC, TW> {
     queue: VecDeque<WorkerInnerOutput<'static, SdnOwner, SdnExtOut<SE>, SdnChannel, SdnEvent<SC, SE, TC, TW>, SdnSpawnCfg>>,
 }
 
-impl<SC, SE, TC: Debug, TW: Debug> SdnWorkerInner<SC, SE, TC, TW> {
+impl<SC: Debug, SE: Debug, TC: Debug, TW: Debug> SdnWorkerInner<SC, SE, TC, TW> {
     fn convert_output<'a>(
         &mut self,
         now_ms: u64,
@@ -132,13 +133,12 @@ impl<SC, SE, TC: Debug, TW: Debug> SdnWorkerInner<SC, SE, TC, TW> {
     }
 }
 
-impl<SC, SE, TC: Debug, TW: Debug> WorkerInner<SdnOwner, SdnExtIn<SC>, SdnExtOut<SE>, SdnChannel, SdnEvent<SC, SE, TC, TW>, SdnInnerCfg<SC, SE, TC, TW>, SdnSpawnCfg>
+impl<SC: Debug, SE: Debug, TC: Debug, TW: Debug> WorkerInner<SdnOwner, SdnExtIn<SC>, SdnExtOut<SE>, SdnChannel, SdnEvent<SC, SE, TC, TW>, SdnInnerCfg<SC, SE, TC, TW>, SdnSpawnCfg>
     for SdnWorkerInner<SC, SE, TC, TW>
 {
     fn build(worker: u16, cfg: SdnInnerCfg<SC, SE, TC, TW>) -> Self {
         let addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), cfg.udp_port));
         let mut queue = VecDeque::from([
-            WorkerInnerOutput::Bus(BusControl::Channel(SdnOwner, BusChannelControl::Subscribe(SdnChannel::Controller))),
             WorkerInnerOutput::Bus(BusControl::Channel(SdnOwner, BusChannelControl::Subscribe(SdnChannel::Worker(worker)))),
             WorkerInnerOutput::Net(SdnOwner, BackendOutgoing::UdpListen { addr, reuse: true }),
         ]);
@@ -147,11 +147,13 @@ impl<SC, SE, TC: Debug, TW: Debug> WorkerInner<SdnOwner, SdnExtIn<SC>, SdnExtOut
             queue.push_back(WorkerInnerOutput::Net(SdnOwner, BackendOutgoing::TunBind { fd }));
         }
         if let Some(controller) = cfg.controller {
+            queue.push_back(WorkerInnerOutput::Bus(BusControl::Channel(SdnOwner, BusChannelControl::Subscribe(SdnChannel::Controller))));
             log::info!("Create controller worker");
             Self {
                 worker,
                 worker_inner: SdnWorker::new(SdnWorkerCfg {
                     node_id: cfg.node_id,
+                    tick_ms: cfg.tick_ms,
                     controller: Some(ControllerPlaneCfg {
                         authorization: controller.auth,
                         handshake_builder: controller.handshake,
@@ -180,6 +182,7 @@ impl<SC, SE, TC: Debug, TW: Debug> WorkerInner<SdnOwner, SdnExtIn<SC>, SdnExtOut
                 worker,
                 worker_inner: SdnWorker::new(SdnWorkerCfg {
                     node_id: cfg.node_id,
+                    tick_ms: cfg.tick_ms,
                     controller: None,
                     data: DataPlaneCfg {
                         worker_id: worker,

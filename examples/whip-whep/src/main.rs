@@ -1,4 +1,5 @@
 use std::{
+    net::SocketAddr,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -12,15 +13,14 @@ use atm0s_sdn::{
     features::{FeaturesControl, FeaturesEvent},
     secure::{HandshakeBuilderXDA, StaticKeyAuthorization},
     services::visualization,
-    tasks::{ControllerCfg, DataWorkerHistory, SdnExtIn},
-    NodeAddr, NodeId,
+    ControllerPlaneCfg, DataPlaneCfg, DataWorkerHistory, NodeAddr, NodeAddrBuilder, NodeId, Protocol, SdnExtIn, SdnWorkerCfg,
 };
 use clap::Parser;
 use sans_io_runtime::{backend::PollingBackend, Controller};
 
 use worker::{ChannelId, Event, ExtIn, ExtOut, ICfg, SCfg, SC, SE, TC, TW};
 
-use crate::worker::{RunnerOwner, RunnerWorker};
+use crate::worker::{ControllerCfg, RunnerOwner, RunnerWorker, SdnInnerCfg};
 
 mod http;
 mod sfu;
@@ -31,11 +31,11 @@ mod worker;
 #[command(version, about, long_about = None)]
 struct Args {
     /// Node Id
-    #[arg(env, short, long, default_value_t = 0)]
+    #[arg(env, short, long, default_value_t = 1)]
     node_id: NodeId,
 
     /// Listen address
-    #[arg(env, short, long, default_value_t = 0)]
+    #[arg(env, short, long, default_value_t = 10000)]
     udp_port: u16,
 
     /// Address of node we should connect to
@@ -47,7 +47,7 @@ struct Args {
     password: String,
 
     /// Workers
-    #[arg(env, long, default_value_t = 2)]
+    #[arg(env, long, default_value_t = 1)]
     workers: usize,
 
     /// Http listen port
@@ -62,49 +62,58 @@ fn main() {
     let args = Args::parse();
     env_logger::builder().format_timestamp_millis().init();
 
-    let handshake = StaticKeyAuthorization::new(&args.password);
+    let auth = Arc::new(StaticKeyAuthorization::new(&args.password));
     let history = Arc::new(DataWorkerHistory::default());
 
     let mut server = http::SimpleHttpServer::new(args.http_port);
     let mut controller = Controller::<ExtIn, ExtOut, SCfg, ChannelId, Event, 128>::default();
     let services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>> = vec![Arc::new(visualization::VisualizationServiceBuilder::<SC, SE, TC, TW>::new(false))];
 
+    let mut addr_builder = NodeAddrBuilder::new(args.node_id);
+    addr_builder.add_protocol(Protocol::Ip4("192.168.1.27".parse().unwrap()));
+    addr_builder.add_protocol(Protocol::Udp(args.udp_port));
+    let addr = addr_builder.addr();
+    log::info!("Node address: {}", addr);
+
     controller.add_worker::<RunnerOwner, _, RunnerWorker, PollingBackend<_, 128, 512>>(
-        Duration::from_millis(1),
+        Duration::from_millis(10),
         ICfg {
-            sfu: sfu::ICfg {
-                udp_addr: "192.168.1.39:0".parse().unwrap(),
-            },
-            sdn: atm0s_sdn::tasks::SdnInnerCfg {
+            sfu: "192.168.1.27:0".parse().unwrap(),
+            sdn: SdnInnerCfg {
                 node_id: args.node_id,
+                tick_ms: 1000,
                 udp_port: args.udp_port,
                 controller: Some(ControllerCfg {
                     session: 0,
-                    auth: Arc::new(handshake),
+                    auth,
                     handshake: Arc::new(HandshakeBuilderXDA),
-                    tick_ms: 1000,
                 }),
                 services: services.clone(),
                 history: history.clone(),
+                #[cfg(feature = "vpn")]
+                vpn_tun_fd: None,
             },
+            sdn_listen: SocketAddr::from(([0, 0, 0, 0], args.udp_port)),
         },
         None,
     );
 
     for _ in 1..args.workers {
         controller.add_worker::<RunnerOwner, _, RunnerWorker, PollingBackend<_, 128, 512>>(
-            Duration::from_millis(1),
+            Duration::from_millis(10),
             ICfg {
-                sfu: sfu::ICfg {
-                    udp_addr: "192.168.1.39:0".parse().unwrap(),
-                },
-                sdn: atm0s_sdn::tasks::SdnInnerCfg {
+                sfu: "192.168.1.27:0".parse().unwrap(),
+                sdn: SdnInnerCfg {
                     node_id: args.node_id,
+                    tick_ms: 1000,
                     udp_port: args.udp_port,
                     controller: None,
                     services: services.clone(),
                     history: history.clone(),
+                    #[cfg(feature = "vpn")]
+                    vpn_tun_fd: None,
                 },
+                sdn_listen: SocketAddr::from(([0, 0, 0, 0], args.udp_port)),
             },
             None,
         );
@@ -126,16 +135,14 @@ fn main() {
         }
         while let Some(ext) = controller.pop_event() {
             match ext {
-                ExtOut::Sfu(sfu::ExtOut::HttpResponse(resp)) => {
+                ExtOut::HttpResponse(resp) => {
                     server.send_response(resp);
                 }
-                ExtOut::Sdn(event) => {
-                    log::info!("SDN event: {:?}", event);
-                }
+                ExtOut::Sdn(event) => {}
             }
         }
         if let Some(req) = req {
-            controller.spawn(SCfg::Sfu(sfu::SCfg::HttpRequest(req)));
+            controller.send_to_best(ExtIn::HttpRequest(req));
         }
     }
 

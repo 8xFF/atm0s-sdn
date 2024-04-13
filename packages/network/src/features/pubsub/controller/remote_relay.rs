@@ -243,10 +243,10 @@ impl GenericRelay for RemoteRelay {
                         next, sticky_session_at, consumers, ..
                     } => {
                         if *next == remote {
-                            log::info!("[Relay] SubOK for bound relay {} from same remote {remote} => renew sticky session", self.uuid);
+                            log::debug!("[Relay] SubOK for bound relay {} from same remote {remote} => renew sticky session", self.uuid);
                             *sticky_session_at = now;
                         } else {
-                            log::info!("[Relay] SubOK for bound relay {} from other remote {remote} => renew stick session and Unsub older", self.uuid);
+                            log::warn!("[Relay] SubOK for bound relay {} from other remote {remote} => renew stick session and Unsub older", self.uuid);
                             let (locals, has_remote) = consumers.relay_dests();
                             self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendUnsub(self.uuid, *next)));
                             if has_remote {

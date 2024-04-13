@@ -126,7 +126,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
     }
 
     pub fn on_tick<'a>(&mut self, now_ms: u64) {
-        log::debug!("[DataPlane] on_tick: {}", now_ms);
+        log::trace!("[DataPlane] on_tick: {}", now_ms);
         self.switcher.queue_flag_all();
         self.features.on_tick(&mut self.feature_ctx, now_ms, self.tick_count);
         self.services.on_tick(&mut self.service_ctx, now_ms, self.tick_count);

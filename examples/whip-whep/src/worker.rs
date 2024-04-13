@@ -1,13 +1,23 @@
-use std::time::Instant;
+use std::{collections::VecDeque, net::SocketAddr, sync::Arc, time::Instant};
 
 use atm0s_sdn::{
+    base::{Authorization, HandshakeBuilder, ServiceBuilder},
     convert_enum,
+    features::{FeaturesControl, FeaturesEvent},
     services::visualization,
-    tasks::{SdnChannel, SdnEvent, SdnExtIn, SdnExtOut, SdnOwner, SdnSpawnCfg, SdnWorkerInner},
+    ControllerPlaneCfg, DataPlaneCfg, NetInput, NetOutput, NodeId, SdnChannel, SdnEvent, SdnExtIn, SdnExtOut, SdnOwner, SdnWorker, SdnWorkerBusEvent, SdnWorkerCfg, SdnWorkerInput, SdnWorkerOutput,
+    ShadowRouterHistory, TimePivot,
 };
-use sans_io_runtime::{TaskSwitcher, WorkerInner, WorkerInnerInput, WorkerInnerOutput};
+use rand::rngs::ThreadRng;
+use sans_io_runtime::{
+    backend::{BackendIncoming, BackendOutgoing},
+    BusChannelControl, BusControl, BusEvent, TaskSwitcher, WorkerInner, WorkerInnerInput, WorkerInnerOutput,
+};
 
-use crate::sfu::{self, SfuOwner, SfuWorker};
+use crate::{
+    http::{HttpRequest, HttpResponse},
+    sfu::{self, SfuChannel, SfuOwner, SfuWorker},
+};
 
 #[repr(usize)]
 enum TaskType {
@@ -26,40 +36,56 @@ impl TryFrom<usize> for TaskType {
     }
 }
 
-#[derive(convert_enum::From, convert_enum::TryInto, Clone)]
+#[derive(convert_enum::From, convert_enum::TryInto, Clone, Debug)]
 pub enum ExtIn {
-    Sfu(sfu::ExtIn),
     Sdn(SdnExtIn<SC>),
+    HttpRequest(HttpRequest),
 }
 
 #[derive(convert_enum::From, convert_enum::TryInto, Clone)]
 pub enum ExtOut {
-    Sfu(sfu::ExtOut),
     Sdn(SdnExtOut<SE>),
+    HttpResponse(HttpResponse),
 }
 
 #[derive(convert_enum::From, convert_enum::TryInto, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ChannelId {
-    Sfu(sfu::ChannelId),
+    Sfu(SfuChannel),
     Sdn(SdnChannel),
 }
 
-#[derive(convert_enum::From, convert_enum::TryInto, Clone)]
+#[derive(convert_enum::From, convert_enum::TryInto, Clone, Debug)]
 pub enum Event {
-    Sfu(sfu::SfuEvent),
     Sdn(SdnEvent<SC, SE, TC, TW>),
 }
 
+pub struct ControllerCfg {
+    pub session: u64,
+    pub auth: Arc<dyn Authorization>,
+    pub handshake: Arc<dyn HandshakeBuilder>,
+    #[cfg(feature = "vpn")]
+    pub vpn_tun_device: Option<sans_io_runtime::backend::tun::TunDevice>,
+}
+
+pub struct SdnInnerCfg<SC, SE, TC, TW> {
+    pub node_id: NodeId,
+    pub tick_ms: u64,
+    pub udp_port: u16,
+    pub controller: Option<ControllerCfg>,
+    pub services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
+    pub history: Arc<dyn ShadowRouterHistory>,
+    #[cfg(feature = "vpn")]
+    pub vpn_tun_fd: Option<sans_io_runtime::backend::tun::TunFd>,
+}
+
 pub struct ICfg {
-    pub sfu: sfu::ICfg,
-    pub sdn: atm0s_sdn::tasks::SdnInnerCfg<SC, SE, TC, TW>,
+    pub sdn: SdnInnerCfg<SC, SE, TC, TW>,
+    pub sdn_listen: SocketAddr,
+    pub sfu: SocketAddr,
 }
 
 #[derive(convert_enum::From, convert_enum::TryInto)]
-pub enum SCfg {
-    Sfu(sfu::SCfg),
-    Sdn(SdnSpawnCfg),
-}
+pub enum SCfg {}
 
 pub type SC = visualization::Control;
 pub type SE = visualization::Event;
@@ -74,18 +100,57 @@ pub enum RunnerOwner {
 
 pub struct RunnerWorker {
     worker: u16,
-    sdn: SdnWorkerInner<SC, SE, TC, TW>,
+    sdn: SdnWorker<SC, SE, TC, TW>,
     sfu: SfuWorker,
+    sdn_backend_slot: usize,
+    sfu_backend_slot: usize,
     switcher: TaskSwitcher,
+    time: TimePivot,
+    queue: VecDeque<WorkerInnerOutput<'static, RunnerOwner, ExtOut, ChannelId, Event, SCfg>>,
 }
 
 impl WorkerInner<RunnerOwner, ExtIn, ExtOut, ChannelId, Event, ICfg, SCfg> for RunnerWorker {
     fn build(worker: u16, cfg: ICfg) -> Self {
+        let mut queue = VecDeque::from([
+            WorkerInnerOutput::Net(RunnerOwner::Sdn(SdnOwner), BackendOutgoing::UdpListen { addr: cfg.sdn_listen, reuse: true }),
+            WorkerInnerOutput::Net(RunnerOwner::Sfu(SfuOwner), BackendOutgoing::UdpListen { addr: cfg.sfu, reuse: false }),
+            WorkerInnerOutput::Bus(BusControl::Channel(
+                RunnerOwner::Sdn(SdnOwner),
+                BusChannelControl::Subscribe(ChannelId::Sdn(SdnChannel::Worker(worker))),
+            )),
+        ]);
+
+        if cfg.sdn.controller.is_some() {
+            queue.push_back(WorkerInnerOutput::Bus(BusControl::Channel(
+                RunnerOwner::Sdn(SdnOwner),
+                BusChannelControl::Subscribe(ChannelId::Sdn(SdnChannel::Controller)),
+            )));
+        }
+
         Self {
             worker,
-            sdn: SdnWorkerInner::build(worker, cfg.sdn),
-            sfu: SfuWorker::build(worker, cfg.sfu),
+            sdn: SdnWorker::new(SdnWorkerCfg {
+                node_id: cfg.sdn.node_id,
+                tick_ms: cfg.sdn.tick_ms,
+                controller: cfg.sdn.controller.map(|c| ControllerPlaneCfg {
+                    session: c.session,
+                    services: cfg.sdn.services.clone(),
+                    authorization: c.auth,
+                    handshake_builder: c.handshake,
+                    random: Box::new(ThreadRng::default()),
+                }),
+                data: DataPlaneCfg {
+                    worker_id: 0,
+                    services: cfg.sdn.services.clone(),
+                    history: cfg.sdn.history.clone(),
+                },
+            }),
+            sfu: SfuWorker::build(worker),
+            sfu_backend_slot: 0,
+            sdn_backend_slot: 0,
             switcher: TaskSwitcher::new(2),
+            time: TimePivot::build(),
+            queue,
         }
     }
 
@@ -97,15 +162,8 @@ impl WorkerInner<RunnerOwner, ExtIn, ExtOut, ChannelId, Event, ICfg, SCfg> for R
         self.sdn.tasks() + self.sfu.tasks()
     }
 
-    fn spawn(&mut self, now: Instant, cfg: SCfg) {
-        match cfg {
-            SCfg::Sdn(cfg) => {
-                self.sdn.spawn(now, cfg);
-            }
-            SCfg::Sfu(cfg) => {
-                self.sfu.spawn(now, cfg);
-            }
-        }
+    fn spawn(&mut self, now: Instant, _cfg: SCfg) {
+        unimplemented!()
     }
 
     fn on_tick<'a>(&mut self, now: Instant) -> Option<WorkerInnerOutput<'a, RunnerOwner, ExtOut, ChannelId, Event, SCfg>> {
@@ -113,45 +171,79 @@ impl WorkerInner<RunnerOwner, ExtIn, ExtOut, ChannelId, Event, ICfg, SCfg> for R
         while let Some(current) = s.looper_current(now) {
             match current.try_into().ok()? {
                 TaskType::Sdn => {
-                    if let Some(out) = s.looper_process(self.sdn.on_tick(now)) {
-                        return Some(self.process_sdn(out));
+                    let now_ms = self.time.timestamp_ms(now);
+                    if let Some(out) = s.looper_process(self.sdn.on_tick(now_ms)) {
+                        return self.process_sdn(now, out);
                     }
                 }
                 TaskType::Sfu => {
                     if let Some(out) = s.looper_process(self.sfu.on_tick(now)) {
-                        return Some(self.process_sfu(out));
+                        return self.process_sfu(now, out);
                     }
                 }
             }
         }
 
-        None
+        self.queue.pop_front()
     }
 
     fn on_event<'a>(&mut self, now: Instant, event: WorkerInnerInput<'a, RunnerOwner, ExtIn, ChannelId, Event>) -> Option<WorkerInnerOutput<'a, RunnerOwner, ExtOut, ChannelId, Event, SCfg>> {
         match event {
-            WorkerInnerInput::Task(owner, event) => match owner {
-                RunnerOwner::Sdn(owner) => {
-                    let out = self.sdn.on_event(now, WorkerInnerInput::Task(owner, event.convert_into().expect("")))?;
-                    self.switcher.queue_flag_task(TaskType::Sdn as usize);
-                    Some(self.process_sdn(out))
+            WorkerInnerInput::Net(owner, event) => match owner {
+                RunnerOwner::Sdn(_owner) => {
+                    let now_ms = self.time.timestamp_ms(now);
+                    match event {
+                        BackendIncoming::UdpPacket { slot: _, from, data } => {
+                            let out = self.sdn.on_event(now_ms, SdnWorkerInput::Net(NetInput::UdpPacket(from, data)))?;
+                            self.switcher.queue_flag_task(TaskType::Sdn as usize);
+                            self.process_sdn(now, out)
+                        }
+                        BackendIncoming::UdpListenResult { bind: _, result } => {
+                            log::info!("Sdn listen result: {:?}", result);
+                            self.sdn_backend_slot = result.ok()?.1;
+                            None
+                        }
+                    }
                 }
-                RunnerOwner::Sfu(owner) => {
-                    let out = self.sfu.on_event(now, WorkerInnerInput::Task(owner, event.convert_into().expect("")))?;
-                    self.switcher.queue_flag_task(TaskType::Sfu as usize);
-                    Some(self.process_sfu(out))
-                }
+                RunnerOwner::Sfu(_owner) => match event {
+                    BackendIncoming::UdpPacket { slot, from, data } => {
+                        let out = self.sfu.on_event(now, sfu::Input::UdpPacket { from, data: data.freeze() })?;
+                        self.switcher.queue_flag_task(TaskType::Sfu as usize);
+                        self.process_sfu(now, out)
+                    }
+                    BackendIncoming::UdpListenResult { bind, result } => {
+                        log::info!("Sfu listen result: {:?}", result);
+                        let (addr, slot) = result.ok()?;
+                        self.sfu_backend_slot = slot;
+                        let out = self.sfu.on_event(now, sfu::Input::UdpBind { addr })?;
+                        self.switcher.queue_flag_task(TaskType::Sfu as usize);
+                        self.process_sfu(now, out)
+                    }
+                },
             },
             WorkerInnerInput::Ext(ext) => match ext {
                 ExtIn::Sdn(ext) => {
-                    let out = self.sdn.on_event(now, WorkerInnerInput::Ext(ext))?;
+                    let now_ms = self.time.timestamp_ms(now);
+                    let out = self.sdn.on_event(now_ms, SdnWorkerInput::Ext(ext))?;
                     self.switcher.queue_flag_task(TaskType::Sdn as usize);
-                    Some(self.process_sdn(out))
+                    self.process_sdn(now, out)
                 }
-                ExtIn::Sfu(ext) => {
-                    let out = self.sfu.on_event(now, WorkerInnerInput::Ext(ext))?;
+                ExtIn::HttpRequest(req) => {
+                    let out = self.sfu.on_event(now, sfu::Input::HttpRequest(req))?;
                     self.switcher.queue_flag_task(TaskType::Sfu as usize);
-                    Some(self.process_sfu(out))
+                    self.process_sfu(now, out)
+                }
+            },
+            WorkerInnerInput::Bus(event) => match event {
+                BusEvent::Broadcast(_from, Event::Sdn(event)) => {
+                    let now_ms = self.time.timestamp_ms(now);
+                    let out = self.sdn.on_event(now_ms, SdnWorkerInput::Bus(event))?;
+                    self.process_sdn(now, out)
+                }
+                BusEvent::Channel(_owner, _channel, Event::Sdn(event)) => {
+                    let now_ms = self.time.timestamp_ms(now);
+                    let out = self.sdn.on_event(now_ms, SdnWorkerInput::Bus(event))?;
+                    self.process_sdn(now, out)
                 }
             },
         }
@@ -162,19 +254,20 @@ impl WorkerInner<RunnerOwner, ExtIn, ExtOut, ChannelId, Event, ICfg, SCfg> for R
         while let Some(current) = s.queue_current() {
             match current.try_into().ok()? {
                 TaskType::Sdn => {
-                    if let Some(out) = s.queue_process(self.sdn.pop_output(now)) {
-                        return Some(self.process_sdn(out));
+                    let now_ms = self.time.timestamp_ms(now);
+                    if let Some(out) = s.queue_process(self.sdn.pop_output(now_ms)) {
+                        return self.process_sdn(now, out);
                     }
                 }
                 TaskType::Sfu => {
                     if let Some(out) = s.queue_process(self.sfu.pop_output(now)) {
-                        return Some(self.process_sfu(out));
+                        return self.process_sfu(now, out);
                     }
                 }
             }
         }
 
-        None
+        self.queue.pop_front()
     }
 
     fn shutdown<'a>(&mut self, now: Instant) -> Option<WorkerInnerOutput<'a, RunnerOwner, ExtOut, ChannelId, Event, SCfg>> {
@@ -182,13 +275,14 @@ impl WorkerInner<RunnerOwner, ExtIn, ExtOut, ChannelId, Event, ICfg, SCfg> for R
         while let Some(current) = s.looper_current(now) {
             match current.try_into().ok()? {
                 TaskType::Sdn => {
-                    if let Some(out) = s.looper_process(self.sdn.shutdown(now)) {
-                        return Some(self.process_sdn(out));
+                    let now_ms = self.time.timestamp_ms(now);
+                    if let Some(out) = s.looper_process(self.sdn.on_event(now_ms, SdnWorkerInput::ShutdownRequest)) {
+                        return self.process_sdn(now, out);
                     }
                 }
                 TaskType::Sfu => {
                     if let Some(out) = s.looper_process(self.sfu.shutdown(now)) {
-                        return Some(self.process_sfu(out));
+                        return self.process_sfu(now, out);
                     }
                 }
             }
@@ -199,16 +293,73 @@ impl WorkerInner<RunnerOwner, ExtIn, ExtOut, ChannelId, Event, ICfg, SCfg> for R
 }
 
 impl RunnerWorker {
-    fn process_sdn<'a>(
-        &mut self,
-        out: WorkerInnerOutput<'a, SdnOwner, SdnExtOut<SE>, SdnChannel, SdnEvent<SC, SE, TC, TW>, SdnSpawnCfg>,
-    ) -> WorkerInnerOutput<'a, RunnerOwner, ExtOut, ChannelId, Event, SCfg> {
+    fn process_sdn<'a>(&mut self, now: Instant, out: SdnWorkerOutput<'a, SC, SE, TC, TW>) -> Option<WorkerInnerOutput<'a, RunnerOwner, ExtOut, ChannelId, Event, SCfg>> {
         self.switcher.queue_flag_task(TaskType::Sdn as usize);
-        out.convert_into()
+        match out {
+            SdnWorkerOutput::Ext(ext) => Some(WorkerInnerOutput::Ext(true, ExtOut::Sdn(ext))),
+            SdnWorkerOutput::ExtWorker(event) => match event {
+                SdnExtOut::FeaturesEvent(event) => {
+                    if let FeaturesEvent::PubSub(event) = event {
+                        let out = self.sfu.on_event(now, sfu::Input::PubsubEvent(event))?;
+                        self.process_sfu(now, out)
+                    } else {
+                        None
+                    }
+                }
+                SdnExtOut::ServicesEvent(service, event) => None,
+            },
+            SdnWorkerOutput::Net(out) => match out {
+                NetOutput::UdpPacket(remote, data) => Some(WorkerInnerOutput::Net(
+                    RunnerOwner::Sdn(SdnOwner),
+                    BackendOutgoing::UdpPacket {
+                        slot: self.sdn_backend_slot,
+                        to: remote,
+                        data,
+                    },
+                )),
+                NetOutput::UdpPackets(remotes, data) => Some(WorkerInnerOutput::Net(
+                    RunnerOwner::Sdn(SdnOwner),
+                    BackendOutgoing::UdpPackets {
+                        slot: self.sdn_backend_slot,
+                        to: remotes,
+                        data,
+                    },
+                )),
+            },
+            SdnWorkerOutput::Bus(event) => match event {
+                SdnWorkerBusEvent::Control(..) => Some(WorkerInnerOutput::Bus(BusControl::Channel(
+                    RunnerOwner::Sdn(SdnOwner),
+                    BusChannelControl::Publish(ChannelId::Sdn(SdnChannel::Controller), true, event.into()),
+                ))),
+                SdnWorkerBusEvent::Workers(..) => Some(WorkerInnerOutput::Bus(BusControl::Broadcast(true, event.into()))),
+                SdnWorkerBusEvent::Worker(worker, msg) => Some(WorkerInnerOutput::Bus(BusControl::Channel(
+                    RunnerOwner::Sdn(SdnOwner),
+                    BusChannelControl::Publish(ChannelId::Sdn(SdnChannel::Worker(worker)), true, Event::Sdn(SdnEvent::Worker(self.worker, msg))),
+                ))),
+            },
+            SdnWorkerOutput::ShutdownResponse => None,
+            SdnWorkerOutput::Continue => None,
+        }
     }
 
-    fn process_sfu<'a>(&mut self, out: WorkerInnerOutput<'a, SfuOwner, sfu::ExtOut, sfu::ChannelId, sfu::SfuEvent, sfu::SCfg>) -> WorkerInnerOutput<'a, RunnerOwner, ExtOut, ChannelId, Event, SCfg> {
+    fn process_sfu<'a>(&mut self, now: Instant, out: sfu::Output) -> Option<WorkerInnerOutput<'a, RunnerOwner, ExtOut, ChannelId, Event, SCfg>> {
         self.switcher.queue_flag_task(TaskType::Sfu as usize);
-        out.convert_into()
+        match out {
+            sfu::Output::HttpResponse(res) => Some(WorkerInnerOutput::Ext(true, ExtOut::HttpResponse(res))),
+            sfu::Output::PubsubControl(control) => {
+                let now_ms = self.time.timestamp_ms(now);
+                let out = self.sdn.on_event(now_ms, SdnWorkerInput::ExtWorker(SdnExtIn::FeaturesControl(FeaturesControl::PubSub(control))))?;
+                self.process_sdn(now, out)
+            }
+            sfu::Output::UdpPacket { to, data } => Some(WorkerInnerOutput::Net(
+                RunnerOwner::Sdn(SdnOwner),
+                BackendOutgoing::UdpPacket {
+                    slot: self.sfu_backend_slot,
+                    to,
+                    data: data.into(),
+                },
+            )),
+            sfu::Output::Continue => None,
+        }
     }
 }

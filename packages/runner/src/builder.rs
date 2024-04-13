@@ -27,6 +27,7 @@ pub struct SdnBuilder<SC, SE, TC, TW> {
     node_id: NodeId,
     session: u64,
     udp_port: u16,
+    tick_ms: u64,
     visualization_collector: bool,
     seeds: Vec<NodeAddr>,
     services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
@@ -80,6 +81,7 @@ where
             handshake: None,
             node_addr,
             node_id,
+            tick_ms: 1000,
             session: thread_rng().next_u64(),
             udp_port,
             visualization_collector: false,
@@ -172,6 +174,7 @@ where
             Duration::from_millis(1000),
             SdnInnerCfg {
                 node_id: self.node_id,
+                tick_ms: self.tick_ms,
                 udp_port: self.udp_port,
                 services: self.services.clone(),
                 history: history.clone(),
@@ -194,6 +197,7 @@ where
                 Duration::from_millis(1000),
                 SdnInnerCfg {
                     node_id: self.node_id,
+                    tick_ms: self.tick_ms,
                     udp_port: self.udp_port,
                     services: self.services.clone(),
                     history: history.clone(),

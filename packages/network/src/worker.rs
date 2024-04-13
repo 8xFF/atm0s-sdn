@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use atm0s_sdn_identity::NodeId;
 use sans_io_runtime::TaskSwitcher;
 
@@ -34,24 +36,29 @@ pub enum SdnWorkerOutput<'a, SC, SE, TC, TW> {
 
 pub struct SdnWorkerCfg<SC, SE, TC, TW> {
     pub node_id: NodeId,
+    pub tick_ms: u64,
     pub controller: Option<ControllerPlaneCfg<SC, SE, TC, TW>>,
     pub data: DataPlaneCfg<SC, SE, TC, TW>,
 }
 
 pub struct SdnWorker<SC, SE, TC, TW> {
+    tick_ms: u64,
     controller: Option<ControllerPlane<SC, SE, TC, TW>>,
     data: DataPlane<SC, SE, TC, TW>,
     data_shutdown: bool,
     switcher: TaskSwitcher,
+    last_tick: Option<u64>,
 }
 
-impl<SC, SE, TC, TW> SdnWorker<SC, SE, TC, TW> {
+impl<SC: Debug, SE: Debug, TC: Debug, TW: Debug> SdnWorker<SC, SE, TC, TW> {
     pub fn new(cfg: SdnWorkerCfg<SC, SE, TC, TW>) -> Self {
         Self {
+            tick_ms: cfg.tick_ms,
             controller: cfg.controller.map(|controller| ControllerPlane::new(cfg.node_id, controller)),
             data: DataPlane::new(cfg.node_id, cfg.data),
             data_shutdown: false,
             switcher: TaskSwitcher::new(2),
+            last_tick: None,
         }
     }
 
@@ -67,6 +74,13 @@ impl<SC, SE, TC, TW> SdnWorker<SC, SE, TC, TW> {
     }
 
     pub fn on_tick<'a>(&mut self, now_ms: u64) -> Option<SdnWorkerOutput<'a, SC, SE, TC, TW>> {
+        if let Some(last_tick) = self.last_tick {
+            if now_ms < last_tick + self.tick_ms {
+                return None;
+            }
+        }
+        self.last_tick = Some(now_ms);
+
         self.switcher.queue_flag_all();
         self.data.on_tick(now_ms);
         if let Some(controller) = &mut self.controller {
@@ -152,7 +166,7 @@ impl<SC, SE, TC, TW> SdnWorker<SC, SE, TC, TW> {
     }
 }
 
-impl<SC, SE, TC, TW> SdnWorker<SC, SE, TC, TW> {
+impl<SC: Debug, SE: Debug, TC: Debug, TW: Debug> SdnWorker<SC, SE, TC, TW> {
     fn process_controller_out<'a>(&mut self, now_ms: u64, out: controller_plane::Output<SE, TW>) -> SdnWorkerOutput<'a, SC, SE, TC, TW> {
         self.switcher.queue_flag_task(0);
         match out {
@@ -181,7 +195,7 @@ impl<SC, SE, TC, TW> SdnWorker<SC, SE, TC, TW> {
             data_plane::Output::Net(out) => SdnWorkerOutput::Net(out),
             data_plane::Output::Control(control) => {
                 if let Some(controller) = &mut self.controller {
-                    log::debug!("Send control to controller");
+                    log::debug!("Send control to controller {:?}", control);
                     controller.on_event(now_ms, controller_plane::Input::Control(control));
                     if let Some(out) = controller.pop_output(now_ms) {
                         self.process_controller_out(now_ms, out)

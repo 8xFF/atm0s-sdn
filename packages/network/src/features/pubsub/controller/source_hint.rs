@@ -85,7 +85,7 @@ impl SourceHintLogic {
             self.remote_subscribers.remove(&subscriber);
             // if all subscribers are removed, we need to notify next hop to remove this node from subscriber list
             if self.local_subscribers.is_empty() && self.remote_subscribers.is_empty() {
-                log::debug!("[SoureHint] Send Unsubscribe({}) to next node because remote subscriber {subscriber} timeout", self.session_id);
+                log::warn!("[SourceHint] Send Unsubscribe({}) to next node because remote subscriber {subscriber} timeout", self.session_id);
                 self.queue.push_back(Output::SendRemote(None, SourceHint::Unsubscribe(self.session_id)));
             }
         }
@@ -99,16 +99,22 @@ impl SourceHintLogic {
         for source in timeout_sources {
             self.remote_sources.remove(&source);
             if !self.local_subscribers.is_empty() {
-                log::debug!("[SoureHint] Notify remove source({source}) to local {:?} actors because timeout", self.local_subscribers);
+                log::warn!("[SourceHint] Notify remove source({source}) to local {:?} actors because timeout", self.local_subscribers);
                 self.queue.push_back(Output::UnsubscribeSource(self.local_subscribers.clone(), source));
             }
         }
 
         if !self.local_sources.is_empty() {
+            log::debug!("[SourceHint] ReSend Register({}) to root node", self.node_id);
             self.queue.push_back(Output::SendRemote(None, SourceHint::Register { source: self.node_id, to_root: true }));
+            for (remote, _) in &self.remote_subscribers {
+                log::debug!("[SourceHint] ReSend Register({}) to subscribe {remote} node", self.node_id);
+                self.queue.push_back(Output::SendRemote(Some(*remote), SourceHint::Register { source: self.node_id, to_root: false }));
+            }
         }
 
         if !self.local_subscribers.is_empty() || !self.remote_subscribers.is_empty() {
+            log::debug!("[SourceHint] ReSend Subscribe({}) to next node", self.session_id);
             self.queue.push_back(Output::SendRemote(None, SourceHint::Subscribe(self.session_id)));
         }
     }
@@ -117,20 +123,20 @@ impl SourceHintLogic {
         match cmd {
             LocalCmd::Register => {
                 if !self.local_sources.contains(&actor) {
-                    log::debug!("[SourceHint] Register new local source: {:?}", actor);
+                    log::info!("[SourceHint] Register new local source: {:?}", actor);
                     self.local_sources.push(actor);
                     if self.local_sources.len() == 1 && self.remote_sources.is_empty() {
-                        log::debug!("[SoureHint] Send Register({}) to root node", self.node_id);
+                        log::info!("[SourceHint] Send Register({}) to root node", self.node_id);
                         self.queue.push_back(Output::SendRemote(None, SourceHint::Register { source: self.node_id, to_root: true }));
                     }
 
                     if self.local_sources.len() == 1 {
                         for (remote, _) in &self.remote_subscribers {
-                            log::debug!("[SoureHint] Notify Register({}) to subscribe {remote} node", self.node_id);
+                            log::info!("[SourceHint] Notify Register({}) to subscribe {remote} node", self.node_id);
                             self.queue.push_back(Output::SendRemote(Some(*remote), SourceHint::Register { source: self.node_id, to_root: false }));
                         }
                         if !self.local_subscribers.is_empty() {
-                            log::debug!("[SoureHint] Notify new source({}) to local {:?} actors", self.node_id, self.local_subscribers);
+                            log::info!("[SourceHint] Notify new source({}) to local {:?} actors", self.node_id, self.local_subscribers);
                             self.queue.push_back(Output::SubscribeSource(self.local_subscribers.clone(), self.node_id));
                         }
                     }
@@ -138,20 +144,20 @@ impl SourceHintLogic {
             }
             LocalCmd::Unregister => {
                 if let Some(index) = self.local_sources.iter().position(|x| x == &actor) {
-                    log::debug!("[SourceHint] Unregister local source: {:?}", actor);
+                    log::info!("[SourceHint] Unregister local source: {:?}", actor);
                     self.local_sources.swap_remove(index);
                     if self.local_sources.is_empty() && self.remote_sources.is_empty() {
-                        log::debug!("[SoureHint] Send Unregister({}) to root node", self.node_id);
+                        log::info!("[SourceHint] Send Unregister({}) to root node", self.node_id);
                         self.queue.push_back(Output::SendRemote(None, SourceHint::Unregister { source: self.node_id, to_root: true }));
                     }
 
                     if self.local_sources.is_empty() {
                         for (remote, _) in &self.remote_subscribers {
-                            log::debug!("[SoureHint] Notify Unregister({}) to subscribe {remote} node", self.node_id);
+                            log::info!("[SourceHint] Notify Unregister({}) to subscribe {remote} node", self.node_id);
                             self.queue.push_back(Output::SendRemote(Some(*remote), SourceHint::Unregister { source: self.node_id, to_root: false }));
                         }
                         if !self.local_subscribers.is_empty() {
-                            log::debug!("[SoureHint] Notify removed source({}) to local {:?} actors", self.node_id, self.local_subscribers);
+                            log::info!("[SourceHint] Notify removed source({}) to local {:?} actors", self.node_id, self.local_subscribers);
                             self.queue.push_back(Output::UnsubscribeSource(self.local_subscribers.clone(), self.node_id));
                         }
                     }
@@ -159,15 +165,15 @@ impl SourceHintLogic {
             }
             LocalCmd::Subscribe => {
                 if !self.local_subscribers.contains(&actor) {
-                    log::debug!("[SourceHint] Subscribe new local subscriber: {:?}", actor);
+                    log::info!("[SourceHint] Subscribe new local subscriber: {:?}", actor);
                     self.local_subscribers.push(actor);
                     if self.local_subscribers.len() == 1 && self.remote_subscribers.is_empty() {
-                        log::debug!("[SoureHint] Send Subscribe({}) to root node", self.session_id);
+                        log::info!("[SourceHint] Send Subscribe({}) to root node", self.session_id);
                         self.queue.push_back(Output::SendRemote(None, SourceHint::Subscribe(self.session_id)));
                     }
 
                     for source in self.remote_sources.keys() {
-                        log::debug!("[SoureHint] Notify SubscribeSource for already added sources({source}) to actor {:?}", actor);
+                        log::info!("[SourceHint] Notify SubscribeSource for already added sources({source}) to actor {:?}", actor);
                         self.queue.push_back(Output::SubscribeSource(vec![actor], *source));
                     }
                     if !self.local_sources.is_empty() {
@@ -177,17 +183,17 @@ impl SourceHintLogic {
             }
             LocalCmd::Unsubscribe => {
                 if let Some(index) = self.local_subscribers.iter().position(|x| x == &actor) {
-                    log::debug!("[SourceHint] Unsubscribe local subscriber: {:?}", actor);
+                    log::info!("[SourceHint] Unsubscribe local subscriber: {:?}", actor);
                     self.local_subscribers.swap_remove(index);
                     // if all subscribers are removed, we need to notify next hop to remove this node from subscriber list
                     if self.local_subscribers.is_empty() && self.remote_subscribers.is_empty() {
-                        log::debug!("[SoureHint] Send Unsubscribe({}) to next node", self.session_id);
+                        log::info!("[SourceHint] Send Unsubscribe({}) to next node", self.session_id);
                         self.queue.push_back(Output::SendRemote(None, SourceHint::Unsubscribe(self.session_id)));
                     }
 
                     // we unsubscriber for the local actor from all remote sources
                     for source in self.remote_sources.keys() {
-                        log::debug!("[SoureHint] Notify UnsubscribeSource for already added sources({source}) to actor {:?}", actor);
+                        log::info!("[SourceHint] Notify UnsubscribeSource for already added sources({source}) to actor {:?}", actor);
                         self.queue.push_back(Output::UnsubscribeSource(vec![actor], *source));
                     }
                     // we unsubscriber for the local actor from local source
@@ -210,7 +216,7 @@ impl SourceHintLogic {
 
                 // Only to_root msg is climb up to root node
                 if to_root {
-                    log::debug!("[SoureHint] forward remote Register({}) to root node", source);
+                    log::debug!("[SourceHint] forward remote Register({}) to root node", source);
                     self.queue.push_back(Output::SendRemote(None, SourceHint::Register { source, to_root: true }));
                 }
 
@@ -219,15 +225,15 @@ impl SourceHintLogic {
                         // for avoiding loop, we only send to other subscribers except sender
                         continue;
                     }
-                    log::debug!("[SoureHint] forward remote Register({}) to subscribe {subscriber} node", source);
+                    log::debug!("[SourceHint] forward remote Register({}) to subscribe {subscriber} node", source);
                     self.queue.push_back(Output::SendRemote(Some(*subscriber), SourceHint::Register { source, to_root: false }));
                 }
 
                 // if source is new, notify to all local subscribers
                 if self.remote_sources.insert(source, now_ms).is_none() {
-                    log::debug!("[SourceHint] added remote source {source}");
+                    log::info!("[SourceHint] added remote source {source}");
                     if !self.local_subscribers.is_empty() {
-                        log::debug!("[SoureHint] Notify new source({}) to local {:?} actors", source, self.local_subscribers);
+                        log::info!("[SourceHint] Notify new source({}) to local {:?} actors", source, self.local_subscribers);
                         self.queue.push_back(Output::SubscribeSource(self.local_subscribers.clone(), source));
                     }
                 }
@@ -241,7 +247,7 @@ impl SourceHintLogic {
 
                 // Only to_root msg is climb up to root node
                 if to_root {
-                    log::debug!("[SoureHint] Send Register({}) to root node", self.node_id);
+                    log::debug!("[SourceHint] Send Register({}) to root node", self.node_id);
                     self.queue.push_back(Output::SendRemote(None, SourceHint::Unregister { source, to_root: true }));
                 }
 
@@ -250,23 +256,25 @@ impl SourceHintLogic {
                         // for avoiding loop, we only send to other subscribers except sender
                         continue;
                     }
-                    log::debug!("[SoureHint] relay UnRegister({}) to subscribe {subscriber} node", source);
+                    log::debug!("[SourceHint] relay UnRegister({}) to subscribe {subscriber} node", source);
                     self.queue.push_back(Output::SendRemote(Some(*subscriber), SourceHint::Unregister { source, to_root: false }));
                 }
 
                 // if source is deleted, notify to all local subscribers
                 if self.remote_sources.remove(&source).is_some() {
+                    log::info!("[SourceHint] removed remote source {source}");
                     if !self.local_subscribers.is_empty() {
-                        log::debug!("[SoureHint] Notify remove source({}) to local {:?} actors", self.node_id, self.local_subscribers);
+                        log::info!("[SourceHint] Notify remove source({}) to local {:?} actors", self.node_id, self.local_subscribers);
                         self.queue.push_back(Output::UnsubscribeSource(self.local_subscribers.clone(), source));
                     }
                 }
             }
             SourceHint::Subscribe(session) => {
                 if self.remote_subscribers.insert(remote, now_ms).is_none() {
+                    log::info!("[SourceHint] added remote subscriber {remote}");
                     self.queue.push_back(Output::SendRemote(Some(remote), SourceHint::SubscribeOk(session)));
                     if self.remote_subscribers.len() == 1 && self.local_subscribers.is_empty() {
-                        log::debug!("[SoureHint] Send Subscribe({}) to root node", self.session_id);
+                        log::info!("[SourceHint] Send Subscribe({}) to root node", self.session_id);
                         self.queue.push_back(Output::SendRemote(None, SourceHint::Subscribe(self.session_id)));
                     }
 
@@ -276,7 +284,7 @@ impl SourceHintLogic {
                     }
 
                     if !sources.is_empty() {
-                        log::debug!("[SoureHint] Notify SubscribeSource for already added sources({:?}) to remote {remote}", sources);
+                        log::info!("[SourceHint] Notify SubscribeSource for already added sources({:?}) to remote {remote}", sources);
                         self.queue.push_back(Output::SendRemote(Some(remote), SourceHint::Sources(sources)));
                     }
                 } else {
@@ -291,10 +299,11 @@ impl SourceHintLogic {
             }
             SourceHint::Unsubscribe(session) => {
                 if self.remote_subscribers.remove(&remote).is_some() {
+                    log::info!("[SourceHint] removed remote subscriber {remote}");
                     self.queue.push_back(Output::SendRemote(Some(remote), SourceHint::UnsubscribeOk(session)));
                     // if all subscribers are removed, we need to notify next hop to remove this node from subscriber list
                     if self.local_subscribers.is_empty() && self.remote_subscribers.is_empty() {
-                        log::debug!("[SoureHint] Send Unsubscribe({}) to next node because remote subscriber {remote} timeout", self.session_id);
+                        log::info!("[SourceHint] Send Unsubscribe({}) to next node because all subscribers removed", self.session_id);
                         self.queue.push_back(Output::SendRemote(None, SourceHint::Unsubscribe(self.session_id)));
                     }
                 } else {
@@ -310,12 +319,14 @@ impl SourceHintLogic {
             SourceHint::Sources(sources) => {
                 for source in sources {
                     if self.remote_sources.insert(source, now_ms).is_none() {
+                        log::info!("[SourceHint] added remote source {source}");
                         for remote in self.remote_subscribers.keys() {
-                            log::debug!("[SoureHint] Notify source({source}) from snapshot to remote {remote}");
+                            log::debug!("[SourceHint] Notify source({source}) from snapshot to remote {remote}");
                             self.queue.push_back(Output::SendRemote(Some(*remote), SourceHint::Register { source, to_root: false }));
                         }
-                        if !self.local_sources.is_empty() {
-                            self.queue.push_back(Output::SubscribeSource(self.local_sources.clone(), source));
+                        if !self.local_subscribers.is_empty() {
+                            log::info!("[SourceHint] Notify new source({source}) to local {:?} actors", self.local_subscribers);
+                            self.queue.push_back(Output::SubscribeSource(self.local_subscribers.clone(), source));
                         }
                     }
                 }
@@ -334,7 +345,7 @@ impl SourceHintLogic {
 
 #[cfg(test)]
 mod tests {
-    use std::net::SocketAddr;
+    use std::{net::SocketAddr, vec};
 
     use crate::{base::FeatureControlActor, features::pubsub::controller::source_hint::TIMEOUT_MS};
 
@@ -366,6 +377,25 @@ mod tests {
             sh.pop_output(),
             Some(Output::SubscribeSource(vec![FeatureControlActor::Controller, FeatureControlActor::Worker(1)], node_id))
         );
+        assert_eq!(sh.pop_output(), None);
+    }
+
+    #[test]
+    fn local_subscribe_should_handle_sources() {
+        let node_id = 1;
+        let session_id = 1234;
+        let mut sh = SourceHintLogic::new(node_id, session_id);
+
+        //subscribe should send a subscribe message
+        sh.on_local(0, FeatureControlActor::Controller, LocalCmd::Subscribe);
+        assert_eq!(sh.pop_output(), Some(Output::SendRemote(None, SourceHint::Subscribe(session_id))));
+        assert_eq!(sh.pop_output(), None);
+
+        let remote = SocketAddr::new([127, 0, 0, 1].into(), 1234);
+
+        sh.on_remote(100, remote, SourceHint::Sources(vec![2, 3]));
+        assert_eq!(sh.pop_output(), Some(Output::SubscribeSource(vec![FeatureControlActor::Controller], 2)));
+        assert_eq!(sh.pop_output(), Some(Output::SubscribeSource(vec![FeatureControlActor::Controller], 3)));
         assert_eq!(sh.pop_output(), None);
     }
 
@@ -585,14 +615,24 @@ mod tests {
         let session_id = 1234;
         let mut sh = SourceHintLogic::new(node_id, session_id);
 
-        //subscribe should send a subscribe message
+        let remote = SocketAddr::new([127, 0, 0, 1].into(), 1234);
+        let remote_node_id = 2;
+        let remote_session_id = 4321;
+
+        //fake a local source with a remote subscribe
         sh.on_local(0, FeatureControlActor::Controller, LocalCmd::Register);
+        sh.on_remote(0, remote, SourceHint::Subscribe(remote_session_id));
 
         assert_eq!(sh.pop_output(), Some(Output::SendRemote(None, SourceHint::Register { source: node_id, to_root: true })));
+        assert_eq!(sh.pop_output(), Some(Output::SendRemote(Some(remote), SourceHint::SubscribeOk(remote_session_id))));
+        assert_eq!(sh.pop_output(), Some(Output::SendRemote(None, SourceHint::Subscribe(session_id))));
+        assert_eq!(sh.pop_output(), Some(Output::SendRemote(Some(remote), SourceHint::Sources(vec![node_id]))));
         assert_eq!(sh.pop_output(), None);
 
         sh.on_tick(1000);
         assert_eq!(sh.pop_output(), Some(Output::SendRemote(None, SourceHint::Register { source: node_id, to_root: true })));
+        assert_eq!(sh.pop_output(), Some(Output::SendRemote(Some(remote), SourceHint::Register { source: node_id, to_root: false })));
+        assert_eq!(sh.pop_output(), Some(Output::SendRemote(None, SourceHint::Subscribe(session_id))));
         assert_eq!(sh.pop_output(), None);
     }
 

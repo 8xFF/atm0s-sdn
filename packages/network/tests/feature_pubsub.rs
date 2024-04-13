@@ -69,6 +69,42 @@ fn feature_pubsub_auto_single_node() {
 }
 
 #[test]
+fn feature_pubsub_auto_single_node_worker() {
+    let node_id = 1;
+    let mut sim = NetworkSimulator::<(), (), (), ()>::new(0);
+    sim.enable_log(log::LevelFilter::Debug);
+    sim.add_node(TestNode::new(node_id, 1234, vec![]));
+
+    sim.process(100);
+
+    let channel = ChannelId(1000);
+    let value = vec![1, 2, 3, 4];
+
+    sim.control_worker(node_id, control(Control(channel, ChannelControl::PubStart)));
+    sim.control_worker(node_id, control(Control(channel, ChannelControl::SubAuto)));
+    sim.process(1);
+    sim.control_worker(node_id, control(Control(channel, ChannelControl::PubData(value.clone()))));
+    sim.process(1);
+    assert_eq!(sim.pop_res_worker(), Some((node_id, event(Event(channel, ChannelEvent::SourceData(node_id, value.clone()))))));
+    assert_eq!(sim.pop_res_worker(), None);
+
+    log::info!("Simulate feedback source now");
+    sim.control_worker(node_id, control(Control(channel, ChannelControl::FeedbackAuto(Feedback::simple(0, 10, 1000, 2000)))));
+    sim.process(2000); //after that tick feedback will timeout
+    assert_eq!(
+        sim.pop_res_worker(),
+        Some((node_id, event(Event(channel, ChannelEvent::FeedbackData(Feedback::simple(0, 10, 1000, 2000))))))
+    );
+    assert_eq!(sim.pop_res_worker(), None);
+
+    sim.control_worker(node_id, control(Control(channel, ChannelControl::UnsubAuto)));
+    sim.process(1);
+    sim.control_worker(node_id, control(Control(channel, ChannelControl::PubData(value.clone()))));
+    sim.process(1);
+    assert_eq!(sim.pop_res_worker(), None);
+}
+
+#[test]
 fn feature_pubsub_manual_two_nodes() {
     let node1 = 1;
     let node2 = 2;
