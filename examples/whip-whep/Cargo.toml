@@ -5,7 +5,7 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
-sans-io-runtime = { path = "../../../sans-io-runtime" }
+sans-io-runtime = { git = "https://github.com/8xFF/sans-io-runtime.git", rev = "1be9705b4fe9852b7c1ac66dc610fedf94a83971" }
 atm0s-sdn = { path = "../../packages/runner" }
 derive_more = "0.99.17"
 str0m = "0.5.0"
