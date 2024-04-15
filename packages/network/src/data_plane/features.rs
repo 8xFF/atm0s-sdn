@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use atm0s_sdn_identity::ConnId;
 use sans_io_runtime::TaskSwitcher;
 
-use crate::base::{FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, GenericBuffer, TransportMsgHeader};
+use crate::base::{Buffer, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, TransportMsgHeader};
 use crate::features::*;
 
 pub type FeaturesWorkerInput<'a> = FeatureWorkerInput<'a, FeaturesControl, FeaturesToWorker>;
@@ -62,7 +62,7 @@ impl FeatureWorkerManager {
         conn: ConnId,
         remote: SocketAddr,
         header: TransportMsgHeader,
-        buf: GenericBuffer<'a>,
+        buf: Buffer<'a>,
     ) -> Option<FeaturesWorkerOutput<'a>> {
         let out = match feature {
             Features::Neighbours => self.neighbours.on_network_raw(ctx, now_ms, conn, remote, header, buf).map(|a| a.into2()),
@@ -82,15 +82,15 @@ impl FeatureWorkerManager {
 
     pub fn on_input<'a>(&mut self, ctx: &mut FeatureWorkerContext, feature: Features, now_ms: u64, input: FeaturesWorkerInput<'a>) -> Option<FeaturesWorkerOutput<'a>> {
         let out = match input {
-            FeatureWorkerInput::Control(service, control) => match control {
-                FeaturesControl::Neighbours(control) => self.neighbours.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| a.into2()),
-                FeaturesControl::Data(control) => self.data.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| a.into2()),
-                FeaturesControl::RouterSync(control) => self.router_sync.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| a.into2()),
-                FeaturesControl::Vpn(control) => self.vpn.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| a.into2()),
-                FeaturesControl::DhtKv(control) => self.dht_kv.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| a.into2()),
-                FeaturesControl::PubSub(control) => self.pubsub.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| a.into2()),
-                FeaturesControl::Alias(control) => self.alias.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| a.into2()),
-                FeaturesControl::Socket(control) => self.socket.on_input(ctx, now_ms, FeatureWorkerInput::Control(service, control)).map(|a| a.into2()),
+            FeatureWorkerInput::Control(actor, control) => match control {
+                FeaturesControl::Neighbours(control) => self.neighbours.on_input(ctx, now_ms, FeatureWorkerInput::Control(actor, control)).map(|a| a.into2()),
+                FeaturesControl::Data(control) => self.data.on_input(ctx, now_ms, FeatureWorkerInput::Control(actor, control)).map(|a| a.into2()),
+                FeaturesControl::RouterSync(control) => self.router_sync.on_input(ctx, now_ms, FeatureWorkerInput::Control(actor, control)).map(|a| a.into2()),
+                FeaturesControl::Vpn(control) => self.vpn.on_input(ctx, now_ms, FeatureWorkerInput::Control(actor, control)).map(|a| a.into2()),
+                FeaturesControl::DhtKv(control) => self.dht_kv.on_input(ctx, now_ms, FeatureWorkerInput::Control(actor, control)).map(|a| a.into2()),
+                FeaturesControl::PubSub(control) => self.pubsub.on_input(ctx, now_ms, FeatureWorkerInput::Control(actor, control)).map(|a| a.into2()),
+                FeaturesControl::Alias(control) => self.alias.on_input(ctx, now_ms, FeatureWorkerInput::Control(actor, control)).map(|a| a.into2()),
+                FeaturesControl::Socket(control) => self.socket.on_input(ctx, now_ms, FeatureWorkerInput::Control(actor, control)).map(|a| a.into2()),
             },
             FeatureWorkerInput::FromController(is_broadcast, to) => match to {
                 FeaturesToWorker::Neighbours(to) => self.neighbours.on_input(ctx, now_ms, FeatureWorkerInput::FromController(is_broadcast, to)).map(|a| a.into2()),
@@ -105,6 +105,7 @@ impl FeatureWorkerManager {
             FeatureWorkerInput::Network(_conn, _header, _buf) => {
                 panic!("should call above on_network_raw")
             }
+            #[cfg(feature = "vpn")]
             FeatureWorkerInput::TunPkt(pkt) => self.vpn.on_input(ctx, now_ms, FeatureWorkerInput::TunPkt(pkt)).map(|a| a.into2()),
             FeatureWorkerInput::Local(header, buf) => match feature {
                 Features::Neighbours => self.neighbours.on_input(ctx, now_ms, FeatureWorkerInput::Local(header, buf)).map(|a| a.into2()),

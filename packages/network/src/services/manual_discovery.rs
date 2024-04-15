@@ -159,7 +159,7 @@ impl<SC, SE, TC: Debug, TW: Debug> Service<FeaturesControl, FeaturesEvent, SC, S
 
 pub struct ManualDiscoveryServiceWorker {}
 
-impl<SE, TC, TW> ServiceWorker<FeaturesControl, FeaturesEvent, SE, TC, TW> for ManualDiscoveryServiceWorker {
+impl<SC, SE, TC, TW> ServiceWorker<FeaturesControl, FeaturesEvent, SC, SE, TC, TW> for ManualDiscoveryServiceWorker {
     fn service_id(&self) -> u8 {
         SERVICE_ID
     }
@@ -206,7 +206,7 @@ where
         Box::new(ManualDiscoveryService::new(self.node_addr.clone(), self.local_tags.clone(), self.connect_tags.clone()))
     }
 
-    fn create_worker(&self) -> Box<dyn ServiceWorker<FeaturesControl, FeaturesEvent, SE, TC, TW>> {
+    fn create_worker(&self) -> Box<dyn ServiceWorker<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>> {
         Box::new(ManualDiscoveryServiceWorker {})
     }
 }

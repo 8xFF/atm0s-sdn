@@ -3,7 +3,9 @@ use std::net::SocketAddr;
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 use atm0s_sdn_router::{shadow::ShadowRouter, RouteRule};
 
-use super::{ConnectionCtx, ConnectionEvent, GenericBuffer, GenericBufferMut, ServiceId, TransportMsgHeader, Ttl};
+#[cfg(feature = "vpn")]
+use super::BufferMut;
+use super::{Buffer, ConnectionCtx, ConnectionEvent, ServiceId, TransportMsgHeader, Ttl};
 
 ///
 ///
@@ -46,6 +48,15 @@ impl NetOutgoingMeta {
         Self { source, ttl, meta, secure }
     }
 
+    pub fn secure() -> Self {
+        Self {
+            source: false,
+            ttl: Ttl::default(),
+            meta: 0,
+            secure: true,
+        }
+    }
+
     pub fn to_header(&self, feature: u8, rule: RouteRule, node_id: NodeId) -> TransportMsgHeader {
         TransportMsgHeader::build(feature, self.meta, rule)
             .set_ttl(*self.ttl)
@@ -74,6 +85,7 @@ impl NetOutgoingMeta {
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 pub enum FeatureControlActor {
     Controller,
+    Worker(u16),
     Service(ServiceId),
 }
 
@@ -137,9 +149,10 @@ pub enum FeatureWorkerInput<'a, Control, ToWorker> {
     /// First bool is flag for broadcast or not
     FromController(bool, ToWorker),
     Control(FeatureControlActor, Control),
-    Network(ConnId, NetIncomingMeta, GenericBuffer<'a>),
-    Local(NetIncomingMeta, GenericBuffer<'a>),
-    TunPkt(GenericBufferMut<'a>),
+    Network(ConnId, NetIncomingMeta, Buffer<'a>),
+    Local(NetIncomingMeta, Buffer<'a>),
+    #[cfg(feature = "vpn")]
+    TunPkt(BufferMut<'a>),
 }
 
 #[derive(Clone)]
@@ -151,11 +164,12 @@ pub enum FeatureWorkerOutput<'a, Control, Event, ToController> {
     Event(FeatureControlActor, Event),
     SendDirect(ConnId, NetOutgoingMeta, Vec<u8>),
     SendRoute(RouteRule, NetOutgoingMeta, Vec<u8>),
-    RawDirect(ConnId, GenericBuffer<'a>),
-    RawBroadcast(Vec<ConnId>, GenericBuffer<'a>),
-    RawDirect2(SocketAddr, GenericBuffer<'a>),
-    RawBroadcast2(Vec<SocketAddr>, GenericBuffer<'a>),
-    TunPkt(GenericBuffer<'a>),
+    RawDirect(ConnId, Buffer<'a>),
+    RawBroadcast(Vec<ConnId>, Buffer<'a>),
+    RawDirect2(SocketAddr, Buffer<'a>),
+    RawBroadcast2(Vec<SocketAddr>, Buffer<'a>),
+    #[cfg(feature = "vpn")]
+    TunPkt(Buffer<'a>),
 }
 
 impl<'a, Control, Event, ToController> FeatureWorkerOutput<'a, Control, Event, ToController> {
@@ -177,6 +191,7 @@ impl<'a, Control, Event, ToController> FeatureWorkerOutput<'a, Control, Event, T
             FeatureWorkerOutput::RawBroadcast(conns, buf) => FeatureWorkerOutput::RawBroadcast(conns, buf),
             FeatureWorkerOutput::RawDirect2(conn, buf) => FeatureWorkerOutput::RawDirect2(conn, buf),
             FeatureWorkerOutput::RawBroadcast2(conns, buf) => FeatureWorkerOutput::RawBroadcast2(conns, buf),
+            #[cfg(feature = "vpn")]
             FeatureWorkerOutput::TunPkt(buf) => FeatureWorkerOutput::TunPkt(buf),
         }
     }
@@ -194,6 +209,7 @@ impl<'a, Control, Event, ToController> FeatureWorkerOutput<'a, Control, Event, T
             FeatureWorkerOutput::RawBroadcast(conns, buf) => FeatureWorkerOutput::RawBroadcast(conns, buf.owned()),
             FeatureWorkerOutput::RawDirect2(conn, buf) => FeatureWorkerOutput::RawDirect2(conn, buf.owned()),
             FeatureWorkerOutput::RawBroadcast2(conns, buf) => FeatureWorkerOutput::RawBroadcast2(conns, buf.owned()),
+            #[cfg(feature = "vpn")]
             FeatureWorkerOutput::TunPkt(buf) => FeatureWorkerOutput::TunPkt(buf.owned()),
         }
     }
@@ -213,7 +229,7 @@ pub trait FeatureWorker<SdkControl, SdkEvent, ToController, ToWorker> {
         conn: ConnId,
         _remote: SocketAddr,
         header: TransportMsgHeader,
-        mut buf: GenericBuffer<'a>,
+        mut buf: Buffer<'a>,
     ) -> Option<FeatureWorkerOutput<'a, SdkControl, SdkEvent, ToController>> {
         let header_len = header.serialize_size();
         buf.pop_front(header_len).expect("Buffer should bigger or equal header");
@@ -223,6 +239,7 @@ pub trait FeatureWorker<SdkControl, SdkEvent, ToController, ToWorker> {
         match input {
             FeatureWorkerInput::Control(actor, control) => Some(FeatureWorkerOutput::ForwardControlToController(actor, control)),
             FeatureWorkerInput::Network(conn, header, buf) => Some(FeatureWorkerOutput::ForwardNetworkToController(conn, header, buf.to_vec())),
+            #[cfg(feature = "vpn")]
             FeatureWorkerInput::TunPkt(_buf) => None,
             FeatureWorkerInput::FromController(_, _) => {
                 log::warn!("No handler for FromController");

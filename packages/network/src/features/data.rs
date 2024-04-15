@@ -83,6 +83,7 @@ impl Feature<Control, Event, ToController, ToWorker> for DataFeature {
                 Control::SendRule(rule, ttl, data) => {
                     let data = match actor {
                         FeatureControlActor::Controller => DataMsg::DataController { data },
+                        FeatureControlActor::Worker(_) => todo!(),
                         FeatureControlActor::Service(service) => DataMsg::DataService { service: *service, data },
                     };
                     let msg = bincode::serialize(&data).expect("should work");

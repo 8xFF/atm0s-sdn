@@ -54,7 +54,7 @@ impl ShadowRouterHistory for DataWorkerHistory {
 mod tests {
     use atm0s_sdn_router::shadow::ShadowRouterHistory;
 
-    use crate::tasks::data_plane::history::HISTORY_TIMEOUT_MS;
+    use crate::history::HISTORY_TIMEOUT_MS;
 
     use super::DataWorkerHistory;
 

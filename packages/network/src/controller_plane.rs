@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::VecDeque, sync::Arc};
 
 use atm0s_sdn_identity::NodeId;
 use rand::RngCore;
@@ -20,9 +20,9 @@ mod neighbours;
 mod services;
 
 #[derive(Debug, Clone, convert_enum::From)]
-pub enum Input<SC, TC> {
+pub enum Input<SC, SE, TC> {
     Ext(ExtIn<SC>),
-    Control(LogicControl<TC>),
+    Control(LogicControl<SC, SE, TC>),
     #[convert_enum(optout)]
     ShutdownRequest,
 }
@@ -30,7 +30,7 @@ pub enum Input<SC, TC> {
 #[derive(Debug, Clone, convert_enum::From)]
 pub enum Output<SE, TW> {
     Ext(ExtOut<SE>),
-    Event(LogicEvent<TW>),
+    Event(LogicEvent<SE, TW>),
     #[convert_enum(optout)]
     ShutdownSuccess,
 }
@@ -59,6 +59,14 @@ impl TryFrom<u8> for TaskType {
     }
 }
 
+pub struct ControllerPlaneCfg<SC, SE, TC, TW> {
+    pub session: u64,
+    pub services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
+    pub authorization: Arc<dyn Authorization>,
+    pub handshake_builder: Arc<dyn HandshakeBuilder>,
+    pub random: Box<dyn RngCore>,
+}
+
 pub struct ControllerPlane<SC, SE, TC, TW> {
     tick_count: u64,
     neighbours: NeighboursManager,
@@ -67,6 +75,7 @@ pub struct ControllerPlane<SC, SE, TC, TW> {
     service_ctx: ServiceCtx,
     services: ServiceManager<SC, SE, TC, TW>,
     switcher: TaskSwitcher,
+    queue: VecDeque<Output<SE, TW>>,
 }
 
 impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
@@ -80,29 +89,24 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
     /// # Returns
     ///
     /// A new ControllerPlane
-    pub fn new(
-        node_id: NodeId,
-        session: u64,
-        services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
-        authorization: Arc<dyn Authorization>,
-        handshake_builder: Arc<dyn HandshakeBuilder>,
-        random: Box<dyn RngCore>,
-    ) -> Self {
-        log::info!("Create ControllerPlane for node: {}, running session {}", node_id, session);
-        let service_ids = services.iter().filter(|s| s.discoverable()).map(|s| s.service_id()).collect();
+    pub fn new(node_id: NodeId, cfg: ControllerPlaneCfg<SC, SE, TC, TW>) -> Self {
+        log::info!("Create ControllerPlane for node: {}, running session {}", node_id, cfg.session);
+        let service_ids = cfg.services.iter().filter(|s| s.discoverable()).map(|s| s.service_id()).collect();
 
         Self {
             tick_count: 0,
-            neighbours: NeighboursManager::new(node_id, authorization, handshake_builder, random),
-            feature_ctx: FeatureContext { node_id, session },
-            features: FeatureManager::new(node_id, session, service_ids),
-            service_ctx: ServiceCtx { node_id, session },
-            services: ServiceManager::new(services),
+            neighbours: NeighboursManager::new(node_id, cfg.authorization, cfg.handshake_builder, cfg.random),
+            feature_ctx: FeatureContext { node_id, session: cfg.session },
+            features: FeatureManager::new(node_id, cfg.session, service_ids),
+            service_ctx: ServiceCtx { node_id, session: cfg.session },
+            services: ServiceManager::new(cfg.services),
             switcher: TaskSwitcher::new(3), //3 types: Neighbours, Feature, Service
+            queue: VecDeque::new(),
         }
     }
 
     pub fn on_tick(&mut self, now_ms: u64) {
+        log::trace!("[ControllerPlane] on_tick: {}", now_ms);
         self.switcher.queue_flag_all();
         self.neighbours.on_tick(now_ms, self.tick_count);
         self.features.on_shared_input(&self.feature_ctx, now_ms, FeatureSharedInput::Tick(self.tick_count));
@@ -110,7 +114,7 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
         self.tick_count += 1;
     }
 
-    pub fn on_event(&mut self, now_ms: u64, event: Input<SC, TC>) {
+    pub fn on_event(&mut self, now_ms: u64, event: Input<SC, SE, TC>) {
         match event {
             Input::Ext(ExtIn::ConnectTo(addr)) => {
                 self.switcher.queue_flag_task(TaskType::Neighbours as usize);
@@ -156,9 +160,19 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
                 self.switcher.queue_flag_task(TaskType::Service as usize);
                 self.services.on_input(&self.service_ctx, now_ms, service, ServiceInput::FeatureEvent(event));
             }
+            Input::Control(LogicControl::ServicesControl(actor, service, control)) => {
+                self.switcher.queue_flag_task(TaskType::Service as usize);
+                self.services.on_input(&self.service_ctx, now_ms, service, ServiceInput::Control(actor, control));
+            }
             Input::Control(LogicControl::FeaturesControl(actor, control)) => {
                 self.switcher.queue_flag_task(TaskType::Feature as usize);
                 self.features.on_input(&self.feature_ctx, now_ms, control.to_feature(), FeatureInput::Control(actor, control));
+            }
+            Input::Control(LogicControl::ExtFeaturesEvent(event)) => {
+                self.queue.push_back(Output::Ext(ExtOut::FeaturesEvent(event)));
+            }
+            Input::Control(LogicControl::ExtServicesEvent(service, event)) => {
+                self.queue.push_back(Output::Ext(ExtOut::ServicesEvent(service, event)));
             }
             Input::ShutdownRequest => {
                 self.switcher.queue_flag_task(TaskType::Neighbours as usize);
@@ -168,6 +182,10 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
     }
 
     pub fn pop_output(&mut self, now_ms: u64) -> Option<Output<SE, TW>> {
+        while let Some(out) = self.queue.pop_front() {
+            return Some(out);
+        }
+
         while let Some(current) = self.switcher.queue_current() {
             match (current as u8).try_into().expect("Should convert to TaskType") {
                 TaskType::Neighbours => {
@@ -195,21 +213,26 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
     }
 
     fn pop_neighbours(&mut self, now_ms: u64) -> Option<Output<SE, TW>> {
-        let out = self.neighbours.pop_output(now_ms)?;
-        match out {
-            neighbours::Output::Control(remote, control) => Some(Output::Event(LogicEvent::NetNeighbour(remote, control))),
-            neighbours::Output::Event(event) => {
-                self.switcher.queue_flag_task(TaskType::Feature as usize);
-                self.features.on_shared_input(&self.feature_ctx, now_ms, FeatureSharedInput::Connection(event.clone()));
-                self.switcher.queue_flag_task(TaskType::Service as usize);
-                self.services.on_shared_input(&self.service_ctx, now_ms, ServiceSharedInput::Connection(event.clone()));
-                match event {
-                    ConnectionEvent::Connected(ctx, secure) => Some(Output::Event(LogicEvent::Pin(ctx.conn, ctx.node, ctx.remote, secure))),
-                    ConnectionEvent::Stats(_ctx, _stats) => None,
-                    ConnectionEvent::Disconnected(ctx) => Some(Output::Event(LogicEvent::UnPin(ctx.conn))),
+        loop {
+            let out = self.neighbours.pop_output(now_ms)?;
+            let out = match out {
+                neighbours::Output::Control(remote, control) => Some(Output::Event(LogicEvent::NetNeighbour(remote, control))),
+                neighbours::Output::Event(event) => {
+                    self.switcher.queue_flag_task(TaskType::Feature as usize);
+                    self.features.on_shared_input(&self.feature_ctx, now_ms, FeatureSharedInput::Connection(event.clone()));
+                    self.switcher.queue_flag_task(TaskType::Service as usize);
+                    self.services.on_shared_input(&self.service_ctx, now_ms, ServiceSharedInput::Connection(event.clone()));
+                    match event {
+                        ConnectionEvent::Connected(ctx, secure) => Some(Output::Event(LogicEvent::Pin(ctx.conn, ctx.node, ctx.remote, secure))),
+                        ConnectionEvent::Stats(_ctx, _stats) => None,
+                        ConnectionEvent::Disconnected(ctx) => Some(Output::Event(LogicEvent::UnPin(ctx.conn))),
+                    }
                 }
+                neighbours::Output::ShutdownResponse => Some(Output::ShutdownSuccess),
+            };
+            if out.is_some() {
+                return out;
             }
-            neighbours::Output::ShutdownResponse => Some(Output::ShutdownSuccess),
         }
     }
 
@@ -222,6 +245,7 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
                 log::debug!("[Controller] send FeatureEvent to actor {:?}, event {:?}", actor, event);
                 match actor {
                     FeatureControlActor::Controller => Some(Output::Ext(ExtOut::FeaturesEvent(event))),
+                    FeatureControlActor::Worker(worker) => Some(Output::Event(LogicEvent::ExtFeaturesEvent(worker, event))),
                     FeatureControlActor::Service(service) => {
                         self.switcher.queue_flag_task(TaskType::Service as usize);
                         self.services.on_input(&self.service_ctx, now_ms, service, ServiceInput::FeatureEvent(event));
@@ -260,7 +284,8 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
                 self.pop_features(now_ms)
             }
             ServiceOutput::Event(actor, event) => match actor {
-                ServiceControlActor::Controller => Some(Output::Ext(ExtOut::ServicesEvent(event))),
+                ServiceControlActor::Controller => Some(Output::Ext(ExtOut::ServicesEvent(service, event))),
+                ServiceControlActor::Worker(worker) => Some(Output::Event(LogicEvent::ExtServicesEvent(worker, service, event))),
             },
             ServiceOutput::BroadcastWorkers(to) => Some(Output::Event(LogicEvent::Service(service, to))),
         }

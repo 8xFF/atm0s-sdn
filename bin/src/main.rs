@@ -1,12 +1,11 @@
-use atm0s_sdn::sans_io_runtime::Owner;
 use atm0s_sdn::secure::StaticKeyAuthorization;
 use atm0s_sdn::services::visualization;
-use atm0s_sdn::tasks::{SdnExtIn, SdnExtOut};
 use atm0s_sdn::{
-    sans_io_runtime::backend::{MioBackend, PollBackend, PollingBackend},
+    sans_io_runtime::backend::{PollBackend, PollingBackend},
     services::visualization::ConnectionInfo,
 };
 use atm0s_sdn::{NodeAddr, NodeId};
+use atm0s_sdn::{SdnBuilder, SdnExtIn, SdnExtOut, SdnOwner};
 use clap::{Parser, ValueEnum};
 use futures_util::{SinkExt, StreamExt};
 #[cfg(not(feature = "embed"))]
@@ -14,7 +13,6 @@ use poem::endpoint::StaticFilesEndpoint;
 #[cfg(feature = "embed")]
 use poem::endpoint::{EmbeddedFileEndpoint, EmbeddedFilesEndpoint};
 use poem::{
-    endpoint::StaticFilesEndpoint,
     get, handler,
     listener::TcpListener,
     web::{
@@ -38,8 +36,6 @@ use std::{
 };
 use tokio::sync::Mutex;
 
-use atm0s_sdn::builder::SdnBuilder;
-
 #[cfg(feature = "embed")]
 #[derive(RustEmbed)]
 #[folder = "public"]
@@ -49,7 +45,6 @@ pub struct Files;
 enum BackendType {
     Poll,
     Polling,
-    Mio,
 }
 
 /// Simple program to running a node
@@ -256,15 +251,14 @@ async fn main() {
     }
 
     let mut controller = match args.backend {
-        BackendType::Mio => builder.build::<MioBackend<128, 128>>(args.workers),
-        BackendType::Poll => builder.build::<PollBackend<128, 128>>(args.workers),
-        BackendType::Polling => builder.build::<PollingBackend<128, 128>>(args.workers),
+        BackendType::Poll => builder.build::<PollBackend<SdnOwner, 128, 128>>(args.workers),
+        BackendType::Polling => builder.build::<PollingBackend<SdnOwner, 128, 128>>(args.workers),
     };
 
     let ctx = Arc::new(Mutex::new(WebsocketCtx::new()));
 
     if args.collector {
-        controller.send_to(Owner::worker(0), SdnExtIn::ServicesControl(visualization::SERVICE_ID.into(), visualization::Control::Subscribe));
+        controller.send_to(0, SdnExtIn::ServicesControl(visualization::SERVICE_ID.into(), visualization::Control::Subscribe));
         let ctx_c = ctx.clone();
         tokio::spawn(async move {
             let route = Route::new().at("/ws", get(ws.data(ctx_c)));
@@ -292,7 +286,7 @@ async fn main() {
         }
         while let Some(event) = controller.pop_event() {
             match event {
-                SdnExtOut::ServicesEvent(event) => match event {
+                SdnExtOut::ServicesEvent(_service, event) => match event {
                     visualization::Event::GotAll(all) => {
                         log::info!("Got all: {:?}", all);
                         ctx.lock().await.set_snapshot(all);

@@ -6,17 +6,31 @@
 
 use crate::{
     base::FeatureControlActor,
-    features::pubsub::{msg::RelayControl, RelayWorkerControl},
+    features::pubsub::{
+        msg::{Feedback, RelayControl},
+        RelayWorkerControl,
+    },
 };
 use std::{collections::VecDeque, net::SocketAddr};
 
-use super::{consumers::RelayConsumers, GenericRelay, GenericRelayOutput, RELAY_STICKY_MS, RELAY_TIMEOUT};
+use super::{consumers::RelayConsumers, feedbacks::FeedbacksAggerator, GenericRelay, GenericRelayOutput, RELAY_STICKY_MS, RELAY_TIMEOUT};
 
 enum RelayState {
     New,
-    Binding { consumers: RelayConsumers },
-    Bound { consumers: RelayConsumers, next: SocketAddr, sticky_session_at: u64 },
-    Unbinding { next: SocketAddr, started_at: u64 },
+    Binding {
+        consumers: RelayConsumers,
+        feedbacks: FeedbacksAggerator,
+    },
+    Bound {
+        consumers: RelayConsumers,
+        feedbacks: FeedbacksAggerator,
+        next: SocketAddr,
+        sticky_session_at: u64,
+    },
+    Unbinding {
+        next: SocketAddr,
+        started_at: u64,
+    },
     Unbound,
 }
 
@@ -40,13 +54,23 @@ impl RemoteRelay {
             queue.push_back(GenericRelayOutput::ToWorker(control));
         }
     }
+
+    fn pop_feedbacks_out(remote: SocketAddr, feedbacks: &mut FeedbacksAggerator, queue: &mut VecDeque<GenericRelayOutput>) {
+        while let Some(fb) = feedbacks.pop_output() {
+            queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendFeedback(fb, remote)));
+        }
+    }
 }
 
 impl GenericRelay for RemoteRelay {
     fn on_tick(&mut self, now: u64) {
         match &mut self.state {
             RelayState::Bound {
-                next, consumers, sticky_session_at, ..
+                next,
+                consumers,
+                feedbacks,
+                sticky_session_at,
+                ..
             } => {
                 if now >= *sticky_session_at + RELAY_STICKY_MS {
                     log::info!("[PubSubRemoteRelay] Sticky session end for relay from {next} => trying finding better way");
@@ -55,7 +79,9 @@ impl GenericRelay for RemoteRelay {
                     self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(self.uuid, Some(*next))));
                 }
                 consumers.on_tick(now);
+                feedbacks.on_tick(now);
                 Self::pop_consumers_out(consumers, &mut self.queue);
+                Self::pop_feedbacks_out(*next, feedbacks, &mut self.queue);
 
                 if consumers.should_clear() {
                     self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendUnsub(self.uuid, *next)));
@@ -85,13 +111,14 @@ impl GenericRelay for RemoteRelay {
 
     fn conn_disconnected(&mut self, now: u64, remote: SocketAddr) {
         match &mut self.state {
-            RelayState::Bound { consumers, next, .. } => {
+            RelayState::Bound { consumers, feedbacks, next, .. } => {
                 consumers.conn_disconnected(now, remote);
                 Self::pop_consumers_out(consumers, &mut self.queue);
                 // If remote is next, this will not be consumers, because it will cause loop deps
                 if *next == remote {
                     let consumers = std::mem::replace(consumers, Default::default());
-                    self.state = RelayState::Binding { consumers };
+                    let feedbacks = std::mem::replace(feedbacks, Default::default());
+                    self.state = RelayState::Binding { consumers, feedbacks };
                     self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(self.uuid, None)));
                 } else if consumers.should_clear() {
                     self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendUnsub(self.uuid, *next)));
@@ -111,6 +138,14 @@ impl GenericRelay for RemoteRelay {
         }
     }
 
+    fn on_pub_start(&mut self, _actor: FeatureControlActor) {
+        panic!("Should not be called");
+    }
+
+    fn on_pub_stop(&mut self, _actor: FeatureControlActor) {
+        panic!("Should not be called");
+    }
+
     /// Add a local subscriber to the relay
     /// Returns true if this is the first subscriber, false otherwise
     fn on_local_sub(&mut self, now: u64, actor: FeatureControlActor) {
@@ -118,24 +153,40 @@ impl GenericRelay for RemoteRelay {
             RelayState::New | RelayState::Unbound => {
                 log::info!("[PubSubRemoteRelay] Sub in New or Unbound state => switch to Binding and send Sub message");
                 let mut consumers = RelayConsumers::default();
+                let feedbacks = FeedbacksAggerator::default();
                 consumers.on_local_sub(now, actor);
                 Self::pop_consumers_out(&mut consumers, &mut self.queue);
-                self.state = RelayState::Binding { consumers };
+                self.state = RelayState::Binding { consumers, feedbacks };
                 self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(self.uuid, None)));
             }
             RelayState::Unbinding { next, .. } => {
                 log::debug!("[PubSubRemoteRelay] Sub in Unbinding state => switch to Binding with previous next {next}");
                 let mut consumers = RelayConsumers::default();
+                let feedbacks = FeedbacksAggerator::default();
                 consumers.on_local_sub(now, actor);
                 Self::pop_consumers_out(&mut consumers, &mut self.queue);
                 self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(self.uuid, Some(*next))));
-                self.state = RelayState::Binding { consumers };
+                self.state = RelayState::Binding { consumers, feedbacks };
             }
             RelayState::Binding { consumers, .. } | RelayState::Bound { consumers, .. } => {
                 log::debug!("[PubSubRemoteRelay] Sub in Binding or Bound state => just add to list");
                 consumers.on_local_sub(now, actor);
                 Self::pop_consumers_out(consumers, &mut self.queue);
             }
+        }
+    }
+
+    /// Sending feedback to sources, for avoiding wasting bandwidth, the feedback will be aggregated and send in each window_ms
+    fn on_local_feedback(&mut self, now: u64, actor: FeatureControlActor, feedback: Feedback) {
+        match &mut self.state {
+            RelayState::Binding { feedbacks, .. } => {
+                feedbacks.on_local_feedback(now, actor, feedback);
+            }
+            RelayState::Bound { next, feedbacks, .. } => {
+                feedbacks.on_local_feedback(now, actor, feedback);
+                Self::pop_feedbacks_out(*next, feedbacks, &mut self.queue);
+            }
+            _ => {}
         }
     }
 
@@ -176,22 +227,26 @@ impl GenericRelay for RemoteRelay {
                     return;
                 }
                 match &mut self.state {
-                    RelayState::Binding { consumers } => {
+                    RelayState::Binding { consumers, feedbacks } => {
                         log::info!("[Relay] SubOK for binding relay {} from {remote} => switched to Bound with this remote", self.uuid);
                         self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteSetSource(remote)));
                         let consumers = std::mem::replace(consumers, Default::default());
+                        let feedbacks = std::mem::replace(feedbacks, Default::default());
                         self.state = RelayState::Bound {
                             next: remote,
                             consumers,
+                            feedbacks,
                             sticky_session_at: now,
                         };
                     }
-                    RelayState::Bound { next, sticky_session_at, consumers } => {
+                    RelayState::Bound {
+                        next, sticky_session_at, consumers, ..
+                    } => {
                         if *next == remote {
-                            log::info!("[Relay] SubOK for bound relay {} from same remote {remote} => renew sticky session", self.uuid);
+                            log::debug!("[Relay] SubOK for bound relay {} from same remote {remote} => renew sticky session", self.uuid);
                             *sticky_session_at = now;
                         } else {
-                            log::info!("[Relay] SubOK for bound relay {} from other remote {remote} => renew stick session and Unsub older", self.uuid);
+                            log::warn!("[Relay] SubOK for bound relay {} from other remote {remote} => renew stick session and Unsub older", self.uuid);
                             let (locals, has_remote) = consumers.relay_dests();
                             self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendUnsub(self.uuid, *next)));
                             if has_remote {
@@ -238,20 +293,32 @@ impl GenericRelay for RemoteRelay {
                     _ => {}
                 }
             }
+            RelayControl::Feedback(fb) => match &mut self.state {
+                RelayState::Binding { feedbacks, .. } => {
+                    feedbacks.on_remote_feedback(now, remote, fb);
+                }
+                RelayState::Bound { next, feedbacks, .. } => {
+                    feedbacks.on_remote_feedback(now, remote, fb);
+                    Self::pop_feedbacks_out(*next, feedbacks, &mut self.queue);
+                }
+                _ => {}
+            },
             _ => match &mut self.state {
                 RelayState::New | RelayState::Unbound => {
                     let mut consumers = RelayConsumers::default();
+                    let feedbacks = FeedbacksAggerator::default();
                     consumers.on_remote(now, remote, control);
                     Self::pop_consumers_out(&mut consumers, &mut self.queue);
                     self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(self.uuid, None)));
-                    self.state = RelayState::Binding { consumers };
+                    self.state = RelayState::Binding { consumers, feedbacks };
                 }
                 RelayState::Unbinding { next, .. } => {
                     let mut consumers = RelayConsumers::default();
+                    let feedbacks = FeedbacksAggerator::default();
                     consumers.on_remote(now, remote, control);
                     Self::pop_consumers_out(&mut consumers, &mut self.queue);
                     self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(self.uuid, Some(*next))));
-                    self.state = RelayState::Binding { consumers };
+                    self.state = RelayState::Binding { consumers, feedbacks };
                 }
                 RelayState::Binding { consumers, .. } => {
                     consumers.on_remote(now, remote, control);

@@ -8,10 +8,7 @@ use atm0s_sdn_network::{
     services::visualization,
 };
 use clap::{Parser, ValueEnum};
-use sans_io_runtime::{
-    backend::{MioBackend, PollBackend, PollingBackend},
-    Owner,
-};
+use sans_io_runtime::backend::{PollBackend, PollingBackend};
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -20,13 +17,12 @@ use std::{
     time::Duration,
 };
 
-use atm0s_sdn::{builder::SdnBuilder, tasks::SdnExtIn};
+use atm0s_sdn::{SdnBuilder, SdnExtIn, SdnOwner};
 
 #[derive(Debug, Clone, ValueEnum)]
 enum BackendType {
     Poll,
     Polling,
-    Mio,
 }
 
 /// Simple program to running a node
@@ -89,13 +85,12 @@ fn main() {
     }
 
     let mut controller = match args.backend {
-        BackendType::Mio => builder.build::<MioBackend<128, 128>>(args.workers),
-        BackendType::Poll => builder.build::<PollBackend<128, 128>>(args.workers),
-        BackendType::Polling => builder.build::<PollingBackend<128, 128>>(args.workers),
+        BackendType::Poll => builder.build::<PollBackend<SdnOwner, 128, 128>>(args.workers),
+        BackendType::Polling => builder.build::<PollingBackend<SdnOwner, 128, 128>>(args.workers),
     };
 
     if args.kv_subscribe {
-        controller.send_to(Owner::worker(0), SdnExtIn::FeaturesControl(FeaturesControl::DhtKv(Control::MapCmd(Map(args.kv_map), MapControl::Sub))));
+        controller.send_to(0, SdnExtIn::FeaturesControl(FeaturesControl::DhtKv(Control::MapCmd(Map(args.kv_map), MapControl::Sub))));
     }
 
     let mut i: u32 = 0;
@@ -114,10 +109,7 @@ fn main() {
         if i % 1000 == 0 && args.kv_set {
             let data = i.to_be_bytes().to_vec();
             log::info!("Set key: {:?}", data);
-            controller.send_to(
-                Owner::worker(0),
-                SdnExtIn::FeaturesControl(FeaturesControl::DhtKv(Control::MapCmd(Map(args.kv_map), MapControl::Set(Key(200), data)))),
-            );
+            controller.send_to(0, SdnExtIn::FeaturesControl(FeaturesControl::DhtKv(Control::MapCmd(Map(args.kv_map), MapControl::Set(Key(200), data)))));
         }
         while let Some(out) = controller.pop_event() {
             log::info!("Got event: {:?}", out);

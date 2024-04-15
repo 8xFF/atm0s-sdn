@@ -1,7 +1,7 @@
 use atm0s_sdn_identity::{NodeAddr, NodeId};
 use atm0s_sdn_network::{secure::StaticKeyAuthorization, services::visualization};
 use clap::{Parser, ValueEnum};
-use sans_io_runtime::backend::{MioBackend, PollBackend, PollingBackend};
+use sans_io_runtime::backend::{PollBackend, PollingBackend};
 use std::{
     net::SocketAddr,
     sync::{
@@ -11,13 +11,12 @@ use std::{
     time::Duration,
 };
 
-use atm0s_sdn::builder::SdnBuilder;
+use atm0s_sdn::{SdnBuilder, SdnOwner};
 
 #[derive(Debug, Clone, ValueEnum)]
 enum BackendType {
     Poll,
     Polling,
-    Mio,
 }
 
 /// Simple program to running a node
@@ -91,9 +90,8 @@ fn main() {
     }
 
     let mut controller = match args.backend {
-        BackendType::Mio => builder.build::<MioBackend<128, 128>>(args.workers),
-        BackendType::Poll => builder.build::<PollBackend<128, 128>>(args.workers),
-        BackendType::Polling => builder.build::<PollingBackend<128, 128>>(args.workers),
+        BackendType::Poll => builder.build::<PollBackend<SdnOwner, 128, 128>>(args.workers),
+        BackendType::Polling => builder.build::<PollingBackend<SdnOwner, 128, 128>>(args.workers),
     };
 
     while controller.process().is_some() {

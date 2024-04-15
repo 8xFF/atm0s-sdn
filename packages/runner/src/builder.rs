@@ -13,9 +13,12 @@ use atm0s_sdn_network::{
     services::{manual_discovery, visualization},
 };
 use rand::{thread_rng, RngCore};
-use sans_io_runtime::{backend::Backend, Owner};
+use sans_io_runtime::backend::Backend;
 
-use crate::tasks::{ControllerCfg, DataWorkerHistory, SdnController, SdnExtIn, SdnInnerCfg, SdnWorkerInner};
+use crate::{
+    history::DataWorkerHistory,
+    worker_inner::{ControllerCfg, SdnController, SdnExtIn, SdnInnerCfg, SdnOwner, SdnWorkerInner},
+};
 
 pub struct SdnBuilder<SC, SE, TC, TW> {
     auth: Option<Arc<dyn Authorization>>,
@@ -24,6 +27,7 @@ pub struct SdnBuilder<SC, SE, TC, TW> {
     node_id: NodeId,
     session: u64,
     udp_port: u16,
+    tick_ms: u64,
     visualization_collector: bool,
     seeds: Vec<NodeAddr>,
     services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
@@ -77,6 +81,7 @@ where
             handshake: None,
             node_addr,
             node_id,
+            tick_ms: 1000,
             session: thread_rng().next_u64(),
             udp_port,
             visualization_collector: false,
@@ -142,7 +147,7 @@ where
         self.vpn_netmask = Some(netmask);
     }
 
-    pub fn build<B: Backend>(mut self, workers: usize) -> SdnController<SC, SE, TC, TW> {
+    pub fn build<B: Backend<SdnOwner>>(mut self, workers: usize) -> SdnController<SC, SE, TC, TW> {
         assert!(workers > 0);
         #[cfg(feature = "vpn")]
         let (tun_device, mut queue_fds) = {
@@ -165,10 +170,11 @@ where
         let history = Arc::new(DataWorkerHistory::default());
 
         let mut controller = SdnController::default();
-        controller.add_worker::<_, SdnWorkerInner<SC, SE, TC, TW>, B>(
+        controller.add_worker::<SdnOwner, _, SdnWorkerInner<SC, SE, TC, TW>, B>(
             Duration::from_millis(1000),
             SdnInnerCfg {
                 node_id: self.node_id,
+                tick_ms: self.tick_ms,
                 udp_port: self.udp_port,
                 services: self.services.clone(),
                 history: history.clone(),
@@ -187,10 +193,11 @@ where
         );
 
         for _ in 1..workers {
-            controller.add_worker::<_, SdnWorkerInner<SC, SE, TC, TW>, B>(
+            controller.add_worker::<SdnOwner, _, SdnWorkerInner<SC, SE, TC, TW>, B>(
                 Duration::from_millis(1000),
                 SdnInnerCfg {
                     node_id: self.node_id,
+                    tick_ms: self.tick_ms,
                     udp_port: self.udp_port,
                     services: self.services.clone(),
                     history: history.clone(),
@@ -205,7 +212,7 @@ where
         std::thread::sleep(std::time::Duration::from_millis(100));
 
         for seed in self.seeds {
-            controller.send_to(Owner::worker(0), SdnExtIn::ConnectTo(seed));
+            controller.send_to(0, SdnExtIn::ConnectTo(seed));
         }
 
         controller
