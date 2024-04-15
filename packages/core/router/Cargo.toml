@@ -1,6 +1,6 @@
 [package]
 name = "atm0s-sdn-router"
-version = "0.1.4"
+version = "0.2.0"
 edition = "2021"
 description = "Router interface for atm0s-sdn"
 license = "MIT"
@@ -8,8 +8,8 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-atm0s-sdn-identity = { path = "../identity", version = "0.2.0" }
-atm0s-sdn-utils = { path = "../utils", version = "0.1.1" }
+atm0s-sdn-identity = { path = "../identity", version = "0.3.0" }
+atm0s-sdn-utils = { path = "../utils", version = "0.2.0" }
 serde = { workspace = true }
 log = { workspace = true }
 mockall = { workspace = true }

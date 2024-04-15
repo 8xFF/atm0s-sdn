@@ -6,12 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.0](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-utils-v0.1.1...atm0s-sdn-utils-v0.2.0) - 2024-04-15
-
-### Other
-- BREAKING CHANGE: Migrate sans io runtime ([#144](https://github.com/8xFF/atm0s-sdn/pull/144))
-
-## [0.1.1](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-utils-v0.1.0...atm0s-sdn-utils-v0.1.1) - 2023-12-11
+## [0.1.0](https://github.com/8xFF/atm0s-sdn/releases/tag/atm0s-sdn-standalone-v0.1.0) - 2024-04-15
 
 ### Added
-- manual-discovery with node tags ([#84](https://github.com/8xFF/atm0s-sdn/pull/84))
+- ext worker communication ([#160](https://github.com/8xFF/atm0s-sdn/pull/160))
+- authorization encryption ([#153](https://github.com/8xFF/atm0s-sdn/pull/153))
+
+### Other
+- auto release build standalone ([#158](https://github.com/8xFF/atm0s-sdn/pull/158))
+- BREAKING CHANGE: Migrate sans io runtime ([#144](https://github.com/8xFF/atm0s-sdn/pull/144))

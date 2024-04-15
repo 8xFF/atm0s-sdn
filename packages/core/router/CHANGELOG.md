@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-router-v0.1.4...atm0s-sdn-router-v0.2.0) - 2024-04-15
+
+### Added
+- history timeout and some logs ([#150](https://github.com/8xFF/atm0s-sdn/pull/150))
+
+### Other
+- added sync msg size test ([#156](https://github.com/8xFF/atm0s-sdn/pull/156))
+- BREAKING CHANGE: Migrate sans io runtime ([#144](https://github.com/8xFF/atm0s-sdn/pull/144))
+
 ## [0.1.4](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-router-v0.1.3...atm0s-sdn-router-v0.1.4) - 2023-12-27
 
 ### Other

@@ -6,6 +6,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-v0.1.10...atm0s-sdn-v0.2.0) - 2024-04-15
+
+### Added
+- ext worker communication ([#160](https://github.com/8xFF/atm0s-sdn/pull/160))
+- authorization encryption ([#153](https://github.com/8xFF/atm0s-sdn/pull/153))
+- history timeout and some logs ([#150](https://github.com/8xFF/atm0s-sdn/pull/150))
+- meta in virtual socket for implement enc, quic-tunnel example ([#149](https://github.com/8xFF/atm0s-sdn/pull/149))
+
+### Fixed
+- connection manager should response even when it in connected state for adapting with network lossy ([#154](https://github.com/8xFF/atm0s-sdn/pull/154))
+- alias only timeout in very rare cases bug ([#151](https://github.com/8xFF/atm0s-sdn/pull/151))
+
+### Other
+- switched to use TaskSwitcher from SansIO Runtime ([#157](https://github.com/8xFF/atm0s-sdn/pull/157))
+- BREAKING CHANGE: Migrate sans io runtime ([#144](https://github.com/8xFF/atm0s-sdn/pull/144))
+- added sync msg size test ([#156](https://github.com/8xFF/atm0s-sdn/pull/156))
+
 ## [0.1.10](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-v0.1.9...atm0s-sdn-v0.1.10) - 2024-02-21
 
 ### Other
