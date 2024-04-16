@@ -17,7 +17,7 @@ rust-embed = { version = "8.2", optional = true }
 
 futures-util = "0.3.30"
 tracing-subscriber = "0.3.18"
-serde_json = "1.0.114"
+serde_json = "1.0.116"
 
 [features]
 default = ["embed"]
