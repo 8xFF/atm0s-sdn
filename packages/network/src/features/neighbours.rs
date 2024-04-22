@@ -1,6 +1,7 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, fmt::Debug, hash::Hash, marker::PhantomData};
 
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
+use derivative::Derivative;
 
 use crate::base::{ConnectionEvent, Feature, FeatureContext, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker};
 
@@ -27,13 +28,14 @@ pub struct ToWorker;
 #[derive(Debug, Clone)]
 pub struct ToController;
 
-#[derive(Default)]
-pub struct NeighboursFeature {
-    subs: Vec<FeatureControlActor>,
-    output: VecDeque<FeatureOutput<Event, ToWorker>>,
+#[derive(Debug, Derivative)]
+#[derivative(Default(bound = ""))]
+pub struct NeighboursFeature<UserData> {
+    subs: Vec<FeatureControlActor<UserData>>,
+    output: VecDeque<FeatureOutput<UserData, Event, ToWorker>>,
 }
 
-impl Feature<Control, Event, ToController, ToWorker> for NeighboursFeature {
+impl<UserData: Debug + Copy + Hash + Eq> Feature<UserData, Control, Event, ToController, ToWorker> for NeighboursFeature<UserData> {
     fn on_shared_input(&mut self, _ctx: &FeatureContext, _now: u64, input: FeatureSharedInput) {
         match input {
             FeatureSharedInput::Connection(ConnectionEvent::Connected(ctx, _)) => {
@@ -52,7 +54,7 @@ impl Feature<Control, Event, ToController, ToWorker> for NeighboursFeature {
         }
     }
 
-    fn on_input<'a>(&mut self, _ctx: &FeatureContext, _now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
+    fn on_input<'a>(&mut self, _ctx: &FeatureContext, _now_ms: u64, input: FeatureInput<'a, UserData, Control, ToController>) {
         match input {
             FeatureInput::Control(actor, control) => match control {
                 Control::Sub => {
@@ -78,12 +80,15 @@ impl Feature<Control, Event, ToController, ToWorker> for NeighboursFeature {
         }
     }
 
-    fn pop_output<'a>(&mut self, _ctx: &FeatureContext) -> Option<FeatureOutput<Event, ToWorker>> {
+    fn pop_output<'a>(&mut self, _ctx: &FeatureContext) -> Option<FeatureOutput<UserData, Event, ToWorker>> {
         self.output.pop_front()
     }
 }
 
-#[derive(Default)]
-pub struct NeighboursFeatureWorker {}
+#[derive(Debug, Derivative)]
+#[derivative(Default(bound = ""))]
+pub struct NeighboursFeatureWorker<UserData> {
+    _tmp: PhantomData<UserData>,
+}
 
-impl FeatureWorker<Control, Event, ToController, ToWorker> for NeighboursFeatureWorker {}
+impl<UserData> FeatureWorker<UserData, Control, Event, ToController, ToWorker> for NeighboursFeatureWorker<UserData> {}

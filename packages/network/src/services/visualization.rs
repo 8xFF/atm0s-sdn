@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, VecDeque},
     fmt::Debug,
+    marker::PhantomData,
     net::SocketAddr,
 };
 
@@ -20,7 +21,9 @@ const NODE_TIMEOUT_MS: u64 = 10000; // after 10 seconds of no ping, node is cons
 const NODE_PING_MS: u64 = 5000;
 const NODE_PING_TTL: u8 = 5;
 
-fn data_cmd<SE, TW>(cmd: data::Control) -> ServiceOutput<FeaturesControl, SE, TW> {
+const DATA_PORT: u16 = 0;
+
+fn data_cmd<UserData, SE, TW>(cmd: data::Control) -> ServiceOutput<UserData, FeaturesControl, SE, TW> {
     ServiceOutput::FeatureControl(FeaturesControl::Data(cmd))
 }
 
@@ -55,17 +58,17 @@ enum Message {
     Snapshot(NodeId, Vec<ConnectionInfo>),
 }
 
-pub struct VisualizationService<SC, SE, TC, TW> {
+pub struct VisualizationService<UserData, SC, SE, TC, TW> {
     last_ping: u64,
     broadcast_seq: u16,
-    queue: VecDeque<ServiceOutput<FeaturesControl, SE, TW>>,
+    queue: VecDeque<ServiceOutput<UserData, FeaturesControl, SE, TW>>,
     conns: BTreeMap<ConnId, ConnectionInfo>,
     network_nodes: BTreeMap<NodeId, NodeInfo>,
-    subscribers: Vec<ServiceControlActor>,
+    subscribers: Vec<ServiceControlActor<UserData>>,
     _tmp: std::marker::PhantomData<(SC, TC, TW)>,
 }
 
-impl<SC, SE, TC, TW> VisualizationService<SC, SE, TC, TW>
+impl<UserData: Copy, SC, SE, TC, TW> VisualizationService<UserData, SC, SE, TC, TW>
 where
     SC: From<Control> + TryInto<Control>,
     SE: From<Event> + TryInto<Event>,
@@ -76,7 +79,7 @@ where
             last_ping: 0,
             conns: BTreeMap::new(),
             network_nodes: BTreeMap::new(),
-            queue: VecDeque::new(),
+            queue: VecDeque::from([ServiceOutput::FeatureControl(FeaturesControl::Data(data::Control::DataListen(DATA_PORT)))]),
             subscribers: Vec::new(),
             _tmp: std::marker::PhantomData,
         }
@@ -89,7 +92,7 @@ where
     }
 }
 
-impl<SC, SE, TC, TW> Service<FeaturesControl, FeaturesEvent, SC, SE, TC, TW> for VisualizationService<SC, SE, TC, TW>
+impl<UserData: Copy + Eq, SC, SE, TC, TW> Service<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW> for VisualizationService<UserData, SC, SE, TC, TW>
 where
     SC: From<Control> + TryInto<Control>,
     SE: From<Event> + TryInto<Event>,
@@ -123,7 +126,8 @@ where
                     let msg = Message::Snapshot(ctx.node_id, self.conns.values().cloned().collect::<Vec<_>>());
                     let seq = self.broadcast_seq;
                     self.broadcast_seq = self.broadcast_seq.wrapping_add(1);
-                    self.queue.push_back(data_cmd(data::Control::SendRule(
+                    self.queue.push_back(data_cmd(data::Control::DataSendRule(
+                        DATA_PORT,
                         RouteRule::ToServices(SERVICE_ID, ServiceBroadcastLevel::Global, seq),
                         NetOutgoingMeta::new(false, Ttl(NODE_PING_TTL), 0, true),
                         bincode::serialize(&msg).expect("Should to bytes"),
@@ -159,9 +163,9 @@ where
         }
     }
 
-    fn on_input(&mut self, _ctx: &ServiceCtx, now: u64, input: ServiceInput<FeaturesEvent, SC, TC>) {
+    fn on_input(&mut self, _ctx: &ServiceCtx, now: u64, input: ServiceInput<UserData, FeaturesEvent, SC, TC>) {
         match input {
-            ServiceInput::FeatureEvent(FeaturesEvent::Data(data::Event::Recv(meta, buf))) => {
+            ServiceInput::FeatureEvent(FeaturesEvent::Data(data::Event::Recv(_port, meta, buf))) => {
                 if !meta.secure {
                     log::warn!("[Visualization] reject unsecure message");
                     return;
@@ -200,14 +204,16 @@ where
         }
     }
 
-    fn pop_output(&mut self, _ctx: &ServiceCtx) -> Option<ServiceOutput<FeaturesControl, SE, TW>> {
+    fn pop_output(&mut self, _ctx: &ServiceCtx) -> Option<ServiceOutput<UserData, FeaturesControl, SE, TW>> {
         self.queue.pop_front()
     }
 }
 
-pub struct VisualizationServiceWorker {}
+pub struct VisualizationServiceWorker<UserData> {
+    _tmp: PhantomData<UserData>,
+}
 
-impl<SC, SE, TC, TW> ServiceWorker<FeaturesControl, FeaturesEvent, SC, SE, TC, TW> for VisualizationServiceWorker {
+impl<UserData, SC, SE, TC, TW> ServiceWorker<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW> for VisualizationServiceWorker<UserData> {
     fn service_id(&self) -> u8 {
         SERVICE_ID
     }
@@ -217,12 +223,12 @@ impl<SC, SE, TC, TW> ServiceWorker<FeaturesControl, FeaturesEvent, SC, SE, TC, T
     }
 }
 
-pub struct VisualizationServiceBuilder<SC, SE, TC, TW> {
+pub struct VisualizationServiceBuilder<UserData, SC, SE, TC, TW> {
     collector: bool,
-    _tmp: std::marker::PhantomData<(SC, SE, TC, TW)>,
+    _tmp: std::marker::PhantomData<(UserData, SC, SE, TC, TW)>,
 }
 
-impl<SC, SE, TC, TW> VisualizationServiceBuilder<SC, SE, TC, TW> {
+impl<UserData, SC, SE, TC, TW> VisualizationServiceBuilder<UserData, SC, SE, TC, TW> {
     pub fn new(collector: bool) -> Self {
         log::info!("[Visualization] started as collector node => will receive metric from all other nodes");
         Self {
@@ -232,8 +238,9 @@ impl<SC, SE, TC, TW> VisualizationServiceBuilder<SC, SE, TC, TW> {
     }
 }
 
-impl<SC, SE, TC, TW> ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW> for VisualizationServiceBuilder<SC, SE, TC, TW>
+impl<UserData, SC, SE, TC, TW> ServiceBuilder<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW> for VisualizationServiceBuilder<UserData, SC, SE, TC, TW>
 where
+    UserData: 'static + Debug + Send + Sync + Copy + Eq,
     SC: 'static + Debug + Send + Sync + From<Control> + TryInto<Control>,
     SE: 'static + Debug + Send + Sync + From<Event> + TryInto<Event>,
     TC: 'static + Debug + Send + Sync,
@@ -251,12 +258,12 @@ where
         self.collector
     }
 
-    fn create(&self) -> Box<dyn Service<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>> {
+    fn create(&self) -> Box<dyn Service<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW>> {
         Box::new(VisualizationService::new())
     }
 
-    fn create_worker(&self) -> Box<dyn ServiceWorker<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>> {
-        Box::new(VisualizationServiceWorker {})
+    fn create_worker(&self) -> Box<dyn ServiceWorker<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW>> {
+        Box::new(VisualizationServiceWorker { _tmp: Default::default() })
     }
 }
 
@@ -273,12 +280,12 @@ mod test {
             data::{Control as DataControl, Event as DataEvent},
             FeaturesEvent,
         },
-        services::visualization::{data_cmd, Message, NODE_PING_MS, NODE_PING_TTL, NODE_TIMEOUT_MS},
+        services::visualization::{data_cmd, Message, DATA_PORT, NODE_PING_MS, NODE_PING_TTL, NODE_TIMEOUT_MS},
     };
 
     use super::{Control, Event, VisualizationService, SERVICE_ID};
 
-    fn data_event(event: DataEvent) -> ServiceInput<FeaturesEvent, Control, ()> {
+    fn data_event(event: DataEvent) -> ServiceInput<(), FeaturesEvent, Control, ()> {
         ServiceInput::FeatureEvent(FeaturesEvent::Data(event))
     }
 
@@ -308,14 +315,16 @@ mod test {
     fn agent_should_prediotic_sending_snapshot() {
         let node_id = 1;
         let ctx = ServiceCtx { node_id, session: 0 };
-        let mut service = VisualizationService::<Control, Event, (), ()>::new();
+        let mut service = VisualizationService::<(), Control, Event, (), ()>::new();
 
+        assert_eq!(service.pop_output(&ctx), Some(data_cmd(DataControl::DataListen(DATA_PORT))));
         assert_eq!(service.pop_output(&ctx), None);
 
         service.on_shared_input(&ctx, NODE_PING_MS, ServiceSharedInput::Tick(0));
         assert_eq!(
             service.pop_output(&ctx),
-            Some(data_cmd(DataControl::SendRule(
+            Some(data_cmd(DataControl::DataSendRule(
+                DATA_PORT,
                 RouteRule::ToServices(SERVICE_ID, ServiceBroadcastLevel::Global, 0),
                 NetOutgoingMeta::new(false, Ttl(NODE_PING_TTL), 0, true),
                 bincode::serialize(&Message::Snapshot(node_id, vec![])).expect("Should to bytes")
@@ -325,7 +334,8 @@ mod test {
         service.on_shared_input(&ctx, NODE_PING_MS * 2, ServiceSharedInput::Tick(0));
         assert_eq!(
             service.pop_output(&ctx),
-            Some(data_cmd(DataControl::SendRule(
+            Some(data_cmd(DataControl::DataSendRule(
+                DATA_PORT,
                 RouteRule::ToServices(SERVICE_ID, ServiceBroadcastLevel::Global, 1),
                 NetOutgoingMeta::new(false, Ttl(NODE_PING_TTL), 0, true),
                 bincode::serialize(&Message::Snapshot(node_id, vec![])).expect("Should to bytes")
@@ -336,7 +346,7 @@ mod test {
     #[test]
     fn agent_handle_connection_event() {
         let node_id = 1;
-        let mut service = VisualizationService::<Control, Event, (), ()>::new();
+        let mut service = VisualizationService::<(), Control, Event, (), ()>::new();
 
         let node2 = 2;
         let node3 = 3;
@@ -357,13 +367,13 @@ mod test {
     fn collector_handle_snapshot_correct() {
         let node_id = 1;
         let ctx = ServiceCtx { node_id, session: 0 };
-        let mut service = VisualizationService::<Control, Event, (), ()>::new();
+        let mut service = VisualizationService::<(), Control, Event, (), ()>::new();
 
         let node2 = 2;
 
         let snapshot = Message::Snapshot(node2, vec![]);
         let buf = bincode::serialize(&snapshot).expect("Should to bytes");
-        service.on_input(&ctx, 100, data_event(DataEvent::Recv(NetIncomingMeta::new(None, NODE_PING_TTL.into(), 0, true), buf)));
+        service.on_input(&ctx, 100, data_event(DataEvent::Recv(DATA_PORT, NetIncomingMeta::new(None, NODE_PING_TTL.into(), 0, true), buf)));
 
         assert_eq!(service.network_nodes.len(), 1);
 

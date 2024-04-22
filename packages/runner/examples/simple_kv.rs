@@ -77,7 +77,7 @@ fn main() {
     let mut shutdown_wait = 0;
     let args = Args::parse();
     env_logger::builder().format_timestamp_millis().init();
-    let mut builder = SdnBuilder::<SC, SE, TC, TW>::new(args.node_id, args.udp_port, vec![]);
+    let mut builder = SdnBuilder::<(), SC, SE, TC, TW>::new(args.node_id, args.udp_port, vec![]);
     builder.set_authorization(StaticKeyAuthorization::new(&args.password));
 
     for seed in args.seeds {
@@ -90,7 +90,7 @@ fn main() {
     };
 
     if args.kv_subscribe {
-        controller.send_to(0, SdnExtIn::FeaturesControl(FeaturesControl::DhtKv(Control::MapCmd(Map(args.kv_map), MapControl::Sub))));
+        controller.send_to(0, SdnExtIn::FeaturesControl((), FeaturesControl::DhtKv(Control::MapCmd(Map(args.kv_map), MapControl::Sub))));
     }
 
     let mut i: u32 = 0;
@@ -109,7 +109,10 @@ fn main() {
         if i % 1000 == 0 && args.kv_set {
             let data = i.to_be_bytes().to_vec();
             log::info!("Set key: {:?}", data);
-            controller.send_to(0, SdnExtIn::FeaturesControl(FeaturesControl::DhtKv(Control::MapCmd(Map(args.kv_map), MapControl::Set(Key(200), data)))));
+            controller.send_to(
+                0,
+                SdnExtIn::FeaturesControl((), FeaturesControl::DhtKv(Control::MapCmd(Map(args.kv_map), MapControl::Set(Key(200), data)))),
+            );
         }
         while let Some(out) = controller.pop_event() {
             log::info!("Got event: {:?}", out);

@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
+    fmt::Debug,
     net::SocketAddr,
 };
 
@@ -13,26 +14,26 @@ use super::{
     ChannelControl, ChannelEvent, Control, Event, RelayWorkerControl, ToController, ToWorker,
 };
 
-struct WorkerRelay {
+struct WorkerRelay<UserData> {
     source: Option<SocketAddr>,
-    locals: Vec<FeatureControlActor>,
+    locals: Vec<FeatureControlActor<UserData>>,
     remotes: Vec<SocketAddr>,
     remotes_uuid: HashMap<SocketAddr, u64>,
 }
 
-impl WorkerRelay {
+impl<UserData> WorkerRelay<UserData> {
     pub fn is_empty(&self) -> bool {
         self.locals.is_empty() && self.remotes.is_empty()
     }
 }
 
-pub struct PubSubFeatureWorker {
-    relays: HashMap<RelayId, WorkerRelay>,
+pub struct PubSubFeatureWorker<UserData> {
+    relays: HashMap<RelayId, WorkerRelay<UserData>>,
     buf: [u8; 1500],
-    queue: VecDeque<FeatureWorkerOutput<'static, Control, Event, ToController>>,
+    queue: VecDeque<FeatureWorkerOutput<'static, UserData, Control, Event, ToController>>,
 }
 
-impl PubSubFeatureWorker {
+impl<UserData> PubSubFeatureWorker<UserData> {
     pub(crate) fn new() -> Self {
         Self {
             relays: HashMap::new(),
@@ -42,7 +43,7 @@ impl PubSubFeatureWorker {
     }
 }
 
-impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWorker {
+impl<UserData: Eq + Copy + Debug> FeatureWorker<UserData, Control, Event, ToController, ToWorker<UserData>> for PubSubFeatureWorker<UserData> {
     fn on_network_raw<'a>(
         &mut self,
         _ctx: &mut FeatureWorkerContext,
@@ -51,7 +52,7 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWork
         remote: SocketAddr,
         _header: TransportMsgHeader,
         buf: Buffer<'a>,
-    ) -> Option<FeatureWorkerOutput<'a, Control, Event, ToController>> {
+    ) -> Option<FeatureWorkerOutput<'a, UserData, Control, Event, ToController>> {
         log::debug!("[PubSubWorker] on_network_raw from {}", remote);
         let msg = PubsubMessage::try_from(&buf as &[u8]).ok()?;
         match msg {
@@ -90,7 +91,12 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWork
         }
     }
 
-    fn on_input<'a>(&mut self, ctx: &mut FeatureWorkerContext, _now: u64, input: FeatureWorkerInput<'a, Control, ToWorker>) -> Option<FeatureWorkerOutput<'a, Control, Event, ToController>> {
+    fn on_input<'a>(
+        &mut self,
+        ctx: &mut FeatureWorkerContext,
+        _now: u64,
+        input: FeatureWorkerInput<'a, UserData, Control, ToWorker<UserData>>,
+    ) -> Option<FeatureWorkerOutput<'a, UserData, Control, Event, ToController>> {
         match input {
             FeatureWorkerInput::FromController(_, ToWorker::RelayControl(relay_id, control)) => match control {
                 RelayWorkerControl::SendSub(uuid, remote) => {
@@ -150,7 +156,7 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWork
                 }
                 RelayWorkerControl::RouteSetSource(source) => {
                     log::info!("[PubsubWorker] RouteSetSource for {:?} to {:?}", relay_id, source);
-                    let entry: &mut WorkerRelay = self.relays.entry(relay_id).or_insert(WorkerRelay {
+                    let entry: &mut WorkerRelay<UserData> = self.relays.entry(relay_id).or_insert(WorkerRelay {
                         source: None,
                         locals: vec![],
                         remotes: vec![],
@@ -175,7 +181,7 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWork
                 }
                 RelayWorkerControl::RouteSetLocal(actor) => {
                     log::debug!("[PubsubWorker] RouteSetLocal for {:?} to {:?}", relay_id, actor);
-                    let entry: &mut WorkerRelay = self.relays.entry(relay_id).or_insert(WorkerRelay {
+                    let entry: &mut WorkerRelay<UserData> = self.relays.entry(relay_id).or_insert(WorkerRelay {
                         source: None,
                         locals: vec![],
                         remotes: vec![],
@@ -201,7 +207,7 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWork
                 }
                 RelayWorkerControl::RouteSetRemote(remote, uuid) => {
                     log::debug!("[PubsubWorker] RouteSetRemote for {:?} to {:?}", relay_id, remote);
-                    let entry: &mut WorkerRelay = self.relays.entry(relay_id).or_insert(WorkerRelay {
+                    let entry: &mut WorkerRelay<UserData> = self.relays.entry(relay_id).or_insert(WorkerRelay {
                         source: None,
                         locals: vec![],
                         remotes: vec![],
@@ -281,7 +287,7 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for PubSubFeatureWork
         }
     }
 
-    fn pop_output<'a>(&mut self, _ctx: &mut FeatureWorkerContext) -> Option<FeatureWorkerOutput<'a, Control, Event, ToController>> {
+    fn pop_output<'a>(&mut self, _ctx: &mut FeatureWorkerContext) -> Option<FeatureWorkerOutput<'a, UserData, Control, Event, ToController>> {
         self.queue.pop_front()
     }
 }

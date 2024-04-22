@@ -6,7 +6,10 @@
 //! For solve conflict, each sub_key will attacked to a locked value, which is a pair (node, lock_session).
 //! In which, node is the node that locked the value, and session is the session of the lock.
 
+use std::{fmt::Debug, marker::PhantomData};
+
 use atm0s_sdn_identity::NodeId;
+use derivative::Derivative;
 
 use crate::base::{Feature, FeatureContext, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker, NetOutgoingMeta};
 
@@ -74,11 +77,11 @@ pub struct ToWorker;
 #[derive(Debug, Clone)]
 pub struct ToController;
 
-pub struct DhtKvFeature {
-    internal: internal::DhtKvInternal,
+pub struct DhtKvFeature<UserData> {
+    internal: internal::DhtKvInternal<UserData>,
 }
 
-impl DhtKvFeature {
+impl<UserData: Eq + Copy + Debug> DhtKvFeature<UserData> {
     pub fn new(node_id: NodeId, session: u64) -> Self {
         Self {
             internal: internal::DhtKvInternal::new(NodeSession(node_id, session)),
@@ -86,7 +89,7 @@ impl DhtKvFeature {
     }
 }
 
-impl Feature<Control, Event, ToController, ToWorker> for DhtKvFeature {
+impl<UserData: Eq + Copy + Debug> Feature<UserData, Control, Event, ToController, ToWorker> for DhtKvFeature<UserData> {
     fn on_shared_input(&mut self, _ctx: &FeatureContext, now: u64, input: FeatureSharedInput) {
         match input {
             FeatureSharedInput::Tick(_) => {
@@ -96,7 +99,7 @@ impl Feature<Control, Event, ToController, ToWorker> for DhtKvFeature {
         }
     }
 
-    fn on_input<'a>(&mut self, _ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
+    fn on_input<'a>(&mut self, _ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'a, UserData, Control, ToController>) {
         match input {
             FeatureInput::Control(actor, control) => {
                 log::debug!("[DhtKv] on ext input: actor={:?}, control={:?}", actor, control);
@@ -121,7 +124,7 @@ impl Feature<Control, Event, ToController, ToWorker> for DhtKvFeature {
         }
     }
 
-    fn pop_output<'a>(&mut self, _ctx: &FeatureContext) -> Option<FeatureOutput<Event, ToWorker>> {
+    fn pop_output<'a>(&mut self, _ctx: &FeatureContext) -> Option<FeatureOutput<UserData, Event, ToWorker>> {
         match self.internal.pop_action()? {
             InternalOutput::Local(service, event) => Some(FeatureOutput::Event(service, event)),
             InternalOutput::Remote(rule, cmd) => Some(FeatureOutput::SendRoute(
@@ -133,7 +136,10 @@ impl Feature<Control, Event, ToController, ToWorker> for DhtKvFeature {
     }
 }
 
-#[derive(Default)]
-pub struct DhtKvFeatureWorker {}
+#[derive(Debug, Derivative)]
+#[derivative(Default(bound = ""))]
+pub struct DhtKvFeatureWorker<UserData> {
+    _tmp: PhantomData<UserData>,
+}
 
-impl FeatureWorker<Control, Event, ToController, ToWorker> for DhtKvFeatureWorker {}
+impl<UserData> FeatureWorker<UserData, Control, Event, ToController, ToWorker> for DhtKvFeatureWorker<UserData> {}

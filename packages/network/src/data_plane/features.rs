@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::net::SocketAddr;
 
 use atm0s_sdn_identity::ConnId;
@@ -6,8 +7,8 @@ use sans_io_runtime::TaskSwitcher;
 use crate::base::{Buffer, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, TransportMsgHeader};
 use crate::features::*;
 
-pub type FeaturesWorkerInput<'a> = FeatureWorkerInput<'a, FeaturesControl, FeaturesToWorker>;
-pub type FeaturesWorkerOutput<'a> = FeatureWorkerOutput<'a, FeaturesControl, FeaturesEvent, FeaturesToController>;
+pub type FeaturesWorkerInput<'a, UserData> = FeatureWorkerInput<'a, UserData, FeaturesControl, FeaturesToWorker<UserData>>;
+pub type FeaturesWorkerOutput<'a, UserData> = FeatureWorkerOutput<'a, UserData, FeaturesControl, FeaturesEvent, FeaturesToController>;
 
 ///
 /// FeatureWorkerManager is a manager for all features
@@ -15,25 +16,25 @@ pub type FeaturesWorkerOutput<'a> = FeatureWorkerOutput<'a, FeaturesControl, Fea
 /// With some special event must to broadcast to all features (Tick, Transport Events), it will
 /// use a switcher to correctly process one by one
 ///
-pub struct FeatureWorkerManager {
-    neighbours: neighbours::NeighboursFeatureWorker,
-    data: data::DataFeatureWorker,
-    router_sync: router_sync::RouterSyncFeatureWorker,
-    vpn: vpn::VpnFeatureWorker,
-    dht_kv: dht_kv::DhtKvFeatureWorker,
-    pubsub: pubsub::PubSubFeatureWorker,
-    alias: alias::AliasFeatureWorker,
-    socket: socket::SocketFeatureWorker,
+pub struct FeatureWorkerManager<UserData> {
+    neighbours: neighbours::NeighboursFeatureWorker<UserData>,
+    data: data::DataFeatureWorker<UserData>,
+    router_sync: router_sync::RouterSyncFeatureWorker<UserData>,
+    vpn: vpn::VpnFeatureWorker<UserData>,
+    dht_kv: dht_kv::DhtKvFeatureWorker<UserData>,
+    pubsub: pubsub::PubSubFeatureWorker<UserData>,
+    alias: alias::AliasFeatureWorker<UserData>,
+    socket: socket::SocketFeatureWorker<UserData>,
     switcher: TaskSwitcher,
 }
 
-impl FeatureWorkerManager {
+impl<UserData: Eq + Debug + Copy> FeatureWorkerManager<UserData> {
     pub fn new() -> Self {
         Self {
             neighbours: neighbours::NeighboursFeatureWorker::default(),
             data: data::DataFeatureWorker::default(),
             router_sync: router_sync::RouterSyncFeatureWorker::default(),
-            vpn: vpn::VpnFeatureWorker,
+            vpn: vpn::VpnFeatureWorker::default(),
             dht_kv: dht_kv::DhtKvFeatureWorker::default(),
             pubsub: pubsub::PubSubFeatureWorker::new(),
             alias: alias::AliasFeatureWorker::default(),
@@ -63,7 +64,7 @@ impl FeatureWorkerManager {
         remote: SocketAddr,
         header: TransportMsgHeader,
         buf: Buffer<'a>,
-    ) -> Option<FeaturesWorkerOutput<'a>> {
+    ) -> Option<FeaturesWorkerOutput<'a, UserData>> {
         let out = match feature {
             Features::Neighbours => self.neighbours.on_network_raw(ctx, now_ms, conn, remote, header, buf).map(|a| a.into2()),
             Features::Data => self.data.on_network_raw(ctx, now_ms, conn, remote, header, buf).map(|a| a.into2()),
@@ -80,7 +81,7 @@ impl FeatureWorkerManager {
         out
     }
 
-    pub fn on_input<'a>(&mut self, ctx: &mut FeatureWorkerContext, feature: Features, now_ms: u64, input: FeaturesWorkerInput<'a>) -> Option<FeaturesWorkerOutput<'a>> {
+    pub fn on_input<'a>(&mut self, ctx: &mut FeatureWorkerContext, feature: Features, now_ms: u64, input: FeaturesWorkerInput<'a, UserData>) -> Option<FeaturesWorkerOutput<'a, UserData>> {
         let out = match input {
             FeatureWorkerInput::Control(actor, control) => match control {
                 FeaturesControl::Neighbours(control) => self.neighbours.on_input(ctx, now_ms, FeatureWorkerInput::Control(actor, control)).map(|a| a.into2()),
@@ -124,7 +125,7 @@ impl FeatureWorkerManager {
         out
     }
 
-    pub fn pop_output(&mut self, ctx: &mut FeatureWorkerContext) -> Option<(Features, FeaturesWorkerOutput<'static>)> {
+    pub fn pop_output(&mut self, ctx: &mut FeatureWorkerContext) -> Option<(Features, FeaturesWorkerOutput<'static, UserData>)> {
         loop {
             let s = &mut self.switcher;
             match (s.queue_current()? as u8).try_into().ok()? {

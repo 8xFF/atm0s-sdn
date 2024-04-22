@@ -1,5 +1,7 @@
 use std::{
     collections::{HashMap, VecDeque},
+    fmt::Debug,
+    hash::Hash,
     net::SocketAddr,
     sync::Arc,
 };
@@ -34,17 +36,17 @@ pub enum NetInput<'a> {
 }
 
 #[derive(Debug, Clone)]
-pub enum CrossWorker<SE> {
-    Feature(FeaturesEvent),
-    Service(ServiceId, SE),
+pub enum CrossWorker<UserData, SE> {
+    Feature(UserData, FeaturesEvent),
+    Service(ServiceId, UserData, SE),
 }
 
 #[derive(Debug)]
-pub enum Input<'a, SC, SE, TW> {
-    Ext(ExtIn<SC>),
+pub enum Input<'a, UserData, SC, SE, TW> {
+    Ext(ExtIn<UserData, SC>),
     Net(NetInput<'a>),
-    Event(LogicEvent<SE, TW>),
-    Worker(CrossWorker<SE>),
+    Event(LogicEvent<UserData, SE, TW>),
+    Worker(CrossWorker<UserData, SE>),
     ShutdownRequest,
 }
 
@@ -57,51 +59,55 @@ pub enum NetOutput<'a> {
 }
 
 #[derive(convert_enum::From)]
-pub enum Output<'a, SC, SE, TC> {
-    Ext(ExtOut<SE>),
+pub enum Output<'a, UserData, SC, SE, TC> {
+    Ext(ExtOut<UserData, SE>),
     Net(NetOutput<'a>),
-    Control(LogicControl<SC, SE, TC>),
+    Control(LogicControl<UserData, SC, SE, TC>),
     #[convert_enum(optout)]
-    Worker(u16, CrossWorker<SE>),
+    Worker(u16, CrossWorker<UserData, SE>),
     #[convert_enum(optout)]
     ShutdownResponse,
     #[convert_enum(optout)]
     Continue,
 }
 
-#[repr(u8)]
+#[derive(num_enum::TryFromPrimitive, num_enum::IntoPrimitive)]
+#[repr(usize)]
 enum TaskType {
-    Feature,
-    Service,
+    Feature = 0,
+    Service = 1,
 }
 
-enum QueueOutput<SC, SE, TC> {
-    Feature(Features, FeatureWorkerOutput<'static, FeaturesControl, FeaturesEvent, FeaturesToController>),
-    Service(ServiceId, ServiceWorkerOutput<FeaturesControl, FeaturesEvent, SC, SE, TC>),
+enum QueueOutput<UserData, SC, SE, TC> {
+    Feature(Features, FeatureWorkerOutput<'static, UserData, FeaturesControl, FeaturesEvent, FeaturesToController>),
+    Service(ServiceId, ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC>),
     Net(NetOutput<'static>),
 }
 
-pub struct DataPlaneCfg<SC, SE, TC, TW> {
+pub struct DataPlaneCfg<UserData, SC, SE, TC, TW> {
     pub worker_id: u16,
-    pub services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
+    pub services: Vec<Arc<dyn ServiceBuilder<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
     pub history: Arc<dyn ShadowRouterHistory>,
 }
 
-pub struct DataPlane<SC, SE, TC, TW> {
+pub struct DataPlane<UserData, SC, SE, TC, TW> {
     tick_count: u64,
     worker_id: u16,
     feature_ctx: FeatureWorkerContext,
-    features: FeatureWorkerManager,
+    features: FeatureWorkerManager<UserData>,
     service_ctx: ServiceWorkerCtx,
-    services: ServiceWorkerManager<SC, SE, TC, TW>,
+    services: ServiceWorkerManager<UserData, SC, SE, TC, TW>,
     conns: HashMap<SocketAddr, DataPlaneConnection>,
     conns_reverse: HashMap<ConnId, SocketAddr>,
-    queue_output: VecDeque<QueueOutput<SC, SE, TC>>,
+    queue_output: VecDeque<QueueOutput<UserData, SC, SE, TC>>,
     switcher: TaskSwitcher,
 }
 
-impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
-    pub fn new(node_id: NodeId, cfg: DataPlaneCfg<SC, SE, TC, TW>) -> Self {
+impl<UserData, SC, SE, TC, TW> DataPlane<UserData, SC, SE, TC, TW>
+where
+    UserData: 'static + Copy + Eq + Hash + Debug,
+{
+    pub fn new(node_id: NodeId, cfg: DataPlaneCfg<UserData, SC, SE, TC, TW>) -> Self {
         log::info!("Create DataPlane for node: {}", node_id);
 
         Self {
@@ -133,7 +139,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
         self.tick_count += 1;
     }
 
-    pub fn on_event<'a>(&mut self, now_ms: u64, event: Input<'a, SC, SE, TW>) -> Option<Output<'a, SC, SE, TC>> {
+    pub fn on_event<'a>(&mut self, now_ms: u64, event: Input<'a, UserData, SC, SE, TW>) -> Option<Output<'a, UserData, SC, SE, TC>> {
         match event {
             Input::Ext(ext) => match ext {
                 ExtIn::ConnectTo(_remote) => {
@@ -142,20 +148,20 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 ExtIn::DisconnectFrom(_node) => {
                     panic!("DisconnectFrom is not supported")
                 }
-                ExtIn::FeaturesControl(control) => {
+                ExtIn::FeaturesControl(userdata, control) => {
                     let feature: Features = control.to_feature();
-                    let actor = FeatureControlActor::Worker(self.worker_id);
+                    let actor = FeatureControlActor::Worker(self.worker_id, userdata);
                     let out = self.features.on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::Control(actor, control))?;
                     Some(self.convert_features(now_ms, feature, out))
                 }
-                ExtIn::ServicesControl(service, control) => {
-                    let actor = ServiceControlActor::Worker(self.worker_id);
+                ExtIn::ServicesControl(service, userdata, control) => {
+                    let actor = ServiceControlActor::Worker(self.worker_id, userdata);
                     let out = self.services.on_input(&mut self.service_ctx, now_ms, service, ServiceWorkerInput::Control(actor, control))?;
                     Some(self.convert_services(now_ms, service, out))
                 }
             },
-            Input::Worker(CrossWorker::Feature(event)) => Some(Output::Ext(ExtOut::FeaturesEvent(event))),
-            Input::Worker(CrossWorker::Service(service, event)) => Some(Output::Ext(ExtOut::ServicesEvent(service, event))),
+            Input::Worker(CrossWorker::Feature(userdata, event)) => Some(Output::Ext(ExtOut::FeaturesEvent(userdata, event))),
+            Input::Worker(CrossWorker::Service(service, userdata, event)) => Some(Output::Ext(ExtOut::ServicesEvent(service, userdata, event))),
             Input::Net(NetInput::UdpPacket(remote, buf)) => {
                 if buf.is_empty() {
                     return None;
@@ -180,13 +186,13 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 let out = self.services.on_input(&mut self.service_ctx, now_ms, service, ServiceWorkerInput::FromController(to))?;
                 Some(self.convert_services(now_ms, service, out))
             }
-            Input::Event(LogicEvent::ExtFeaturesEvent(worker, event)) => {
+            Input::Event(LogicEvent::ExtFeaturesEvent(worker, userdata, event)) => {
                 assert_eq!(self.worker_id, worker);
-                Some(Output::Ext(ExtOut::FeaturesEvent(event)))
+                Some(Output::Ext(ExtOut::FeaturesEvent(userdata, event)))
             }
-            Input::Event(LogicEvent::ExtServicesEvent(worker, service, event)) => {
+            Input::Event(LogicEvent::ExtServicesEvent(worker, service, userdata, event)) => {
                 assert_eq!(self.worker_id, worker);
-                Some(Output::Ext(ExtOut::ServicesEvent(service, event)))
+                Some(Output::Ext(ExtOut::ServicesEvent(service, userdata, event)))
             }
             Input::Event(LogicEvent::NetNeighbour(remote, control)) => {
                 let buf: Result<Vec<u8>, _> = (&control).try_into();
@@ -215,7 +221,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
         }
     }
 
-    pub fn pop_output<'a>(&mut self, now_ms: u64) -> Option<Output<'a, SC, SE, TC>> {
+    pub fn pop_output<'a>(&mut self, now_ms: u64) -> Option<Output<'a, UserData, SC, SE, TC>> {
         if let Some(out) = self.queue_output.pop_front() {
             return match out {
                 QueueOutput::Feature(feature, out) => Some(self.convert_features(now_ms, feature, out)),
@@ -225,27 +231,26 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
         };
 
         while let Some(current) = self.switcher.queue_current() {
-            match current {
-                0 => {
+            match current.try_into().ok()? {
+                TaskType::Feature => {
                     let out = self.features.pop_output(&mut self.feature_ctx);
                     if let Some((feature, out)) = self.switcher.queue_process(out) {
                         return Some(self.convert_features(now_ms, feature, out));
                     }
                 }
-                1 => {
+                TaskType::Service => {
                     let out = self.services.pop_output(&mut self.service_ctx);
                     if let Some((feature, out)) = self.switcher.queue_process(out) {
                         return Some(self.convert_services(now_ms, feature, out));
                     }
                 }
-                _ => panic!("Invalid task group index: {}", current),
             }
         }
 
         None
     }
 
-    fn incoming_route<'a>(&mut self, now_ms: u64, remote: SocketAddr, mut buf: BufferMut<'a>) -> Option<Output<'a, SC, SE, TC>> {
+    fn incoming_route<'a>(&mut self, now_ms: u64, remote: SocketAddr, mut buf: BufferMut<'a>) -> Option<Output<'a, UserData, SC, SE, TC>> {
         let conn = self.conns.get_mut(&remote)?;
         if TransportMsgHeader::is_secure(buf[0]) {
             conn.decrypt_if_need(now_ms, &mut buf)?;
@@ -290,7 +295,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
         }
     }
 
-    fn outgoing_route<'a>(&mut self, now_ms: u64, feature: Features, rule: RouteRule, mut meta: NetOutgoingMeta, buf: Vec<u8>) -> Option<Output<'a, SC, SE, TC>> {
+    fn outgoing_route<'a>(&mut self, now_ms: u64, feature: Features, rule: RouteRule, mut meta: NetOutgoingMeta, buf: Vec<u8>) -> Option<Output<'a, UserData, SC, SE, TC>> {
         match self.feature_ctx.router.derive_action(&rule, Some(self.feature_ctx.node_id), None) {
             RouteAction::Reject => {
                 log::debug!("[DataPlane] outgoing route rule {:?} is rejected", rule);
@@ -327,7 +332,12 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
         }
     }
 
-    fn convert_features<'a>(&mut self, now_ms: u64, feature: Features, out: FeatureWorkerOutput<'a, FeaturesControl, FeaturesEvent, FeaturesToController>) -> Output<'a, SC, SE, TC> {
+    fn convert_features<'a>(
+        &mut self,
+        now_ms: u64,
+        feature: Features,
+        out: FeatureWorkerOutput<'a, UserData, FeaturesControl, FeaturesEvent, FeaturesToController>,
+    ) -> Output<'a, UserData, SC, SE, TC> {
         self.switcher.queue_flag_task(TaskType::Feature as usize);
 
         match out {
@@ -336,12 +346,12 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
             FeatureWorkerOutput::ForwardLocalToController(header, buf) => LogicControl::NetLocal(feature, header, buf).into(),
             FeatureWorkerOutput::ToController(control) => LogicControl::Feature(control).into(),
             FeatureWorkerOutput::Event(actor, event) => match actor {
-                FeatureControlActor::Controller => Output::Control(LogicControl::ExtFeaturesEvent(event)),
-                FeatureControlActor::Worker(worker) => {
+                FeatureControlActor::Controller(userdata) => Output::Control(LogicControl::ExtFeaturesEvent(userdata, event)),
+                FeatureControlActor::Worker(worker, userdata) => {
                     if self.worker_id == worker {
-                        Output::Ext(ExtOut::FeaturesEvent(event))
+                        Output::Ext(ExtOut::FeaturesEvent(userdata, event))
                     } else {
-                        Output::Worker(worker, CrossWorker::Feature(event))
+                        Output::Worker(worker, CrossWorker::Feature(userdata, event))
                     }
                 }
                 FeatureControlActor::Service(service) => {
@@ -395,7 +405,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
         }
     }
 
-    fn convert_services<'a>(&mut self, now_ms: u64, service: ServiceId, out: ServiceWorkerOutput<FeaturesControl, FeaturesEvent, SC, SE, TC>) -> Output<'a, SC, SE, TC> {
+    fn convert_services<'a>(&mut self, now_ms: u64, service: ServiceId, out: ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC>) -> Output<'a, UserData, SC, SE, TC> {
         self.switcher.queue_flag_task(TaskType::Service as usize);
 
         match out {
@@ -414,12 +424,12 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 }
             }
             ServiceWorkerOutput::Event(actor, event) => match actor {
-                ServiceControlActor::Controller => Output::Control(LogicControl::ExtServicesEvent(service, event)),
-                ServiceControlActor::Worker(worker) => {
+                ServiceControlActor::Controller(userdata) => Output::Control(LogicControl::ExtServicesEvent(service, userdata, event)),
+                ServiceControlActor::Worker(worker, userdata) => {
                     if self.worker_id == worker {
-                        Output::Ext(ExtOut::ServicesEvent(service, event))
+                        Output::Ext(ExtOut::ServicesEvent(service, userdata, event))
                     } else {
-                        Output::Worker(worker, CrossWorker::Service(service, event))
+                        Output::Worker(worker, CrossWorker::Service(service, userdata, event))
                     }
                 }
             },

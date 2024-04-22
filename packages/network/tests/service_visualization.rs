@@ -10,9 +10,10 @@ use crate::simulator::{node_to_addr, NetworkSimulator, TestNode};
 
 mod simulator;
 
-fn node_changed(node: NodeId, remotes: &[(NodeId, ConnId)]) -> ExtOut<Event> {
+fn node_changed(node: NodeId, remotes: &[(NodeId, ConnId)]) -> ExtOut<(), Event> {
     ExtOut::ServicesEvent(
         visualization::SERVICE_ID.into(),
+        (),
         Event::NodeChanged(
             node,
             remotes
@@ -37,15 +38,18 @@ fn service_visualization_simple() {
     let _addr1 = sim.add_node(TestNode::new(node1, 1234, vec![Arc::new(VisualizationServiceBuilder::new(true))]));
     let addr2 = sim.add_node(TestNode::new(node2, 1235, vec![Arc::new(VisualizationServiceBuilder::new(false))]));
 
-    sim.control(node1, ExtIn::ServicesControl(visualization::SERVICE_ID.into(), Control::Subscribe));
+    sim.control(node1, ExtIn::ServicesControl(visualization::SERVICE_ID.into(), (), Control::Subscribe));
 
     // For sync, snapshot and subscribe process
     for _i in 0..6 {
         sim.process(1000);
     }
 
-    assert_eq!(sim.pop_res(), Some((node1, ExtOut::ServicesEvent(visualization::SERVICE_ID.into(), Event::GotAll(vec![])))));
-    assert_eq!(sim.pop_res(), Some((node1, ExtOut::ServicesEvent(visualization::SERVICE_ID.into(), Event::NodeChanged(node1, vec![])))));
+    assert_eq!(sim.pop_res(), Some((node1, ExtOut::ServicesEvent(visualization::SERVICE_ID.into(), (), Event::GotAll(vec![])))));
+    assert_eq!(
+        sim.pop_res(),
+        Some((node1, ExtOut::ServicesEvent(visualization::SERVICE_ID.into(), (), Event::NodeChanged(node1, vec![]))))
+    );
 
     sim.control(node1, ExtIn::ConnectTo(addr2));
 
@@ -74,18 +78,24 @@ fn service_visualization_multi_collectors() {
     let addr2 = sim.add_node(TestNode::new(node2, 1235, vec![Arc::new(VisualizationServiceBuilder::new(true))]));
     let addr3 = sim.add_node(TestNode::new(node3, 1236, vec![Arc::new(VisualizationServiceBuilder::new(false))]));
 
-    sim.control(node1, ExtIn::ServicesControl(visualization::SERVICE_ID.into(), Control::Subscribe));
-    sim.control(node2, ExtIn::ServicesControl(visualization::SERVICE_ID.into(), Control::Subscribe));
+    sim.control(node1, ExtIn::ServicesControl(visualization::SERVICE_ID.into(), (), Control::Subscribe));
+    sim.control(node2, ExtIn::ServicesControl(visualization::SERVICE_ID.into(), (), Control::Subscribe));
 
     // For sync, snapshot and subscribe process
     for _i in 0..6 {
         sim.process(1000);
     }
 
-    assert_eq!(sim.pop_res(), Some((node1, ExtOut::ServicesEvent(visualization::SERVICE_ID.into(), Event::GotAll(vec![])))));
-    assert_eq!(sim.pop_res(), Some((node2, ExtOut::ServicesEvent(visualization::SERVICE_ID.into(), Event::GotAll(vec![])))));
-    assert_eq!(sim.pop_res(), Some((node1, ExtOut::ServicesEvent(visualization::SERVICE_ID.into(), Event::NodeChanged(node1, vec![])))));
-    assert_eq!(sim.pop_res(), Some((node2, ExtOut::ServicesEvent(visualization::SERVICE_ID.into(), Event::NodeChanged(node2, vec![])))));
+    assert_eq!(sim.pop_res(), Some((node1, ExtOut::ServicesEvent(visualization::SERVICE_ID.into(), (), Event::GotAll(vec![])))));
+    assert_eq!(sim.pop_res(), Some((node2, ExtOut::ServicesEvent(visualization::SERVICE_ID.into(), (), Event::GotAll(vec![])))));
+    assert_eq!(
+        sim.pop_res(),
+        Some((node1, ExtOut::ServicesEvent(visualization::SERVICE_ID.into(), (), Event::NodeChanged(node1, vec![]))))
+    );
+    assert_eq!(
+        sim.pop_res(),
+        Some((node2, ExtOut::ServicesEvent(visualization::SERVICE_ID.into(), (), Event::NodeChanged(node2, vec![]))))
+    );
 
     sim.control(node1, ExtIn::ConnectTo(addr2));
     sim.control(node2, ExtIn::ConnectTo(addr3));
@@ -108,9 +118,9 @@ fn service_visualization_multi_collectors() {
         }
     }
 
-    let get_key = |a: &ExtOut<Event>| -> u32 {
+    let get_key = |a: &ExtOut<(), Event>| -> u32 {
         match a {
-            ExtOut::ServicesEvent(_service, Event::NodeChanged(node, _)) => *node,
+            ExtOut::ServicesEvent(_service, _, Event::NodeChanged(node, _)) => *node,
             _ => panic!("Unexpected event: {:?}", a),
         }
     };

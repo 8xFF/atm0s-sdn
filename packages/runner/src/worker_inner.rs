@@ -1,6 +1,7 @@
 use std::{
     collections::VecDeque,
     fmt::Debug,
+    hash::Hash,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     sync::Arc,
     time::Instant,
@@ -16,7 +17,7 @@ use atm0s_sdn_network::{
     ExtIn, ExtOut,
 };
 use atm0s_sdn_router::shadow::ShadowRouterHistory;
-use rand::rngs::ThreadRng;
+use rand::rngs::OsRng;
 use sans_io_runtime::{
     backend::{BackendIncoming, BackendOutgoing},
     BusChannelControl, BusControl, BusEvent, Controller, WorkerInner, WorkerInnerInput, WorkerInnerOutput,
@@ -24,10 +25,10 @@ use sans_io_runtime::{
 
 use crate::time::TimePivot;
 
-pub type SdnController<SC, SE, TC, TW> = Controller<SdnExtIn<SC>, SdnExtOut<SE>, SdnSpawnCfg, SdnChannel, SdnEvent<SC, SE, TC, TW>, 1024>;
+pub type SdnController<UserData, SC, SE, TC, TW> = Controller<SdnExtIn<UserData, SC>, SdnExtOut<UserData, SE>, SdnSpawnCfg, SdnChannel, SdnEvent<UserData, SC, SE, TC, TW>, 1024>;
 
-pub type SdnExtIn<SC> = ExtIn<SC>;
-pub type SdnExtOut<SE> = ExtOut<SE>;
+pub type SdnExtIn<UserData, SC> = ExtIn<UserData, SC>;
+pub type SdnExtOut<UserData, SE> = ExtOut<UserData, SE>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SdnOwner;
@@ -38,7 +39,7 @@ pub enum SdnChannel {
     Worker(u16),
 }
 
-pub type SdnEvent<SC, SE, TC, TW> = SdnWorkerBusEvent<SC, SE, TC, TW>;
+pub type SdnEvent<UserData, SC, SE, TC, TW> = SdnWorkerBusEvent<UserData, SC, SE, TC, TW>;
 
 pub struct ControllerCfg {
     pub session: u64,
@@ -49,12 +50,12 @@ pub struct ControllerCfg {
     pub vpn_tun_device: Option<sans_io_runtime::backend::tun::TunDevice>,
 }
 
-pub struct SdnInnerCfg<SC, SE, TC, TW> {
+pub struct SdnInnerCfg<UserData, SC, SE, TC, TW> {
     pub node_id: NodeId,
     pub tick_ms: u64,
     pub udp_port: u16,
     pub controller: Option<ControllerCfg>,
-    pub services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
+    pub services: Vec<Arc<dyn ServiceBuilder<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
     pub history: Arc<dyn ShadowRouterHistory>,
     #[cfg(feature = "vpn")]
     pub vpn_tun_fd: Option<sans_io_runtime::backend::tun::TunFd>,
@@ -68,9 +69,9 @@ enum State {
     Shutdowned,
 }
 
-pub struct SdnWorkerInner<SC, SE, TC, TW> {
+pub struct SdnWorkerInner<UserData, SC, SE, TC, TW> {
     worker: u16,
-    worker_inner: SdnWorker<SC, SE, TC, TW>,
+    worker_inner: SdnWorker<UserData, SC, SE, TC, TW>,
     state: State,
     timer: TimePivot,
     #[cfg(feature = "vpn")]
@@ -78,15 +79,15 @@ pub struct SdnWorkerInner<SC, SE, TC, TW> {
     udp_backend_slot: Option<usize>,
     #[cfg(feature = "vpn")]
     tun_backend_slot: Option<usize>,
-    queue: VecDeque<WorkerInnerOutput<'static, SdnOwner, SdnExtOut<SE>, SdnChannel, SdnEvent<SC, SE, TC, TW>, SdnSpawnCfg>>,
+    queue: VecDeque<WorkerInnerOutput<'static, SdnOwner, SdnExtOut<UserData, SE>, SdnChannel, SdnEvent<UserData, SC, SE, TC, TW>, SdnSpawnCfg>>,
 }
 
-impl<SC: Debug, SE: Debug, TC: Debug, TW: Debug> SdnWorkerInner<SC, SE, TC, TW> {
+impl<UserData: 'static + Eq + Copy + Hash + Debug, SC: Debug, SE: Debug, TC: Debug, TW: Debug> SdnWorkerInner<UserData, SC, SE, TC, TW> {
     fn convert_output<'a>(
         &mut self,
         now_ms: u64,
-        event: SdnWorkerOutput<'a, SC, SE, TC, TW>,
-    ) -> Option<WorkerInnerOutput<'a, SdnOwner, SdnExtOut<SE>, SdnChannel, SdnEvent<SC, SE, TC, TW>, SdnSpawnCfg>> {
+        event: SdnWorkerOutput<'a, UserData, SC, SE, TC, TW>,
+    ) -> Option<WorkerInnerOutput<'a, SdnOwner, SdnExtOut<UserData, SE>, SdnChannel, SdnEvent<UserData, SC, SE, TC, TW>, SdnSpawnCfg>> {
         match event {
             SdnWorkerOutput::Ext(ext) => Some(WorkerInnerOutput::Ext(true, ext)),
             SdnWorkerOutput::ExtWorker(_) => {
@@ -133,10 +134,11 @@ impl<SC: Debug, SE: Debug, TC: Debug, TW: Debug> SdnWorkerInner<SC, SE, TC, TW> 
     }
 }
 
-impl<SC: Debug, SE: Debug, TC: Debug, TW: Debug> WorkerInner<SdnOwner, SdnExtIn<SC>, SdnExtOut<SE>, SdnChannel, SdnEvent<SC, SE, TC, TW>, SdnInnerCfg<SC, SE, TC, TW>, SdnSpawnCfg>
-    for SdnWorkerInner<SC, SE, TC, TW>
+impl<UserData: 'static + Eq + Copy + Hash + Debug, SC: Debug, SE: Debug, TC: Debug, TW: Debug>
+    WorkerInner<SdnOwner, SdnExtIn<UserData, SC>, SdnExtOut<UserData, SE>, SdnChannel, SdnEvent<UserData, SC, SE, TC, TW>, SdnInnerCfg<UserData, SC, SE, TC, TW>, SdnSpawnCfg>
+    for SdnWorkerInner<UserData, SC, SE, TC, TW>
 {
-    fn build(worker: u16, cfg: SdnInnerCfg<SC, SE, TC, TW>) -> Self {
+    fn build(worker: u16, cfg: SdnInnerCfg<UserData, SC, SE, TC, TW>) -> Self {
         let addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), cfg.udp_port));
         let mut queue = VecDeque::from([
             WorkerInnerOutput::Bus(BusControl::Channel(SdnOwner, BusChannelControl::Subscribe(SdnChannel::Worker(worker)))),
@@ -158,7 +160,7 @@ impl<SC: Debug, SE: Debug, TC: Debug, TW: Debug> WorkerInner<SdnOwner, SdnExtIn<
                         authorization: controller.auth,
                         handshake_builder: controller.handshake,
                         session: controller.session,
-                        random: Box::new(ThreadRng::default()),
+                        random: Box::new(OsRng::default()),
                         services: cfg.services.clone(),
                     }),
                     data: DataPlaneCfg {
@@ -214,7 +216,7 @@ impl<SC: Debug, SE: Debug, TC: Debug, TW: Debug> WorkerInner<SdnOwner, SdnExtIn<
         todo!("Spawn not implemented")
     }
 
-    fn on_tick<'a>(&mut self, now: Instant) -> Option<WorkerInnerOutput<'a, SdnOwner, SdnExtOut<SE>, SdnChannel, SdnEvent<SC, SE, TC, TW>, SdnSpawnCfg>> {
+    fn on_tick<'a>(&mut self, now: Instant) -> Option<WorkerInnerOutput<'a, SdnOwner, SdnExtOut<UserData, SE>, SdnChannel, SdnEvent<UserData, SC, SE, TC, TW>, SdnSpawnCfg>> {
         if let Some(e) = self.queue.pop_front() {
             return Some(e);
         }
@@ -226,8 +228,8 @@ impl<SC: Debug, SE: Debug, TC: Debug, TW: Debug> WorkerInner<SdnOwner, SdnExtIn<
     fn on_event<'a>(
         &mut self,
         now: Instant,
-        event: WorkerInnerInput<'a, SdnOwner, SdnExtIn<SC>, SdnChannel, SdnEvent<SC, SE, TC, TW>>,
-    ) -> Option<WorkerInnerOutput<'a, SdnOwner, SdnExtOut<SE>, SdnChannel, SdnEvent<SC, SE, TC, TW>, SdnSpawnCfg>> {
+        event: WorkerInnerInput<'a, SdnOwner, SdnExtIn<UserData, SC>, SdnChannel, SdnEvent<UserData, SC, SE, TC, TW>>,
+    ) -> Option<WorkerInnerOutput<'a, SdnOwner, SdnExtOut<UserData, SE>, SdnChannel, SdnEvent<UserData, SC, SE, TC, TW>, SdnSpawnCfg>> {
         let now_ms = self.timer.timestamp_ms(now);
         let out = match event {
             WorkerInnerInput::Net(_, event) => match event {
@@ -256,7 +258,7 @@ impl<SC: Debug, SE: Debug, TC: Debug, TW: Debug> WorkerInner<SdnOwner, SdnExtIn<
         self.convert_output(now_ms, out?)
     }
 
-    fn pop_output<'a>(&mut self, now: Instant) -> Option<WorkerInnerOutput<'a, SdnOwner, SdnExtOut<SE>, SdnChannel, SdnEvent<SC, SE, TC, TW>, SdnSpawnCfg>> {
+    fn pop_output<'a>(&mut self, now: Instant) -> Option<WorkerInnerOutput<'a, SdnOwner, SdnExtOut<UserData, SE>, SdnChannel, SdnEvent<UserData, SC, SE, TC, TW>, SdnSpawnCfg>> {
         if let Some(e) = self.queue.pop_front() {
             return Some(e);
         }
@@ -265,7 +267,7 @@ impl<SC: Debug, SE: Debug, TC: Debug, TW: Debug> WorkerInner<SdnOwner, SdnExtIn<
         self.convert_output(now_ms, out)
     }
 
-    fn shutdown<'a>(&mut self, now: Instant) -> Option<WorkerInnerOutput<'a, SdnOwner, SdnExtOut<SE>, SdnChannel, SdnEvent<SC, SE, TC, TW>, SdnSpawnCfg>> {
+    fn shutdown<'a>(&mut self, now: Instant) -> Option<WorkerInnerOutput<'a, SdnOwner, SdnExtOut<UserData, SE>, SdnChannel, SdnEvent<UserData, SC, SE, TC, TW>, SdnSpawnCfg>> {
         if !matches!(self.state, State::Running) {
             return None;
         }

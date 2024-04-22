@@ -20,10 +20,12 @@
 
 use std::{
     collections::{BTreeMap, VecDeque},
+    fmt::Debug,
     net::SocketAddr,
 };
 
 use atm0s_sdn_identity::NodeId;
+use derivative::Derivative;
 
 use crate::{base::FeatureControlActor, features::pubsub::msg::SourceHint};
 
@@ -38,25 +40,26 @@ pub enum LocalCmd {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Output {
+pub enum Output<UserData> {
     SendRemote(Option<SocketAddr>, SourceHint),
-    SubscribeSource(Vec<FeatureControlActor>, NodeId),
-    UnsubscribeSource(Vec<FeatureControlActor>, NodeId),
+    SubscribeSource(Vec<FeatureControlActor<UserData>>, NodeId),
+    UnsubscribeSource(Vec<FeatureControlActor<UserData>>, NodeId),
 }
 
-#[derive(Default)]
-pub struct SourceHintLogic {
+#[derive(Derivative)]
+#[derivative(Default(bound = ""))]
+pub struct SourceHintLogic<UserData> {
     node_id: NodeId,
     session_id: u64,
     remote_sources: BTreeMap<NodeId, u64>,
     remote_subscribers: BTreeMap<SocketAddr, u64>,
-    local_sources: Vec<FeatureControlActor>,
-    local_subscribers: Vec<FeatureControlActor>,
+    local_sources: Vec<FeatureControlActor<UserData>>,
+    local_subscribers: Vec<FeatureControlActor<UserData>>,
     next_hop: Option<SocketAddr>,
-    queue: VecDeque<Output>,
+    queue: VecDeque<Output<UserData>>,
 }
 
-impl SourceHintLogic {
+impl<UserData: Eq + Copy + Debug> SourceHintLogic<UserData> {
     pub fn new(node_id: NodeId, session_id: u64) -> Self {
         Self {
             node_id,
@@ -119,7 +122,7 @@ impl SourceHintLogic {
         }
     }
 
-    pub fn on_local(&mut self, _now_ms: u64, actor: FeatureControlActor, cmd: LocalCmd) {
+    pub fn on_local(&mut self, _now_ms: u64, actor: FeatureControlActor<UserData>, cmd: LocalCmd) {
         match cmd {
             LocalCmd::Register => {
                 if !self.local_sources.contains(&actor) {
@@ -334,7 +337,7 @@ impl SourceHintLogic {
         }
     }
 
-    pub fn pop_output(&mut self) -> Option<Output> {
+    pub fn pop_output(&mut self) -> Option<Output<UserData>> {
         self.queue.pop_front()
     }
 
@@ -358,24 +361,24 @@ mod tests {
         let mut sh = SourceHintLogic::new(node_id, session_id);
 
         //subscribe should send a subscribe message
-        sh.on_local(0, FeatureControlActor::Controller, LocalCmd::Subscribe);
+        sh.on_local(0, FeatureControlActor::Controller(()), LocalCmd::Subscribe);
 
         assert_eq!(sh.pop_output(), Some(Output::SendRemote(None, SourceHint::Subscribe(session_id))));
         assert_eq!(sh.pop_output(), None);
 
-        sh.on_local(0, FeatureControlActor::Controller, LocalCmd::Subscribe);
+        sh.on_local(0, FeatureControlActor::Controller(()), LocalCmd::Subscribe);
         assert_eq!(sh.pop_output(), None);
 
-        sh.on_local(0, FeatureControlActor::Worker(1), LocalCmd::Subscribe);
+        sh.on_local(0, FeatureControlActor::Worker(1, ()), LocalCmd::Subscribe);
         assert_eq!(sh.pop_output(), None);
 
         //fake a local source should send local source event
-        sh.on_local(0, FeatureControlActor::Controller, LocalCmd::Register);
+        sh.on_local(0, FeatureControlActor::Controller(()), LocalCmd::Register);
 
         assert_eq!(sh.pop_output(), Some(Output::SendRemote(None, SourceHint::Register { source: node_id, to_root: true })));
         assert_eq!(
             sh.pop_output(),
-            Some(Output::SubscribeSource(vec![FeatureControlActor::Controller, FeatureControlActor::Worker(1)], node_id))
+            Some(Output::SubscribeSource(vec![FeatureControlActor::Controller(()), FeatureControlActor::Worker(1, ())], node_id))
         );
         assert_eq!(sh.pop_output(), None);
     }
@@ -387,15 +390,15 @@ mod tests {
         let mut sh = SourceHintLogic::new(node_id, session_id);
 
         //subscribe should send a subscribe message
-        sh.on_local(0, FeatureControlActor::Controller, LocalCmd::Subscribe);
+        sh.on_local(0, FeatureControlActor::Controller(()), LocalCmd::Subscribe);
         assert_eq!(sh.pop_output(), Some(Output::SendRemote(None, SourceHint::Subscribe(session_id))));
         assert_eq!(sh.pop_output(), None);
 
         let remote = SocketAddr::new([127, 0, 0, 1].into(), 1234);
 
         sh.on_remote(100, remote, SourceHint::Sources(vec![2, 3]));
-        assert_eq!(sh.pop_output(), Some(Output::SubscribeSource(vec![FeatureControlActor::Controller], 2)));
-        assert_eq!(sh.pop_output(), Some(Output::SubscribeSource(vec![FeatureControlActor::Controller], 3)));
+        assert_eq!(sh.pop_output(), Some(Output::SubscribeSource(vec![FeatureControlActor::Controller(())], 2)));
+        assert_eq!(sh.pop_output(), Some(Output::SubscribeSource(vec![FeatureControlActor::Controller(())], 3)));
         assert_eq!(sh.pop_output(), None);
     }
 
@@ -404,22 +407,22 @@ mod tests {
         let node_id = 1;
         let session_id = 1234;
         let mut sh = SourceHintLogic::new(node_id, session_id);
-        sh.on_local(0, FeatureControlActor::Controller, LocalCmd::Register);
+        sh.on_local(0, FeatureControlActor::Controller(()), LocalCmd::Register);
 
         assert_eq!(sh.pop_output(), Some(Output::SendRemote(None, SourceHint::Register { source: node_id, to_root: true })));
         assert_eq!(sh.pop_output(), None);
 
-        sh.on_local(0, FeatureControlActor::Controller, LocalCmd::Register);
+        sh.on_local(0, FeatureControlActor::Controller(()), LocalCmd::Register);
         assert_eq!(sh.pop_output(), None);
 
-        sh.on_local(0, FeatureControlActor::Worker(1), LocalCmd::Register);
+        sh.on_local(0, FeatureControlActor::Worker(1, ()), LocalCmd::Register);
         assert_eq!(sh.pop_output(), None);
 
         //subscribe should send a subscribe message and local source event
-        sh.on_local(0, FeatureControlActor::Controller, LocalCmd::Subscribe);
+        sh.on_local(0, FeatureControlActor::Controller(()), LocalCmd::Subscribe);
 
         assert_eq!(sh.pop_output(), Some(Output::SendRemote(None, SourceHint::Subscribe(session_id))));
-        assert_eq!(sh.pop_output(), Some(Output::SubscribeSource(vec![FeatureControlActor::Controller], node_id)));
+        assert_eq!(sh.pop_output(), Some(Output::SubscribeSource(vec![FeatureControlActor::Controller(())], node_id)));
         assert_eq!(sh.pop_output(), None);
     }
 
@@ -433,7 +436,7 @@ mod tests {
         let remote_session_id = 4321;
 
         //fake a local source
-        sh.on_local(0, FeatureControlActor::Controller, LocalCmd::Register);
+        sh.on_local(0, FeatureControlActor::Controller(()), LocalCmd::Register);
         assert_eq!(sh.pop_output(), Some(Output::SendRemote(None, SourceHint::Register { source: node_id, to_root: true })));
 
         //remote subscribe should receive a subscribe ok and snapshot of sources
@@ -477,17 +480,17 @@ mod tests {
         assert_eq!(sh.pop_output(), None);
 
         //subscribe should send a subscribe message and local source event
-        sh.on_local(0, FeatureControlActor::Controller, LocalCmd::Subscribe);
+        sh.on_local(0, FeatureControlActor::Controller(()), LocalCmd::Subscribe);
 
         assert_eq!(sh.pop_output(), Some(Output::SendRemote(None, SourceHint::Subscribe(session_id))));
-        assert_eq!(sh.pop_output(), Some(Output::SubscribeSource(vec![FeatureControlActor::Controller], remote_node_id)));
+        assert_eq!(sh.pop_output(), Some(Output::SubscribeSource(vec![FeatureControlActor::Controller(())], remote_node_id)));
         assert_eq!(sh.pop_output(), None);
 
         //unsubscribe should send a unsubscribe message and local source event
-        sh.on_local(0, FeatureControlActor::Controller, LocalCmd::Unsubscribe);
+        sh.on_local(0, FeatureControlActor::Controller(()), LocalCmd::Unsubscribe);
 
         assert_eq!(sh.pop_output(), Some(Output::SendRemote(None, SourceHint::Unsubscribe(session_id))));
-        assert_eq!(sh.pop_output(), Some(Output::UnsubscribeSource(vec![FeatureControlActor::Controller], remote_node_id)));
+        assert_eq!(sh.pop_output(), Some(Output::UnsubscribeSource(vec![FeatureControlActor::Controller(())], remote_node_id)));
         assert_eq!(sh.pop_output(), None);
     }
 
@@ -495,7 +498,7 @@ mod tests {
     fn remote_notify_register_should_not_climb_to_root() {
         let node_id = 1;
         let session_id = 1234;
-        let mut sh = SourceHintLogic::new(node_id, session_id);
+        let mut sh = SourceHintLogic::<()>::new(node_id, session_id);
 
         let remote = SocketAddr::new([127, 0, 0, 1].into(), 1234);
         let remote_node_id = 2;
@@ -526,7 +529,7 @@ mod tests {
     fn remote_register_should_not_resend_same_sender() {
         let node_id = 1;
         let session_id = 1234;
-        let mut sh = SourceHintLogic::new(node_id, session_id);
+        let mut sh = SourceHintLogic::<()>::new(node_id, session_id);
 
         let remote1 = SocketAddr::new([127, 0, 0, 1].into(), 1234);
         let remote1_node_id = 2;
@@ -620,7 +623,7 @@ mod tests {
         let remote_session_id = 4321;
 
         //fake a local source with a remote subscribe
-        sh.on_local(0, FeatureControlActor::Controller, LocalCmd::Register);
+        sh.on_local(0, FeatureControlActor::Controller(()), LocalCmd::Register);
         sh.on_remote(0, remote, SourceHint::Subscribe(remote_session_id));
 
         assert_eq!(sh.pop_output(), Some(Output::SendRemote(None, SourceHint::Register { source: node_id, to_root: true })));
@@ -643,7 +646,7 @@ mod tests {
         let mut sh = SourceHintLogic::new(node_id, session_id);
 
         //subscribe should send a subscribe message
-        sh.on_local(0, FeatureControlActor::Controller, LocalCmd::Subscribe);
+        sh.on_local(0, FeatureControlActor::Controller(()), LocalCmd::Subscribe);
 
         assert_eq!(sh.pop_output(), Some(Output::SendRemote(None, SourceHint::Subscribe(session_id))));
         assert_eq!(sh.pop_output(), None);
@@ -660,7 +663,7 @@ mod tests {
         let mut sh = SourceHintLogic::new(node_id, session_id);
 
         //subscribe should send a subscribe message and local source event
-        sh.on_local(0, FeatureControlActor::Controller, LocalCmd::Subscribe);
+        sh.on_local(0, FeatureControlActor::Controller(()), LocalCmd::Subscribe);
 
         assert_eq!(sh.pop_output(), Some(Output::SendRemote(None, SourceHint::Subscribe(session_id))));
         assert_eq!(sh.pop_output(), None);
@@ -687,7 +690,7 @@ mod tests {
                 }
             ))
         );
-        assert_eq!(sh.pop_output(), Some(Output::SubscribeSource(vec![FeatureControlActor::Controller], remote_node_id)));
+        assert_eq!(sh.pop_output(), Some(Output::SubscribeSource(vec![FeatureControlActor::Controller(())], remote_node_id)));
         assert_eq!(sh.pop_output(), None);
 
         assert_eq!(sh.remote_sources.len(), 1);
@@ -698,7 +701,7 @@ mod tests {
 
         sh.on_tick(TIMEOUT_MS);
         assert_eq!(sh.remote_sources.len(), 0);
-        assert_eq!(sh.pop_output(), Some(Output::UnsubscribeSource(vec![FeatureControlActor::Controller], remote_node_id)));
+        assert_eq!(sh.pop_output(), Some(Output::UnsubscribeSource(vec![FeatureControlActor::Controller(())], remote_node_id)));
         assert_eq!(sh.pop_output(), Some(Output::SendRemote(None, SourceHint::Subscribe(session_id))));
         assert_eq!(sh.pop_output(), None);
     }
@@ -710,7 +713,7 @@ mod tests {
         let mut sh = SourceHintLogic::new(node_id, session_id);
 
         //subscribe should send a subscribe message and local source event
-        sh.on_local(0, FeatureControlActor::Controller, LocalCmd::Subscribe);
+        sh.on_local(0, FeatureControlActor::Controller(()), LocalCmd::Subscribe);
 
         assert_eq!(sh.pop_output(), Some(Output::SendRemote(None, SourceHint::Subscribe(session_id))));
         assert_eq!(sh.pop_output(), None);
@@ -728,7 +731,7 @@ mod tests {
             },
         );
 
-        assert_eq!(sh.pop_output(), Some(Output::SubscribeSource(vec![FeatureControlActor::Controller], remote_node_id)));
+        assert_eq!(sh.pop_output(), Some(Output::SubscribeSource(vec![FeatureControlActor::Controller(())], remote_node_id)));
         assert_eq!(sh.pop_output(), None);
 
         assert_eq!(sh.remote_sources.len(), 1);
@@ -739,7 +742,7 @@ mod tests {
 
         sh.on_tick(TIMEOUT_MS);
         assert_eq!(sh.remote_sources.len(), 0);
-        assert_eq!(sh.pop_output(), Some(Output::UnsubscribeSource(vec![FeatureControlActor::Controller], remote_node_id)));
+        assert_eq!(sh.pop_output(), Some(Output::UnsubscribeSource(vec![FeatureControlActor::Controller(())], remote_node_id)));
         assert_eq!(sh.pop_output(), Some(Output::SendRemote(None, SourceHint::Subscribe(session_id))));
         assert_eq!(sh.pop_output(), None);
     }
@@ -748,7 +751,7 @@ mod tests {
     fn remote_subscriber_timeout() {
         let node_id = 1;
         let session_id = 1234;
-        let mut sh = SourceHintLogic::new(node_id, session_id);
+        let mut sh = SourceHintLogic::<()>::new(node_id, session_id);
 
         let remote = SocketAddr::new([127, 0, 0, 1].into(), 1234);
         let remote_session_id = 4321;
@@ -777,7 +780,7 @@ mod tests {
         let mut sh = SourceHintLogic::new(node_id, session_id);
 
         //subscribe should send a subscribe message and local source event
-        sh.on_local(0, FeatureControlActor::Controller, LocalCmd::Subscribe);
+        sh.on_local(0, FeatureControlActor::Controller(()), LocalCmd::Subscribe);
 
         assert_eq!(sh.pop_output(), Some(Output::SendRemote(None, SourceHint::Subscribe(session_id))));
         assert_eq!(sh.pop_output(), None);
@@ -790,7 +793,7 @@ mod tests {
         let source_id = 100;
         sh.on_remote(0, remote1, SourceHint::Register { source: source_id, to_root: false });
 
-        assert_eq!(sh.pop_output(), Some(Output::SubscribeSource(vec![FeatureControlActor::Controller], source_id)));
+        assert_eq!(sh.pop_output(), Some(Output::SubscribeSource(vec![FeatureControlActor::Controller(())], source_id)));
         assert_eq!(sh.pop_output(), None);
 
         //now next hop changed to remote2
@@ -802,7 +805,7 @@ mod tests {
 
         //we only accept from remote2
         sh.on_remote(0, remote2, SourceHint::Unregister { source: source_id, to_root: false });
-        assert_eq!(sh.pop_output(), Some(Output::UnsubscribeSource(vec![FeatureControlActor::Controller], source_id)));
+        assert_eq!(sh.pop_output(), Some(Output::UnsubscribeSource(vec![FeatureControlActor::Controller(())], source_id)));
         assert_eq!(sh.pop_output(), None);
     }
 }

@@ -75,8 +75,8 @@ impl Drop for AutoContext {
 
 #[derive(Debug)]
 pub enum TestNodeIn<'a, SC> {
-    Ext(ExtIn<SC>),
-    ExtWorker(ExtIn<SC>),
+    Ext(ExtIn<(), SC>),
+    ExtWorker(ExtIn<(), SC>),
     Udp(SocketAddr, BufferMut<'a>),
     #[cfg(feature = "vpn")]
     Tun(BufferMut<'a>),
@@ -84,8 +84,8 @@ pub enum TestNodeIn<'a, SC> {
 
 #[derive(Debug)]
 pub enum TestNodeOut<'a, SE> {
-    Ext(ExtOut<SE>),
-    ExtWorker(ExtOut<SE>),
+    Ext(ExtOut<(), SE>),
+    ExtWorker(ExtOut<(), SE>),
     Udp(Vec<SocketAddr>, Buffer<'a>),
     #[cfg(feature = "vpn")]
     Tun(Buffer<'a>),
@@ -126,11 +126,11 @@ impl ShadowRouterHistory for SingleThreadDataWorkerHistory {
 
 pub struct TestNode<SC, SE, TC, TW> {
     node_id: NodeId,
-    worker: SdnWorker<SC, SE, TC, TW>,
+    worker: SdnWorker<(), SC, SE, TC, TW>,
 }
 
 impl<SC: Debug, SE: Debug, TC: Debug, TW: Debug> TestNode<SC, SE, TC, TW> {
-    pub fn new(node_id: NodeId, session: u64, services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>) -> Self {
+    pub fn new(node_id: NodeId, session: u64, services: Vec<Arc<dyn ServiceBuilder<(), FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>) -> Self {
         let _log = AutoContext::new(node_id);
         let authorization: Arc<StaticKeyAuthorization> = Arc::new(StaticKeyAuthorization::new("demo-key"));
         let handshake_builder = Arc::new(HandshakeBuilderXDA);
@@ -199,7 +199,7 @@ impl<SC: Debug, SE: Debug, TC: Debug, TW: Debug> TestNode<SC, SE, TC, TW> {
         Some(self.process_worker_output(now, output))
     }
 
-    fn process_worker_output<'a>(&mut self, now: u64, output: SdnWorkerOutput<'a, SC, SE, TC, TW>) -> TestNodeOut<'a, SE> {
+    fn process_worker_output<'a>(&mut self, now: u64, output: SdnWorkerOutput<'a, (), SC, SE, TC, TW>) -> TestNodeOut<'a, SE> {
         match output {
             SdnWorkerOutput::Ext(ext) => TestNodeOut::Ext(ext),
             SdnWorkerOutput::ExtWorker(ext) => TestNodeOut::ExtWorker(ext),
@@ -230,10 +230,10 @@ pub fn node_to_addr(node: NodeId) -> SocketAddr {
 
 pub struct NetworkSimulator<SC, SE, TC: Clone, TW: Clone> {
     clock_ms: u64,
-    input: VecDeque<(NodeId, ExtIn<SC>)>,
-    input_worker: VecDeque<(NodeId, ExtIn<SC>)>,
-    output: VecDeque<(NodeId, ExtOut<SE>)>,
-    output_worker: VecDeque<(NodeId, ExtOut<SE>)>,
+    input: VecDeque<(NodeId, ExtIn<(), SC>)>,
+    input_worker: VecDeque<(NodeId, ExtIn<(), SC>)>,
+    output: VecDeque<(NodeId, ExtOut<(), SE>)>,
+    output_worker: VecDeque<(NodeId, ExtOut<(), SE>)>,
     nodes: Vec<TestNode<SC, SE, TC, TW>>,
     nodes_index: HashMap<NodeId, usize>,
     switcher: TaskSwitcher,
@@ -259,19 +259,19 @@ impl<SC: Debug, SE: Debug, TC: Debug + Clone, TW: Debug + Clone> NetworkSimulato
         log::set_max_level(level);
     }
 
-    pub fn control(&mut self, node: NodeId, control: ExtIn<SC>) {
+    pub fn control(&mut self, node: NodeId, control: ExtIn<(), SC>) {
         self.input.push_back((node, control));
     }
 
-    pub fn pop_res(&mut self) -> Option<(NodeId, ExtOut<SE>)> {
+    pub fn pop_res(&mut self) -> Option<(NodeId, ExtOut<(), SE>)> {
         self.output.pop_front()
     }
 
-    pub fn control_worker(&mut self, node: NodeId, control: ExtIn<SC>) {
+    pub fn control_worker(&mut self, node: NodeId, control: ExtIn<(), SC>) {
         self.input_worker.push_back((node, control));
     }
 
-    pub fn pop_res_worker(&mut self) -> Option<(NodeId, ExtOut<SE>)> {
+    pub fn pop_res_worker(&mut self) -> Option<(NodeId, ExtOut<(), SE>)> {
         self.output_worker.pop_front()
     }
 

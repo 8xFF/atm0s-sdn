@@ -1,11 +1,14 @@
+use std::fmt::Debug;
+use std::hash::Hash;
+
 use atm0s_sdn_identity::NodeId;
 use sans_io_runtime::TaskSwitcher;
 
 use crate::base::{Feature, FeatureContext, FeatureInput, FeatureOutput, FeatureSharedInput};
 use crate::features::*;
 
-pub type FeaturesInput<'a> = FeatureInput<'a, FeaturesControl, FeaturesToController>;
-pub type FeaturesOutput = FeatureOutput<FeaturesEvent, FeaturesToWorker>;
+pub type FeaturesInput<'a, UserData> = FeatureInput<'a, UserData, FeaturesControl, FeaturesToController>;
+pub type FeaturesOutput<UserData> = FeatureOutput<UserData, FeaturesEvent, FeaturesToWorker<UserData>>;
 
 ///
 /// FeatureManager is a manager for all features
@@ -13,19 +16,19 @@ pub type FeaturesOutput = FeatureOutput<FeaturesEvent, FeaturesToWorker>;
 /// With some special event must to broadcast to all features (Tick, Transport Events), it will
 /// use a switcher to correctly process one by one
 ///
-pub struct FeatureManager {
-    neighbours: neighbours::NeighboursFeature,
-    data: data::DataFeature,
-    router_sync: router_sync::RouterSyncFeature,
-    vpn: vpn::VpnFeature,
-    dht_kv: dht_kv::DhtKvFeature,
-    pubsub: pubsub::PubSubFeature,
-    alias: alias::AliasFeature,
-    socket: socket::SocketFeature,
+pub struct FeatureManager<UserData> {
+    neighbours: neighbours::NeighboursFeature<UserData>,
+    data: data::DataFeature<UserData>,
+    router_sync: router_sync::RouterSyncFeature<UserData>,
+    vpn: vpn::VpnFeature<UserData>,
+    dht_kv: dht_kv::DhtKvFeature<UserData>,
+    pubsub: pubsub::PubSubFeature<UserData>,
+    alias: alias::AliasFeature<UserData>,
+    socket: socket::SocketFeature<UserData>,
     switcher: TaskSwitcher,
 }
 
-impl FeatureManager {
+impl<UserData: 'static + Hash + Eq + Copy + Debug> FeatureManager<UserData> {
     pub fn new(node: NodeId, session: u64, services: Vec<u8>) -> Self {
         Self {
             neighbours: neighbours::NeighboursFeature::default(),
@@ -52,7 +55,7 @@ impl FeatureManager {
         self.socket.on_shared_input(ctx, now_ms, input);
     }
 
-    pub fn on_input<'a>(&mut self, ctx: &FeatureContext, now_ms: u64, feature: Features, input: FeaturesInput<'a>) {
+    pub fn on_input<'a>(&mut self, ctx: &FeatureContext, now_ms: u64, feature: Features, input: FeaturesInput<'a, UserData>) {
         self.switcher.queue_flag_task(feature as usize);
         match input {
             FeatureInput::FromWorker(to) => match to {
@@ -98,7 +101,7 @@ impl FeatureManager {
         }
     }
 
-    pub fn pop_output<'a>(&mut self, ctx: &FeatureContext) -> Option<(Features, FeaturesOutput)> {
+    pub fn pop_output<'a>(&mut self, ctx: &FeatureContext) -> Option<(Features, FeaturesOutput<UserData>)> {
         let s = &mut self.switcher;
         loop {
             match (s.queue_current()? as u8).try_into().ok()? {

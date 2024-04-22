@@ -1,5 +1,6 @@
 use std::{
     fmt::Debug,
+    hash::Hash,
     net::{IpAddr, SocketAddr},
     sync::Arc,
     time::Duration,
@@ -20,7 +21,7 @@ use crate::{
     worker_inner::{ControllerCfg, SdnController, SdnExtIn, SdnInnerCfg, SdnOwner, SdnWorkerInner},
 };
 
-pub struct SdnBuilder<SC, SE, TC, TW> {
+pub struct SdnBuilder<UserData, SC, SE, TC, TW> {
     auth: Option<Arc<dyn Authorization>>,
     handshake: Option<Arc<dyn HandshakeBuilder>>,
     node_addr: NodeAddr,
@@ -30,7 +31,7 @@ pub struct SdnBuilder<SC, SE, TC, TW> {
     tick_ms: u64,
     visualization_collector: bool,
     seeds: Vec<NodeAddr>,
-    services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
+    services: Vec<Arc<dyn ServiceBuilder<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
     #[cfg(feature = "vpn")]
     vpn_enable: bool,
     #[cfg(feature = "vpn")]
@@ -39,8 +40,9 @@ pub struct SdnBuilder<SC, SE, TC, TW> {
     vpn_netmask: Option<(u8, u8, u8, u8)>,
 }
 
-impl<SC, SE, TC: Debug, TW: Debug> SdnBuilder<SC, SE, TC, TW>
+impl<UserData, SC, SE, TC: Debug, TW: Debug> SdnBuilder<UserData, SC, SE, TC, TW>
 where
+    UserData: 'static + Clone + Debug + Send + Sync + Copy + Eq + Hash,
     SC: 'static + Clone + Debug + Send + Sync + From<visualization::Control> + TryInto<visualization::Control>,
     SE: 'static + Clone + Debug + Send + Sync + From<visualization::Event> + TryInto<visualization::Event>,
     TC: 'static + Clone + Send + Sync,
@@ -125,7 +127,7 @@ where
     }
 
     /// panic if the service already exists
-    pub fn add_service(&mut self, service: Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>) {
+    pub fn add_service(&mut self, service: Arc<dyn ServiceBuilder<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>) {
         for s in self.services.iter() {
             assert_ne!(s.service_id(), service.service_id(), "Service ({}, {}) already exists", service.service_id(), service.service_name());
         }
@@ -147,7 +149,7 @@ where
         self.vpn_netmask = Some(netmask);
     }
 
-    pub fn build<B: Backend<SdnOwner>>(mut self, workers: usize) -> SdnController<SC, SE, TC, TW> {
+    pub fn build<B: Backend<SdnOwner>>(mut self, workers: usize) -> SdnController<UserData, SC, SE, TC, TW> {
         assert!(workers > 0);
         #[cfg(feature = "vpn")]
         let (tun_device, mut queue_fds) = {
@@ -165,12 +167,12 @@ where
             }
         };
 
-        self.add_service(Arc::new(visualization::VisualizationServiceBuilder::<SC, SE, TC, TW>::new(self.visualization_collector)));
+        self.add_service(Arc::new(visualization::VisualizationServiceBuilder::<UserData, SC, SE, TC, TW>::new(self.visualization_collector)));
 
         let history = Arc::new(DataWorkerHistory::default());
 
         let mut controller = SdnController::default();
-        controller.add_worker::<SdnOwner, _, SdnWorkerInner<SC, SE, TC, TW>, B>(
+        controller.add_worker::<SdnOwner, _, SdnWorkerInner<UserData, SC, SE, TC, TW>, B>(
             Duration::from_millis(1000),
             SdnInnerCfg {
                 node_id: self.node_id,
@@ -193,7 +195,7 @@ where
         );
 
         for _ in 1..workers {
-            controller.add_worker::<SdnOwner, _, SdnWorkerInner<SC, SE, TC, TW>, B>(
+            controller.add_worker::<SdnOwner, _, SdnWorkerInner<UserData, SC, SE, TC, TW>, B>(
                 Duration::from_millis(1000),
                 SdnInnerCfg {
                     node_id: self.node_id,

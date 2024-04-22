@@ -7,14 +7,14 @@ use crate::base::{ServiceBuilder, ServiceId, ServiceWorker, ServiceWorkerCtx, Se
 use crate::features::{FeaturesControl, FeaturesEvent};
 
 /// To manage the services we need to create an object that will hold the services
-pub struct ServiceWorkerManager<ServiceControl, ServiceEvent, ToController, ToWorker> {
-    services: [Option<Box<dyn ServiceWorker<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>>; 256],
+pub struct ServiceWorkerManager<UserData, ServiceControl, ServiceEvent, ToController, ToWorker> {
+    services: [Option<Box<dyn ServiceWorker<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>>; 256],
     switcher: TaskSwitcher,
     _tmp: PhantomData<ServiceControl>,
 }
 
-impl<ServiceControl, ServiceEvent, ToController, ToWorker> ServiceWorkerManager<ServiceControl, ServiceEvent, ToController, ToWorker> {
-    pub fn new(services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>>) -> Self {
+impl<UserData, ServiceControl, ServiceEvent, ToController, ToWorker> ServiceWorkerManager<UserData, ServiceControl, ServiceEvent, ToController, ToWorker> {
+    pub fn new(services: Vec<Arc<dyn ServiceBuilder<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>>) -> Self {
         let max_service_id = services.iter().map(|s| s.service_id()).max().unwrap_or(0);
         Self {
             services: std::array::from_fn(|index| services.iter().find(|s| s.service_id() == index as u8).map(|s| s.create_worker())),
@@ -37,8 +37,8 @@ impl<ServiceControl, ServiceEvent, ToController, ToWorker> ServiceWorkerManager<
         ctx: &ServiceWorkerCtx,
         now: u64,
         id: ServiceId,
-        input: ServiceWorkerInput<FeaturesEvent, ServiceControl, ToWorker>,
-    ) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController>> {
+        input: ServiceWorkerInput<UserData, FeaturesEvent, ServiceControl, ToWorker>,
+    ) -> Option<ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController>> {
         let service = self.services[*id as usize].as_mut()?;
         let out = service.on_input(ctx, now, input);
         if out.is_some() {
@@ -47,7 +47,7 @@ impl<ServiceControl, ServiceEvent, ToController, ToWorker> ServiceWorkerManager<
         out
     }
 
-    pub fn pop_output(&mut self, ctx: &ServiceWorkerCtx) -> Option<(ServiceId, ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController>)> {
+    pub fn pop_output(&mut self, ctx: &ServiceWorkerCtx) -> Option<(ServiceId, ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController>)> {
         loop {
             let s = &mut self.switcher;
             let index = s.queue_current()?;

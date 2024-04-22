@@ -1,4 +1,7 @@
-use std::collections::{HashMap, VecDeque};
+use std::{
+    collections::{HashMap, VecDeque},
+    fmt::Debug,
+};
 
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_router::RouteRule;
@@ -28,8 +31,8 @@ pub enum Event {
 }
 
 #[derive(Debug, Clone)]
-pub enum ToWorker {
-    BindSocket(u16, FeatureControlActor),
+pub enum ToWorker<UserData> {
+    BindSocket(u16, FeatureControlActor<UserData>),
     ConnectSocket(u16, NodeId, u16),
     UnbindSocket(u16),
 }
@@ -37,18 +40,18 @@ pub enum ToWorker {
 #[derive(Debug, Clone)]
 pub struct ToController;
 
-struct Socket {
+struct Socket<UserData> {
     target: Option<(NodeId, u16)>,
-    actor: FeatureControlActor,
+    actor: FeatureControlActor<UserData>,
 }
 
-pub struct SocketFeature {
-    sockets: HashMap<u16, Socket>,
+pub struct SocketFeature<UserData> {
+    sockets: HashMap<u16, Socket<UserData>>,
     temp: [u8; MTU_SIZE],
-    queue: VecDeque<FeatureOutput<Event, ToWorker>>,
+    queue: VecDeque<FeatureOutput<UserData, Event, ToWorker<UserData>>>,
 }
 
-impl SocketFeature {
+impl<UserData> SocketFeature<UserData> {
     fn send_to(&mut self, src: u16, dest_node: NodeId, dest_port: u16, data: Vec<u8>, meta: u8) {
         if let Some(size) = serialize_msg(&mut self.temp, src, dest_port, &data) {
             let meta: NetOutgoingMeta = NetOutgoingMeta::new(true, Default::default(), meta, false);
@@ -57,7 +60,7 @@ impl SocketFeature {
     }
 }
 
-impl Default for SocketFeature {
+impl<UserData> Default for SocketFeature<UserData> {
     fn default() -> Self {
         Self {
             sockets: HashMap::new(),
@@ -67,10 +70,10 @@ impl Default for SocketFeature {
     }
 }
 
-impl Feature<Control, Event, ToController, ToWorker> for SocketFeature {
+impl<UserData: Copy + Debug + Eq> Feature<UserData, Control, Event, ToController, ToWorker<UserData>> for SocketFeature<UserData> {
     fn on_shared_input(&mut self, _ctx: &FeatureContext, _now: u64, _input: FeatureSharedInput) {}
 
-    fn on_input<'a>(&mut self, ctx: &FeatureContext, _now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
+    fn on_input<'a>(&mut self, ctx: &FeatureContext, _now_ms: u64, input: FeatureInput<'a, UserData, Control, ToController>) {
         match input {
             FeatureInput::Control(actor, control) => match control {
                 Control::Bind(port) => {
@@ -181,18 +184,18 @@ impl Feature<Control, Event, ToController, ToWorker> for SocketFeature {
         }
     }
 
-    fn pop_output(&mut self, _ctx: &FeatureContext) -> Option<FeatureOutput<Event, ToWorker>> {
+    fn pop_output(&mut self, _ctx: &FeatureContext) -> Option<FeatureOutput<UserData, Event, ToWorker<UserData>>> {
         self.queue.pop_front()
     }
 }
 
-pub struct SocketFeatureWorker {
-    sockets: HashMap<u16, Socket>,
+pub struct SocketFeatureWorker<UserData> {
+    sockets: HashMap<u16, Socket<UserData>>,
     buf: [u8; MTU_SIZE],
 }
 
-impl SocketFeatureWorker {
-    fn process_incoming(&self, from_node: NodeId, buf: &[u8], meta: u8) -> Option<FeatureWorkerOutput<'static, Control, Event, ToController>> {
+impl<UserData: Copy> SocketFeatureWorker<UserData> {
+    fn process_incoming(&self, from_node: NodeId, buf: &[u8], meta: u8) -> Option<FeatureWorkerOutput<'static, UserData, Control, Event, ToController>> {
         let (pkt_src, pkt_dest, data) = deserialize_msg(&buf)?;
         let socket = self.sockets.get(&pkt_dest)?;
         if let Some((dest_node, dest_port)) = socket.target {
@@ -211,7 +214,7 @@ impl SocketFeatureWorker {
     }
 }
 
-impl Default for SocketFeatureWorker {
+impl<UserData> Default for SocketFeatureWorker<UserData> {
     fn default() -> Self {
         Self {
             sockets: HashMap::new(),
@@ -220,7 +223,7 @@ impl Default for SocketFeatureWorker {
     }
 }
 
-impl FeatureWorker<Control, Event, ToController, ToWorker> for SocketFeatureWorker {
+impl<UserData: Clone + Copy + Eq> FeatureWorker<UserData, Control, Event, ToController, ToWorker<UserData>> for SocketFeatureWorker<UserData> {
     fn on_network_raw<'a>(
         &mut self,
         _ctx: &mut FeatureWorkerContext,
@@ -229,11 +232,16 @@ impl FeatureWorker<Control, Event, ToController, ToWorker> for SocketFeatureWork
         _remote: std::net::SocketAddr,
         header: TransportMsgHeader,
         buf: Buffer<'a>,
-    ) -> Option<FeatureWorkerOutput<'a, Control, Event, ToController>> {
+    ) -> Option<FeatureWorkerOutput<'a, UserData, Control, Event, ToController>> {
         self.process_incoming(header.from_node?, &(&buf)[header.serialize_size()..], header.meta)
     }
 
-    fn on_input<'a>(&mut self, _ctx: &mut FeatureWorkerContext, _now: u64, input: FeatureWorkerInput<'a, Control, ToWorker>) -> Option<FeatureWorkerOutput<'a, Control, Event, ToController>> {
+    fn on_input<'a>(
+        &mut self,
+        _ctx: &mut FeatureWorkerContext,
+        _now: u64,
+        input: FeatureWorkerInput<'a, UserData, Control, ToWorker<UserData>>,
+    ) -> Option<FeatureWorkerOutput<'a, UserData, Control, Event, ToController>> {
         match input {
             FeatureWorkerInput::FromController(_, control) => match control {
                 ToWorker::BindSocket(port, actor) => {

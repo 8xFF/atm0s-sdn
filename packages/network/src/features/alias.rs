@@ -1,7 +1,12 @@
-use std::collections::{HashMap, VecDeque};
+use std::{
+    collections::{HashMap, VecDeque},
+    fmt::Debug,
+    marker::PhantomData,
+};
 
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_router::{RouteRule, ServiceBroadcastLevel};
+use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 
 use crate::base::{Feature, FeatureContext, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker, NetOutgoingMeta, Ttl};
@@ -53,8 +58,8 @@ enum QueryState {
 }
 
 #[derive(Debug)]
-struct QuerySlot {
-    waiters: Vec<FeatureControlActor>,
+struct QuerySlot<UserData> {
+    waiters: Vec<FeatureControlActor<UserData>>,
     state: QueryState,
     service: u8,
     level: ServiceBroadcastLevel,
@@ -66,17 +71,18 @@ struct HintSlot {
     ts: u64,
 }
 
-#[derive(Default)]
-pub struct AliasFeature {
-    queries: HashMap<u64, QuerySlot>,
+#[derive(Debug, Derivative)]
+#[derivative(Default(bound = ""))]
+pub struct AliasFeature<UserData> {
+    queries: HashMap<u64, QuerySlot<UserData>>,
     hint_slots: HashMap<u64, HintSlot>,
     local_slots: HashMap<u64, u64>,
-    queue: VecDeque<FeatureOutput<Event, ToWorker>>,
+    queue: VecDeque<FeatureOutput<UserData, Event, ToWorker>>,
     scan_seq: u16,
 }
 
-impl AliasFeature {
-    fn process_control(&mut self, now_ms: u64, actor: FeatureControlActor, control: Control) {
+impl<UserData: Debug + Copy> AliasFeature<UserData> {
+    fn process_control(&mut self, now_ms: u64, actor: FeatureControlActor<UserData>, control: Control) {
         match control {
             Control::Register { alias, service, level } => {
                 log::info!("[AliasFeature] Register local alias {} and broadcast hint", alias);
@@ -198,7 +204,7 @@ impl AliasFeature {
         }
     }
 
-    fn send_to(queue: &mut VecDeque<FeatureOutput<Event, ToWorker>>, rule: RouteRule, msg: Message) {
+    fn send_to(queue: &mut VecDeque<FeatureOutput<UserData, Event, ToWorker>>, rule: RouteRule, msg: Message) {
         let msg = bincode::serialize(&msg).expect("Should to bytes");
         queue.push_back(FeatureOutput::SendRoute(rule, NetOutgoingMeta::new(true, Ttl::default(), 0, true), msg));
     }
@@ -210,7 +216,7 @@ impl AliasFeature {
     }
 }
 
-impl Feature<Control, Event, ToController, ToWorker> for AliasFeature {
+impl<UserData: Debug + Copy> Feature<UserData, Control, Event, ToController, ToWorker> for AliasFeature<UserData> {
     fn on_shared_input(&mut self, _ctx: &FeatureContext, now: u64, input: FeatureSharedInput) {
         match input {
             FeatureSharedInput::Tick(_) => {
@@ -247,7 +253,7 @@ impl Feature<Control, Event, ToController, ToWorker> for AliasFeature {
         }
     }
 
-    fn on_input<'a>(&mut self, _ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
+    fn on_input<'a>(&mut self, _ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'a, UserData, Control, ToController>) {
         match input {
             FeatureInput::Control(actor, control) => self.process_control(now_ms, actor, control),
             FeatureInput::Local(meta, msg) | FeatureInput::Net(_, meta, msg) => {
@@ -264,15 +270,18 @@ impl Feature<Control, Event, ToController, ToWorker> for AliasFeature {
         }
     }
 
-    fn pop_output(&mut self, _ctx: &FeatureContext) -> Option<FeatureOutput<Event, ToWorker>> {
+    fn pop_output(&mut self, _ctx: &FeatureContext) -> Option<FeatureOutput<UserData, Event, ToWorker>> {
         self.queue.pop_front()
     }
 }
 
-#[derive(Default)]
-pub struct AliasFeatureWorker;
+#[derive(Debug, Derivative)]
+#[derivative(Default(bound = ""))]
+pub struct AliasFeatureWorker<UserData> {
+    _tmp: PhantomData<UserData>,
+}
 
-impl FeatureWorker<Control, Event, ToController, ToWorker> for AliasFeatureWorker {}
+impl<UserData> FeatureWorker<UserData, Control, Event, ToController, ToWorker> for AliasFeatureWorker<UserData> {}
 
 #[cfg(test)]
 mod tests {
@@ -285,7 +294,7 @@ mod tests {
 
     use super::{AliasFeature, Control, Event, FoundLocation, Message, ToWorker};
 
-    fn decode_msg(msg: Option<FeatureOutput<Event, ToWorker>>) -> Option<(RouteRule, Message)> {
+    fn decode_msg(msg: Option<FeatureOutput<(), Event, ToWorker>>) -> Option<(RouteRule, Message)> {
         match msg? {
             FeatureOutput::SendRoute(rule, _, msg) => Some((rule, bincode::deserialize(&msg).expect("Should decode"))),
             _ => panic!("Should be SendRoute"),
@@ -298,14 +307,14 @@ mod tests {
         let ctx = FeatureContext { node_id: 0, session: 0 };
         let service = 1;
         let level = ServiceBroadcastLevel::Global;
-        alias.on_input(&ctx, 0, FeatureInput::Control(FeatureControlActor::Controller, Control::Register { alias: 1000, service, level }));
+        alias.on_input(&ctx, 0, FeatureInput::Control(FeatureControlActor::Controller(()), Control::Register { alias: 1000, service, level }));
         assert_eq!(decode_msg(alias.pop_output(&ctx)), Some((RouteRule::ToServices(service, level, 0), Message::Notify(1000))));
         assert_eq!(alias.pop_output(&ctx), None);
 
-        alias.on_input(&ctx, 0, FeatureInput::Control(FeatureControlActor::Controller, Control::Query { alias: 1000, service, level }));
+        alias.on_input(&ctx, 0, FeatureInput::Control(FeatureControlActor::Controller(()), Control::Query { alias: 1000, service, level }));
         assert_eq!(
             alias.pop_output(&ctx),
-            Some(FeatureOutput::Event(FeatureControlActor::Controller, Event::QueryResult(1000, Some(FoundLocation::Local))))
+            Some(FeatureOutput::Event(FeatureControlActor::Controller(()), Event::QueryResult(1000, Some(FoundLocation::Local))))
         );
         assert_eq!(alias.pop_output(&ctx), None);
     }
@@ -316,7 +325,7 @@ mod tests {
         let ctx = FeatureContext { node_id: 0, session: 0 };
         let service = 1;
         let level = ServiceBroadcastLevel::Global;
-        alias.on_input(&ctx, 0, FeatureInput::Control(FeatureControlActor::Controller, Control::Register { alias: 1000, service, level }));
+        alias.on_input(&ctx, 0, FeatureInput::Control(FeatureControlActor::Controller(()), Control::Register { alias: 1000, service, level }));
         assert_eq!(decode_msg(alias.pop_output(&ctx)), Some((RouteRule::ToServices(service, level, 0), Message::Notify(1000))));
         assert_eq!(alias.pop_output(&ctx), None);
 
@@ -335,7 +344,7 @@ mod tests {
         let ctx = FeatureContext { node_id: 0, session: 0 };
         let service = 1;
         let level = ServiceBroadcastLevel::Global;
-        alias.on_input(&ctx, 0, FeatureInput::Control(FeatureControlActor::Controller, Control::Register { alias: 1000, service, level }));
+        alias.on_input(&ctx, 0, FeatureInput::Control(FeatureControlActor::Controller(()), Control::Register { alias: 1000, service, level }));
         assert_eq!(decode_msg(alias.pop_output(&ctx)), Some((RouteRule::ToServices(service, level, 0), Message::Notify(1000))));
         assert_eq!(alias.pop_output(&ctx), None);
 
@@ -359,12 +368,15 @@ mod tests {
         alias.on_input(
             &ctx,
             HINT_TIMEOUT_MS,
-            FeatureInput::Control(FeatureControlActor::Controller, Control::Query { alias: 1000, service, level }),
+            FeatureInput::Control(FeatureControlActor::Controller(()), Control::Query { alias: 1000, service, level }),
         );
 
         assert_eq!(
             alias.pop_output(&ctx),
-            Some(FeatureOutput::Event(FeatureControlActor::Controller, Event::QueryResult(1000, Some(FoundLocation::CachedHint(123)))))
+            Some(FeatureOutput::Event(
+                FeatureControlActor::Controller(()),
+                Event::QueryResult(1000, Some(FoundLocation::CachedHint(123)))
+            ))
         );
         assert_eq!(alias.pop_output(&ctx), None);
     }
@@ -378,7 +390,7 @@ mod tests {
 
         alias.hint_slots.insert(1000, HintSlot { node: 123, ts: 0 });
 
-        alias.on_input(&ctx, 10000, FeatureInput::Control(FeatureControlActor::Controller, Control::Query { alias: 1000, service, level }));
+        alias.on_input(&ctx, 10000, FeatureInput::Control(FeatureControlActor::Controller(()), Control::Query { alias: 1000, service, level }));
         assert_eq!(decode_msg(alias.pop_output(&ctx)), Some((RouteRule::ToNode(123), Message::Check(1000))));
         assert_eq!(alias.pop_output(&ctx), None);
 
@@ -387,7 +399,10 @@ mod tests {
 
         assert_eq!(
             alias.pop_output(&ctx),
-            Some(FeatureOutput::Event(FeatureControlActor::Controller, Event::QueryResult(1000, Some(FoundLocation::RemoteHint(123)))))
+            Some(FeatureOutput::Event(
+                FeatureControlActor::Controller(()),
+                Event::QueryResult(1000, Some(FoundLocation::RemoteHint(123)))
+            ))
         );
         assert_eq!(alias.pop_output(&ctx), None);
     }
@@ -399,7 +414,7 @@ mod tests {
         let service = 1;
         let level = ServiceBroadcastLevel::Global;
 
-        alias.on_input(&ctx, 0, FeatureInput::Control(FeatureControlActor::Controller, Control::Query { alias: 1000, service, level }));
+        alias.on_input(&ctx, 0, FeatureInput::Control(FeatureControlActor::Controller(()), Control::Query { alias: 1000, service, level }));
         assert_eq!(decode_msg(alias.pop_output(&ctx)), Some((RouteRule::ToServices(service, level, 0), Message::Scan(1000))));
         assert_eq!(alias.pop_output(&ctx), None);
 
@@ -408,7 +423,10 @@ mod tests {
 
         assert_eq!(
             alias.pop_output(&ctx),
-            Some(FeatureOutput::Event(FeatureControlActor::Controller, Event::QueryResult(1000, Some(FoundLocation::RemoteScan(123)))))
+            Some(FeatureOutput::Event(
+                FeatureControlActor::Controller(()),
+                Event::QueryResult(1000, Some(FoundLocation::RemoteScan(123)))
+            ))
         );
         assert_eq!(alias.pop_output(&ctx), None);
     }
@@ -422,7 +440,7 @@ mod tests {
 
         alias.hint_slots.insert(1000, HintSlot { node: 122, ts: 0 });
 
-        alias.on_input(&ctx, 10000, FeatureInput::Control(FeatureControlActor::Controller, Control::Query { alias: 1000, service, level }));
+        alias.on_input(&ctx, 10000, FeatureInput::Control(FeatureControlActor::Controller(()), Control::Query { alias: 1000, service, level }));
         assert_eq!(decode_msg(alias.pop_output(&ctx)), Some((RouteRule::ToNode(122), Message::Check(1000))));
         assert_eq!(alias.pop_output(&ctx), None);
 
@@ -438,7 +456,10 @@ mod tests {
 
         assert_eq!(
             alias.pop_output(&ctx),
-            Some(FeatureOutput::Event(FeatureControlActor::Controller, Event::QueryResult(1000, Some(FoundLocation::RemoteScan(123)))))
+            Some(FeatureOutput::Event(
+                FeatureControlActor::Controller(()),
+                Event::QueryResult(1000, Some(FoundLocation::RemoteScan(123)))
+            ))
         );
         assert_eq!(alias.pop_output(&ctx), None);
     }
@@ -452,7 +473,7 @@ mod tests {
 
         alias.hint_slots.insert(1000, HintSlot { node: 122, ts: 0 });
 
-        alias.on_input(&ctx, 10000, FeatureInput::Control(FeatureControlActor::Controller, Control::Query { alias: 1000, service, level }));
+        alias.on_input(&ctx, 10000, FeatureInput::Control(FeatureControlActor::Controller(()), Control::Query { alias: 1000, service, level }));
         assert_eq!(decode_msg(alias.pop_output(&ctx)), Some((RouteRule::ToNode(122), Message::Check(1000))));
         assert_eq!(alias.pop_output(&ctx), None);
 
@@ -468,7 +489,10 @@ mod tests {
 
         assert_eq!(
             alias.pop_output(&ctx),
-            Some(FeatureOutput::Event(FeatureControlActor::Controller, Event::QueryResult(1000, Some(FoundLocation::RemoteScan(123)))))
+            Some(FeatureOutput::Event(
+                FeatureControlActor::Controller(()),
+                Event::QueryResult(1000, Some(FoundLocation::RemoteScan(123)))
+            ))
         );
         assert_eq!(alias.pop_output(&ctx), None);
 
@@ -491,7 +515,7 @@ mod tests {
 
         alias.hint_slots.insert(1000, HintSlot { node: 122, ts: 0 });
 
-        alias.on_input(&ctx, 10000, FeatureInput::Control(FeatureControlActor::Controller, Control::Query { alias: 1000, service, level }));
+        alias.on_input(&ctx, 10000, FeatureInput::Control(FeatureControlActor::Controller(()), Control::Query { alias: 1000, service, level }));
         assert_eq!(decode_msg(alias.pop_output(&ctx)), Some((RouteRule::ToNode(122), Message::Check(1000))));
         assert_eq!(alias.pop_output(&ctx), None);
 
@@ -505,13 +529,13 @@ mod tests {
         //simulate scan found
         alias.on_shared_input(&ctx, 10000 + HINT_TIMEOUT_MS + SCAN_TIMEOUT_MS, FeatureSharedInput::Tick(1));
 
-        assert_eq!(alias.pop_output(&ctx), Some(FeatureOutput::Event(FeatureControlActor::Controller, Event::QueryResult(1000, None))));
+        assert_eq!(alias.pop_output(&ctx), Some(FeatureOutput::Event(FeatureControlActor::Controller(()), Event::QueryResult(1000, None))));
         assert_eq!(alias.pop_output(&ctx), None);
     }
 
     #[test]
     fn handle_notify_from_remote() {
-        let mut alias = AliasFeature::default();
+        let mut alias = AliasFeature::<()>::default();
         alias.process_remote(100, 123, Message::Notify(1000));
         assert_eq!(alias.hint_slots.get(&1000), Some(&HintSlot { node: 123, ts: 100 }));
     }

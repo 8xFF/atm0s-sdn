@@ -13,7 +13,7 @@ mod simulator;
 
 struct MockService;
 
-impl Service<FeaturesControl, FeaturesEvent, (), (), (), ()> for MockService {
+impl Service<(), FeaturesControl, FeaturesEvent, (), (), (), ()> for MockService {
     fn service_id(&self) -> u8 {
         0
     }
@@ -22,18 +22,18 @@ impl Service<FeaturesControl, FeaturesEvent, (), (), (), ()> for MockService {
         "mock"
     }
 
-    fn on_input(&mut self, _ctx: &ServiceCtx, _now: u64, _input: ServiceInput<FeaturesEvent, (), ()>) {}
+    fn on_input(&mut self, _ctx: &ServiceCtx, _now: u64, _input: ServiceInput<(), FeaturesEvent, (), ()>) {}
 
     fn on_shared_input<'a>(&mut self, _ctx: &ServiceCtx, _now: u64, _input: ServiceSharedInput) {}
 
-    fn pop_output(&mut self, _ctx: &ServiceCtx) -> Option<ServiceOutput<FeaturesControl, (), ()>> {
+    fn pop_output(&mut self, _ctx: &ServiceCtx) -> Option<ServiceOutput<(), FeaturesControl, (), ()>> {
         None
     }
 }
 
 struct MockServiceWorker;
 
-impl ServiceWorker<FeaturesControl, FeaturesEvent, (), (), (), ()> for MockServiceWorker {
+impl ServiceWorker<(), FeaturesControl, FeaturesEvent, (), (), (), ()> for MockServiceWorker {
     fn service_id(&self) -> u8 {
         0
     }
@@ -45,7 +45,7 @@ impl ServiceWorker<FeaturesControl, FeaturesEvent, (), (), (), ()> for MockServi
 
 struct MockServiceBuilder;
 
-impl ServiceBuilder<FeaturesControl, FeaturesEvent, (), (), (), ()> for MockServiceBuilder {
+impl ServiceBuilder<(), FeaturesControl, FeaturesEvent, (), (), (), ()> for MockServiceBuilder {
     fn service_id(&self) -> u8 {
         0
     }
@@ -54,11 +54,11 @@ impl ServiceBuilder<FeaturesControl, FeaturesEvent, (), (), (), ()> for MockServ
         "mock"
     }
 
-    fn create(&self) -> Box<dyn Service<FeaturesControl, FeaturesEvent, (), (), (), ()>> {
+    fn create(&self) -> Box<dyn Service<(), FeaturesControl, FeaturesEvent, (), (), (), ()>> {
         Box::new(MockService)
     }
 
-    fn create_worker(&self) -> Box<dyn ServiceWorker<FeaturesControl, FeaturesEvent, (), (), (), ()>> {
+    fn create_worker(&self) -> Box<dyn ServiceWorker<(), FeaturesControl, FeaturesEvent, (), (), (), ()>> {
         Box::new(MockServiceWorker)
     }
 }
@@ -75,18 +75,25 @@ fn feature_router_sync_single_node() {
         sim.process(500);
     }
 
-    sim.control(node1, ExtIn::FeaturesControl(FeaturesControl::Data(data::Control::Ping(node1))));
+    sim.control(node1, ExtIn::FeaturesControl((), FeaturesControl::Data(data::Control::Ping(node1))));
     sim.process(10);
-    assert_eq!(sim.pop_res(), Some((node1, ExtOut::FeaturesEvent(FeaturesEvent::Data(data::Event::Pong(node1, Some(0)))))));
+    assert_eq!(sim.pop_res(), Some((node1, ExtOut::FeaturesEvent((), FeaturesEvent::Data(data::Event::Pong(node1, Some(0)))))));
 
+    sim.control(node1, ExtIn::FeaturesControl((), FeaturesControl::Data(data::Control::DataListen(1))));
     sim.control(
         node1,
-        ExtIn::FeaturesControl(FeaturesControl::Data(data::Control::SendRule(RouteRule::ToService(0), NetOutgoingMeta::default(), vec![1, 2, 3, 4]))),
+        ExtIn::FeaturesControl(
+            (),
+            FeaturesControl::Data(data::Control::DataSendRule(1, RouteRule::ToService(0), NetOutgoingMeta::default(), vec![1, 2, 3, 4])),
+        ),
     );
     sim.process(10);
     assert_eq!(
         sim.pop_res(),
-        Some((node1, ExtOut::FeaturesEvent(FeaturesEvent::Data(data::Event::Recv(NetIncomingMeta::default(), vec![1, 2, 3, 4])))))
+        Some((
+            node1,
+            ExtOut::FeaturesEvent((), FeaturesEvent::Data(data::Event::Recv(1, NetIncomingMeta::default(), vec![1, 2, 3, 4])))
+        ))
     );
 }
 
@@ -106,9 +113,9 @@ fn feature_router_sync_two_nodes() {
         sim.process(500);
     }
 
-    sim.control(node1, ExtIn::FeaturesControl(FeaturesControl::Data(data::Control::Ping(node2))));
+    sim.control(node1, ExtIn::FeaturesControl((), FeaturesControl::Data(data::Control::Ping(node2))));
     sim.process(10);
-    assert_eq!(sim.pop_res(), Some((node1, ExtOut::FeaturesEvent(FeaturesEvent::Data(data::Event::Pong(node2, Some(0)))))));
+    assert_eq!(sim.pop_res(), Some((node1, ExtOut::FeaturesEvent((), FeaturesEvent::Data(data::Event::Pong(node2, Some(0)))))));
 }
 
 #[test]
@@ -131,7 +138,7 @@ fn feature_router_sync_three_nodes() {
         sim.process(500);
     }
 
-    sim.control(node1, ExtIn::FeaturesControl(FeaturesControl::Data(data::Control::Ping(node3))));
+    sim.control(node1, ExtIn::FeaturesControl((), FeaturesControl::Data(data::Control::Ping(node3))));
     sim.process(10);
-    assert_eq!(sim.pop_res(), Some((node1, ExtOut::FeaturesEvent(FeaturesEvent::Data(data::Event::Pong(node3, Some(0)))))));
+    assert_eq!(sim.pop_res(), Some((node1, ExtOut::FeaturesEvent((), FeaturesEvent::Data(data::Event::Pong(node3, Some(0)))))));
 }

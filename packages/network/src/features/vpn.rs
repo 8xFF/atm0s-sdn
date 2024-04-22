@@ -1,9 +1,12 @@
+use std::marker::PhantomData;
+
 #[cfg(feature = "vpn")]
 use crate::base::{BufferMut, TransportMsg};
 #[cfg(feature = "vpn")]
 use atm0s_sdn_identity::{NodeId, NodeIdType};
 #[cfg(feature = "vpn")]
 use atm0s_sdn_router::{RouteAction, RouteRule, RouterTable};
+use derivative::Derivative;
 
 use crate::base::{Buffer, Feature, FeatureContext, FeatureInput, FeatureOutput, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput};
 
@@ -22,24 +25,29 @@ pub struct ToWorker;
 #[derive(Debug, Clone)]
 pub struct ToController;
 
-#[derive(Default)]
-pub struct VpnFeature {}
+#[derive(Debug, Derivative)]
+#[derivative(Default(bound = ""))]
+pub struct VpnFeature<UserData> {
+    _tmp: PhantomData<UserData>,
+}
 
-impl Feature<Control, Event, ToController, ToWorker> for VpnFeature {
+impl<UserData> Feature<UserData, Control, Event, ToController, ToWorker> for VpnFeature<UserData> {
     fn on_shared_input(&mut self, _ctx: &FeatureContext, _now: u64, _input: crate::base::FeatureSharedInput) {}
 
-    fn on_input<'a>(&mut self, _ctx: &FeatureContext, _now_ms: u64, _input: FeatureInput<'a, Control, ToController>) {}
+    fn on_input<'a>(&mut self, _ctx: &FeatureContext, _now_ms: u64, _input: FeatureInput<'a, UserData, Control, ToController>) {}
 
-    fn pop_output<'a>(&mut self, _ctx: &FeatureContext) -> Option<FeatureOutput<Event, ToWorker>> {
+    fn pop_output<'a>(&mut self, _ctx: &FeatureContext) -> Option<FeatureOutput<UserData, Event, ToWorker>> {
         None
     }
 }
 
-pub struct VpnFeatureWorker;
+#[derive(Debug, Derivative)]
+#[derivative(Default(bound = ""))]
+pub struct VpnFeatureWorker<UserData>(PhantomData<UserData>);
 
-impl VpnFeatureWorker {
+impl<UserData> VpnFeatureWorker<UserData> {
     #[cfg(feature = "vpn")]
-    fn process_tun<'a>(&mut self, ctx: &FeatureWorkerContext, mut pkt: BufferMut<'a>) -> Option<FeatureWorkerOutput<'a, Control, Event, ToController>> {
+    fn process_tun<'a>(&mut self, ctx: &FeatureWorkerContext, mut pkt: BufferMut<'a>) -> Option<FeatureWorkerOutput<'a, UserData, Control, Event, ToController>> {
         #[cfg(any(target_os = "macos", target_os = "ios"))]
         let to_ip = &pkt[20..24];
         #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -61,7 +69,7 @@ impl VpnFeatureWorker {
         }
     }
 
-    fn process_udp<'a>(&self, _ctx: &FeatureWorkerContext, pkt: Buffer<'a>) -> Option<FeatureWorkerOutput<'a, Control, Event, ToController>> {
+    fn process_udp<'a>(&self, _ctx: &FeatureWorkerContext, pkt: Buffer<'a>) -> Option<FeatureWorkerOutput<'a, UserData, Control, Event, ToController>> {
         #[cfg(feature = "vpn")]
         {
             Some(FeatureWorkerOutput::TunPkt(pkt))
@@ -71,8 +79,13 @@ impl VpnFeatureWorker {
     }
 }
 
-impl FeatureWorker<Control, Event, ToController, ToWorker> for VpnFeatureWorker {
-    fn on_input<'a>(&mut self, ctx: &mut FeatureWorkerContext, _now: u64, input: FeatureWorkerInput<'a, Control, ToWorker>) -> Option<FeatureWorkerOutput<'a, Control, Event, ToController>> {
+impl<UserData> FeatureWorker<UserData, Control, Event, ToController, ToWorker> for VpnFeatureWorker<UserData> {
+    fn on_input<'a>(
+        &mut self,
+        ctx: &mut FeatureWorkerContext,
+        _now: u64,
+        input: FeatureWorkerInput<'a, UserData, Control, ToWorker>,
+    ) -> Option<FeatureWorkerOutput<'a, UserData, Control, Event, ToController>> {
         match input {
             #[cfg(feature = "vpn")]
             FeatureWorkerInput::TunPkt(pkt) => self.process_tun(ctx, pkt),

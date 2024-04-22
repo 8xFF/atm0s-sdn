@@ -7,13 +7,13 @@ use crate::base::{ServiceBuilder, ServiceCtx, ServiceId, ServiceInput, ServiceOu
 use crate::features::{FeaturesControl, FeaturesEvent};
 
 /// To manage the services we need to create an object that will hold the services
-pub struct ServiceManager<ServiceControl, ServiceEvent, ToController, ToWorker> {
-    services: [Option<Box<dyn Service<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>>; 256],
+pub struct ServiceManager<UserData, ServiceControl, ServiceEvent, ToController, ToWorker> {
+    services: [Option<Box<dyn Service<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>>; 256],
     switcher: TaskSwitcher,
 }
 
-impl<ServiceControl, ServiceEvent, ToController, ToWorker> ServiceManager<ServiceControl, ServiceEvent, ToController, ToWorker> {
-    pub fn new(services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>>) -> Self {
+impl<UserData, ServiceControl, ServiceEvent, ToController, ToWorker> ServiceManager<UserData, ServiceControl, ServiceEvent, ToController, ToWorker> {
+    pub fn new(services: Vec<Arc<dyn ServiceBuilder<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>>) -> Self {
         let max_service_id = services.iter().map(|s| s.service_id()).max().unwrap_or(0);
         Self {
             services: std::array::from_fn(|index| services.iter().find(|s| s.service_id() == index as u8).map(|s| s.create())),
@@ -30,7 +30,7 @@ impl<ServiceControl, ServiceEvent, ToController, ToWorker> ServiceManager<Servic
         }
     }
 
-    pub fn on_input(&mut self, ctx: &ServiceCtx, now: u64, id: ServiceId, input: ServiceInput<FeaturesEvent, ServiceControl, ToController>) {
+    pub fn on_input(&mut self, ctx: &ServiceCtx, now: u64, id: ServiceId, input: ServiceInput<UserData, FeaturesEvent, ServiceControl, ToController>) {
         if let Some(service) = self.services.get_mut(*id as usize) {
             if let Some(service) = service {
                 self.switcher.queue_flag_task(*id as usize);
@@ -39,7 +39,7 @@ impl<ServiceControl, ServiceEvent, ToController, ToWorker> ServiceManager<Servic
         }
     }
 
-    pub fn pop_output(&mut self, ctx: &ServiceCtx) -> Option<(ServiceId, ServiceOutput<FeaturesControl, ServiceEvent, ToWorker>)> {
+    pub fn pop_output(&mut self, ctx: &ServiceCtx) -> Option<(ServiceId, ServiceOutput<UserData, FeaturesControl, ServiceEvent, ToWorker>)> {
         loop {
             let s = &mut self.switcher;
             let index = s.queue_current()? as u8;
