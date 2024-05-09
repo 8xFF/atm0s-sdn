@@ -23,14 +23,14 @@ fn feature_socket_single_node() {
     sim.control(node1, ExtIn::FeaturesControl((), FeaturesControl::Socket(socket::Control::Bind(10001))));
     sim.control(
         node1,
-        ExtIn::FeaturesControl((), FeaturesControl::Socket(socket::Control::SendTo(10001, node1, 10000, vec![1, 2, 3, 4], 0))),
+        ExtIn::FeaturesControl((), FeaturesControl::Socket(socket::Control::SendTo(10001, node1, 10000, vec![1, 2, 3, 4].into(), 0))),
     );
     sim.process(10);
     assert_eq!(
         sim.pop_res(),
         Some((
             node1,
-            ExtOut::FeaturesEvent((), FeaturesEvent::Socket(socket::Event::RecvFrom(10000, node1, 10001, vec![1, 2, 3, 4], 0)))
+            ExtOut::FeaturesEvent((), FeaturesEvent::Socket(socket::Event::RecvFrom(10000, node1, 10001, vec![1, 2, 3, 4].into(), 0)))
         ))
     );
 }
@@ -56,14 +56,14 @@ fn feature_socket_two_nodes() {
     sim.process(10);
     sim.control(
         node2,
-        ExtIn::FeaturesControl((), FeaturesControl::Socket(socket::Control::SendTo(10001, node1, 10000, vec![1, 2, 3, 4], 0))),
+        ExtIn::FeaturesControl((), FeaturesControl::Socket(socket::Control::SendTo(10001, node1, 10000, vec![1, 2, 3, 4].into(), 0))),
     );
     sim.process(10);
     assert_eq!(
         sim.pop_res(),
         Some((
             node1,
-            ExtOut::FeaturesEvent((), FeaturesEvent::Socket(socket::Event::RecvFrom(10000, node2, 10001, vec![1, 2, 3, 4], 0)))
+            ExtOut::FeaturesEvent((), FeaturesEvent::Socket(socket::Event::RecvFrom(10000, node2, 10001, vec![1, 2, 3, 4].into(), 0)))
         ))
     );
 }
@@ -93,14 +93,14 @@ fn feature_socket_three_nodes() {
     sim.process(10);
     sim.control(
         node3,
-        ExtIn::FeaturesControl((), FeaturesControl::Socket(socket::Control::SendTo(10001, node1, 10000, vec![1, 2, 3, 4], 0))),
+        ExtIn::FeaturesControl((), FeaturesControl::Socket(socket::Control::SendTo(10001, node1, 10000, vec![1, 2, 3, 4].into(), 0))),
     );
     sim.process(10);
     assert_eq!(
         sim.pop_res(),
         Some((
             node1,
-            ExtOut::FeaturesEvent((), FeaturesEvent::Socket(socket::Event::RecvFrom(10000, node3, 10001, vec![1, 2, 3, 4], 0)))
+            ExtOut::FeaturesEvent((), FeaturesEvent::Socket(socket::Event::RecvFrom(10000, node3, 10001, vec![1, 2, 3, 4].into(), 0)))
         ))
     );
 }

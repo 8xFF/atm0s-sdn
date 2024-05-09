@@ -4,6 +4,7 @@ use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 use atm0s_sdn_router::RouteRule;
 use base::{FeatureControlActor, NeighboursControl, NetIncomingMeta, NetOutgoingMeta, SecureContext, ServiceControlActor, ServiceId};
 use features::{Features, FeaturesControl, FeaturesEvent, FeaturesToController, FeaturesToWorker};
+use sans_io_runtime::Buffer;
 
 #[cfg(feature = "fuzz")]
 pub mod _fuzz_export;
@@ -34,8 +35,8 @@ pub enum LogicControl<UserData, SC, SE, TC> {
     Feature(FeaturesToController),
     Service(ServiceId, TC),
     NetNeighbour(SocketAddr, NeighboursControl),
-    NetRemote(Features, ConnId, NetIncomingMeta, Vec<u8>),
-    NetLocal(Features, NetIncomingMeta, Vec<u8>),
+    NetRemote(Features, ConnId, NetIncomingMeta, Buffer),
+    NetLocal(Features, NetIncomingMeta, Buffer),
     FeaturesControl(FeatureControlActor<UserData>, FeaturesControl),
     ServicesControl(ServiceControlActor<UserData>, ServiceId, SC),
     ServiceEvent(ServiceId, FeaturesEvent),
@@ -46,8 +47,8 @@ pub enum LogicControl<UserData, SC, SE, TC> {
 #[derive(Debug, Clone)]
 pub enum LogicEvent<UserData, SE, TW> {
     NetNeighbour(SocketAddr, NeighboursControl),
-    NetDirect(Features, SocketAddr, ConnId, NetOutgoingMeta, Vec<u8>),
-    NetRoute(Features, RouteRule, NetOutgoingMeta, Vec<u8>),
+    NetDirect(Features, SocketAddr, ConnId, NetOutgoingMeta, Buffer),
+    NetRoute(Features, RouteRule, NetOutgoingMeta, Buffer),
 
     Pin(ConnId, NodeId, SocketAddr, SecureContext),
     UnPin(ConnId),

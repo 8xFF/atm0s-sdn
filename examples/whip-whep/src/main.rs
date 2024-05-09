@@ -8,15 +8,15 @@ use std::{
     vec,
 };
 
+use atm0s_sdn::sans_io_runtime::{backend::PollingBackend, Controller};
 use atm0s_sdn::{
     base::ServiceBuilder,
     features::{FeaturesControl, FeaturesEvent},
     secure::{HandshakeBuilderXDA, StaticKeyAuthorization},
     services::visualization,
-    ControllerPlaneCfg, DataPlaneCfg, DataWorkerHistory, NodeAddr, NodeAddrBuilder, NodeId, Protocol, SdnExtIn, SdnWorkerCfg,
+    DataWorkerHistory, NodeAddr, NodeAddrBuilder, NodeId, Protocol, SdnExtIn,
 };
 use clap::Parser;
-use sans_io_runtime::{backend::PollingBackend, Controller};
 
 use worker::{ChannelId, Event, ExtIn, ExtOut, ICfg, SCfg, SC, SE, TC, TW};
 
@@ -67,10 +67,10 @@ fn main() {
 
     let mut server = http::SimpleHttpServer::new(args.http_port);
     let mut controller = Controller::<ExtIn, ExtOut, SCfg, ChannelId, Event, 128>::default();
-    let services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>> = vec![Arc::new(visualization::VisualizationServiceBuilder::<SC, SE, TC, TW>::new(false))];
+    let services: Vec<Arc<dyn ServiceBuilder<(), FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>> = vec![Arc::new(visualization::VisualizationServiceBuilder::<(), SC, SE, TC, TW>::new(false))];
 
     let mut addr_builder = NodeAddrBuilder::new(args.node_id);
-    addr_builder.add_protocol(Protocol::Ip4("192.168.1.27".parse().unwrap()));
+    addr_builder.add_protocol(Protocol::Ip4("192.168.1.39".parse().unwrap()));
     addr_builder.add_protocol(Protocol::Udp(args.udp_port));
     let addr = addr_builder.addr();
     log::info!("Node address: {}", addr);
@@ -78,11 +78,10 @@ fn main() {
     controller.add_worker::<RunnerOwner, _, RunnerWorker, PollingBackend<_, 128, 512>>(
         Duration::from_millis(10),
         ICfg {
-            sfu: "192.168.1.27:0".parse().unwrap(),
+            sfu: "192.168.1.39:0".parse().unwrap(),
             sdn: SdnInnerCfg {
                 node_id: args.node_id,
                 tick_ms: 1000,
-                udp_port: args.udp_port,
                 controller: Some(ControllerCfg {
                     session: 0,
                     auth,
@@ -102,11 +101,10 @@ fn main() {
         controller.add_worker::<RunnerOwner, _, RunnerWorker, PollingBackend<_, 128, 512>>(
             Duration::from_millis(10),
             ICfg {
-                sfu: "192.168.1.27:0".parse().unwrap(),
+                sfu: "192.168.1.39:0".parse().unwrap(),
                 sdn: SdnInnerCfg {
                     node_id: args.node_id,
                     tick_ms: 1000,
-                    udp_port: args.udp_port,
                     controller: None,
                     services: services.clone(),
                     history: history.clone(),
@@ -123,16 +121,16 @@ fn main() {
         controller.send_to(0, ExtIn::Sdn(SdnExtIn::ConnectTo(seed)));
     }
 
-    let term = Arc::new(AtomicBool::new(false));
-    signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&term)).expect("Should register hook");
+    // let term = Arc::new(AtomicBool::new(false));
+    // signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&term)).expect("Should register hook");
 
     while let Ok(req) = server.recv(Duration::from_millis(100)) {
         if controller.process().is_none() {
             break;
         }
-        if term.load(Ordering::Relaxed) {
-            controller.shutdown();
-        }
+        // if term.load(Ordering::Relaxed) {
+        //     controller.shutdown();
+        // }
         while let Some(ext) = controller.pop_event() {
             match ext {
                 ExtOut::HttpResponse(resp) => {

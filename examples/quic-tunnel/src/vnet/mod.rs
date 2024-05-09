@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 
-use atm0s_sdn::NodeId;
+use atm0s_sdn::{base::Buffer, NodeId};
 use tokio::{
     select,
     sync::mpsc::{channel, Receiver, Sender, UnboundedReceiver, UnboundedSender},
@@ -22,7 +22,7 @@ pub struct NetworkPkt {
     pub local_port: u16,
     pub remote: NodeId,
     pub remote_port: u16,
-    pub data: Vec<u8>,
+    pub data: Buffer,
     pub meta: u8,
 }
 

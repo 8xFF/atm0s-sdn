@@ -53,7 +53,7 @@ impl AsyncUdpSocket for VirtualUdpSocket {
                         local_port: self.port,
                         remote: u32::from_be_bytes(addr.ip().octets()),
                         remote_port: addr.port(),
-                        data: transmit.contents.to_vec(),
+                        data: transmit.contents.to_vec().into(),
                         meta: transmit.ecn.map(|x| x as u8).unwrap_or(0),
                     };
                     log::debug!("{} sending {} bytes to {}", self.addr, pkt.data.len(), addr);

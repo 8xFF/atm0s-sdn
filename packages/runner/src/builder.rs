@@ -184,7 +184,6 @@ where
                     session: self.session,
                     auth: self.auth.unwrap_or_else(|| Arc::new(StaticKeyAuthorization::new("unsecure"))),
                     handshake: self.handshake.unwrap_or_else(|| Arc::new(HandshakeBuilderXDA)),
-                    tick_ms: 1000,
                     #[cfg(feature = "vpn")]
                     vpn_tun_device: tun_device,
                 }),

@@ -1,9 +1,10 @@
-use std::{collections::VecDeque, fmt::Debug, hash::Hash, marker::PhantomData};
+use std::{collections::VecDeque, fmt::Debug, hash::Hash};
 
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 use derivative::Derivative;
+use sans_io_runtime::{collections::DynamicDeque, TaskSwitcherChild};
 
-use crate::base::{ConnectionEvent, Feature, FeatureContext, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker};
+use crate::base::{ConnectionEvent, Feature, FeatureContext, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker, FeatureWorkerInput, FeatureWorkerOutput};
 
 pub const FEATURE_ID: u8 = 0;
 pub const FEATURE_NAME: &str = "neighbours_api";
@@ -28,11 +29,14 @@ pub struct ToWorker;
 #[derive(Debug, Clone)]
 pub struct ToController;
 
+pub type Output<UserData> = FeatureOutput<UserData, Event, ToWorker>;
+pub type WorkerOutput<UserData> = FeatureWorkerOutput<UserData, Control, Event, ToController>;
+
 #[derive(Debug, Derivative)]
 #[derivative(Default(bound = ""))]
 pub struct NeighboursFeature<UserData> {
     subs: Vec<FeatureControlActor<UserData>>,
-    output: VecDeque<FeatureOutput<UserData, Event, ToWorker>>,
+    output: VecDeque<Output<UserData>>,
 }
 
 impl<UserData: Debug + Copy + Hash + Eq> Feature<UserData, Control, Event, ToController, ToWorker> for NeighboursFeature<UserData> {
@@ -79,16 +83,39 @@ impl<UserData: Debug + Copy + Hash + Eq> Feature<UserData, Control, Event, ToCon
             _ => {}
         }
     }
+}
 
-    fn pop_output<'a>(&mut self, _ctx: &FeatureContext) -> Option<FeatureOutput<UserData, Event, ToWorker>> {
+impl<UserData> TaskSwitcherChild<Output<UserData>> for NeighboursFeature<UserData> {
+    type Time = u64;
+    fn pop_output(&mut self, _now: u64) -> Option<Output<UserData>> {
         self.output.pop_front()
     }
 }
 
-#[derive(Debug, Derivative)]
+#[derive(Derivative)]
 #[derivative(Default(bound = ""))]
 pub struct NeighboursFeatureWorker<UserData> {
-    _tmp: PhantomData<UserData>,
+    queue: DynamicDeque<WorkerOutput<UserData>, 1>,
 }
 
-impl<UserData> FeatureWorker<UserData, Control, Event, ToController, ToWorker> for NeighboursFeatureWorker<UserData> {}
+impl<UserData> FeatureWorker<UserData, Control, Event, ToController, ToWorker> for NeighboursFeatureWorker<UserData> {
+    fn on_input(&mut self, _ctx: &mut crate::base::FeatureWorkerContext, _now: u64, input: crate::base::FeatureWorkerInput<UserData, Control, ToWorker>) {
+        match input {
+            FeatureWorkerInput::Control(actor, control) => self.queue.push_back(FeatureWorkerOutput::ForwardControlToController(actor, control)),
+            FeatureWorkerInput::Network(conn, header, buf) => self.queue.push_back(FeatureWorkerOutput::ForwardNetworkToController(conn, header, buf)),
+            #[cfg(feature = "vpn")]
+            FeatureWorkerInput::TunPkt(..) => {}
+            FeatureWorkerInput::FromController(..) => {
+                log::warn!("No handler for FromController");
+            }
+            FeatureWorkerInput::Local(header, buf) => self.queue.push_back(FeatureWorkerOutput::ForwardLocalToController(header, buf)),
+        }
+    }
+}
+
+impl<UserData> TaskSwitcherChild<WorkerOutput<UserData>> for NeighboursFeatureWorker<UserData> {
+    type Time = u64;
+    fn pop_output(&mut self, _now: u64) -> Option<WorkerOutput<UserData>> {
+        self.queue.pop_front()
+    }
+}

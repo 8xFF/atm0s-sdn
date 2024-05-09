@@ -1,24 +1,18 @@
-use std::{
-    collections::{HashMap, VecDeque},
-    fmt::Debug,
-    hash::Hash,
-    net::SocketAddr,
-    sync::Arc,
-};
+use std::{collections::HashMap, fmt::Debug, hash::Hash, net::SocketAddr, sync::Arc};
 
 use atm0s_sdn_identity::{ConnId, NodeId};
 use atm0s_sdn_router::{
     shadow::{ShadowRouter, ShadowRouterHistory},
     RouteAction, RouteRule, RouterTable,
 };
-use sans_io_runtime::TaskSwitcher;
+use sans_io_runtime::{collections::DynamicDeque, return_if_err, return_if_none, return_if_some, TaskSwitcher, TaskSwitcherBranch, TaskSwitcherChild};
 
 use crate::{
     base::{
-        Buffer, BufferMut, FeatureControlActor, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, NeighboursControl, NetOutgoingMeta, ServiceBuilder, ServiceControlActor, ServiceId,
+        Buffer, FeatureControlActor, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, NeighboursControl, NetOutgoingMeta, ServiceBuilder, ServiceControlActor, ServiceId,
         ServiceWorkerCtx, ServiceWorkerInput, ServiceWorkerOutput, TransportMsg, TransportMsgHeader,
     },
-    features::{Features, FeaturesControl, FeaturesEvent, FeaturesToController},
+    features::{Features, FeaturesControl, FeaturesEvent},
     ExtIn, ExtOut, LogicControl, LogicEvent,
 };
 
@@ -29,10 +23,10 @@ mod features;
 mod services;
 
 #[derive(Debug)]
-pub enum NetInput<'a> {
-    UdpPacket(SocketAddr, BufferMut<'a>),
+pub enum NetInput {
+    UdpPacket(SocketAddr, Buffer),
     #[cfg(feature = "vpn")]
-    TunPacket(BufferMut<'a>),
+    TunPacket(Buffer),
 }
 
 #[derive(Debug, Clone)]
@@ -42,26 +36,26 @@ pub enum CrossWorker<UserData, SE> {
 }
 
 #[derive(Debug)]
-pub enum Input<'a, UserData, SC, SE, TW> {
+pub enum Input<UserData, SC, SE, TW> {
     Ext(ExtIn<UserData, SC>),
-    Net(NetInput<'a>),
+    Net(NetInput),
     Event(LogicEvent<UserData, SE, TW>),
     Worker(CrossWorker<UserData, SE>),
     ShutdownRequest,
 }
 
 #[derive(Debug)]
-pub enum NetOutput<'a> {
-    UdpPacket(SocketAddr, Buffer<'a>),
-    UdpPackets(Vec<SocketAddr>, Buffer<'a>),
+pub enum NetOutput {
+    UdpPacket(SocketAddr, Buffer),
+    UdpPackets(Vec<SocketAddr>, Buffer),
     #[cfg(feature = "vpn")]
-    TunPacket(Buffer<'a>),
+    TunPacket(Buffer),
 }
 
 #[derive(convert_enum::From)]
-pub enum Output<'a, UserData, SC, SE, TC> {
+pub enum Output<UserData, SC, SE, TC> {
     Ext(ExtOut<UserData, SE>),
-    Net(NetOutput<'a>),
+    Net(NetOutput),
     Control(LogicControl<UserData, SC, SE, TC>),
     #[convert_enum(optout)]
     Worker(u16, CrossWorker<UserData, SE>),
@@ -78,12 +72,6 @@ enum TaskType {
     Service = 1,
 }
 
-enum QueueOutput<UserData, SC, SE, TC> {
-    Feature(Features, FeatureWorkerOutput<'static, UserData, FeaturesControl, FeaturesEvent, FeaturesToController>),
-    Service(ServiceId, ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC>),
-    Net(NetOutput<'static>),
-}
-
 pub struct DataPlaneCfg<UserData, SC, SE, TC, TW> {
     pub worker_id: u16,
     pub services: Vec<Arc<dyn ServiceBuilder<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
@@ -94,12 +82,12 @@ pub struct DataPlane<UserData, SC, SE, TC, TW> {
     tick_count: u64,
     worker_id: u16,
     feature_ctx: FeatureWorkerContext,
-    features: FeatureWorkerManager<UserData>,
     service_ctx: ServiceWorkerCtx,
-    services: ServiceWorkerManager<UserData, SC, SE, TC, TW>,
+    features: TaskSwitcherBranch<FeatureWorkerManager<UserData>, features::Output<UserData>>,
+    services: TaskSwitcherBranch<ServiceWorkerManager<UserData, SC, SE, TC, TW>, services::Output<UserData, SC, SE, TC>>,
     conns: HashMap<SocketAddr, DataPlaneConnection>,
     conns_reverse: HashMap<ConnId, SocketAddr>,
-    queue_output: VecDeque<QueueOutput<UserData, SC, SE, TC>>,
+    queue: DynamicDeque<Output<UserData, SC, SE, TC>, 16>,
     switcher: TaskSwitcher,
 }
 
@@ -117,12 +105,12 @@ where
                 node_id,
                 router: ShadowRouter::new(node_id, cfg.history),
             },
-            features: FeatureWorkerManager::new(),
             service_ctx: ServiceWorkerCtx { node_id },
-            services: ServiceWorkerManager::new(cfg.services),
+            features: TaskSwitcherBranch::new(FeatureWorkerManager::new(), TaskType::Feature),
+            services: TaskSwitcherBranch::new(ServiceWorkerManager::new(cfg.services), TaskType::Service),
             conns: HashMap::new(),
             conns_reverse: HashMap::new(),
-            queue_output: VecDeque::new(),
+            queue: DynamicDeque::default(),
             switcher: TaskSwitcher::new(2),
         }
     }
@@ -131,15 +119,14 @@ where
         self.feature_ctx.router.derive_action(&rule, source, relay_from)
     }
 
-    pub fn on_tick<'a>(&mut self, now_ms: u64) {
+    pub fn on_tick(&mut self, now_ms: u64) {
         log::trace!("[DataPlane] on_tick: {}", now_ms);
-        self.switcher.queue_flag_all();
-        self.features.on_tick(&mut self.feature_ctx, now_ms, self.tick_count);
-        self.services.on_tick(&mut self.service_ctx, now_ms, self.tick_count);
+        self.features.input(&mut self.switcher).on_tick(&mut self.feature_ctx, now_ms, self.tick_count);
+        self.services.input(&mut self.switcher).on_tick(&mut self.service_ctx, now_ms, self.tick_count);
         self.tick_count += 1;
     }
 
-    pub fn on_event<'a>(&mut self, now_ms: u64, event: Input<'a, UserData, SC, SE, TW>) -> Option<Output<'a, UserData, SC, SE, TC>> {
+    pub fn on_event(&mut self, now_ms: u64, event: Input<UserData, SC, SE, TW>) {
         match event {
             Input::Ext(ext) => match ext {
                 ExtIn::ConnectTo(_remote) => {
@@ -151,332 +138,317 @@ where
                 ExtIn::FeaturesControl(userdata, control) => {
                     let feature: Features = control.to_feature();
                     let actor = FeatureControlActor::Worker(self.worker_id, userdata);
-                    let out = self.features.on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::Control(actor, control))?;
-                    Some(self.convert_features(now_ms, feature, out))
+                    self.features
+                        .input(&mut self.switcher)
+                        .on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::Control(actor, control));
                 }
                 ExtIn::ServicesControl(service, userdata, control) => {
                     let actor = ServiceControlActor::Worker(self.worker_id, userdata);
-                    let out = self.services.on_input(&mut self.service_ctx, now_ms, service, ServiceWorkerInput::Control(actor, control))?;
-                    Some(self.convert_services(now_ms, service, out))
+                    self.services
+                        .input(&mut self.switcher)
+                        .on_input(&mut self.service_ctx, now_ms, service, ServiceWorkerInput::Control(actor, control));
                 }
             },
-            Input::Worker(CrossWorker::Feature(userdata, event)) => Some(Output::Ext(ExtOut::FeaturesEvent(userdata, event))),
-            Input::Worker(CrossWorker::Service(service, userdata, event)) => Some(Output::Ext(ExtOut::ServicesEvent(service, userdata, event))),
+            Input::Worker(CrossWorker::Feature(userdata, event)) => self.queue.push_back(Output::Ext(ExtOut::FeaturesEvent(userdata, event))),
+            Input::Worker(CrossWorker::Service(service, userdata, event)) => self.queue.push_back(Output::Ext(ExtOut::ServicesEvent(service, userdata, event))),
             Input::Net(NetInput::UdpPacket(remote, buf)) => {
                 if buf.is_empty() {
-                    return None;
+                    return;
                 }
                 if let Ok(control) = NeighboursControl::try_from(&*buf) {
-                    Some(LogicControl::NetNeighbour(remote, control).into())
+                    self.queue.push_back(LogicControl::NetNeighbour(remote, control).into());
                 } else {
-                    self.incoming_route(now_ms, remote, buf)
+                    self.incoming_route(now_ms, remote, buf);
                 }
             }
             #[cfg(feature = "vpn")]
             Input::Net(NetInput::TunPacket(pkt)) => {
-                let out = self.features.on_input(&mut self.feature_ctx, Features::Vpn, now_ms, FeatureWorkerInput::TunPkt(pkt))?;
-                Some(self.convert_features(now_ms, Features::Vpn, out))
+                self.features
+                    .input(&mut self.switcher)
+                    .on_input(&mut self.feature_ctx, Features::Vpn, now_ms, FeatureWorkerInput::TunPkt(pkt));
             }
             Input::Event(LogicEvent::Feature(is_broadcast, to)) => {
                 let feature = to.to_feature();
-                let out = self.features.on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::FromController(is_broadcast, to))?;
-                Some(self.convert_features(now_ms, feature, out))
+                self.features
+                    .input(&mut self.switcher)
+                    .on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::FromController(is_broadcast, to));
             }
             Input::Event(LogicEvent::Service(service, to)) => {
-                let out = self.services.on_input(&mut self.service_ctx, now_ms, service, ServiceWorkerInput::FromController(to))?;
-                Some(self.convert_services(now_ms, service, out))
+                self.services
+                    .input(&mut self.switcher)
+                    .on_input(&mut self.service_ctx, now_ms, service, ServiceWorkerInput::FromController(to));
             }
             Input::Event(LogicEvent::ExtFeaturesEvent(worker, userdata, event)) => {
                 assert_eq!(self.worker_id, worker);
-                Some(Output::Ext(ExtOut::FeaturesEvent(userdata, event)))
+                self.queue.push_back(Output::Ext(ExtOut::FeaturesEvent(userdata, event)));
             }
             Input::Event(LogicEvent::ExtServicesEvent(worker, service, userdata, event)) => {
                 assert_eq!(self.worker_id, worker);
-                Some(Output::Ext(ExtOut::ServicesEvent(service, userdata, event)))
+                self.queue.push_back(Output::Ext(ExtOut::ServicesEvent(service, userdata, event)));
             }
             Input::Event(LogicEvent::NetNeighbour(remote, control)) => {
-                let buf: Result<Vec<u8>, _> = (&control).try_into();
-                Some(NetOutput::UdpPacket(remote, Buffer::from(buf.ok()?)).into())
+                let buf: Result<Vec<u8>, ()> = (&control).try_into();
+                if let Ok(buf) = buf {
+                    self.queue.push_back(NetOutput::UdpPacket(remote, buf.into()).into());
+                }
             }
             Input::Event(LogicEvent::NetDirect(feature, remote, _conn, meta, buf)) => {
                 let header = meta.to_header(feature as u8, RouteRule::Direct, self.feature_ctx.node_id);
-                let conn = self.conns.get_mut(&remote)?;
-                let msg = TransportMsg::build_raw(header, &buf);
-                Self::build_send_to_from_mut(now_ms, conn, remote, msg.take().into()).map(|e| e.into())
+                let conn = return_if_none!(self.conns.get_mut(&remote));
+                let msg = TransportMsg::build_raw(header, buf);
+                if let Some(pkt) = Self::build_send_to_from_mut(now_ms, conn, remote, msg.take().into()) {
+                    self.queue.push_back(pkt.into());
+                }
             }
             Input::Event(LogicEvent::NetRoute(feature, rule, meta, buf)) => self.outgoing_route(now_ms, feature, rule, meta, buf),
             Input::Event(LogicEvent::Pin(conn, node, addr, secure)) => {
                 self.conns.insert(addr, DataPlaneConnection::new(node, conn, addr, secure));
                 self.conns_reverse.insert(conn, addr);
-                None
             }
             Input::Event(LogicEvent::UnPin(conn)) => {
                 if let Some(addr) = self.conns_reverse.remove(&conn) {
                     log::info!("UnPin: conn: {} <--> addr: {}", conn, addr);
                     self.conns.remove(&addr);
                 }
-                None
             }
-            Input::ShutdownRequest => Some(Output::ShutdownResponse),
+            Input::ShutdownRequest => self.queue.push_back(Output::ShutdownResponse),
         }
     }
 
-    pub fn pop_output<'a>(&mut self, now_ms: u64) -> Option<Output<'a, UserData, SC, SE, TC>> {
-        if let Some(out) = self.queue_output.pop_front() {
-            return match out {
-                QueueOutput::Feature(feature, out) => Some(self.convert_features(now_ms, feature, out)),
-                QueueOutput::Service(service, out) => Some(self.convert_services(now_ms, service, out)),
-                QueueOutput::Net(out) => Some(Output::Net(out)),
-            };
-        };
-
-        while let Some(current) = self.switcher.queue_current() {
-            match current.try_into().ok()? {
-                TaskType::Feature => {
-                    let out = self.features.pop_output(&mut self.feature_ctx);
-                    if let Some((feature, out)) = self.switcher.queue_process(out) {
-                        return Some(self.convert_features(now_ms, feature, out));
-                    }
-                }
-                TaskType::Service => {
-                    let out = self.services.pop_output(&mut self.service_ctx);
-                    if let Some((feature, out)) = self.switcher.queue_process(out) {
-                        return Some(self.convert_services(now_ms, feature, out));
-                    }
-                }
-            }
-        }
-
-        None
-    }
-
-    fn incoming_route<'a>(&mut self, now_ms: u64, remote: SocketAddr, mut buf: BufferMut<'a>) -> Option<Output<'a, UserData, SC, SE, TC>> {
-        let conn = self.conns.get_mut(&remote)?;
+    fn incoming_route(&mut self, now_ms: u64, remote: SocketAddr, mut buf: Buffer) {
+        let conn = return_if_none!(self.conns.get_mut(&remote));
         if TransportMsgHeader::is_secure(buf[0]) {
-            conn.decrypt_if_need(now_ms, &mut buf)?;
+            return_if_none!(conn.decrypt_if_need(now_ms, &mut buf));
         }
-        let header = TransportMsgHeader::try_from(&buf as &[u8]).ok()?;
+        let header = return_if_err!(TransportMsgHeader::try_from(&buf as &[u8]));
         let action = self.feature_ctx.router.derive_action(&header.route, header.from_node, Some(conn.node()));
         log::debug!("[DataPlane] Incoming rule: {:?} from: {remote}, node {:?} => action {:?}", header.route, header.from_node, action);
         match action {
-            RouteAction::Reject => None,
+            RouteAction::Reject => {}
             RouteAction::Local => {
-                let feature = header.feature.try_into().ok()?;
-                log::debug!("Incoming feature: {:?} from: {remote}", feature);
-                let out = self.features.on_network_raw(&mut self.feature_ctx, feature, now_ms, conn.conn(), remote, header, buf.freeze())?;
-                Some(self.convert_features(now_ms, feature, out))
+                let feature = return_if_none!(header.feature.try_into().ok());
+                log::debug!("Incoming message for feature: {:?} from: {remote}", feature);
+                self.features
+                    .input(&mut self.switcher)
+                    .on_network_raw(&mut self.feature_ctx, feature, now_ms, conn.conn(), remote, header, buf);
             }
             RouteAction::Next(remote) => {
                 if !TransportMsgHeader::decrease_ttl(&mut buf) {
                     log::debug!("TTL is 0, drop packet");
                 }
-                let target_conn = self.conns.get_mut(&remote)?;
-                Self::build_send_to_from_mut(now_ms, target_conn, remote, buf).map(|e| e.into())
+                let target_conn = return_if_none!(self.conns.get_mut(&remote));
+                if let Some(out) = Self::build_send_to_from_mut(now_ms, target_conn, remote, buf) {
+                    self.queue.push_back(out.into());
+                }
             }
             RouteAction::Broadcast(local, remotes) => {
                 if !TransportMsgHeader::decrease_ttl(&mut buf) {
                     log::debug!("TTL is 0, drop packet");
-                    return None;
+                    return;
                 }
                 if local {
                     if let Ok(feature) = header.feature.try_into() {
                         log::debug!("Incoming broadcast feature: {:?} from: {remote}", feature);
-                        if let Some(out) = self.features.on_network_raw(&mut self.feature_ctx, feature, now_ms, conn.conn(), remote, header, buf.copy_readonly()) {
-                            self.queue_output.push_back(QueueOutput::Feature(feature, out.owned()));
-                        }
+                        self.features
+                            .input(&mut self.switcher)
+                            .on_network_raw(&mut self.feature_ctx, feature, now_ms, conn.conn(), remote, header, buf.clone());
                     }
                 }
-                if remotes.is_empty() {
-                    self.pop_output(now_ms).map(|e| e.into())
-                } else {
-                    self.build_send_to_multi_from_mut(now_ms, remotes, buf).map(|e: NetOutput<'_>| e.into())
+                if !remotes.is_empty() {
+                    if let Some(out) = self.build_send_to_multi_from_mut(now_ms, remotes, buf) {
+                        self.queue.push_back(out.into());
+                    }
                 }
             }
         }
     }
 
-    fn outgoing_route<'a>(&mut self, now_ms: u64, feature: Features, rule: RouteRule, mut meta: NetOutgoingMeta, buf: Vec<u8>) -> Option<Output<'a, UserData, SC, SE, TC>> {
+    fn outgoing_route(&mut self, now_ms: u64, feature: Features, rule: RouteRule, mut meta: NetOutgoingMeta, buf: Buffer) {
         match self.feature_ctx.router.derive_action(&rule, Some(self.feature_ctx.node_id), None) {
             RouteAction::Reject => {
                 log::debug!("[DataPlane] outgoing route rule {:?} is rejected", rule);
-                None
             }
             RouteAction::Local => {
                 log::debug!("[DataPlane] outgoing route rule {:?} is processed locally", rule);
                 let meta = meta.to_incoming(self.feature_ctx.node_id);
-                let out = self.features.on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::Local(meta, buf.into()))?;
-                Some(self.convert_features(now_ms, feature, out.owned()))
+                self.features
+                    .input(&mut self.switcher)
+                    .on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::Local(meta, buf.into()));
             }
             RouteAction::Next(remote) => {
                 log::debug!("[DataPlane] outgoing route rule {:?} is go with remote {remote}", rule);
                 let header = meta.to_header(feature as u8, rule, self.feature_ctx.node_id);
-                let msg = TransportMsg::build_raw(header, &buf);
-                let conn = self.conns.get_mut(&remote)?;
-                Self::build_send_to_from_mut(now_ms, conn, remote, msg.take().into()).map(|e| e.into())
+                let msg = TransportMsg::build_raw(header, buf);
+                let conn = return_if_none!(self.conns.get_mut(&remote));
+                if let Some(out) = Self::build_send_to_from_mut(now_ms, conn, remote, msg.take()) {
+                    self.queue.push_back(out.into());
+                }
             }
             RouteAction::Broadcast(local, remotes) => {
                 log::debug!("[DataPlane] outgoing route rule {:?} is go with local {local} and remotes {:?}", rule, remotes);
                 meta.source = true; //Force enable source for broadcast
 
                 let header = meta.to_header(feature as u8, rule, self.feature_ctx.node_id);
-                let msg = TransportMsg::build_raw(header, &buf);
                 if local {
                     let meta = meta.to_incoming(self.feature_ctx.node_id);
-                    if let Some(out) = self.features.on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::Local(meta, buf.into())) {
-                        self.switcher.queue_flag_task(TaskType::Feature as usize);
-                        self.queue_output.push_back(QueueOutput::Feature(feature, out.owned()));
-                    }
+                    self.features
+                        .input(&mut self.switcher)
+                        .on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::Local(meta, buf.clone()));
                 }
-                self.build_send_to_multi_from_mut(now_ms, remotes, msg.take().into()).map(|e| e.into())
+                let msg = TransportMsg::build_raw(header, buf);
+                if let Some(out) = self.build_send_to_multi_from_mut(now_ms, remotes, msg.take()) {
+                    self.queue.push_back(out.into());
+                }
             }
         }
     }
 
-    fn convert_features<'a>(
-        &mut self,
-        now_ms: u64,
-        feature: Features,
-        out: FeatureWorkerOutput<'a, UserData, FeaturesControl, FeaturesEvent, FeaturesToController>,
-    ) -> Output<'a, UserData, SC, SE, TC> {
-        self.switcher.queue_flag_task(TaskType::Feature as usize);
-
+    fn pop_features(&mut self, now_ms: u64) {
+        let (feature, out) = return_if_none!(self.features.pop_output(now_ms, &mut self.switcher));
         match out {
-            FeatureWorkerOutput::ForwardControlToController(service, control) => LogicControl::FeaturesControl(service, control).into(),
-            FeatureWorkerOutput::ForwardNetworkToController(conn, header, msg) => LogicControl::NetRemote(feature, conn, header, msg).into(),
-            FeatureWorkerOutput::ForwardLocalToController(header, buf) => LogicControl::NetLocal(feature, header, buf).into(),
-            FeatureWorkerOutput::ToController(control) => LogicControl::Feature(control).into(),
+            FeatureWorkerOutput::ForwardControlToController(service, control) => self.queue.push_back(LogicControl::FeaturesControl(service, control).into()),
+            FeatureWorkerOutput::ForwardNetworkToController(conn, header, msg) => self.queue.push_back(LogicControl::NetRemote(feature, conn, header, msg).into()),
+            FeatureWorkerOutput::ForwardLocalToController(header, buf) => self.queue.push_back(LogicControl::NetLocal(feature, header, buf).into()),
+            FeatureWorkerOutput::ToController(control) => self.queue.push_back(LogicControl::Feature(control).into()),
             FeatureWorkerOutput::Event(actor, event) => match actor {
-                FeatureControlActor::Controller(userdata) => Output::Control(LogicControl::ExtFeaturesEvent(userdata, event)),
+                FeatureControlActor::Controller(userdata) => self.queue.push_back(Output::Control(LogicControl::ExtFeaturesEvent(userdata, event))),
                 FeatureControlActor::Worker(worker, userdata) => {
                     if self.worker_id == worker {
-                        Output::Ext(ExtOut::FeaturesEvent(userdata, event))
+                        self.queue.push_back(Output::Ext(ExtOut::FeaturesEvent(userdata, event)));
                     } else {
-                        Output::Worker(worker, CrossWorker::Feature(userdata, event))
+                        self.queue.push_back(Output::Worker(worker, CrossWorker::Feature(userdata, event)));
                     }
                 }
                 FeatureControlActor::Service(service) => {
-                    if let Some(out) = self.services.on_input(&mut self.service_ctx, now_ms, service, ServiceWorkerInput::FeatureEvent(event)) {
-                        self.convert_services(now_ms, service, out)
-                    } else {
-                        Output::Continue
-                    }
+                    self.services
+                        .input(&mut self.switcher)
+                        .on_input(&mut self.service_ctx, now_ms, service, ServiceWorkerInput::FeatureEvent(event));
                 }
             },
             FeatureWorkerOutput::SendDirect(conn, meta, buf) => {
                 if let Some(addr) = self.conns_reverse.get(&conn) {
                     let conn = self.conns.get_mut(addr).expect("Should have");
                     let header = meta.to_header(feature as u8, RouteRule::Direct, self.feature_ctx.node_id);
-                    let msg = TransportMsg::build_raw(header, &buf);
-                    Self::build_send_to_from_mut(now_ms, conn, *addr, msg.take().into()).expect("Should have output").into()
-                } else {
-                    Output::Continue
+                    let msg = TransportMsg::build_raw(header, buf);
+                    self.queue
+                        .push_back(Self::build_send_to_from_mut(now_ms, conn, *addr, msg.take().into()).expect("Should have output").into())
                 }
             }
             FeatureWorkerOutput::SendRoute(rule, ttl, buf) => {
                 log::info!("SendRoute: {:?}", rule);
-                if let Some(out) = self.outgoing_route(now_ms, feature, rule, ttl, buf) {
-                    out
-                } else {
-                    Output::Continue
-                }
+                self.outgoing_route(now_ms, feature, rule, ttl, buf);
             }
             FeatureWorkerOutput::RawDirect(conn, buf) => {
                 if let Some(addr) = self.conns_reverse.get(&conn) {
                     let conn = self.conns.get_mut(addr).expect("Should have conn");
-                    Self::build_send_to(now_ms, conn, *addr, buf).expect("Should ok for convert RawDirect").into()
-                } else {
-                    Output::Continue
+                    self.queue.push_back(Self::build_send_to(now_ms, conn, *addr, buf).expect("Should ok for convert RawDirect").into());
                 }
             }
             FeatureWorkerOutput::RawBroadcast(conns, buf) => {
                 let addrs = conns.iter().filter_map(|conn| self.conns_reverse.get(conn)).cloned().collect();
-                self.build_send_to_multi(now_ms, addrs, buf).map(|e| e.into()).unwrap_or(Output::Continue)
+                let out = self.build_send_to_multi(now_ms, addrs, buf).map(|e| e.into()).unwrap_or(Output::Continue);
+                self.queue.push_back(out);
             }
             FeatureWorkerOutput::RawDirect2(addr, buf) => {
                 if let Some(conn) = self.conns.get_mut(&addr) {
-                    Self::build_send_to(now_ms, conn, addr, buf).expect("Should ok for convert RawDirect2").into()
-                } else {
-                    Output::Continue
+                    self.queue.push_back(Self::build_send_to(now_ms, conn, addr, buf).expect("Should ok for convert RawDirect2").into());
                 }
             }
-            FeatureWorkerOutput::RawBroadcast2(addrs, buf) => self.build_send_to_multi(now_ms, addrs, buf).map(|e| e.into()).unwrap_or(Output::Continue),
+            FeatureWorkerOutput::RawBroadcast2(addrs, buf) => {
+                let out = self.build_send_to_multi(now_ms, addrs, buf).map(|e| e.into()).unwrap_or(Output::Continue);
+                self.queue.push_back(out);
+            }
             #[cfg(feature = "vpn")]
-            FeatureWorkerOutput::TunPkt(pkt) => NetOutput::TunPacket(pkt).into(),
+            FeatureWorkerOutput::TunPkt(pkt) => self.queue.push_back(NetOutput::TunPacket(pkt).into()),
         }
     }
 
-    fn convert_services<'a>(&mut self, now_ms: u64, service: ServiceId, out: ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC>) -> Output<'a, UserData, SC, SE, TC> {
-        self.switcher.queue_flag_task(TaskType::Service as usize);
-
+    fn pop_services(&mut self, now_ms: u64) {
+        let (service, out) = return_if_none!(self.services.pop_output(now_ms, &mut self.switcher));
         match out {
-            ServiceWorkerOutput::ForwardControlToController(actor, control) => LogicControl::ServicesControl(actor, service, control).into(),
-            ServiceWorkerOutput::ForwardFeatureEventToController(event) => LogicControl::ServiceEvent(service, event).into(),
-            ServiceWorkerOutput::ToController(tc) => LogicControl::Service(service, tc).into(),
+            ServiceWorkerOutput::ForwardControlToController(actor, control) => self.queue.push_back(LogicControl::ServicesControl(actor, service, control).into()),
+            ServiceWorkerOutput::ForwardFeatureEventToController(event) => self.queue.push_back(LogicControl::ServiceEvent(service, event).into()),
+            ServiceWorkerOutput::ToController(tc) => self.queue.push_back(LogicControl::Service(service, tc).into()),
             ServiceWorkerOutput::FeatureControl(control) => {
                 let feature = control.to_feature();
-                if let Some(out) = self
-                    .features
-                    .on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::Control(FeatureControlActor::Service(service), control))
-                {
-                    self.convert_features(now_ms, feature, out)
-                } else {
-                    Output::Continue
-                }
+                self.features
+                    .input(&mut self.switcher)
+                    .on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::Control(FeatureControlActor::Service(service), control));
             }
             ServiceWorkerOutput::Event(actor, event) => match actor {
-                ServiceControlActor::Controller(userdata) => Output::Control(LogicControl::ExtServicesEvent(service, userdata, event)),
+                ServiceControlActor::Controller(userdata) => self.queue.push_back(Output::Control(LogicControl::ExtServicesEvent(service, userdata, event))),
                 ServiceControlActor::Worker(worker, userdata) => {
                     if self.worker_id == worker {
-                        Output::Ext(ExtOut::ServicesEvent(service, userdata, event))
+                        self.queue.push_back(Output::Ext(ExtOut::ServicesEvent(service, userdata, event)));
                     } else {
-                        Output::Worker(worker, CrossWorker::Service(service, userdata, event))
+                        self.queue.push_back(Output::Worker(worker, CrossWorker::Service(service, userdata, event)));
                     }
                 }
             },
         }
     }
 
-    fn build_send_to_from_mut<'a>(now: u64, conn: &mut DataPlaneConnection, remote: SocketAddr, mut buf: BufferMut<'a>) -> Option<NetOutput<'a>> {
+    fn build_send_to_from_mut(now: u64, conn: &mut DataPlaneConnection, remote: SocketAddr, mut buf: Buffer) -> Option<NetOutput> {
         conn.encrypt_if_need(now, &mut buf)?;
-        let after = buf.freeze();
-        Some(NetOutput::UdpPacket(remote, after))
+        Some(NetOutput::UdpPacket(remote, buf))
     }
 
-    fn build_send_to_multi_from_mut<'a>(&mut self, now: u64, mut remotes: Vec<SocketAddr>, mut buf: BufferMut<'a>) -> Option<NetOutput<'a>> {
+    fn build_send_to_multi_from_mut(&mut self, now: u64, mut remotes: Vec<SocketAddr>, mut buf: Buffer) -> Option<NetOutput> {
         if TransportMsgHeader::is_secure(buf[0]) {
             let first = remotes.pop()?;
             for remote in remotes {
                 if let Some(conn) = self.conns.get_mut(&remote) {
-                    let mut buf = BufferMut::build(&buf, 0, 12 + 16);
+                    let mut buf = Buffer::build(&buf, 0, 12 + 16);
                     if let Some(_) = conn.encrypt_if_need(now, &mut buf) {
-                        let out = NetOutput::UdpPacket(remote, buf.freeze());
-                        self.queue_output.push_back(QueueOutput::Net(out));
+                        let out = NetOutput::UdpPacket(remote, buf);
+                        self.queue.push_back(Output::Net(out));
                     }
                 }
             }
             let conn = self.conns.get_mut(&first)?;
             conn.encrypt_if_need(now, &mut buf)?;
-            Some(NetOutput::UdpPacket(first, buf.freeze()))
+            Some(NetOutput::UdpPacket(first, buf))
         } else {
-            Some(NetOutput::UdpPackets(remotes, buf.freeze()))
+            Some(NetOutput::UdpPackets(remotes, buf))
         }
     }
 
-    fn build_send_to_multi<'a>(&mut self, now: u64, remotes: Vec<SocketAddr>, buf: Buffer<'a>) -> Option<NetOutput<'a>> {
+    fn build_send_to_multi(&mut self, now: u64, remotes: Vec<SocketAddr>, buf: Buffer) -> Option<NetOutput> {
         if TransportMsgHeader::is_secure(buf[0]) {
-            let buf = BufferMut::build(&buf, 0, 12 + 16);
+            let buf = Buffer::build(&buf, 0, 12 + 16);
             self.build_send_to_multi_from_mut(now, remotes, buf)
         } else {
             Some(NetOutput::UdpPackets(remotes, buf))
         }
     }
 
-    fn build_send_to<'a>(now: u64, conn: &mut DataPlaneConnection, remote: SocketAddr, buf: Buffer<'a>) -> Option<NetOutput<'a>> {
+    fn build_send_to(now: u64, conn: &mut DataPlaneConnection, remote: SocketAddr, buf: Buffer) -> Option<NetOutput> {
         if TransportMsgHeader::is_secure(buf[0]) {
-            let buf = BufferMut::build(&buf, 0, 12 + 16);
+            let buf = Buffer::build(&buf, 0, 12 + 16);
             Self::build_send_to_from_mut(now, conn, remote, buf)
         } else {
             Some(NetOutput::UdpPacket(remote, buf))
         }
+    }
+}
+
+impl<UserData, SC, SE, TC, TW> TaskSwitcherChild<Output<UserData, SC, SE, TC>> for DataPlane<UserData, SC, SE, TC, TW>
+where
+    UserData: 'static + Copy + Eq + Hash + Debug,
+{
+    type Time = u64;
+    fn pop_output(&mut self, now: u64) -> Option<Output<UserData, SC, SE, TC>> {
+        return_if_some!(self.queue.pop_front());
+
+        while let Some(current) = self.switcher.current() {
+            match current.try_into().ok()? {
+                TaskType::Feature => self.pop_features(now),
+                TaskType::Service => self.pop_services(now),
+            }
+
+            return_if_some!(self.queue.pop_front());
+        }
+
+        None
     }
 }

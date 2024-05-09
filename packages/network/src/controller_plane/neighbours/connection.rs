@@ -64,7 +64,7 @@ impl PartialEq for ConnectionEvent {
 #[derive(Debug, PartialEq)]
 pub enum Output {
     Event(ConnectionEvent),
-    Net(SocketAddr, NeighboursControlCmds),
+    Net(u64, SocketAddr, NeighboursControlCmds),
 }
 
 pub struct NeighbourConnection {
@@ -91,7 +91,7 @@ impl NeighbourConnection {
             node,
             remote,
             state,
-            output: VecDeque::from([Output::Net(remote, NeighboursControlCmds::ConnectRequest { to: node, session, handshake })]),
+            output: VecDeque::from([Output::Net(now_ms, remote, NeighboursControlCmds::ConnectRequest { to: node, session, handshake })]),
             handshake_builder,
         }
     }
@@ -126,10 +126,13 @@ impl NeighbourConnection {
             State::Connecting { .. } | State::Connected { .. } => {
                 log::info!("[NeighbourConnection] Sending disconnect request with remote {}", self.remote);
                 self.state = State::Disconnecting { at_ms: now_ms };
-                self.output.push_back(self.generate_control(NeighboursControlCmds::DisconnectRequest {
-                    session: self.conn.session(),
-                    reason: NeighboursDisconnectReason::Other,
-                }));
+                self.output.push_back(self.generate_control(
+                    now_ms,
+                    NeighboursControlCmds::DisconnectRequest {
+                        session: self.conn.session(),
+                        reason: NeighboursDisconnectReason::Other,
+                    },
+                ));
             }
             _ => {
                 log::warn!("[NeighbourConnection] Invalid state for performing disconnect request with remote {}", self.remote);
@@ -147,11 +150,14 @@ impl NeighbourConnection {
                         log::warn!("[NeighbourConnection] Connection timeout to {} after {} ms", self.remote, TIMEOUT_MS);
                     } else if now_ms - *at_ms >= RETRY_CMD_MS {
                         if let Ok(request_buf) = requester.create_public_request() {
-                            self.output.push_back(self.generate_control(NeighboursControlCmds::ConnectRequest {
-                                to: self.node,
-                                session: self.conn.session(),
-                                handshake: request_buf,
-                            }));
+                            self.output.push_back(self.generate_control(
+                                now_ms,
+                                NeighboursControlCmds::ConnectRequest {
+                                    to: self.node,
+                                    session: self.conn.session(),
+                                    handshake: request_buf,
+                                },
+                            ));
                             log::info!("[NeighbourConnection] Resend connect request to {}, dest_node {}", self.remote, self.node);
                         } else {
                             log::warn!(
@@ -175,7 +181,7 @@ impl NeighbourConnection {
                         seq: *ping_seq,
                         sent_ms: now_ms,
                     };
-                    self.output.push_back(self.generate_control(cmd));
+                    self.output.push_back(self.generate_control(now_ms, cmd));
                 }
             }
             State::Disconnecting { at_ms } => {
@@ -185,10 +191,13 @@ impl NeighbourConnection {
                     log::warn!("[NeighbourConnection] Disconnect request timeout to {} after {} ms", self.remote, TIMEOUT_MS);
                 } else {
                     *at_ms = now_ms;
-                    self.output.push_back(self.generate_control(NeighboursControlCmds::DisconnectRequest {
-                        session: self.conn.session(),
-                        reason: NeighboursDisconnectReason::Other,
-                    }));
+                    self.output.push_back(self.generate_control(
+                        now_ms,
+                        NeighboursControlCmds::DisconnectRequest {
+                            session: self.conn.session(),
+                            reason: NeighboursDisconnectReason::Other,
+                        },
+                    ));
                     log::info!("Resend disconnect request to {}", self.remote);
                 }
             }
@@ -268,7 +277,7 @@ impl NeighbourConnection {
                     );
                     Err(NeighboursConnectError::InvalidData)
                 };
-                self.output.push_back(self.generate_control(NeighboursControlCmds::ConnectResponse { session, result }));
+                self.output.push_back(self.generate_control(now_ms, NeighboursControlCmds::ConnectResponse { session, result }));
             }
             NeighboursControlCmds::ConnectResponse { session, result } => {
                 if session == self.conn.session() {
@@ -312,7 +321,7 @@ impl NeighbourConnection {
             NeighboursControlCmds::Ping { session, seq, sent_ms } => {
                 if session == self.conn.session() {
                     if let State::Connected { .. } = &self.state {
-                        self.output.push_back(self.generate_control(NeighboursControlCmds::Pong { session, seq, sent_ms }));
+                        self.output.push_back(self.generate_control(now_ms, NeighboursControlCmds::Pong { session, seq, sent_ms }));
                     } else {
                         log::warn!("[NeighbourConnection] Invalid state, should be Connected for ping from {}", self.remote);
                     }
@@ -341,7 +350,7 @@ impl NeighbourConnection {
             NeighboursControlCmds::DisconnectRequest { session, .. } => {
                 if session == self.conn.session() {
                     self.state = State::Disconnected;
-                    self.output.push_back(self.generate_control(NeighboursControlCmds::DisconnectResponse { session }));
+                    self.output.push_back(self.generate_control(now_ms, NeighboursControlCmds::DisconnectResponse { session }));
                     self.output.push_back(Output::Event(ConnectionEvent::Disconnected));
                     log::info!("[NeighbourConnection] Disconnect request from {}", self.remote);
                 } else {
@@ -368,8 +377,8 @@ impl NeighbourConnection {
         self.output.pop_front()
     }
 
-    fn generate_control(&self, control: NeighboursControlCmds) -> Output {
-        Output::Net(self.remote, control)
+    fn generate_control(&self, now_ms: u64, control: NeighboursControlCmds) -> Output {
+        Output::Net(now_ms, self.remote, control)
     }
 
     fn switch_to_incoming(&mut self, session: u64) {
@@ -401,6 +410,7 @@ mod tests {
         assert_eq!(
             client.pop_output(),
             Some(Output::Net(
+                100,
                 remote,
                 NeighboursControlCmds::ConnectRequest {
                     to: 2,
@@ -454,6 +464,7 @@ mod tests {
         assert_eq!(
             server.pop_output(),
             Some(Output::Net(
+                1100,
                 remote,
                 NeighboursControlCmds::ConnectResponse {
                     session: 1000,
@@ -476,6 +487,7 @@ mod tests {
         assert_eq!(
             server.pop_output(),
             Some(Output::Net(
+                1100,
                 remote,
                 NeighboursControlCmds::ConnectResponse {
                     session: 1000,
@@ -498,6 +510,7 @@ mod tests {
         assert_eq!(
             server.pop_output(),
             Some(Output::Net(
+                1100,
                 remote,
                 NeighboursControlCmds::ConnectResponse {
                     session: 1000,

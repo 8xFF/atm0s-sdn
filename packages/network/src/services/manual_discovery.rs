@@ -1,14 +1,14 @@
 use std::{
     collections::{HashMap, VecDeque},
     fmt::Debug,
-    marker::PhantomData,
 };
 
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 use atm0s_sdn_utils::hash::hash_str;
+use sans_io_runtime::collections::DynamicDeque;
 
 use crate::{
-    base::{ConnectionEvent, Service, ServiceBuilder, ServiceCtx, ServiceInput, ServiceOutput, ServiceSharedInput, ServiceWorker},
+    base::{ConnectionEvent, Service, ServiceBuilder, ServiceCtx, ServiceInput, ServiceOutput, ServiceSharedInput, ServiceWorker, ServiceWorkerCtx, ServiceWorkerInput, ServiceWorkerOutput},
     features::{
         dht_kv::{Control as KvControl, Event as KvEvent, Key, Map, MapControl, MapEvent},
         neighbours::Control as NeighbourControl,
@@ -153,22 +153,36 @@ impl<UserData, SC, SE, TC: Debug, TW: Debug> Service<UserData, FeaturesControl, 
         }
     }
 
-    fn pop_output(&mut self, _ctx: &ServiceCtx) -> Option<ServiceOutput<UserData, FeaturesControl, SE, TW>> {
+    fn pop_output2(&mut self, _now: u64) -> Option<ServiceOutput<UserData, FeaturesControl, SE, TW>> {
         self.queue.pop_front()
     }
 }
 
-pub struct ManualDiscoveryServiceWorker<UserData> {
-    _tmp: PhantomData<UserData>,
+pub struct ManualDiscoveryServiceWorker<UserData, SC, SE, TC> {
+    queue: DynamicDeque<ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC>, 8>,
 }
 
-impl<UserData, SC, SE, TC, TW> ServiceWorker<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW> for ManualDiscoveryServiceWorker<UserData> {
+impl<UserData, SC, SE, TC, TW> ServiceWorker<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW> for ManualDiscoveryServiceWorker<UserData, SC, SE, TC> {
     fn service_id(&self) -> u8 {
         SERVICE_ID
     }
 
     fn service_name(&self) -> &str {
         SERVICE_NAME
+    }
+
+    fn on_tick(&mut self, _ctx: &ServiceWorkerCtx, _now: u64, _tick_count: u64) {}
+
+    fn on_input(&mut self, _ctx: &ServiceWorkerCtx, _now: u64, input: ServiceWorkerInput<UserData, FeaturesEvent, SC, TW>) {
+        match input {
+            ServiceWorkerInput::Control(actor, control) => self.queue.push_back(ServiceWorkerOutput::ForwardControlToController(actor, control)),
+            ServiceWorkerInput::FeatureEvent(event) => self.queue.push_back(ServiceWorkerOutput::ForwardFeatureEventToController(event)),
+            ServiceWorkerInput::FromController(_) => {}
+        }
+    }
+
+    fn pop_output2(&mut self, _now: u64) -> Option<ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC>> {
+        self.queue.pop_front()
     }
 }
 
@@ -211,7 +225,7 @@ where
     }
 
     fn create_worker(&self) -> Box<dyn ServiceWorker<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW>> {
-        Box::new(ManualDiscoveryServiceWorker { _tmp: Default::default() })
+        Box::new(ManualDiscoveryServiceWorker { queue: Default::default() })
     }
 }
 
@@ -264,11 +278,11 @@ mod test {
         let local_map = Map(hash_str("local"));
         let connect_map = Map(hash_str("connect"));
 
-        assert_eq!(service.pop_output(&ctx), Some(map_cmd(local_map, MapControl::Set(Key(0), addr1.to_vec()))));
-        assert_eq!(service.pop_output(&ctx), Some(map_cmd(connect_map, MapControl::Sub)));
+        assert_eq!(service.pop_output2(0), Some(map_cmd(local_map, MapControl::Set(Key(0), addr1.to_vec()))));
+        assert_eq!(service.pop_output2(0), Some(map_cmd(connect_map, MapControl::Sub)));
 
         service.on_input(&ctx, 100, map_event(connect_map, MapEvent::OnSet(Key(1), 2, addr2.to_vec())));
-        assert_eq!(service.pop_output(&ctx), Some(neighbour_cmd(neighbours::Control::ConnectTo(addr2))));
+        assert_eq!(service.pop_output2(100), Some(neighbour_cmd(neighbours::Control::ConnectTo(addr2))));
     }
 
     #[test]
@@ -281,28 +295,28 @@ mod test {
         let local_map = Map(hash_str("local"));
         let connect_map = Map(hash_str("connect"));
 
-        assert_eq!(service.pop_output(&ctx), Some(map_cmd(local_map, MapControl::Set(Key(0), addr1.to_vec()))));
-        assert_eq!(service.pop_output(&ctx), Some(map_cmd(connect_map, MapControl::Sub)));
+        assert_eq!(service.pop_output2(0), Some(map_cmd(local_map, MapControl::Set(Key(0), addr1.to_vec()))));
+        assert_eq!(service.pop_output2(0), Some(map_cmd(connect_map, MapControl::Sub)));
 
         // add node
         service.on_input(&ctx, 100, map_event(connect_map, MapEvent::OnSet(Key(1), addr2.node_id(), addr2.to_vec())));
-        assert_eq!(service.pop_output(&ctx), Some(neighbour_cmd(neighbours::Control::ConnectTo(addr2.clone()))));
+        assert_eq!(service.pop_output2(100), Some(neighbour_cmd(neighbours::Control::ConnectTo(addr2.clone()))));
 
         // fake connected
         service.on_input(&ctx, 110, neighbour_event(neighbours::Event::Connected(addr2.node_id(), ConnId::from_out(0, 0))));
 
         // remove node
         service.on_shared_input(&ctx, 200, ServiceSharedInput::Tick(0));
-        assert_eq!(service.pop_output(&ctx), None);
+        assert_eq!(service.pop_output2(200), None);
 
         // fake removed key
         service.on_input(&ctx, 300, map_event(connect_map, MapEvent::OnDel(Key(1), addr2.node_id())));
-        assert_eq!(service.pop_output(&ctx), None);
+        assert_eq!(service.pop_output2(300), None);
 
         // wait disconnect
         service.on_shared_input(&ctx, 300 + WAIT_DISCONNECT_MS, ServiceSharedInput::Tick(0));
-        assert_eq!(service.pop_output(&ctx), Some(neighbour_cmd(neighbours::Control::DisconnectFrom(addr2.node_id()))));
-        assert_eq!(service.pop_output(&ctx), None);
+        assert_eq!(service.pop_output2(300 + WAIT_DISCONNECT_MS), Some(neighbour_cmd(neighbours::Control::DisconnectFrom(addr2.node_id()))));
+        assert_eq!(service.pop_output2(300 + WAIT_DISCONNECT_MS), None);
     }
 
     #[test]
@@ -315,22 +329,22 @@ mod test {
         let local_map = Map(hash_str("local"));
         let connect_map = Map(hash_str("connect"));
 
-        assert_eq!(service.pop_output(&ctx), Some(map_cmd(local_map, MapControl::Set(Key(0), addr1.to_vec()))));
-        assert_eq!(service.pop_output(&ctx), Some(map_cmd(connect_map, MapControl::Sub)));
+        assert_eq!(service.pop_output2(0), Some(map_cmd(local_map, MapControl::Set(Key(0), addr1.to_vec()))));
+        assert_eq!(service.pop_output2(0), Some(map_cmd(connect_map, MapControl::Sub)));
 
         service.on_input(&ctx, 100, map_event(connect_map, MapEvent::OnSet(Key(1), 2, addr2.to_vec())));
-        assert_eq!(service.pop_output(&ctx), Some(neighbour_cmd(neighbours::Control::ConnectTo(addr2.clone()))));
+        assert_eq!(service.pop_output2(100), Some(neighbour_cmd(neighbours::Control::ConnectTo(addr2.clone()))));
 
         service.on_shared_input(&ctx, 200, ServiceSharedInput::Tick(0));
-        assert_eq!(service.pop_output(&ctx), None);
+        assert_eq!(service.pop_output2(200), None);
 
         service.on_input(&ctx, 300, neighbour_event(neighbours::Event::Disconnected(addr2.node_id(), ConnId::from_out(0, 0))));
 
-        service.on_shared_input(&ctx, 200, ServiceSharedInput::Tick(0));
-        assert_eq!(service.pop_output(&ctx), None);
+        service.on_shared_input(&ctx, 300, ServiceSharedInput::Tick(0));
+        assert_eq!(service.pop_output2(300), None);
 
         service.on_shared_input(&ctx, RETRY_CONNECT_MS, ServiceSharedInput::Tick(0));
-        assert_eq!(service.pop_output(&ctx), Some(neighbour_cmd(neighbours::Control::ConnectTo(addr2.clone()))));
-        assert_eq!(service.pop_output(&ctx), None);
+        assert_eq!(service.pop_output2(RETRY_CONNECT_MS), Some(neighbour_cmd(neighbours::Control::ConnectTo(addr2.clone()))));
+        assert_eq!(service.pop_output2(RETRY_CONNECT_MS), None);
     }
 }

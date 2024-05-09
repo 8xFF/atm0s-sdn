@@ -45,7 +45,6 @@ pub struct ControllerCfg {
     pub session: u64,
     pub auth: Arc<dyn Authorization>,
     pub handshake: Arc<dyn HandshakeBuilder>,
-    pub tick_ms: u64,
     #[cfg(feature = "vpn")]
     pub vpn_tun_device: Option<sans_io_runtime::backend::tun::TunDevice>,
 }
@@ -79,15 +78,15 @@ pub struct SdnWorkerInner<UserData, SC, SE, TC, TW> {
     udp_backend_slot: Option<usize>,
     #[cfg(feature = "vpn")]
     tun_backend_slot: Option<usize>,
-    queue: VecDeque<WorkerInnerOutput<'static, SdnOwner, SdnExtOut<UserData, SE>, SdnChannel, SdnEvent<UserData, SC, SE, TC, TW>, SdnSpawnCfg>>,
+    queue: VecDeque<WorkerInnerOutput<SdnOwner, SdnExtOut<UserData, SE>, SdnChannel, SdnEvent<UserData, SC, SE, TC, TW>, SdnSpawnCfg>>,
 }
 
 impl<UserData: 'static + Eq + Copy + Hash + Debug, SC: Debug, SE: Debug, TC: Debug, TW: Debug> SdnWorkerInner<UserData, SC, SE, TC, TW> {
-    fn convert_output<'a>(
+    fn convert_output(
         &mut self,
         now_ms: u64,
-        event: SdnWorkerOutput<'a, UserData, SC, SE, TC, TW>,
-    ) -> Option<WorkerInnerOutput<'a, SdnOwner, SdnExtOut<UserData, SE>, SdnChannel, SdnEvent<UserData, SC, SE, TC, TW>, SdnSpawnCfg>> {
+        event: SdnWorkerOutput<UserData, SC, SE, TC, TW>,
+    ) -> Option<WorkerInnerOutput<SdnOwner, SdnExtOut<UserData, SE>, SdnChannel, SdnEvent<UserData, SC, SE, TC, TW>, SdnSpawnCfg>> {
         match event {
             SdnWorkerOutput::Ext(ext) => Some(WorkerInnerOutput::Ext(true, ext)),
             SdnWorkerOutput::ExtWorker(_) => {
@@ -127,7 +126,7 @@ impl<UserData: 'static + Eq + Copy + Hash + Debug, SC: Debug, SE: Debug, TC: Deb
             }
             SdnWorkerOutput::Continue => {
                 //we need to continue pop for continue gather output
-                let out = self.worker_inner.pop_output(now_ms)?;
+                let out = self.worker_inner.pop_output2(now_ms)?;
                 self.convert_output(now_ms, out)
             }
         }
@@ -216,32 +215,22 @@ impl<UserData: 'static + Eq + Copy + Hash + Debug, SC: Debug, SE: Debug, TC: Deb
         todo!("Spawn not implemented")
     }
 
-    fn on_tick<'a>(&mut self, now: Instant) -> Option<WorkerInnerOutput<'a, SdnOwner, SdnExtOut<UserData, SE>, SdnChannel, SdnEvent<UserData, SC, SE, TC, TW>, SdnSpawnCfg>> {
-        if let Some(e) = self.queue.pop_front() {
-            return Some(e);
-        }
+    fn on_tick(&mut self, now: Instant) {
         let now_ms = self.timer.timestamp_ms(now);
-        let out = self.worker_inner.on_tick(now_ms)?;
-        self.convert_output(now_ms, out)
+        self.worker_inner.on_tick(now_ms);
     }
 
-    fn on_event<'a>(
-        &mut self,
-        now: Instant,
-        event: WorkerInnerInput<'a, SdnOwner, SdnExtIn<UserData, SC>, SdnChannel, SdnEvent<UserData, SC, SE, TC, TW>>,
-    ) -> Option<WorkerInnerOutput<'a, SdnOwner, SdnExtOut<UserData, SE>, SdnChannel, SdnEvent<UserData, SC, SE, TC, TW>, SdnSpawnCfg>> {
+    fn on_event(&mut self, now: Instant, event: WorkerInnerInput<SdnOwner, SdnExtIn<UserData, SC>, SdnChannel, SdnEvent<UserData, SC, SE, TC, TW>>) {
         let now_ms = self.timer.timestamp_ms(now);
-        let out = match event {
+        match event {
             WorkerInnerInput::Net(_, event) => match event {
                 BackendIncoming::UdpListenResult { bind: _, result } => {
                     self.udp_backend_slot = Some(result.expect("Should have slot").1);
-                    None
                 }
                 BackendIncoming::UdpPacket { slot: _, from, data } => self.worker_inner.on_event(now_ms, SdnWorkerInput::Net(NetInput::UdpPacket(from, data))),
                 #[cfg(feature = "vpn")]
                 BackendIncoming::TunBindResult { result } => {
                     self.tun_backend_slot = Some(result.expect("Should have slot"));
-                    None
                 }
                 #[cfg(feature = "vpn")]
                 BackendIncoming::TunPacket { slot: _, data } => self.worker_inner.on_event(now_ms, SdnWorkerInput::Net(NetInput::TunPacket(data))),
@@ -255,26 +244,24 @@ impl<UserData: 'static + Eq + Copy + Hash + Debug, SC: Debug, SE: Debug, TC: Deb
                 self.worker_inner.on_event(now_ms, SdnWorkerInput::Ext(ext))
             }
         };
-        self.convert_output(now_ms, out?)
     }
 
-    fn pop_output<'a>(&mut self, now: Instant) -> Option<WorkerInnerOutput<'a, SdnOwner, SdnExtOut<UserData, SE>, SdnChannel, SdnEvent<UserData, SC, SE, TC, TW>, SdnSpawnCfg>> {
+    fn pop_output(&mut self, now: Instant) -> Option<WorkerInnerOutput<SdnOwner, SdnExtOut<UserData, SE>, SdnChannel, SdnEvent<UserData, SC, SE, TC, TW>, SdnSpawnCfg>> {
         if let Some(e) = self.queue.pop_front() {
             return Some(e);
         }
         let now_ms = self.timer.timestamp_ms(now);
-        let out = self.worker_inner.pop_output(now_ms)?;
+        let out = self.worker_inner.pop_output2(now_ms)?;
         self.convert_output(now_ms, out)
     }
 
-    fn shutdown<'a>(&mut self, now: Instant) -> Option<WorkerInnerOutput<'a, SdnOwner, SdnExtOut<UserData, SE>, SdnChannel, SdnEvent<UserData, SC, SE, TC, TW>, SdnSpawnCfg>> {
+    fn on_shutdown(&mut self, now: Instant) {
         if !matches!(self.state, State::Running) {
-            return None;
+            return;
         }
 
         let now_ms = self.timer.timestamp_ms(now);
         self.state = State::Shutdowning;
-        let out = self.worker_inner.on_event(now_ms, SdnWorkerInput::ShutdownRequest)?;
-        self.convert_output(now_ms, out)
+        self.worker_inner.on_event(now_ms, SdnWorkerInput::ShutdownRequest);
     }
 }

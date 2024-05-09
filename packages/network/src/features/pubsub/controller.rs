@@ -25,6 +25,7 @@ mod source_hint;
 use atm0s_sdn_identity::NodeId;
 use local_relay::LocalRelay;
 use remote_relay::RemoteRelay;
+use sans_io_runtime::TaskSwitcherChild;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum GenericRelayOutput<UserData> {
@@ -314,8 +315,11 @@ impl<UserData: 'static + Eq + Copy + Debug> Feature<UserData, Control, Event, To
             _ => panic!("Unexpected input"),
         }
     }
+}
 
-    fn pop_output<'a>(&mut self, _ctx: &FeatureContext) -> Option<FeatureOutput<UserData, Event, ToWorker<UserData>>> {
+impl<UserData> TaskSwitcherChild<FeatureOutput<UserData, Event, ToWorker<UserData>>> for PubSubFeature<UserData> {
+    type Time = u64;
+    fn pop_output(&mut self, _now: u64) -> Option<FeatureOutput<UserData, Event, ToWorker<UserData>>> {
         self.queue.pop_front()
     }
 }

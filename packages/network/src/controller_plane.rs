@@ -2,7 +2,7 @@ use std::{collections::VecDeque, fmt::Debug, hash::Hash, sync::Arc};
 
 use atm0s_sdn_identity::NodeId;
 use rand::RngCore;
-use sans_io_runtime::TaskSwitcher;
+use sans_io_runtime::{return_if_none, return_if_some, TaskSwitcher, TaskSwitcherBranch, TaskSwitcherChild};
 
 use crate::{
     base::{
@@ -53,11 +53,11 @@ pub struct ControllerPlaneCfg<UserData, SC, SE, TC, TW> {
 
 pub struct ControllerPlane<UserData, SC, SE, TC, TW> {
     tick_count: u64,
-    neighbours: NeighboursManager,
     feature_ctx: FeatureContext,
-    features: FeatureManager<UserData>,
     service_ctx: ServiceCtx,
-    services: ServiceManager<UserData, SC, SE, TC, TW>,
+    neighbours: TaskSwitcherBranch<NeighboursManager, neighbours::Output>,
+    features: TaskSwitcherBranch<FeatureManager<UserData>, features::Output<UserData>>,
+    services: TaskSwitcherBranch<ServiceManager<UserData, SC, SE, TC, TW>, services::Output<UserData, SE, TW>>,
     switcher: TaskSwitcher,
     queue: VecDeque<Output<UserData, SE, TW>>,
 }
@@ -82,11 +82,11 @@ where
 
         Self {
             tick_count: 0,
-            neighbours: NeighboursManager::new(node_id, cfg.authorization, cfg.handshake_builder, cfg.random),
             feature_ctx: FeatureContext { node_id, session: cfg.session },
-            features: FeatureManager::new(node_id, cfg.session, service_ids),
             service_ctx: ServiceCtx { node_id, session: cfg.session },
-            services: ServiceManager::new(cfg.services),
+            neighbours: TaskSwitcherBranch::new(NeighboursManager::new(node_id, cfg.authorization, cfg.handshake_builder, cfg.random), TaskType::Neighbours),
+            features: TaskSwitcherBranch::new(FeatureManager::new(node_id, cfg.session, service_ids), TaskType::Feature),
+            services: TaskSwitcherBranch::new(ServiceManager::new(cfg.services), TaskType::Service),
             switcher: TaskSwitcher::new(3), //3 types: Neighbours, Feature, Service
             queue: VecDeque::new(),
         }
@@ -94,26 +94,26 @@ where
 
     pub fn on_tick(&mut self, now_ms: u64) {
         log::trace!("[ControllerPlane] on_tick: {}", now_ms);
-        self.switcher.queue_flag_all();
-        self.neighbours.on_tick(now_ms, self.tick_count);
-        self.features.on_shared_input(&self.feature_ctx, now_ms, FeatureSharedInput::Tick(self.tick_count));
-        self.services.on_shared_input(&self.service_ctx, now_ms, ServiceSharedInput::Tick(self.tick_count));
+        self.neighbours.input(&mut self.switcher).on_tick(now_ms, self.tick_count);
+        self.features
+            .input(&mut self.switcher)
+            .on_shared_input(&self.feature_ctx, now_ms, FeatureSharedInput::Tick(self.tick_count));
+        self.services
+            .input(&mut self.switcher)
+            .on_shared_input(&self.service_ctx, now_ms, ServiceSharedInput::Tick(self.tick_count));
         self.tick_count += 1;
     }
 
     pub fn on_event(&mut self, now_ms: u64, event: Input<UserData, SC, SE, TC>) {
         match event {
             Input::Ext(ExtIn::ConnectTo(addr)) => {
-                self.switcher.queue_flag_task(TaskType::Neighbours as usize);
-                self.neighbours.on_input(now_ms, neighbours::Input::ConnectTo(addr));
+                self.neighbours.input(&mut self.switcher).on_input(now_ms, neighbours::Input::ConnectTo(addr));
             }
             Input::Ext(ExtIn::DisconnectFrom(node)) => {
-                self.switcher.queue_flag_task(TaskType::Neighbours as usize);
-                self.neighbours.on_input(now_ms, neighbours::Input::DisconnectFrom(node));
+                self.neighbours.input(&mut self.switcher).on_input(now_ms, neighbours::Input::DisconnectFrom(node));
             }
             Input::Ext(ExtIn::FeaturesControl(userdata, control)) => {
-                self.switcher.queue_flag_task(TaskType::Feature as usize);
-                self.features.on_input(
+                self.features.input(&mut self.switcher).on_input(
                     &self.feature_ctx,
                     now_ms,
                     control.to_feature(),
@@ -121,43 +121,41 @@ where
                 );
             }
             Input::Ext(ExtIn::ServicesControl(service, userdata, control)) => {
-                self.switcher.queue_flag_task(TaskType::Service as usize);
                 self.services
+                    .input(&mut self.switcher)
                     .on_input(&self.service_ctx, now_ms, service, ServiceInput::Control(ServiceControlActor::Controller(userdata), control));
             }
             Input::Control(LogicControl::NetNeighbour(remote, control)) => {
-                self.switcher.queue_flag_task(TaskType::Neighbours as usize);
-                self.neighbours.on_input(now_ms, neighbours::Input::Control(remote, control));
+                self.neighbours.input(&mut self.switcher).on_input(now_ms, neighbours::Input::Control(remote, control));
             }
             Input::Control(LogicControl::Feature(to)) => {
-                self.switcher.queue_flag_task(TaskType::Feature as usize);
-                self.features.on_input(&self.feature_ctx, now_ms, to.to_feature(), FeatureInput::FromWorker(to));
+                self.features
+                    .input(&mut self.switcher)
+                    .on_input(&self.feature_ctx, now_ms, to.to_feature(), FeatureInput::FromWorker(to));
             }
             Input::Control(LogicControl::Service(service, to)) => {
-                self.switcher.queue_flag_task(TaskType::Service as usize);
-                self.services.on_input(&self.service_ctx, now_ms, service, ServiceInput::FromWorker(to));
+                self.services.input(&mut self.switcher).on_input(&self.service_ctx, now_ms, service, ServiceInput::FromWorker(to));
             }
             Input::Control(LogicControl::NetRemote(feature, conn, meta, msg)) => {
                 if let Some(ctx) = self.neighbours.conn(conn) {
-                    self.switcher.queue_flag_task(TaskType::Feature as usize);
-                    self.features.on_input(&self.feature_ctx, now_ms, feature, FeatureInput::Net(ctx, meta, msg));
+                    self.features.input(&mut self.switcher).on_input(&self.feature_ctx, now_ms, feature, FeatureInput::Net(ctx, meta, msg));
                 }
             }
             Input::Control(LogicControl::NetLocal(feature, meta, msg)) => {
-                self.switcher.queue_flag_task(TaskType::Feature as usize);
-                self.features.on_input(&self.feature_ctx, now_ms, feature, FeatureInput::Local(meta, msg));
+                self.features.input(&mut self.switcher).on_input(&self.feature_ctx, now_ms, feature, FeatureInput::Local(meta, msg));
             }
             Input::Control(LogicControl::ServiceEvent(service, event)) => {
-                self.switcher.queue_flag_task(TaskType::Service as usize);
-                self.services.on_input(&self.service_ctx, now_ms, service, ServiceInput::FeatureEvent(event));
+                self.services.input(&mut self.switcher).on_input(&self.service_ctx, now_ms, service, ServiceInput::FeatureEvent(event));
             }
             Input::Control(LogicControl::ServicesControl(actor, service, control)) => {
-                self.switcher.queue_flag_task(TaskType::Service as usize);
-                self.services.on_input(&self.service_ctx, now_ms, service, ServiceInput::Control(actor, control));
+                self.services
+                    .input(&mut self.switcher)
+                    .on_input(&self.service_ctx, now_ms, service, ServiceInput::Control(actor, control));
             }
             Input::Control(LogicControl::FeaturesControl(actor, control)) => {
-                self.switcher.queue_flag_task(TaskType::Feature as usize);
-                self.features.on_input(&self.feature_ctx, now_ms, control.to_feature(), FeatureInput::Control(actor, control));
+                self.features
+                    .input(&mut self.switcher)
+                    .on_input(&self.feature_ctx, now_ms, control.to_feature(), FeatureInput::Control(actor, control));
             }
             Input::Control(LogicControl::ExtFeaturesEvent(userdata, event)) => {
                 self.queue.push_back(Output::Ext(ExtOut::FeaturesEvent(userdata, event)));
@@ -166,118 +164,99 @@ where
                 self.queue.push_back(Output::Ext(ExtOut::ServicesEvent(service, userdata, event)));
             }
             Input::ShutdownRequest => {
-                self.switcher.queue_flag_task(TaskType::Neighbours as usize);
-                self.neighbours.on_input(now_ms, neighbours::Input::ShutdownRequest);
+                self.neighbours.input(&mut self.switcher).on_input(now_ms, neighbours::Input::ShutdownRequest);
             }
         }
     }
 
-    pub fn pop_output(&mut self, now_ms: u64) -> Option<Output<UserData, SE, TW>> {
-        while let Some(out) = self.queue.pop_front() {
-            return Some(out);
-        }
-
-        while let Some(current) = self.switcher.queue_current() {
-            match current.try_into().expect("Should convert to TaskType") {
-                TaskType::Neighbours => {
-                    let out = self.pop_neighbours(now_ms);
-                    if let Some(out) = self.switcher.queue_process(out) {
-                        return Some(out);
-                    }
-                }
-                TaskType::Feature => {
-                    let out = self.pop_features(now_ms);
-                    if let Some(out) = self.switcher.queue_process(out) {
-                        return Some(out);
-                    }
-                }
-                TaskType::Service => {
-                    let out = self.pop_services(now_ms);
-                    if let Some(out) = self.switcher.queue_process(out) {
-                        return Some(out);
-                    }
-                }
-            }
-        }
-
-        None
-    }
-
-    fn pop_neighbours(&mut self, now_ms: u64) -> Option<Output<UserData, SE, TW>> {
-        loop {
-            let out = self.neighbours.pop_output(now_ms)?;
-            let out = match out {
-                neighbours::Output::Control(remote, control) => Some(Output::Event(LogicEvent::NetNeighbour(remote, control))),
-                neighbours::Output::Event(event) => {
-                    self.switcher.queue_flag_task(TaskType::Feature as usize);
-                    self.features.on_shared_input(&self.feature_ctx, now_ms, FeatureSharedInput::Connection(event.clone()));
-                    self.switcher.queue_flag_task(TaskType::Service as usize);
-                    self.services.on_shared_input(&self.service_ctx, now_ms, ServiceSharedInput::Connection(event.clone()));
-                    match event {
-                        ConnectionEvent::Connected(ctx, secure) => Some(Output::Event(LogicEvent::Pin(ctx.conn, ctx.node, ctx.remote, secure))),
-                        ConnectionEvent::Stats(_ctx, _stats) => None,
-                        ConnectionEvent::Disconnected(ctx) => Some(Output::Event(LogicEvent::UnPin(ctx.conn))),
-                    }
-                }
-                neighbours::Output::ShutdownResponse => Some(Output::ShutdownSuccess),
-            };
-            if out.is_some() {
-                return out;
-            }
-        }
-    }
-
-    fn pop_features(&mut self, now_ms: u64) -> Option<Output<UserData, SE, TW>> {
-        let (feature, out) = self.features.pop_output(&self.feature_ctx)?;
+    fn pop_neighbours(&mut self, now_ms: u64) {
+        let out = return_if_none!(self.neighbours.pop_output(now_ms, &mut self.switcher));
         match out {
-            FeatureOutput::ToWorker(is_broadcast, to) => Some(Output::Event(LogicEvent::Feature(is_broadcast, to))),
+            neighbours::Output::Control(remote, control) => self.queue.push_back(Output::Event(LogicEvent::NetNeighbour(remote, control))),
+            neighbours::Output::Event(event) => {
+                self.features
+                    .input(&mut self.switcher)
+                    .on_shared_input(&self.feature_ctx, now_ms, FeatureSharedInput::Connection(event.clone()));
+                self.services
+                    .input(&mut self.switcher)
+                    .on_shared_input(&self.service_ctx, now_ms, ServiceSharedInput::Connection(event.clone()));
+                match event {
+                    ConnectionEvent::Connected(ctx, secure) => self.queue.push_back(Output::Event(LogicEvent::Pin(ctx.conn, ctx.node, ctx.remote, secure))),
+                    ConnectionEvent::Stats(_ctx, _stats) => {}
+                    ConnectionEvent::Disconnected(ctx) => self.queue.push_back(Output::Event(LogicEvent::UnPin(ctx.conn))),
+                }
+            }
+            neighbours::Output::ShutdownResponse => self.queue.push_back(Output::ShutdownSuccess),
+        }
+    }
+
+    fn pop_features(&mut self, now_ms: u64) {
+        let (feature, out) = return_if_none!(self.features.pop_output(now_ms, &mut self.switcher));
+        match out {
+            FeatureOutput::ToWorker(is_broadcast, to) => self.queue.push_back(Output::Event(LogicEvent::Feature(is_broadcast, to))),
             FeatureOutput::Event(actor, event) => {
                 log::debug!("[Controller] send FeatureEvent to actor {:?}, event {:?}", actor, event);
                 match actor {
-                    FeatureControlActor::Controller(userdata) => Some(Output::Ext(ExtOut::FeaturesEvent(userdata, event))),
-                    FeatureControlActor::Worker(worker, userdata) => Some(Output::Event(LogicEvent::ExtFeaturesEvent(worker, userdata, event))),
+                    FeatureControlActor::Controller(userdata) => self.queue.push_back(Output::Ext(ExtOut::FeaturesEvent(userdata, event))),
+                    FeatureControlActor::Worker(worker, userdata) => self.queue.push_back(Output::Event(LogicEvent::ExtFeaturesEvent(worker, userdata, event))),
                     FeatureControlActor::Service(service) => {
-                        self.switcher.queue_flag_task(TaskType::Service as usize);
-                        self.services.on_input(&self.service_ctx, now_ms, service, ServiceInput::FeatureEvent(event));
-                        self.pop_services(now_ms)
+                        self.services.input(&mut self.switcher).on_input(&self.service_ctx, now_ms, service, ServiceInput::FeatureEvent(event));
                     }
                 }
             }
             FeatureOutput::SendDirect(conn, meta, buf) => {
                 log::debug!("[ControllerPlane] SendDirect to conn: {:?}, len: {}", conn, buf.len());
-                Some(Output::Event(LogicEvent::NetDirect(feature, self.neighbours.conn(conn)?.remote, conn, meta, buf)))
+                let conn_ctx = return_if_none!(self.neighbours.conn(conn));
+                self.queue.push_back(Output::Event(LogicEvent::NetDirect(feature, conn_ctx.remote, conn, meta, buf)))
             }
             FeatureOutput::SendRoute(rule, ttl, buf) => {
                 log::debug!("[ControllerPlane] SendRoute to rule: {:?}, len: {}", rule, buf.len());
-                Some(Output::Event(LogicEvent::NetRoute(feature, rule, ttl, buf)))
+                self.queue.push_back(Output::Event(LogicEvent::NetRoute(feature, rule, ttl, buf)))
             }
             FeatureOutput::NeighboursConnectTo(addr) => {
-                self.switcher.queue_flag_task(TaskType::Neighbours as usize);
-                self.neighbours.on_input(now_ms, neighbours::Input::ConnectTo(addr));
-                self.pop_neighbours(now_ms)
+                self.neighbours.input(&mut self.switcher).on_input(now_ms, neighbours::Input::ConnectTo(addr));
             }
             FeatureOutput::NeighboursDisconnectFrom(node) => {
-                self.switcher.queue_flag_task(TaskType::Neighbours as usize);
-                self.neighbours.on_input(now_ms, neighbours::Input::DisconnectFrom(node));
-                self.pop_neighbours(now_ms)
+                self.neighbours.input(&mut self.switcher).on_input(now_ms, neighbours::Input::DisconnectFrom(node));
             }
         }
     }
 
-    fn pop_services(&mut self, now_ms: u64) -> Option<Output<UserData, SE, TW>> {
-        let (service, out) = self.services.pop_output(&self.service_ctx)?;
+    fn pop_services(&mut self, now_ms: u64) {
+        let (service, out) = return_if_none!(self.services.pop_output(now_ms, &mut self.switcher));
         match out {
             ServiceOutput::FeatureControl(control) => {
-                self.switcher.queue_flag_task(TaskType::Feature as usize);
                 self.features
+                    .input(&mut self.switcher)
                     .on_input(&self.feature_ctx, now_ms, control.to_feature(), FeatureInput::Control(FeatureControlActor::Service(service), control));
-                self.pop_features(now_ms)
             }
             ServiceOutput::Event(actor, event) => match actor {
-                ServiceControlActor::Controller(userdata) => Some(Output::Ext(ExtOut::ServicesEvent(service, userdata, event))),
-                ServiceControlActor::Worker(worker, userdata) => Some(Output::Event(LogicEvent::ExtServicesEvent(worker, service, userdata, event))),
+                ServiceControlActor::Controller(userdata) => self.queue.push_back(Output::Ext(ExtOut::ServicesEvent(service, userdata, event))),
+                ServiceControlActor::Worker(worker, userdata) => self.queue.push_back(Output::Event(LogicEvent::ExtServicesEvent(worker, service, userdata, event))),
             },
-            ServiceOutput::BroadcastWorkers(to) => Some(Output::Event(LogicEvent::Service(service, to))),
+            ServiceOutput::BroadcastWorkers(to) => self.queue.push_back(Output::Event(LogicEvent::Service(service, to))),
         }
+    }
+}
+
+impl<UserData, SC, SE, TC, TW> TaskSwitcherChild<Output<UserData, SE, TW>> for ControllerPlane<UserData, SC, SE, TC, TW>
+where
+    UserData: 'static + Hash + Copy + Eq + Debug,
+{
+    type Time = u64;
+    fn pop_output(&mut self, now_ms: u64) -> Option<Output<UserData, SE, TW>> {
+        return_if_some!(self.queue.pop_front());
+
+        while let Some(current) = self.switcher.current() {
+            match current.try_into().expect("Should convert to TaskType") {
+                TaskType::Neighbours => self.pop_neighbours(now_ms),
+                TaskType::Feature => self.pop_features(now_ms),
+                TaskType::Service => self.pop_services(now_ms),
+            }
+
+            return_if_some!(self.queue.pop_front());
+        }
+
+        None
     }
 }

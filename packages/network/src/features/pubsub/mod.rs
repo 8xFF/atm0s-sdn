@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 
 use atm0s_sdn_identity::NodeId;
 
-use crate::base::FeatureControlActor;
+use crate::base::{FeatureControlActor, FeatureOutput, FeatureWorkerOutput};
 
 use self::msg::{RelayControl, RelayId, SourceHint};
 
@@ -83,3 +83,6 @@ pub enum ToController {
     RelayControl(SocketAddr, RelayId, RelayControl),
     SourceHint(SocketAddr, ChannelId, SourceHint),
 }
+
+pub type Output<UserData> = FeatureOutput<UserData, Event, ToWorker<UserData>>;
+pub type WorkerOutput<UserData> = FeatureWorkerOutput<UserData, Control, Event, ToController>;

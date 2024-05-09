@@ -1,21 +1,24 @@
 use std::{
     collections::{BTreeMap, VecDeque},
     fmt::Debug,
-    marker::PhantomData,
     net::SocketAddr,
 };
 
 use atm0s_sdn_identity::{ConnId, NodeId};
 use atm0s_sdn_router::{RouteRule, ServiceBroadcastLevel};
+use sans_io_runtime::collections::DynamicDeque;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    base::{ConnectionEvent, NetOutgoingMeta, Service, ServiceBuilder, ServiceControlActor, ServiceCtx, ServiceInput, ServiceOutput, ServiceSharedInput, ServiceWorker, Ttl},
+    base::{
+        ConnectionEvent, NetOutgoingMeta, Service, ServiceBuilder, ServiceControlActor, ServiceCtx, ServiceInput, ServiceOutput, ServiceSharedInput, ServiceWorker, ServiceWorkerCtx,
+        ServiceWorkerInput, ServiceWorkerOutput, Ttl,
+    },
     features::{data, FeaturesControl, FeaturesEvent},
 };
 
 pub const SERVICE_ID: u8 = 1;
-pub const SERVICE_NAME: &str = "manual_discovery";
+pub const SERVICE_NAME: &str = "visualization";
 
 const NODE_TIMEOUT_MS: u64 = 10000; // after 10 seconds of no ping, node is considered dead
 const NODE_PING_MS: u64 = 5000;
@@ -204,22 +207,36 @@ where
         }
     }
 
-    fn pop_output(&mut self, _ctx: &ServiceCtx) -> Option<ServiceOutput<UserData, FeaturesControl, SE, TW>> {
+    fn pop_output2(&mut self, _now: u64) -> Option<ServiceOutput<UserData, FeaturesControl, SE, TW>> {
         self.queue.pop_front()
     }
 }
 
-pub struct VisualizationServiceWorker<UserData> {
-    _tmp: PhantomData<UserData>,
+pub struct VisualizationServiceWorker<UserData, SC, SE, TC> {
+    queue: DynamicDeque<ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC>, 8>,
 }
 
-impl<UserData, SC, SE, TC, TW> ServiceWorker<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW> for VisualizationServiceWorker<UserData> {
+impl<UserData, SC, SE, TC, TW> ServiceWorker<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW> for VisualizationServiceWorker<UserData, SC, SE, TC> {
     fn service_id(&self) -> u8 {
         SERVICE_ID
     }
 
     fn service_name(&self) -> &str {
         SERVICE_NAME
+    }
+
+    fn on_tick(&mut self, _ctx: &ServiceWorkerCtx, _now: u64, _tick_count: u64) {}
+
+    fn on_input(&mut self, _ctx: &ServiceWorkerCtx, _now: u64, input: ServiceWorkerInput<UserData, FeaturesEvent, SC, TW>) {
+        match input {
+            ServiceWorkerInput::Control(actor, control) => self.queue.push_back(ServiceWorkerOutput::ForwardControlToController(actor, control)),
+            ServiceWorkerInput::FeatureEvent(event) => self.queue.push_back(ServiceWorkerOutput::ForwardFeatureEventToController(event)),
+            ServiceWorkerInput::FromController(_) => {}
+        }
+    }
+
+    fn pop_output2(&mut self, _now: u64) -> Option<ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC>> {
+        self.queue.pop_front()
     }
 }
 
@@ -263,7 +280,7 @@ where
     }
 
     fn create_worker(&self) -> Box<dyn ServiceWorker<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW>> {
-        Box::new(VisualizationServiceWorker { _tmp: Default::default() })
+        Box::new(VisualizationServiceWorker { queue: Default::default() })
     }
 }
 
@@ -317,12 +334,12 @@ mod test {
         let ctx = ServiceCtx { node_id, session: 0 };
         let mut service = VisualizationService::<(), Control, Event, (), ()>::new();
 
-        assert_eq!(service.pop_output(&ctx), Some(data_cmd(DataControl::DataListen(DATA_PORT))));
-        assert_eq!(service.pop_output(&ctx), None);
+        assert_eq!(service.pop_output2(0), Some(data_cmd(DataControl::DataListen(DATA_PORT))));
+        assert_eq!(service.pop_output2(0), None);
 
         service.on_shared_input(&ctx, NODE_PING_MS, ServiceSharedInput::Tick(0));
         assert_eq!(
-            service.pop_output(&ctx),
+            service.pop_output2(NODE_PING_MS),
             Some(data_cmd(DataControl::DataSendRule(
                 DATA_PORT,
                 RouteRule::ToServices(SERVICE_ID, ServiceBroadcastLevel::Global, 0),
@@ -333,7 +350,7 @@ mod test {
 
         service.on_shared_input(&ctx, NODE_PING_MS * 2, ServiceSharedInput::Tick(0));
         assert_eq!(
-            service.pop_output(&ctx),
+            service.pop_output2(NODE_PING_MS * 2),
             Some(data_cmd(DataControl::DataSendRule(
                 DATA_PORT,
                 RouteRule::ToServices(SERVICE_ID, ServiceBroadcastLevel::Global, 1),

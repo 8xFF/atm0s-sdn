@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use atm0s_sdn_network::{
-    base::{NetIncomingMeta, NetOutgoingMeta, Service, ServiceBuilder, ServiceCtx, ServiceInput, ServiceOutput, ServiceSharedInput, ServiceWorker},
+    base::{
+        NetIncomingMeta, NetOutgoingMeta, Service, ServiceBuilder, ServiceCtx, ServiceInput, ServiceOutput, ServiceSharedInput, ServiceWorker, ServiceWorkerCtx, ServiceWorkerInput,
+        ServiceWorkerOutput,
+    },
     features::{data, FeaturesControl, FeaturesEvent},
     ExtIn, ExtOut,
 };
@@ -26,7 +29,7 @@ impl Service<(), FeaturesControl, FeaturesEvent, (), (), (), ()> for MockService
 
     fn on_shared_input<'a>(&mut self, _ctx: &ServiceCtx, _now: u64, _input: ServiceSharedInput) {}
 
-    fn pop_output(&mut self, _ctx: &ServiceCtx) -> Option<ServiceOutput<(), FeaturesControl, (), ()>> {
+    fn pop_output2(&mut self, _now: u64) -> Option<ServiceOutput<(), FeaturesControl, (), ()>> {
         None
     }
 }
@@ -40,6 +43,14 @@ impl ServiceWorker<(), FeaturesControl, FeaturesEvent, (), (), (), ()> for MockS
 
     fn service_name(&self) -> &str {
         "mock"
+    }
+
+    fn on_tick(&mut self, _ctx: &ServiceWorkerCtx, _now: u64, _tick_count: u64) {}
+
+    fn on_input(&mut self, _ctx: &ServiceWorkerCtx, _now: u64, _input: ServiceWorkerInput<(), FeaturesEvent, (), ()>) {}
+
+    fn pop_output2(&mut self, _now: u64) -> Option<ServiceWorkerOutput<(), FeaturesControl, FeaturesEvent, (), (), ()>> {
+        None
     }
 }
 
@@ -102,6 +113,7 @@ fn feature_router_sync_two_nodes() {
     let node1 = 1;
     let node2 = 2;
     let mut sim = NetworkSimulator::<(), (), (), ()>::new(0);
+    sim.enable_log(log::LevelFilter::Debug);
 
     let _addr1 = sim.add_node(TestNode::new(node1, 1234, vec![]));
     let addr2 = sim.add_node(TestNode::new(node2, 1235, vec![]));
@@ -109,9 +121,7 @@ fn feature_router_sync_two_nodes() {
     sim.control(node1, ExtIn::ConnectTo(addr2));
 
     // For sync
-    for _i in 0..4 {
-        sim.process(500);
-    }
+    sim.process(500);
 
     sim.control(node1, ExtIn::FeaturesControl((), FeaturesControl::Data(data::Control::Ping(node2))));
     sim.process(10);

@@ -16,15 +16,12 @@ use atm0s_sdn_network::data_plane::DataPlaneCfg;
 use atm0s_sdn_network::features::{FeaturesControl, FeaturesEvent};
 use atm0s_sdn_network::secure::{HandshakeBuilderXDA, StaticKeyAuthorization};
 use atm0s_sdn_network::worker::{SdnWorker, SdnWorkerCfg, SdnWorkerInput, SdnWorkerOutput};
-use atm0s_sdn_network::{
-    base::{Buffer, BufferMut},
-    data_plane, ExtIn, ExtOut,
-};
+use atm0s_sdn_network::{base::Buffer, data_plane, ExtIn, ExtOut};
 use atm0s_sdn_router::shadow::ShadowRouterHistory;
 use log::{LevelFilter, Metadata, Record};
 use parking_lot::Mutex;
 use rand::rngs::mock::StepRng;
-use sans_io_runtime::TaskSwitcher;
+use sans_io_runtime::{TaskSwitcher, TaskSwitcherChild};
 
 static CONTEXT_LOGGER: ContextLogger = ContextLogger { node: Mutex::new(None) };
 
@@ -74,21 +71,21 @@ impl Drop for AutoContext {
 }
 
 #[derive(Debug)]
-pub enum TestNodeIn<'a, SC> {
+pub enum TestNodeIn<SC> {
     Ext(ExtIn<(), SC>),
     ExtWorker(ExtIn<(), SC>),
-    Udp(SocketAddr, BufferMut<'a>),
+    Udp(SocketAddr, Buffer),
     #[cfg(feature = "vpn")]
-    Tun(BufferMut<'a>),
+    Tun(Buffer),
 }
 
 #[derive(Debug)]
-pub enum TestNodeOut<'a, SE> {
+pub enum TestNodeOut<SE> {
     Ext(ExtOut<(), SE>),
     ExtWorker(ExtOut<(), SE>),
-    Udp(Vec<SocketAddr>, Buffer<'a>),
+    Udp(Vec<SocketAddr>, Buffer),
     #[cfg(feature = "vpn")]
-    Tun(Buffer<'a>),
+    Tun(Buffer),
     Continue,
 }
 
@@ -164,42 +161,30 @@ impl<SC: Debug, SE: Debug, TC: Debug, TW: Debug> TestNode<SC, SE, TC, TW> {
         build_addr(self.node_id)
     }
 
-    pub fn tick<'a>(&mut self, now: u64) -> Option<TestNodeOut<'a, SE>> {
+    pub fn tick(&mut self, now: u64) {
         let _log = AutoContext::new(self.node_id);
-        let out = self.worker.on_tick(now)?;
-        Some(self.process_worker_output(now, out))
+        self.worker.on_tick(now);
     }
 
-    pub fn on_input<'a>(&mut self, now: u64, input: TestNodeIn<'a, SC>) -> Option<TestNodeOut<'a, SE>> {
+    pub fn on_input(&mut self, now: u64, input: TestNodeIn<SC>) {
         let _log = AutoContext::new(self.node_id);
-        match input {
-            TestNodeIn::Ext(ext_in) => {
-                let out = self.worker.on_event(now, SdnWorkerInput::Ext(ext_in))?;
-                Some(self.process_worker_output(now, out))
-            }
-            TestNodeIn::ExtWorker(ext_in) => {
-                let out = self.worker.on_event(now, SdnWorkerInput::ExtWorker(ext_in))?;
-                Some(self.process_worker_output(now, out))
-            }
-            TestNodeIn::Udp(addr, buf) => {
-                let out = self.worker.on_event(now, SdnWorkerInput::Net(data_plane::NetInput::UdpPacket(addr, buf)))?;
-                Some(self.process_worker_output(now, out))
-            }
+        let input = match input {
+            TestNodeIn::Ext(ext_in) => SdnWorkerInput::Ext(ext_in),
+            TestNodeIn::ExtWorker(ext_in) => SdnWorkerInput::ExtWorker(ext_in),
+            TestNodeIn::Udp(addr, buf) => SdnWorkerInput::Net(data_plane::NetInput::UdpPacket(addr, buf)),
             #[cfg(feature = "vpn")]
-            TestNodeIn::Tun(buf) => {
-                let out = self.worker.on_event(now, SdnWorkerInput::Net(data_plane::NetInput::TunPacket(buf)))?;
-                Some(self.process_worker_output(now, out))
-            }
-        }
+            TestNodeIn::Tun(buf) => SdnWorkerInput::Net(data_plane::NetInput::TunPacket(buf)),
+        };
+        self.worker.on_event(now, input);
     }
 
-    pub fn pop_output<'a>(&mut self, now: u64) -> Option<TestNodeOut<'a, SE>> {
+    pub fn pop_output(&mut self, now: u64) -> Option<TestNodeOut<SE>> {
         let _log = AutoContext::new(self.node_id);
         let output = self.worker.pop_output(now)?;
         Some(self.process_worker_output(now, output))
     }
 
-    fn process_worker_output<'a>(&mut self, now: u64, output: SdnWorkerOutput<'a, (), SC, SE, TC, TW>) -> TestNodeOut<'a, SE> {
+    fn process_worker_output(&mut self, now: u64, output: SdnWorkerOutput<(), SC, SE, TC, TW>) -> TestNodeOut<SE> {
         match output {
             SdnWorkerOutput::Ext(ext) => TestNodeOut::Ext(ext),
             SdnWorkerOutput::ExtWorker(ext) => TestNodeOut::ExtWorker(ext),
@@ -208,11 +193,8 @@ impl<SC: Debug, SE: Debug, TC: Debug, TW: Debug> TestNode<SC, SE, TC, TW> {
             #[cfg(feature = "vpn")]
             SdnWorkerOutput::Net(data_plane::NetOutput::TunPacket(data)) => TestNodeOut::Tun(data),
             SdnWorkerOutput::Bus(bus) => {
-                if let Some(out) = self.worker.on_event(now, SdnWorkerInput::Bus(bus)) {
-                    self.process_worker_output(now, out)
-                } else {
-                    TestNodeOut::Continue
-                }
+                self.worker.on_event(now, SdnWorkerInput::Bus(bus));
+                TestNodeOut::Continue
             }
             SdnWorkerOutput::ShutdownResponse => todo!(),
             SdnWorkerOutput::Continue => TestNodeOut::Continue,
@@ -288,42 +270,37 @@ impl<SC: Debug, SE: Debug, TC: Debug + Clone, TW: Debug + Clone> NetworkSimulato
         self.clock_ms += delta;
         log::debug!("Tick {} ms", self.clock_ms);
         for i in 0..self.nodes.len() {
-            let node_id = self.nodes[i].node_id();
-            if let Some(out) = self.nodes[i].tick(self.clock_ms) {
-                self.process_out(self.clock_ms, node_id, out);
-            }
+            self.switcher.flag_task(i);
+            self.nodes[i].tick(self.clock_ms);
         }
 
         while let Some((node, input)) = self.input.pop_front() {
             let node_index = *self.nodes_index.get(&node).expect("Node not found");
-            if let Some(out) = self.nodes[node_index].on_input(self.clock_ms, TestNodeIn::Ext(input)) {
-                self.process_out(self.clock_ms, node, out);
-            }
+            self.nodes[node_index].on_input(self.clock_ms, TestNodeIn::Ext(input));
         }
 
         while let Some((node, input)) = self.input_worker.pop_front() {
             let node_index = *self.nodes_index.get(&node).expect("Node not found");
-            if let Some(out) = self.nodes[node_index].on_input(self.clock_ms, TestNodeIn::ExtWorker(input)) {
-                self.process_out(self.clock_ms, node, out);
-            }
+            self.nodes[node_index].on_input(self.clock_ms, TestNodeIn::ExtWorker(input));
         }
 
-        self.switcher.queue_flag_all();
         self.pop_outputs(self.clock_ms);
     }
 
     fn pop_outputs(&mut self, now: u64) {
-        while let Some(index) = self.switcher.queue_current() {
+        while let Some(index) = self.switcher.current() {
             let node = self.nodes[index].node_id();
-            if let Some(out) = self.switcher.queue_process(self.nodes[index].pop_output(now)) {
+            if let Some(out) = self.nodes[index].pop_output(now) {
                 self.process_out(now, node, out);
+            } else {
+                self.switcher.finished(index);
             }
         }
     }
 
     fn process_out(&mut self, now: u64, node: NodeId, out: TestNodeOut<SE>) {
         let node_index = *self.nodes_index.get(&node).expect("Node not found");
-        self.switcher.queue_flag_task(node_index);
+        self.switcher.flag_task(node_index);
         match out {
             TestNodeOut::Ext(out) => {
                 self.output.push_back((node, out));
@@ -337,9 +314,8 @@ impl<SC: Debug, SE: Debug, TC: Debug + Clone, TW: Debug + Clone> NetworkSimulato
                     log::debug!("Send UDP packet from {} to {}, buf len {}", source_addr, dest, data.len());
                     let dest_node = addr_to_node(dest);
                     let dest_index = *self.nodes_index.get(&dest_node).expect("Node not found");
-                    if let Some(out) = self.nodes[dest_index].on_input(now, TestNodeIn::Udp(source_addr, data.clone_mut())) {
-                        self.process_out(now, dest_node, out);
-                    }
+                    self.switcher.flag_task(dest_index);
+                    self.nodes[dest_index].on_input(now, TestNodeIn::Udp(source_addr, data.clone()));
                 }
             }
             #[cfg(feature = "vpn")]

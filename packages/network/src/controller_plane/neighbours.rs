@@ -5,6 +5,7 @@ use std::{
 };
 
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId, Protocol};
+use sans_io_runtime::TaskSwitcherChild;
 
 use crate::base::{self, Authorization, ConnectionCtx, HandshakeBuilder, NeighboursControl, NeighboursControlCmds, SecureContext};
 
@@ -118,8 +119,11 @@ impl NeighboursManager {
             }
         }
     }
+}
 
-    pub fn pop_output(&mut self, now_ms: u64) -> Option<Output> {
+impl TaskSwitcherChild<Output> for NeighboursManager {
+    type Time = u64;
+    fn pop_output(&mut self, now: u64) -> Option<Output> {
         if let Some(output) = self.queue.pop_front() {
             return Some(output);
         }
@@ -158,7 +162,7 @@ impl NeighboursManager {
                             self.queue.push_back(Output::Event(event));
                         }
                     }
-                    connection::Output::Net(remote, cmd) => {
+                    connection::Output::Net(now_ms, remote, cmd) => {
                         log::debug!("[NeighboursManager] pop_output Net(remote: {:?}, cmd: {:?})", remote, cmd);
                         self.queue.push_back(Output::Control(remote, NeighboursControl::build(now_ms, self.node_id, cmd, &*self.authorization)));
                     }

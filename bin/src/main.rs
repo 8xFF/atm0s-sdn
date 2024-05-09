@@ -235,7 +235,7 @@ async fn main() {
     let mut shutdown_wait = 0;
     let args = Args::parse();
     tracing_subscriber::fmt::init();
-    let mut builder = SdnBuilder::<SC, SE, TC, TW>::new(args.node_id, args.udp_port, args.custom_addrs);
+    let mut builder = SdnBuilder::<(), SC, SE, TC, TW>::new(args.node_id, args.udp_port, args.custom_addrs);
 
     builder.set_authorization(StaticKeyAuthorization::new(&args.password));
     builder.set_manual_discovery(args.local_tags, args.connect_tags);
@@ -258,7 +258,7 @@ async fn main() {
     let ctx = Arc::new(Mutex::new(WebsocketCtx::new()));
 
     if args.collector {
-        controller.send_to(0, SdnExtIn::ServicesControl(visualization::SERVICE_ID.into(), visualization::Control::Subscribe));
+        controller.send_to(0, SdnExtIn::ServicesControl(visualization::SERVICE_ID.into(), (), visualization::Control::Subscribe));
         let ctx_c = ctx.clone();
         tokio::spawn(async move {
             let route = Route::new().at("/ws", get(ws.data(ctx_c)));
@@ -286,7 +286,7 @@ async fn main() {
         }
         while let Some(event) = controller.pop_event() {
             match event {
-                SdnExtOut::ServicesEvent(_service, event) => match event {
+                SdnExtOut::ServicesEvent(_service, (), event) => match event {
                     visualization::Event::GotAll(all) => {
                         log::info!("Got all: {:?}", all);
                         ctx.lock().await.set_snapshot(all);
@@ -300,7 +300,7 @@ async fn main() {
                         ctx.lock().await.del_node(node);
                     }
                 },
-                SdnExtOut::FeaturesEvent(_event) => {}
+                SdnExtOut::FeaturesEvent(_, _) => {}
             }
         }
         tokio::time::sleep(Duration::from_millis(10)).await;

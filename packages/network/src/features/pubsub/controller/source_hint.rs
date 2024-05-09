@@ -619,7 +619,6 @@ mod tests {
         let mut sh = SourceHintLogic::new(node_id, session_id);
 
         let remote = SocketAddr::new([127, 0, 0, 1].into(), 1234);
-        let remote_node_id = 2;
         let remote_session_id = 4321;
 
         //fake a local source with a remote subscribe

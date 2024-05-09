@@ -1,5 +1,6 @@
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_utils::simple_pub_type;
+use sans_io_runtime::TaskSwitcherChild;
 
 use super::ConnectionEvent;
 
@@ -44,7 +45,16 @@ pub trait Service<UserData, FeaturesControl, FeaturesEvent, ServiceControl, Serv
 
     fn on_shared_input<'a>(&mut self, _ctx: &ServiceCtx, _now: u64, _input: ServiceSharedInput);
     fn on_input(&mut self, _ctx: &ServiceCtx, _now: u64, input: ServiceInput<UserData, FeaturesEvent, ServiceControl, ToController>);
-    fn pop_output(&mut self, _ctx: &ServiceCtx) -> Option<ServiceOutput<UserData, FeaturesControl, ServiceEvent, ToWorker>>;
+    fn pop_output2(&mut self, _now: u64) -> Option<ServiceOutput<UserData, FeaturesControl, ServiceEvent, ToWorker>>;
+}
+
+impl<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker> TaskSwitcherChild<ServiceOutput<UserData, FeaturesControl, ServiceEvent, ToWorker>>
+    for Box<dyn Service<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>
+{
+    type Time = u64;
+    fn pop_output(&mut self, now: u64) -> Option<ServiceOutput<UserData, FeaturesControl, ServiceEvent, ToWorker>> {
+        self.pop_output2(now)
+    }
 }
 
 /// Second part is Worker, which is running inside each data plane workers.
@@ -70,24 +80,18 @@ pub struct ServiceWorkerCtx {
 pub trait ServiceWorker<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker> {
     fn service_id(&self) -> u8;
     fn service_name(&self) -> &str;
-    fn on_tick(&mut self, _ctx: &ServiceWorkerCtx, _now: u64, _tick_count: u64) {}
-    fn on_input(
-        &mut self,
-        _ctx: &ServiceWorkerCtx,
-        _now: u64,
-        input: ServiceWorkerInput<UserData, FeaturesEvent, ServiceControl, ToWorker>,
-    ) -> Option<ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController>> {
-        match input {
-            ServiceWorkerInput::Control(actor, control) => Some(ServiceWorkerOutput::ForwardControlToController(actor, control)),
-            ServiceWorkerInput::FeatureEvent(event) => Some(ServiceWorkerOutput::ForwardFeatureEventToController(event)),
-            ServiceWorkerInput::FromController(_) => {
-                log::warn!("No handler for FromController in {}", self.service_name());
-                None
-            }
-        }
-    }
-    fn pop_output(&mut self, _ctx: &ServiceWorkerCtx) -> Option<ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController>> {
-        None
+    fn on_tick(&mut self, _ctx: &ServiceWorkerCtx, _now: u64, _tick_count: u64);
+    fn on_input(&mut self, _ctx: &ServiceWorkerCtx, _now: u64, input: ServiceWorkerInput<UserData, FeaturesEvent, ServiceControl, ToWorker>);
+    fn pop_output2(&mut self, _now: u64) -> Option<ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController>>;
+}
+
+impl<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>
+    TaskSwitcherChild<ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController>>
+    for Box<dyn ServiceWorker<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>
+{
+    type Time = u64;
+    fn pop_output(&mut self, now: u64) -> Option<ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController>> {
+        self.pop_output2(now)
     }
 }
 

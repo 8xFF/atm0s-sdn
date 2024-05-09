@@ -1,33 +1,33 @@
 use std::{
     collections::{HashMap, VecDeque},
     fmt::Debug,
+    ops::Deref,
 };
 
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_router::RouteRule;
+use sans_io_runtime::{collections::DynamicDeque, return_if_none, TaskSwitcherChild};
 
 use crate::base::{
     Buffer, Feature, FeatureContext, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput,
-    NetOutgoingMeta, TransportMsgHeader, Ttl,
+    NetOutgoingMeta, Ttl,
 };
 
 pub const FEATURE_ID: u8 = 7;
 pub const FEATURE_NAME: &str = "socket";
 
-const MTU_SIZE: usize = 1300;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Control {
     Bind(u16),
     Connect(u16, NodeId, u16),
-    SendTo(u16, NodeId, u16, Vec<u8>, u8),
-    Send(u16, Vec<u8>, u8),
+    SendTo(u16, NodeId, u16, Buffer, u8),
+    Send(u16, Buffer, u8),
     Unbind(u16),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
-    RecvFrom(u16, NodeId, u16, Vec<u8>, u8),
+    RecvFrom(u16, NodeId, u16, Buffer, u8),
 }
 
 #[derive(Debug, Clone)]
@@ -45,18 +45,19 @@ struct Socket<UserData> {
     actor: FeatureControlActor<UserData>,
 }
 
+pub type Output<UserData> = FeatureOutput<UserData, Event, ToWorker<UserData>>;
+pub type WorkerOutput<UserData> = FeatureWorkerOutput<UserData, Control, Event, ToController>;
+
 pub struct SocketFeature<UserData> {
     sockets: HashMap<u16, Socket<UserData>>,
-    temp: [u8; MTU_SIZE],
-    queue: VecDeque<FeatureOutput<UserData, Event, ToWorker<UserData>>>,
+    queue: VecDeque<Output<UserData>>,
 }
 
 impl<UserData> SocketFeature<UserData> {
-    fn send_to(&mut self, src: u16, dest_node: NodeId, dest_port: u16, data: Vec<u8>, meta: u8) {
-        if let Some(size) = serialize_msg(&mut self.temp, src, dest_port, &data) {
-            let meta: NetOutgoingMeta = NetOutgoingMeta::new(true, Default::default(), meta, false);
-            self.queue.push_back(FeatureOutput::SendRoute(RouteRule::ToNode(dest_node), meta, self.temp[..size].to_vec()));
-        }
+    fn send_to(&mut self, src: u16, dest_node: NodeId, dest_port: u16, mut data: Buffer, meta: u8) {
+        embed_meta(src, dest_port, &mut data);
+        let meta: NetOutgoingMeta = NetOutgoingMeta::new(true, Default::default(), meta, false);
+        self.queue.push_back(FeatureOutput::SendRoute(RouteRule::ToNode(dest_node), meta, data));
     }
 }
 
@@ -64,7 +65,6 @@ impl<UserData> Default for SocketFeature<UserData> {
     fn default() -> Self {
         Self {
             sockets: HashMap::new(),
-            temp: [0; MTU_SIZE],
             queue: VecDeque::new(),
         }
     }
@@ -147,14 +147,14 @@ impl<UserData: Copy + Debug + Eq> Feature<UserData, Control, Event, ToController
                     }
                 }
             },
-            FeatureInput::Net(_, meta, buf) | FeatureInput::Local(meta, buf) => {
+            FeatureInput::Net(_, meta, mut buf) | FeatureInput::Local(meta, mut buf) => {
                 let from_node = if let Some(source) = meta.source {
                     source
                 } else {
                     log::warn!("[SocketFeature] Recv failed, source not set");
                     return;
                 };
-                let (pkt_src, pkt_dest, data) = if let Some(res) = deserialize_msg(&buf) {
+                let (pkt_src, pkt_dest) = if let Some(res) = extract_meta(&mut buf) {
                     res
                 } else {
                     log::warn!("[SocketFeature] Recv failed, invalid data");
@@ -170,11 +170,9 @@ impl<UserData: Copy + Debug + Eq> Feature<UserData, Control, Event, ToController
                             log::warn!("[SocketFeature] Recv failed, port mismatch: {} != {}", dest_port, pkt_dest);
                             return;
                         }
-                        self.queue
-                            .push_back(FeatureOutput::Event(socket.actor, Event::RecvFrom(pkt_dest, from_node, pkt_src, data.to_vec(), meta.meta)));
+                        self.queue.push_back(FeatureOutput::Event(socket.actor, Event::RecvFrom(pkt_dest, from_node, pkt_src, buf, meta.meta)));
                     } else {
-                        self.queue
-                            .push_back(FeatureOutput::Event(socket.actor, Event::RecvFrom(pkt_dest, from_node, pkt_src, data.to_vec(), meta.meta)));
+                        self.queue.push_back(FeatureOutput::Event(socket.actor, Event::RecvFrom(pkt_dest, from_node, pkt_src, buf, meta.meta)));
                     }
                 } else {
                     log::warn!("[SocketFeature] Recv failed, port not found: {}", pkt_dest);
@@ -183,33 +181,36 @@ impl<UserData: Copy + Debug + Eq> Feature<UserData, Control, Event, ToController
             _ => {}
         }
     }
+}
 
-    fn pop_output(&mut self, _ctx: &FeatureContext) -> Option<FeatureOutput<UserData, Event, ToWorker<UserData>>> {
+impl<UserData> TaskSwitcherChild<Output<UserData>> for SocketFeature<UserData> {
+    type Time = u64;
+    fn pop_output(&mut self, _now: u64) -> Option<Output<UserData>> {
         self.queue.pop_front()
     }
 }
 
 pub struct SocketFeatureWorker<UserData> {
     sockets: HashMap<u16, Socket<UserData>>,
-    buf: [u8; MTU_SIZE],
+    queue: DynamicDeque<WorkerOutput<UserData>, 16>,
 }
 
 impl<UserData: Copy> SocketFeatureWorker<UserData> {
-    fn process_incoming(&self, from_node: NodeId, buf: &[u8], meta: u8) -> Option<FeatureWorkerOutput<'static, UserData, Control, Event, ToController>> {
-        let (pkt_src, pkt_dest, data) = deserialize_msg(&buf)?;
-        let socket = self.sockets.get(&pkt_dest)?;
+    fn process_incoming(&mut self, from_node: NodeId, mut buf: Buffer, meta: u8) {
+        let (pkt_src, pkt_dest) = return_if_none!(extract_meta(&mut buf));
+        let socket = return_if_none!(self.sockets.get(&pkt_dest));
         if let Some((dest_node, dest_port)) = socket.target {
             if dest_node != from_node {
                 log::warn!("[SocketFeature] Recv failed, node mismatch: {} != {}", dest_node, from_node);
-                return None;
+                return;
             }
             if dest_port != pkt_dest {
                 log::warn!("[SocketFeature] Recv failed, port mismatch: {} != {}", dest_port, pkt_dest);
-                return None;
+                return;
             }
-            Some(FeatureWorkerOutput::Event(socket.actor, Event::RecvFrom(pkt_dest, from_node, pkt_src, data.to_vec(), meta)))
+            self.queue.push_back(FeatureWorkerOutput::Event(socket.actor, Event::RecvFrom(pkt_dest, from_node, pkt_src, buf, meta)));
         } else {
-            Some(FeatureWorkerOutput::Event(socket.actor, Event::RecvFrom(pkt_dest, from_node, pkt_src, data.to_vec(), meta)))
+            self.queue.push_back(FeatureWorkerOutput::Event(socket.actor, Event::RecvFrom(pkt_dest, from_node, pkt_src, buf, meta)))
         }
     }
 }
@@ -218,97 +219,93 @@ impl<UserData> Default for SocketFeatureWorker<UserData> {
     fn default() -> Self {
         Self {
             sockets: HashMap::new(),
-            buf: [0; MTU_SIZE],
+            queue: Default::default(),
         }
     }
 }
 
 impl<UserData: Clone + Copy + Eq> FeatureWorker<UserData, Control, Event, ToController, ToWorker<UserData>> for SocketFeatureWorker<UserData> {
-    fn on_network_raw<'a>(
-        &mut self,
-        _ctx: &mut FeatureWorkerContext,
-        _now: u64,
-        _conn: atm0s_sdn_identity::ConnId,
-        _remote: std::net::SocketAddr,
-        header: TransportMsgHeader,
-        buf: Buffer<'a>,
-    ) -> Option<FeatureWorkerOutput<'a, UserData, Control, Event, ToController>> {
-        self.process_incoming(header.from_node?, &(&buf)[header.serialize_size()..], header.meta)
-    }
-
-    fn on_input<'a>(
-        &mut self,
-        _ctx: &mut FeatureWorkerContext,
-        _now: u64,
-        input: FeatureWorkerInput<'a, UserData, Control, ToWorker<UserData>>,
-    ) -> Option<FeatureWorkerOutput<'a, UserData, Control, Event, ToController>> {
+    fn on_input(&mut self, _ctx: &mut FeatureWorkerContext, _now: u64, input: FeatureWorkerInput<UserData, Control, ToWorker<UserData>>) {
         match input {
+            FeatureWorkerInput::Network(_conn, meta, buf) => {
+                let from_node = return_if_none!(meta.source);
+                self.process_incoming(from_node, buf, meta.meta);
+            }
             FeatureWorkerInput::FromController(_, control) => match control {
                 ToWorker::BindSocket(port, actor) => {
                     log::info!("[SocketFeatureWorker] BindSocket: {port}");
                     self.sockets.insert(port, Socket { target: None, actor });
-                    None
                 }
                 ToWorker::ConnectSocket(port, dest_node, dest_port) => {
                     log::info!("[SocketFeatureWorker] ConnectSocket: {port} => {dest_node}:{dest_port}");
                     if let Some(socket) = self.sockets.get_mut(&port) {
                         socket.target = Some((dest_node, dest_port));
                     }
-                    None
                 }
                 ToWorker::UnbindSocket(port) => {
                     log::info!("[SocketFeatureWorker] UnbindSocket: {port}");
                     self.sockets.remove(&port);
-                    None
                 }
             },
             FeatureWorkerInput::Control(actor, control) => {
-                let (port, (dest_node, dest_port), data, meta) = match control {
+                let (port, (dest_node, dest_port), mut data, meta) = match control {
                     Control::Send(port, data, meta) => {
-                        let socket = self.sockets.get(&port)?;
+                        let socket = return_if_none!(self.sockets.get(&port));
                         if actor == socket.actor {
-                            (port, socket.target?, data, meta)
+                            let target = return_if_none!(socket.target);
+                            (port, target, data, meta)
                         } else {
-                            return None;
+                            return;
                         }
                     }
                     Control::SendTo(port, dest_node, dest_port, data, meta) => {
-                        let socket = self.sockets.get(&port)?;
+                        let socket = return_if_none!(self.sockets.get(&port));
                         if actor == socket.actor {
                             (port, (dest_node, dest_port), data, meta)
                         } else {
-                            return None;
+                            return;
                         }
                     }
-                    _ => return Some(FeatureWorkerOutput::ForwardControlToController(actor, control)),
+                    _ => {
+                        self.queue.push_back(FeatureWorkerOutput::ForwardControlToController(actor, control));
+                        return;
+                    }
                 };
 
-                let size = serialize_msg(&mut self.buf, port, dest_port, &data)?;
+                embed_meta(port, dest_port, &mut data);
                 let outgoing_meta = NetOutgoingMeta::new(true, Ttl::default(), meta, false);
-                Some(FeatureWorkerOutput::SendRoute(RouteRule::ToNode(dest_node), outgoing_meta, self.buf[0..size].to_vec()))
+                self.queue.push_back(FeatureWorkerOutput::SendRoute(RouteRule::ToNode(dest_node), outgoing_meta, data));
             }
-            FeatureWorkerInput::Local(meta, buf) | FeatureWorkerInput::Network(_, meta, buf) => self.process_incoming(meta.source?, &buf, meta.meta),
-            _ => None,
+            FeatureWorkerInput::Local(meta, buf) => {
+                let from_node = return_if_none!(meta.source);
+                self.process_incoming(from_node, buf, meta.meta);
+            }
+            _ => {}
         }
     }
 }
 
-fn serialize_msg(buf: &mut [u8], src: u16, dest: u16, data: &[u8]) -> Option<usize> {
-    if data.len() > buf.len() - 4 {
-        return None;
+impl<UserData> TaskSwitcherChild<WorkerOutput<UserData>> for SocketFeatureWorker<UserData> {
+    type Time = u64;
+    fn pop_output(&mut self, _now: u64) -> Option<WorkerOutput<UserData>> {
+        self.queue.pop_front()
     }
-    buf[..2].copy_from_slice(&src.to_be_bytes());
-    buf[2..4].copy_from_slice(&dest.to_be_bytes());
-    buf[4..(4 + data.len())].copy_from_slice(&data);
-    Some(data.len() + 4)
 }
 
-fn deserialize_msg<'a>(buf: &'a [u8]) -> Option<(u16, u16, &'a [u8])> {
-    if buf.len() < 4 {
-        log::debug!("[SocketFeature] Invalid message length: {}, min is 4 bytes", buf.len());
-        return None;
-    }
-    let src = u16::from_be_bytes([buf[0], buf[1]]);
-    let dest = u16::from_be_bytes([buf[2], buf[3]]);
-    Some((src, dest, &buf[4..]))
+fn embed_meta(src: u16, dest: u16, data: &mut Buffer) {
+    data.ensure_front(4);
+    data.push_front(&dest.to_be_bytes());
+    data.push_front(&src.to_be_bytes());
+}
+
+fn extract_meta<'a>(buf: &mut Buffer) -> Option<(u16, u16)> {
+    let src_buf2 = buf.pop_front(2)?;
+    let src_buf = src_buf2.deref();
+    let src = u16::from_be_bytes([src_buf[0], src_buf[1]]);
+
+    let dest_buf2 = buf.pop_front(2)?;
+    let dest_buf = dest_buf2.deref();
+    let dest = u16::from_be_bytes([dest_buf[0], dest_buf[1]]);
+
+    Some((src, dest))
 }

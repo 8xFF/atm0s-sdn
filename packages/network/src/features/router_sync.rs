@@ -1,6 +1,5 @@
 use std::{
     collections::{HashMap, VecDeque},
-    marker::PhantomData,
     net::SocketAddr,
 };
 
@@ -10,6 +9,7 @@ use atm0s_sdn_router::{
     shadow::ShadowRouterDelta,
 };
 use derivative::Derivative;
+use sans_io_runtime::{collections::DynamicDeque, TaskSwitcherChild};
 
 use crate::base::{
     ConnectionEvent, Feature, FeatureContext, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, NetOutgoingMeta,
@@ -27,10 +27,13 @@ pub type Event = ();
 pub type ToWorker = ShadowRouterDelta<SocketAddr>;
 pub type ToController = ();
 
+pub type Output<UserData> = FeatureOutput<UserData, Event, ToWorker>;
+pub type WorkerOutput<UserData> = FeatureWorkerOutput<UserData, Control, Event, ToController>;
+
 pub struct RouterSyncFeature<UserData> {
     router: Router,
     conns: HashMap<ConnId, (NodeId, SocketAddr, Metric)>,
-    queue: VecDeque<FeatureOutput<UserData, Event, ToWorker>>,
+    queue: VecDeque<Output<UserData>>,
     services: Vec<u8>,
 }
 
@@ -46,7 +49,7 @@ impl<UserData> RouterSyncFeature<UserData> {
         }
     }
 
-    fn send_sync_to(router: &Router, queue: &mut VecDeque<FeatureOutput<UserData, Event, ToWorker>>, conn: ConnId, node: NodeId) {
+    fn send_sync_to(router: &Router, queue: &mut VecDeque<Output<UserData>>, conn: ConnId, node: NodeId) {
         let sync = router.create_sync(node);
         queue.push_back(FeatureOutput::SendDirect(
             conn,
@@ -117,8 +120,11 @@ impl<UserData> Feature<UserData, Control, Event, ToController, ToWorker> for Rou
             _ => {}
         }
     }
+}
 
-    fn pop_output<'a>(&mut self, _ctx: &FeatureContext) -> Option<FeatureOutput<UserData, Event, ToWorker>> {
+impl<UserData> TaskSwitcherChild<Output<UserData>> for RouterSyncFeature<UserData> {
+    type Time = u64;
+    fn pop_output(&mut self, _now: u64) -> Option<Output<UserData>> {
         if let Some(rule) = self.router.pop_delta() {
             log::debug!("[RouterSync] broadcast to all workers {:?}", rule);
             let rule = match rule {
@@ -151,37 +157,36 @@ impl<UserData> Feature<UserData, Control, Event, ToController, ToWorker> for Rou
     }
 }
 
-#[derive(Debug, Derivative)]
+#[derive(Derivative)]
 #[derivative(Default(bound = ""))]
 pub struct RouterSyncFeatureWorker<UserData> {
-    _tmp: PhantomData<UserData>,
+    queue: DynamicDeque<WorkerOutput<UserData>, 1>,
 }
 
 impl<UserData> FeatureWorker<UserData, Control, Event, ToController, ToWorker> for RouterSyncFeatureWorker<UserData> {
-    fn on_input<'a>(
-        &mut self,
-        ctx: &mut FeatureWorkerContext,
-        _now: u64,
-        input: FeatureWorkerInput<'a, UserData, Control, ToWorker>,
-    ) -> Option<FeatureWorkerOutput<'a, UserData, Control, Event, ToController>> {
+    fn on_input(&mut self, ctx: &mut FeatureWorkerContext, _now: u64, input: FeatureWorkerInput<UserData, Control, ToWorker>) {
         match input {
-            FeatureWorkerInput::Control(service, control) => Some(FeatureWorkerOutput::ForwardControlToController(service, control)),
-            FeatureWorkerInput::Network(conn, header, msg) => Some(FeatureWorkerOutput::ForwardNetworkToController(conn, header, msg.to_vec())),
+            FeatureWorkerInput::Control(service, control) => self.queue.push_back(FeatureWorkerOutput::ForwardControlToController(service, control)),
+            FeatureWorkerInput::Network(conn, header, msg) => self.queue.push_back(FeatureWorkerOutput::ForwardNetworkToController(conn, header, msg)),
             FeatureWorkerInput::FromController(_, delta) => {
                 log::debug!("[RouterSyncWorker] apply router delta {:?}", delta);
                 ctx.router.apply_delta(delta);
-                None
             }
             FeatureWorkerInput::Local(_header, _msg) => {
                 log::warn!("No handler for local message in {}", FEATURE_NAME);
-                None
             }
             #[cfg(feature = "vpn")]
             FeatureWorkerInput::TunPkt(_buf) => {
                 log::warn!("No handler for tun packet in {}", FEATURE_NAME);
-                None
             }
         }
+    }
+}
+
+impl<UserData> TaskSwitcherChild<WorkerOutput<UserData>> for RouterSyncFeatureWorker<UserData> {
+    type Time = u64;
+    fn pop_output(&mut self, _now: u64) -> Option<WorkerOutput<UserData>> {
+        self.queue.pop_front()
     }
 }
 
