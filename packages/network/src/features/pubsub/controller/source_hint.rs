@@ -78,7 +78,6 @@ impl<UserData: Eq + Copy + Debug> SourceHintLogic<UserData> {
     }
 
     pub fn on_tick(&mut self, now_ms: u64) {
-        log::info!("on tick");
         let mut timeout_subscribes = vec![];
         for (remote, last_tick) in &self.remote_subscribers {
             if now_ms - last_tick >= TIMEOUT_MS {
@@ -225,7 +224,7 @@ impl<UserData: Eq + Copy + Debug> SourceHintLogic<UserData> {
 
                 // Only to_root msg is climb up to root node
                 if to_root {
-                    log::info!("[SourceHint] forward remote Register({}) to root node", source);
+                    log::debug!("[SourceHint] forward remote Register({}) to root node", source);
                     self.queue.push_back(Output::SendRemote(None, SourceHint::Register { source, to_root: true }));
                 }
 
@@ -234,7 +233,7 @@ impl<UserData: Eq + Copy + Debug> SourceHintLogic<UserData> {
                         // for avoiding loop, we only send to other subscribers except sender
                         continue;
                     }
-                    log::info!("[SourceHint] forward remote Register({}) to subscribe {subscriber} node", source);
+                    log::debug!("[SourceHint] forward remote Register({}) to subscribe {subscriber} node", source);
                     self.queue.push_back(Output::SendRemote(Some(*subscriber), SourceHint::Register { source, to_root: false }));
                 }
 
