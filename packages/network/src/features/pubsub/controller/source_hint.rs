@@ -78,6 +78,7 @@ impl<UserData: Eq + Copy + Debug> SourceHintLogic<UserData> {
     }
 
     pub fn on_tick(&mut self, now_ms: u64) {
+        log::info!("on tick");
         let mut timeout_subscribes = vec![];
         for (remote, last_tick) in &self.remote_subscribers {
             if now_ms - last_tick >= TIMEOUT_MS {
@@ -211,6 +212,11 @@ impl<UserData: Eq + Copy + Debug> SourceHintLogic<UserData> {
     pub fn on_remote(&mut self, now_ms: u64, remote: SocketAddr, cmd: SourceHint) {
         match cmd {
             SourceHint::Register { source, to_root } => {
+                // We dont accept register from local source, this ocurs when subscribe and next-hop reply with all sources include it self
+                if source == self.node_id {
+                    return;
+                }
+
                 // We only accept register from original source and go up to root node, or notify from next_hop (parent node1)
                 if !to_root && self.next_hop != Some(remote) {
                     log::warn!("[SourceHint] remote Register({source}) relayed from {remote} is not from next hop, ignore it");
@@ -219,7 +225,7 @@ impl<UserData: Eq + Copy + Debug> SourceHintLogic<UserData> {
 
                 // Only to_root msg is climb up to root node
                 if to_root {
-                    log::debug!("[SourceHint] forward remote Register({}) to root node", source);
+                    log::info!("[SourceHint] forward remote Register({}) to root node", source);
                     self.queue.push_back(Output::SendRemote(None, SourceHint::Register { source, to_root: true }));
                 }
 
@@ -228,7 +234,7 @@ impl<UserData: Eq + Copy + Debug> SourceHintLogic<UserData> {
                         // for avoiding loop, we only send to other subscribers except sender
                         continue;
                     }
-                    log::debug!("[SourceHint] forward remote Register({}) to subscribe {subscriber} node", source);
+                    log::info!("[SourceHint] forward remote Register({}) to subscribe {subscriber} node", source);
                     self.queue.push_back(Output::SendRemote(Some(*subscriber), SourceHint::Register { source, to_root: false }));
                 }
 
@@ -242,6 +248,11 @@ impl<UserData: Eq + Copy + Debug> SourceHintLogic<UserData> {
                 }
             }
             SourceHint::Unregister { source, to_root } => {
+                // We dont accept unregister from local source, this ocurs when subscribe and next-hop reply with all sources include it self
+                if source == self.node_id {
+                    return;
+                }
+
                 // We only accept unregister from original source and go up to root node, or notify from next_hop (parent node1
                 if !to_root && self.next_hop != Some(remote) {
                     log::warn!("[SourceHint] Unregister({source}) relayed from {remote} is not from next hop, ignore it");
@@ -321,7 +332,8 @@ impl<UserData: Eq + Copy + Debug> SourceHintLogic<UserData> {
             }
             SourceHint::Sources(sources) => {
                 for source in sources {
-                    if self.remote_sources.insert(source, now_ms).is_none() {
+                    // We dont accept register from local source, this ocurs when subscribe and next-hop reply with all sources include it self
+                    if source != self.node_id && self.remote_sources.insert(source, now_ms).is_none() {
                         log::info!("[SourceHint] added remote source {source}");
                         for remote in self.remote_subscribers.keys() {
                             log::debug!("[SourceHint] Notify source({source}) from snapshot to remote {remote}");
@@ -805,6 +817,26 @@ mod tests {
         //we only accept from remote2
         sh.on_remote(0, remote2, SourceHint::Unregister { source: source_id, to_root: false });
         assert_eq!(sh.pop_output(), Some(Output::UnsubscribeSource(vec![FeatureControlActor::Controller(())], source_id)));
+        assert_eq!(sh.pop_output(), None);
+    }
+
+    /// We should reject register from same source, if not it will create both local and remote source
+    #[test]
+    fn reject_loop_register() {
+        let node_id = 1;
+        let session_id = 1234;
+        let mut sh = SourceHintLogic::<()>::new(node_id, session_id);
+
+        let remote1 = SocketAddr::new([127, 0, 0, 1].into(), 1234);
+        sh.on_remote(0, remote1, SourceHint::SubscribeOk(session_id));
+        sh.on_remote(0, remote1, SourceHint::Sources(vec![node_id]));
+
+        assert_eq!(sh.remote_sources.len(), 0);
+        assert_eq!(sh.pop_output(), None);
+
+        sh.on_remote(0, remote1, SourceHint::Register { source: node_id, to_root: false });
+
+        assert_eq!(sh.remote_sources.len(), 0);
         assert_eq!(sh.pop_output(), None);
     }
 }
