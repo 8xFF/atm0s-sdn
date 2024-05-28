@@ -12,7 +12,7 @@ pub use atm0s_sdn_network::{
     base::ServiceId,
     data_plane::{NetInput, NetOutput},
 };
-pub use atm0s_sdn_router::{shadow::ShadowRouterHistory, ServiceBroadcastLevel};
+pub use atm0s_sdn_router::{shadow::ShadowRouterHistory, RouteRule, ServiceBroadcastLevel};
 pub use sans_io_runtime;
 
 mod builder;
@@ -20,7 +20,7 @@ mod history;
 mod time;
 mod worker_inner;
 
-pub use builder::SdnBuilder;
+pub use builder::{generate_node_addr, SdnBuilder};
 pub use history::DataWorkerHistory;
 pub use time::{TimePivot, TimeTicker};
 pub use worker_inner::{SdnChannel, SdnController, SdnEvent, SdnExtIn, SdnExtOut, SdnOwner};

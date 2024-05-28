@@ -239,10 +239,7 @@ impl<UserData: 'static + Eq + Copy + Hash + Debug, SC: Debug, SE: Debug, TC: Deb
                 BusEvent::Broadcast(_from_worker, msg) => self.worker_inner.on_event(now_ms, SdnWorkerInput::Bus(msg)),
                 BusEvent::Channel(_, _, msg) => self.worker_inner.on_event(now_ms, SdnWorkerInput::Bus(msg)),
             },
-            WorkerInnerInput::Ext(ext) => {
-                log::info!("on ext event");
-                self.worker_inner.on_event(now_ms, SdnWorkerInput::Ext(ext))
-            }
+            WorkerInnerInput::Ext(ext) => self.worker_inner.on_event(now_ms, SdnWorkerInput::Ext(ext)),
         };
     }
 

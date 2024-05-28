@@ -49,33 +49,7 @@ where
     TW: 'static + Clone + Send + Sync,
 {
     pub fn new(node_id: NodeId, udp_port: u16, custom_ip: Vec<SocketAddr>) -> Self {
-        let mut addr_builder = NodeAddrBuilder::new(node_id);
-        for (name, ip) in local_ip_address::list_afinet_netifas().expect("Should have local ip addresses") {
-            match ip {
-                IpAddr::V4(ip) => {
-                    log::info!("Added ip {}:\t{:?}", name, ip);
-                    addr_builder.add_protocol(Protocol::Ip4(ip));
-                    addr_builder.add_protocol(Protocol::Udp(udp_port));
-                }
-                IpAddr::V6(ip) => {
-                    log::warn!("Ignoring ipv6 address: {}", ip);
-                }
-            }
-        }
-        for ip in custom_ip {
-            match ip {
-                SocketAddr::V4(ip) => {
-                    log::info!("Added custom ip:\t{:?}", ip);
-                    addr_builder.add_protocol(Protocol::Ip4(*ip.ip()));
-                    addr_builder.add_protocol(Protocol::Udp(ip.port()));
-                }
-                SocketAddr::V6(ip) => {
-                    log::warn!("Ignoring ipv6 address: {}", ip);
-                }
-            }
-        }
-
-        let node_addr = addr_builder.addr();
+        let node_addr = generate_node_addr(node_id, udp_port, custom_ip);
         log::info!("Created node on addr {}", node_addr);
 
         Self {
@@ -218,4 +192,34 @@ where
 
         controller
     }
+}
+
+pub fn generate_node_addr(node_id: u32, udp_port: u16, custom_ips: Vec<SocketAddr>) -> NodeAddr {
+    let mut addr_builder = NodeAddrBuilder::new(node_id);
+    for (name, ip) in local_ip_address::list_afinet_netifas().expect("Should have local ip addresses") {
+        match ip {
+            IpAddr::V4(ip) => {
+                log::info!("Added ip {}:\t{:?}", name, ip);
+                addr_builder.add_protocol(Protocol::Ip4(ip));
+                addr_builder.add_protocol(Protocol::Udp(udp_port));
+            }
+            IpAddr::V6(ip) => {
+                log::warn!("Ignoring ipv6 address: {}", ip);
+            }
+        }
+    }
+    for ip in custom_ips {
+        match ip {
+            SocketAddr::V4(ip) => {
+                log::info!("Added custom ip:\t{:?}", ip);
+                addr_builder.add_protocol(Protocol::Ip4(*ip.ip()));
+                addr_builder.add_protocol(Protocol::Udp(ip.port()));
+            }
+            SocketAddr::V6(ip) => {
+                log::warn!("Ignoring ipv6 address: {}", ip);
+            }
+        }
+    }
+
+    addr_builder.addr()
 }
