@@ -3,9 +3,11 @@
 # Define servers as an associative array with additional details
 declare -A servers
 servers=(
-    ["server1"]="root@ADDR"
-    ["server1_public"]="ADDR"
+    ["server1"]="root@IP"
+    ["server1_name"]="NAME"
+    ["server1_public"]="IP"
+    ["server1_ssh_port"]="22"
     ["server1_node_id"]="1"
-    ["server1_collector"]="true"
-    ["server1_seeds"]="1@/ip4/ADDR/udp/10000"
+    ["server1_collector"]="false"
+    ["server1_seeds"]="0@/ip4/IP/udp/10000"
 )
