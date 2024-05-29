@@ -6,7 +6,8 @@ use crate::base::{ConnectionCtx, ConnectionStats, Decryptor, Encryptor, Handshak
 
 const INIT_RTT_MS: u32 = 1000;
 const RETRY_CMD_MS: u64 = 1000;
-const TIMEOUT_MS: u64 = 10000;
+const CONNECT_TIMEOUT_MS: u64 = 30000; //we need connect more time
+const CONNECTION_TIMEOUT_MS: u64 = 10000;
 
 enum State {
     Connecting {
@@ -144,10 +145,10 @@ impl NeighbourConnection {
         match &mut self.state {
             State::Connecting { at_ms, requester } => {
                 if let Some(requester) = requester {
-                    if now_ms - *at_ms >= TIMEOUT_MS {
+                    if now_ms - *at_ms >= CONNECT_TIMEOUT_MS {
                         self.state = State::ConnectTimeout;
                         self.output.push_back(Output::Event(ConnectionEvent::ConnectTimeout));
-                        log::warn!("[NeighbourConnection] Connection timeout to {} after {} ms", self.remote, TIMEOUT_MS);
+                        log::warn!("[NeighbourConnection] Connection timeout to {} after {} ms", self.remote, CONNECT_TIMEOUT_MS);
                     } else if now_ms - *at_ms >= RETRY_CMD_MS {
                         if let Ok(request_buf) = requester.create_public_request() {
                             self.output.push_back(self.generate_control(
@@ -170,7 +171,7 @@ impl NeighbourConnection {
                 }
             }
             State::Connected { ping_seq, last_pong_ms, .. } => {
-                if now_ms - *last_pong_ms >= TIMEOUT_MS {
+                if now_ms - *last_pong_ms >= CONNECTION_TIMEOUT_MS {
                     log::warn!("[NeighbourConnection] Connection timeout to {} after a while not received pong, last {last_pong_ms}", self.remote);
                     self.output.push_back(Output::Event(ConnectionEvent::Disconnected));
                 } else {
@@ -185,10 +186,10 @@ impl NeighbourConnection {
                 }
             }
             State::Disconnecting { at_ms } => {
-                if now_ms - *at_ms >= TIMEOUT_MS {
+                if now_ms - *at_ms >= CONNECTION_TIMEOUT_MS {
                     self.state = State::Disconnected;
                     self.output.push_back(Output::Event(ConnectionEvent::Disconnected));
-                    log::warn!("[NeighbourConnection] Disconnect request timeout to {} after {} ms", self.remote, TIMEOUT_MS);
+                    log::warn!("[NeighbourConnection] Disconnect request timeout to {} after {} ms", self.remote, CONNECTION_TIMEOUT_MS);
                 } else {
                     *at_ms = now_ms;
                     self.output.push_back(self.generate_control(
@@ -253,7 +254,14 @@ impl NeighbourConnection {
                                 if handshake.eq(&pre_hand.0) && pre_hand.2 == session {
                                     Ok(pre_hand.1.clone())
                                 } else {
-                                    log::warn!("[NeighbourConnection] Invalid handshake from {}, expected {:?}, got {:?}", self.remote, handshake, handshake);
+                                    log::warn!(
+                                        "[NeighbourConnection] Invalid handshake from {}, expected {} {:?}, got {} {:?}",
+                                        self.remote,
+                                        session,
+                                        handshake,
+                                        pre_hand.2,
+                                        pre_hand.0,
+                                    );
                                     Err(NeighboursConnectError::InvalidData)
                                 }
                             } else {
@@ -306,9 +314,10 @@ impl NeighbourConnection {
                                 self.output.push_back(Output::Event(ConnectionEvent::ConnectError(NeighboursConnectError::InvalidData)));
                             }
                             (_, Err(err)) => {
+                                // We don't need to fire error here, we will reconnect utils timeout
                                 log::warn!("Connect response error from {}: {:?}", self.remote, err);
-                                self.state = State::ConnectError(err);
-                                self.output.push_back(Output::Event(ConnectionEvent::ConnectError(err)));
+                                // self.state = State::ConnectError(err);
+                                //self.output.push_back(Output::Event(ConnectionEvent::ConnectError(err)));
                             }
                         }
                     } else {
