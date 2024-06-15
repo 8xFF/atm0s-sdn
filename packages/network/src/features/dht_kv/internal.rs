@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use atm0s_sdn_router::RouteRule;
 
 use crate::base::FeatureControlActor;
@@ -9,18 +11,18 @@ use super::{
     Control, Event,
 };
 
-pub enum InternalOutput {
-    Local(FeatureControlActor, Event),
+pub enum InternalOutput<UserData> {
+    Local(FeatureControlActor<UserData>, Event),
     Remote(RouteRule, RemoteCommand),
 }
 
-pub struct DhtKvInternal {
+pub struct DhtKvInternal<UserData> {
     session: NodeSession,
-    local: LocalStorage,
+    local: LocalStorage<UserData>,
     remote: RemoteStorage,
 }
 
-impl DhtKvInternal {
+impl<UserData: Eq + Debug + Copy> DhtKvInternal<UserData> {
     pub fn new(session: NodeSession) -> Self {
         Self {
             session,
@@ -34,7 +36,7 @@ impl DhtKvInternal {
         self.remote.on_tick(now);
     }
 
-    pub fn on_local(&mut self, now: u64, actor: FeatureControlActor, control: Control) {
+    pub fn on_local(&mut self, now: u64, actor: FeatureControlActor<UserData>, control: Control) {
         self.local.on_local(now, actor, control);
     }
 
@@ -48,7 +50,7 @@ impl DhtKvInternal {
         }
     }
 
-    pub fn pop_action(&mut self) -> Option<InternalOutput> {
+    pub fn pop_action(&mut self) -> Option<InternalOutput<UserData>> {
         if let Some(out) = self.local.pop_action() {
             match out {
                 LocalStorageOutput::Remote(rule, cmd) => {

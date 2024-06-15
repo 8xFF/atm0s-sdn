@@ -1,5 +1,8 @@
 use atm0s_sdn_router::RouteRule;
-use std::collections::{HashMap, VecDeque};
+use std::{
+    collections::{HashMap, VecDeque},
+    fmt::Debug,
+};
 
 use crate::base::FeatureControlActor;
 
@@ -18,20 +21,20 @@ fn route(key: Map) -> RouteRule {
     RouteRule::ToKey(key.0 as u32)
 }
 
-pub enum LocalStorageOutput {
-    Local(FeatureControlActor, Event),
+pub enum LocalStorageOutput<UserData> {
+    Local(FeatureControlActor<UserData>, Event),
     Remote(RouteRule, ClientCommand),
 }
 
-pub struct LocalStorage {
+pub struct LocalStorage<UserData> {
     session: NodeSession,
-    maps: HashMap<Map, LocalMap>,
-    map_get_waits: HashMap<(Map, u64), (FeatureControlActor, u64)>,
-    queue: VecDeque<LocalStorageOutput>,
+    maps: HashMap<Map, LocalMap<UserData>>,
+    map_get_waits: HashMap<(Map, u64), (FeatureControlActor<UserData>, u64)>,
+    queue: VecDeque<LocalStorageOutput<UserData>>,
     req_id_seed: u64,
 }
 
-impl LocalStorage {
+impl<UserData: Eq + Debug + Copy> LocalStorage<UserData> {
     pub fn new(session: NodeSession) -> Self {
         Self {
             session,
@@ -70,7 +73,7 @@ impl LocalStorage {
         }
     }
 
-    pub fn on_local(&mut self, now: u64, actor: FeatureControlActor, control: Control) {
+    pub fn on_local(&mut self, now: u64, actor: FeatureControlActor<UserData>, control: Control) {
         match control {
             Control::MapCmd(key, control) => {
                 if let Some(map) = Self::get_map(&mut self.maps, self.session, key, control.is_creator()) {
@@ -109,11 +112,11 @@ impl LocalStorage {
         }
     }
 
-    pub fn pop_action(&mut self) -> Option<LocalStorageOutput> {
+    pub fn pop_action(&mut self) -> Option<LocalStorageOutput<UserData>> {
         self.queue.pop_front()
     }
 
-    fn get_map(maps: &mut HashMap<Map, LocalMap>, session: NodeSession, key: Map, auto_create: bool) -> Option<&mut LocalMap> {
+    fn get_map(maps: &mut HashMap<Map, LocalMap<UserData>>, session: NodeSession, key: Map, auto_create: bool) -> Option<&mut LocalMap<UserData>> {
         if !maps.contains_key(&key) && auto_create {
             log::info!("[DhtKvClient] Creating new map: {}", key);
             maps.insert(key, LocalMap::new(session));
@@ -121,7 +124,7 @@ impl LocalStorage {
         maps.get_mut(&key)
     }
 
-    fn pop_map_actions(key: Map, map: &mut LocalMap, queue: &mut VecDeque<LocalStorageOutput>) {
+    fn pop_map_actions(key: Map, map: &mut LocalMap<UserData>, queue: &mut VecDeque<LocalStorageOutput<UserData>>) {
         while let Some(out) = map.pop_action() {
             queue.push_back(match out {
                 LocalMapOutput::Local(actor, event) => LocalStorageOutput::Local(actor, Event::MapEvent(key, event)),

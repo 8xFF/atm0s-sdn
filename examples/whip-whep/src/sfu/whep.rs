@@ -1,6 +1,9 @@
 use std::{net::SocketAddr, time::Instant};
 
-use sans_io_runtime::Buffer;
+use atm0s_sdn::{
+    base::Buffer,
+    sans_io_runtime::{collections::DynamicDeque, return_if_none, return_if_some, Task},
+};
 use str0m::{
     change::{DtlsCert, SdpOffer},
     ice::IceCreds,
@@ -18,12 +21,12 @@ pub struct WhepTaskBuildResult {
 }
 
 pub enum WhepInput<'a> {
-    UdpPacket { from: SocketAddr, data: Buffer<'a> },
+    UdpPacket { from: SocketAddr, data: Buffer },
     Media(&'a TrackMedia),
 }
 
 pub enum WhepOutput {
-    UdpPacket { to: SocketAddr, data: Vec<u8> },
+    UdpPacket { to: SocketAddr, data: Buffer },
     Started(String),
     RequestKey(KeyframeRequestKind),
     Destroy,
@@ -36,6 +39,7 @@ pub struct WhepTask {
     audio_mid: Option<Mid>,
     video_mid: Option<Mid>,
     room: String,
+    queue: DynamicDeque<WhepOutput, 6>,
 }
 
 impl WhepTask {
@@ -58,6 +62,7 @@ impl WhepTask {
             audio_mid: None,
             video_mid: None,
             room,
+            queue: Default::default(),
         };
 
         Ok(WhepTaskBuildResult {
@@ -67,16 +72,7 @@ impl WhepTask {
         })
     }
 
-    fn pop_event_inner(&mut self, now: Instant, has_input: bool) -> Option<WhepOutput> {
-        // incase we have input, we should not check timeout
-        if !has_input {
-            if let Some(timeout) = self.timeout {
-                if timeout > now {
-                    return None;
-                }
-            }
-        }
-
+    fn pop_event_inner(&mut self, now: Instant) -> Option<WhepOutput> {
         while let Ok(out) = self.rtc.poll_output() {
             match out {
                 Output::Timeout(timeout) => {
@@ -86,7 +82,7 @@ impl WhepTask {
                 Output::Transmit(send) => {
                     return Some(WhepOutput::UdpPacket {
                         to: send.destination,
-                        data: send.contents.to_vec(),
+                        data: send.contents.to_vec().into(),
                     });
                 }
                 Output::Event(e) => match e {
@@ -122,22 +118,20 @@ impl WhepTask {
 
 impl WhepTask {
     /// Called on each tick of the task.
-    pub fn on_tick<'a>(&mut self, now: Instant) -> Option<WhepOutput> {
-        let timeout = self.timeout?;
+    pub fn on_tick(&mut self, now: Instant) {
+        let timeout = return_if_none!(self.timeout);
         if now < timeout {
-            return None;
+            return;
         }
 
         if let Err(e) = self.rtc.handle_input(Input::Timeout(now)) {
             log::error!("Error handling timeout: {}", e);
         }
-        log::trace!("clear timeout after handled");
         self.timeout = None;
-        self.pop_event_inner(now, true)
     }
 
     /// Called when an input event is received for the task.
-    pub fn on_event<'a>(&mut self, now: Instant, input: WhepInput<'a>) -> Option<WhepOutput> {
+    pub fn on_event<'a>(&mut self, now: Instant, input: WhepInput<'a>) {
         match input {
             WhepInput::UdpPacket { from, data } => {
                 if let Err(e) = self
@@ -147,7 +141,6 @@ impl WhepTask {
                     log::error!("Error handling udp: {}", e);
                 }
                 self.timeout = None;
-                self.pop_event_inner(now, true)
             }
             WhepInput::Media(media) => {
                 let (mid, nackable) = if media.pt == 111 {
@@ -173,25 +166,22 @@ impl WhepTask {
                         }
                         log::trace!("clear timeout with media");
                         self.timeout = None;
-                        self.pop_event_inner(now, true)
-                    } else {
-                        None
                     }
                 } else {
                     log::error!("No mid for media {}", media.pt);
-                    None
                 }
             }
         }
     }
 
     /// Retrieves the next output event from the task.
-    pub fn pop_output<'a>(&mut self, now: Instant) -> Option<WhepOutput> {
-        self.pop_event_inner(now, false)
+    pub fn pop_output(&mut self, now: Instant) -> Option<WhepOutput> {
+        return_if_some!(self.queue.pop_front());
+        self.pop_event_inner(now)
     }
 
-    pub fn shutdown<'a>(&mut self, _now: Instant) -> Option<WhepOutput> {
+    pub fn on_shutdown(&mut self, _now: Instant) {
         self.rtc.disconnect();
-        return WhepOutput::Destroy.into();
+        self.queue.push_back(WhepOutput::Destroy.into());
     }
 }

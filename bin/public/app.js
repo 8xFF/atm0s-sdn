@@ -55,6 +55,9 @@ function resetGraph(nodes) {
     nodes.map((node) => {
         cy.add({ data: { id: node.id } });
         node.connections.map((connection) => {
+            if (cy.$id(connection.dest).length == 0) {
+                cy.add({ data: { id: connection.dest } });
+            }
             let edge = edgeKey(node.id, connection.dest, connection.uuid, connection.outgoing);
             if (edges[edge] === undefined) {
                 edges[edge] = {

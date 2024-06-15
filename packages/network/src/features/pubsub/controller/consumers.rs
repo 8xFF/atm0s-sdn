@@ -1,7 +1,10 @@
 use std::{
     collections::{HashMap, VecDeque},
+    fmt::Debug,
     net::SocketAddr,
 };
+
+use derivative::Derivative;
 
 use crate::{
     base::FeatureControlActor,
@@ -15,14 +18,15 @@ struct RelayRemote {
     last_sub: u64,
 }
 
-#[derive(Default)]
-pub struct RelayConsumers {
+#[derive(Derivative)]
+#[derivative(Default(bound = ""))]
+pub struct RelayConsumers<UserData> {
     remotes: HashMap<SocketAddr, RelayRemote>,
-    locals: Vec<FeatureControlActor>,
-    queue: VecDeque<RelayWorkerControl>,
+    locals: Vec<FeatureControlActor<UserData>>,
+    queue: VecDeque<RelayWorkerControl<UserData>>,
 }
 
-impl RelayConsumers {
+impl<UserData: Eq + Debug + Copy> RelayConsumers<UserData> {
     pub fn on_tick(&mut self, now: u64) {
         let mut timeout = vec![];
         for (remote, slot) in self.remotes.iter() {
@@ -37,7 +41,7 @@ impl RelayConsumers {
         }
     }
 
-    pub fn on_local_sub(&mut self, _now: u64, actor: FeatureControlActor) {
+    pub fn on_local_sub(&mut self, _now: u64, actor: FeatureControlActor<UserData>) {
         if self.locals.contains(&actor) {
             log::warn!("[RelayConsumers] Sub for already subbed local actor {:?}", actor);
             return;
@@ -47,7 +51,7 @@ impl RelayConsumers {
         self.queue.push_back(RelayWorkerControl::RouteSetLocal(actor));
     }
 
-    pub fn on_local_unsub(&mut self, _now: u64, actor: FeatureControlActor) {
+    pub fn on_local_unsub(&mut self, _now: u64, actor: FeatureControlActor<UserData>) {
         if let Some(pos) = self.locals.iter().position(|a| *a == actor) {
             log::debug!("[RelayConsumers] Unsub from local actor {:?}", actor);
             self.queue.push_back(RelayWorkerControl::RouteDelLocal(actor));
@@ -102,11 +106,11 @@ impl RelayConsumers {
         self.locals.is_empty() && self.remotes.is_empty()
     }
 
-    pub fn relay_dests(&self) -> (&[FeatureControlActor], bool) {
+    pub fn relay_dests(&self) -> (&[FeatureControlActor<UserData>], bool) {
         (self.locals.as_slice(), !self.remotes.is_empty())
     }
 
-    pub fn pop_output(&mut self) -> Option<RelayWorkerControl> {
+    pub fn pop_output(&mut self) -> Option<RelayWorkerControl<UserData>> {
         self.queue.pop_front()
     }
 }
@@ -125,17 +129,17 @@ mod tests {
     #[test]
     fn relay_local_should_work_single_sub() {
         let mut consumers = RelayConsumers::default();
-        consumers.on_local_sub(0, FeatureControlActor::Controller);
+        consumers.on_local_sub(0, FeatureControlActor::Controller(()));
 
-        assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteSetLocal(FeatureControlActor::Controller)));
+        assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteSetLocal(FeatureControlActor::Controller(()))));
         assert_eq!(consumers.pop_output(), None);
 
-        assert_eq!(consumers.relay_dests(), (&[FeatureControlActor::Controller] as &[_], false));
+        assert_eq!(consumers.relay_dests(), (&[FeatureControlActor::Controller(())] as &[_], false));
         assert_eq!(consumers.should_clear(), false);
 
-        consumers.on_local_unsub(100, FeatureControlActor::Controller);
+        consumers.on_local_unsub(100, FeatureControlActor::Controller(()));
 
-        assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteDelLocal(FeatureControlActor::Controller)));
+        assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteDelLocal(FeatureControlActor::Controller(()))));
         assert_eq!(consumers.pop_output(), None);
 
         assert_eq!(consumers.relay_dests(), (&[] as &[_], false));
@@ -145,9 +149,9 @@ mod tests {
     #[test]
     fn relay_local_should_work_multi_subs() {
         let mut consumers = RelayConsumers::default();
-        consumers.on_local_sub(0, FeatureControlActor::Controller);
+        consumers.on_local_sub(0, FeatureControlActor::Controller(()));
 
-        assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteSetLocal(FeatureControlActor::Controller)));
+        assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteSetLocal(FeatureControlActor::Controller(()))));
         assert_eq!(consumers.pop_output(), None);
 
         consumers.on_local_sub(0, FeatureControlActor::Service(1.into()));
@@ -155,12 +159,12 @@ mod tests {
         assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteSetLocal(FeatureControlActor::Service(1.into()))));
         assert_eq!(consumers.pop_output(), None);
 
-        assert_eq!(consumers.relay_dests(), (&[FeatureControlActor::Controller, FeatureControlActor::Service(1.into())] as &[_], false));
+        assert_eq!(consumers.relay_dests(), (&[FeatureControlActor::Controller(()), FeatureControlActor::Service(1.into())] as &[_], false));
         assert_eq!(consumers.should_clear(), false);
 
-        consumers.on_local_unsub(100, FeatureControlActor::Controller);
+        consumers.on_local_unsub(100, FeatureControlActor::Controller(()));
 
-        assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteDelLocal(FeatureControlActor::Controller)));
+        assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteDelLocal(FeatureControlActor::Controller(()))));
         assert_eq!(consumers.pop_output(), None);
 
         assert_eq!(consumers.relay_dests(), (&[FeatureControlActor::Service(1.into())] as &[_], false));
@@ -177,7 +181,7 @@ mod tests {
 
     #[test]
     fn relay_remote_should_work_single_sub() {
-        let mut consumers = RelayConsumers::default();
+        let mut consumers = RelayConsumers::<()>::default();
 
         let remote = SocketAddr::from(([127, 0, 0, 1], 8080));
 
@@ -202,7 +206,7 @@ mod tests {
 
     #[test]
     fn relay_remote_should_work_multi_subs() {
-        let mut consumers = RelayConsumers::default();
+        let mut consumers = RelayConsumers::<()>::default();
 
         let remote1 = SocketAddr::from(([127, 0, 0, 1], 8080));
         let remote2 = SocketAddr::from(([127, 0, 0, 2], 8080));
@@ -253,12 +257,12 @@ mod tests {
         assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteSetRemote(remote1, 1000)));
         assert_eq!(consumers.pop_output(), None);
 
-        consumers.on_local_sub(0, FeatureControlActor::Controller);
+        consumers.on_local_sub(0, FeatureControlActor::Controller(()));
 
-        assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteSetLocal(FeatureControlActor::Controller)));
+        assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteSetLocal(FeatureControlActor::Controller(()))));
         assert_eq!(consumers.pop_output(), None);
 
-        assert_eq!(consumers.relay_dests(), (&[FeatureControlActor::Controller] as &[_], true));
+        assert_eq!(consumers.relay_dests(), (&[FeatureControlActor::Controller(())] as &[_], true));
         assert_eq!(consumers.should_clear(), false);
 
         consumers.on_remote(100, remote1, RelayControl::Unsub(1000));
@@ -267,12 +271,12 @@ mod tests {
         assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteDelRemote(remote1)));
         assert_eq!(consumers.pop_output(), None);
 
-        assert_eq!(consumers.relay_dests(), (&[FeatureControlActor::Controller] as &[_], false));
+        assert_eq!(consumers.relay_dests(), (&[FeatureControlActor::Controller(())] as &[_], false));
         assert_eq!(consumers.should_clear(), false);
 
-        consumers.on_local_unsub(200, FeatureControlActor::Controller);
+        consumers.on_local_unsub(200, FeatureControlActor::Controller(()));
 
-        assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteDelLocal(FeatureControlActor::Controller)));
+        assert_eq!(consumers.pop_output(), Some(RelayWorkerControl::RouteDelLocal(FeatureControlActor::Controller(()))));
         assert_eq!(consumers.pop_output(), None);
 
         assert_eq!(consumers.relay_dests(), (&[] as &[_], false));
@@ -281,7 +285,7 @@ mod tests {
 
     #[test]
     fn clear_timeout_remote() {
-        let mut consumers = RelayConsumers::default();
+        let mut consumers = RelayConsumers::<()>::default();
 
         let remote1 = SocketAddr::from(([127, 0, 0, 1], 8080));
 

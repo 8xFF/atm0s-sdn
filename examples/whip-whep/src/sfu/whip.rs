@@ -1,6 +1,6 @@
 use std::{net::SocketAddr, time::Instant};
 
-use sans_io_runtime::Buffer;
+use atm0s_sdn::sans_io_runtime::{collections::DynamicDeque, return_if_none, return_if_some, Buffer, Task};
 use str0m::{
     change::{DtlsCert, SdpOffer},
     ice::IceCreds,
@@ -17,13 +17,13 @@ pub struct WhipTaskBuildResult {
     pub sdp: String,
 }
 
-pub enum WhipInput<'a> {
-    UdpPacket { from: SocketAddr, data: Buffer<'a> },
+pub enum WhipInput {
+    UdpPacket { from: SocketAddr, data: Buffer },
     KeyFrame(KeyframeRequestKind),
 }
 
 pub enum WhipOutput {
-    UdpPacket { to: SocketAddr, data: Vec<u8> },
+    UdpPacket { to: SocketAddr, data: Buffer },
     Started(String),
     Media(TrackMedia),
     Destroy,
@@ -36,6 +36,7 @@ pub struct WhipTask {
     audio_mid: Option<Mid>,
     video_mid: Option<Mid>,
     room: String,
+    queue: DynamicDeque<WhipOutput, 6>,
 }
 
 impl WhipTask {
@@ -57,6 +58,7 @@ impl WhipTask {
             audio_mid: None,
             video_mid: None,
             room,
+            queue: DynamicDeque::default(),
         };
 
         Ok(WhipTaskBuildResult {
@@ -66,16 +68,7 @@ impl WhipTask {
         })
     }
 
-    fn pop_event_inner(&mut self, now: Instant, has_input: bool) -> Option<WhipOutput> {
-        // incase we have input, we should not check timeout
-        if !has_input {
-            if let Some(timeout) = self.timeout {
-                if timeout > now {
-                    return None;
-                }
-            }
-        }
-
+    fn pop_event_inner(&mut self, now: Instant) -> Option<WhipOutput> {
         while let Ok(out) = self.rtc.poll_output() {
             match out {
                 Output::Timeout(timeout) => {
@@ -85,7 +78,7 @@ impl WhipTask {
                 Output::Transmit(send) => {
                     return WhipOutput::UdpPacket {
                         to: send.destination,
-                        data: send.contents.to_vec(),
+                        data: send.contents.to_vec().into(),
                     }
                     .into();
                 }
@@ -121,23 +114,22 @@ impl WhipTask {
     }
 }
 
-impl WhipTask {
+impl Task<WhipInput, WhipOutput> for WhipTask {
     /// Called on each tick of the task.
-    pub fn on_tick<'a>(&mut self, now: Instant) -> Option<WhipOutput> {
-        let timeout = self.timeout?;
+    fn on_tick(&mut self, now: Instant) {
+        let timeout = return_if_none!(self.timeout);
         if now < timeout {
-            return None;
+            return;
         }
 
         if let Err(e) = self.rtc.handle_input(Input::Timeout(now)) {
             log::error!("Error handling timeout: {}", e);
         }
         self.timeout = None;
-        self.pop_event_inner(now, true)
     }
 
     /// Called when an input event is received for the task.
-    pub fn on_event<'a>(&mut self, now: Instant, input: WhipInput<'a>) -> Option<WhipOutput> {
+    fn on_event(&mut self, now: Instant, input: WhipInput) {
         match input {
             WhipInput::UdpPacket { from, data } => {
                 if let Err(e) = self
@@ -146,28 +138,26 @@ impl WhipTask {
                 {
                     log::error!("Error handling udp: {}", e);
                 }
-                self.pop_event_inner(now, true)
             }
             WhipInput::KeyFrame(kind) => {
                 if let Some(mid) = self.video_mid {
                     log::info!("Requesting keyframe for video mid: {:?}", mid);
                     self.rtc.direct_api().stream_rx_by_mid(mid, None).expect("Should has video mid").request_keyframe(kind);
-                    self.pop_event_inner(now, true)
                 } else {
                     log::error!("No video mid for requesting keyframe");
-                    None
                 }
             }
         }
     }
 
-    /// Retrieves the next output event from the task.
-    pub fn pop_output<'a>(&mut self, now: Instant) -> Option<WhipOutput> {
-        self.pop_event_inner(now, false)
+    fn on_shutdown(&mut self, _now: Instant) {
+        self.rtc.disconnect();
+        self.queue.push_back(WhipOutput::Destroy.into())
     }
 
-    pub fn shutdown<'a>(&mut self, _now: Instant) -> Option<WhipOutput> {
-        self.rtc.disconnect();
-        WhipOutput::Destroy.into()
+    /// Retrieves the next output event from the task.
+    fn pop_output(&mut self, now: Instant) -> Option<WhipOutput> {
+        return_if_some!(self.queue.pop_front());
+        self.pop_event_inner(now)
     }
 }

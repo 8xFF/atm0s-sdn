@@ -17,8 +17,8 @@ fn feature_neighbours_two_nodes() {
     let _addr1 = sim.add_node(TestNode::new(node1, 1234, vec![]));
     let addr2 = sim.add_node(TestNode::new(node2, 1235, vec![]));
 
-    sim.control(node1, ExtIn::FeaturesControl(FeaturesControl::Neighbours(neighbours::Control::Sub)));
-    sim.control(node2, ExtIn::FeaturesControl(FeaturesControl::Neighbours(neighbours::Control::Sub)));
+    sim.control(node1, ExtIn::FeaturesControl((), FeaturesControl::Neighbours(neighbours::Control::Sub)));
+    sim.control(node2, ExtIn::FeaturesControl((), FeaturesControl::Neighbours(neighbours::Control::Sub)));
 
     sim.control(node1, ExtIn::ConnectTo(addr2));
 
@@ -37,8 +37,14 @@ fn feature_neighbours_two_nodes() {
     assert_eq!(
         out,
         vec![
-            (node1, ExtOut::FeaturesEvent(FeaturesEvent::Neighbours(neighbours::Event::Connected(node2, ConnId::from_out(0, 1000))))),
-            (node2, ExtOut::FeaturesEvent(FeaturesEvent::Neighbours(neighbours::Event::Connected(node1, ConnId::from_in(0, 1000))))),
+            (
+                node1,
+                ExtOut::FeaturesEvent((), FeaturesEvent::Neighbours(neighbours::Event::Connected(node2, ConnId::from_out(0, 1000))))
+            ),
+            (
+                node2,
+                ExtOut::FeaturesEvent((), FeaturesEvent::Neighbours(neighbours::Event::Connected(node1, ConnId::from_in(0, 1000))))
+            ),
         ]
     );
 }

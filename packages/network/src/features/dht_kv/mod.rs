@@ -6,9 +6,13 @@
 //! For solve conflict, each sub_key will attacked to a locked value, which is a pair (node, lock_session).
 //! In which, node is the node that locked the value, and session is the session of the lock.
 
-use atm0s_sdn_identity::NodeId;
+use std::fmt::Debug;
 
-use crate::base::{Feature, FeatureContext, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker, NetOutgoingMeta};
+use atm0s_sdn_identity::NodeId;
+use derivative::Derivative;
+use sans_io_runtime::{collections::DynamicDeque, TaskSwitcherChild};
+
+use crate::base::{Feature, FeatureContext, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker, FeatureWorkerInput, FeatureWorkerOutput, NetOutgoingMeta};
 
 use self::{
     internal::InternalOutput,
@@ -74,11 +78,14 @@ pub struct ToWorker;
 #[derive(Debug, Clone)]
 pub struct ToController;
 
-pub struct DhtKvFeature {
-    internal: internal::DhtKvInternal,
+pub type Output<UserData> = FeatureOutput<UserData, Event, ToWorker>;
+pub type WorkerOutput<UserData> = FeatureWorkerOutput<UserData, Control, Event, ToController>;
+
+pub struct DhtKvFeature<UserData> {
+    internal: internal::DhtKvInternal<UserData>,
 }
 
-impl DhtKvFeature {
+impl<UserData: Eq + Copy + Debug> DhtKvFeature<UserData> {
     pub fn new(node_id: NodeId, session: u64) -> Self {
         Self {
             internal: internal::DhtKvInternal::new(NodeSession(node_id, session)),
@@ -86,7 +93,7 @@ impl DhtKvFeature {
     }
 }
 
-impl Feature<Control, Event, ToController, ToWorker> for DhtKvFeature {
+impl<UserData: Eq + Copy + Debug> Feature<UserData, Control, Event, ToController, ToWorker> for DhtKvFeature<UserData> {
     fn on_shared_input(&mut self, _ctx: &FeatureContext, now: u64, input: FeatureSharedInput) {
         match input {
             FeatureSharedInput::Tick(_) => {
@@ -96,7 +103,7 @@ impl Feature<Control, Event, ToController, ToWorker> for DhtKvFeature {
         }
     }
 
-    fn on_input<'a>(&mut self, _ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
+    fn on_input<'a>(&mut self, _ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'a, UserData, Control, ToController>) {
         match input {
             FeatureInput::Control(actor, control) => {
                 log::debug!("[DhtKv] on ext input: actor={:?}, control={:?}", actor, control);
@@ -120,20 +127,46 @@ impl Feature<Control, Event, ToController, ToWorker> for DhtKvFeature {
             _ => {}
         }
     }
+}
 
-    fn pop_output<'a>(&mut self, _ctx: &FeatureContext) -> Option<FeatureOutput<Event, ToWorker>> {
+impl<UserData: Eq + Copy + Debug> TaskSwitcherChild<FeatureOutput<UserData, Event, ToWorker>> for DhtKvFeature<UserData> {
+    type Time = u64;
+    fn pop_output(&mut self, _now: u64) -> Option<FeatureOutput<UserData, Event, ToWorker>> {
         match self.internal.pop_action()? {
             InternalOutput::Local(service, event) => Some(FeatureOutput::Event(service, event)),
             InternalOutput::Remote(rule, cmd) => Some(FeatureOutput::SendRoute(
                 rule,
                 NetOutgoingMeta::new(false, Default::default(), 0, true),
-                bincode::serialize(&cmd).expect("Should to bytes"),
+                bincode::serialize(&cmd).expect("Should to bytes").into(),
             )),
         }
     }
 }
 
-#[derive(Default)]
-pub struct DhtKvFeatureWorker {}
+#[derive(Derivative)]
+#[derivative(Default(bound = ""))]
+pub struct DhtKvFeatureWorker<UserData> {
+    queue: DynamicDeque<FeatureWorkerOutput<UserData, Control, Event, ToController>, 1>,
+}
 
-impl FeatureWorker<Control, Event, ToController, ToWorker> for DhtKvFeatureWorker {}
+impl<UserData> FeatureWorker<UserData, Control, Event, ToController, ToWorker> for DhtKvFeatureWorker<UserData> {
+    fn on_input(&mut self, _ctx: &mut crate::base::FeatureWorkerContext, _now: u64, input: crate::base::FeatureWorkerInput<UserData, Control, ToWorker>) {
+        match input {
+            FeatureWorkerInput::Control(actor, control) => self.queue.push_back(FeatureWorkerOutput::ForwardControlToController(actor, control)),
+            FeatureWorkerInput::Network(conn, header, buf) => self.queue.push_back(FeatureWorkerOutput::ForwardNetworkToController(conn, header, buf)),
+            #[cfg(feature = "vpn")]
+            FeatureWorkerInput::TunPkt(..) => {}
+            FeatureWorkerInput::FromController(..) => {
+                log::warn!("No handler for FromController");
+            }
+            FeatureWorkerInput::Local(header, buf) => self.queue.push_back(FeatureWorkerOutput::ForwardLocalToController(header, buf)),
+        }
+    }
+}
+
+impl<UserData> TaskSwitcherChild<FeatureWorkerOutput<UserData, Control, Event, ToController>> for DhtKvFeatureWorker<UserData> {
+    type Time = u64;
+    fn pop_output(&mut self, _now: u64) -> Option<FeatureWorkerOutput<UserData, Control, Event, ToController>> {
+        self.queue.pop_front()
+    }
+}

@@ -1,8 +1,10 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, fmt::Debug, hash::Hash};
 
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
+use derivative::Derivative;
+use sans_io_runtime::{collections::DynamicDeque, TaskSwitcherChild};
 
-use crate::base::{ConnectionEvent, Feature, FeatureContext, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker};
+use crate::base::{ConnectionEvent, Feature, FeatureContext, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker, FeatureWorkerInput, FeatureWorkerOutput};
 
 pub const FEATURE_ID: u8 = 0;
 pub const FEATURE_NAME: &str = "neighbours_api";
@@ -27,13 +29,17 @@ pub struct ToWorker;
 #[derive(Debug, Clone)]
 pub struct ToController;
 
-#[derive(Default)]
-pub struct NeighboursFeature {
-    subs: Vec<FeatureControlActor>,
-    output: VecDeque<FeatureOutput<Event, ToWorker>>,
+pub type Output<UserData> = FeatureOutput<UserData, Event, ToWorker>;
+pub type WorkerOutput<UserData> = FeatureWorkerOutput<UserData, Control, Event, ToController>;
+
+#[derive(Debug, Derivative)]
+#[derivative(Default(bound = ""))]
+pub struct NeighboursFeature<UserData> {
+    subs: Vec<FeatureControlActor<UserData>>,
+    output: VecDeque<Output<UserData>>,
 }
 
-impl Feature<Control, Event, ToController, ToWorker> for NeighboursFeature {
+impl<UserData: Debug + Copy + Hash + Eq> Feature<UserData, Control, Event, ToController, ToWorker> for NeighboursFeature<UserData> {
     fn on_shared_input(&mut self, _ctx: &FeatureContext, _now: u64, input: FeatureSharedInput) {
         match input {
             FeatureSharedInput::Connection(ConnectionEvent::Connected(ctx, _)) => {
@@ -52,7 +58,7 @@ impl Feature<Control, Event, ToController, ToWorker> for NeighboursFeature {
         }
     }
 
-    fn on_input<'a>(&mut self, _ctx: &FeatureContext, _now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
+    fn on_input<'a>(&mut self, _ctx: &FeatureContext, _now_ms: u64, input: FeatureInput<'a, UserData, Control, ToController>) {
         match input {
             FeatureInput::Control(actor, control) => match control {
                 Control::Sub => {
@@ -77,13 +83,39 @@ impl Feature<Control, Event, ToController, ToWorker> for NeighboursFeature {
             _ => {}
         }
     }
+}
 
-    fn pop_output<'a>(&mut self, _ctx: &FeatureContext) -> Option<FeatureOutput<Event, ToWorker>> {
+impl<UserData> TaskSwitcherChild<Output<UserData>> for NeighboursFeature<UserData> {
+    type Time = u64;
+    fn pop_output(&mut self, _now: u64) -> Option<Output<UserData>> {
         self.output.pop_front()
     }
 }
 
-#[derive(Default)]
-pub struct NeighboursFeatureWorker {}
+#[derive(Derivative)]
+#[derivative(Default(bound = ""))]
+pub struct NeighboursFeatureWorker<UserData> {
+    queue: DynamicDeque<WorkerOutput<UserData>, 1>,
+}
 
-impl FeatureWorker<Control, Event, ToController, ToWorker> for NeighboursFeatureWorker {}
+impl<UserData> FeatureWorker<UserData, Control, Event, ToController, ToWorker> for NeighboursFeatureWorker<UserData> {
+    fn on_input(&mut self, _ctx: &mut crate::base::FeatureWorkerContext, _now: u64, input: crate::base::FeatureWorkerInput<UserData, Control, ToWorker>) {
+        match input {
+            FeatureWorkerInput::Control(actor, control) => self.queue.push_back(FeatureWorkerOutput::ForwardControlToController(actor, control)),
+            FeatureWorkerInput::Network(conn, header, buf) => self.queue.push_back(FeatureWorkerOutput::ForwardNetworkToController(conn, header, buf)),
+            #[cfg(feature = "vpn")]
+            FeatureWorkerInput::TunPkt(..) => {}
+            FeatureWorkerInput::FromController(..) => {
+                log::warn!("No handler for FromController");
+            }
+            FeatureWorkerInput::Local(header, buf) => self.queue.push_back(FeatureWorkerOutput::ForwardLocalToController(header, buf)),
+        }
+    }
+}
+
+impl<UserData> TaskSwitcherChild<WorkerOutput<UserData>> for NeighboursFeatureWorker<UserData> {
+    type Time = u64;
+    fn pop_output(&mut self, _now: u64) -> Option<WorkerOutput<UserData>> {
+        self.queue.pop_front()
+    }
+}
