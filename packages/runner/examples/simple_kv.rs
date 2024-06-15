@@ -66,8 +66,9 @@ struct Args {
     kv_set: bool,
 }
 
-type SC = visualization::Control;
-type SE = visualization::Event;
+type UserInfo = u32;
+type SC = visualization::Control<UserInfo>;
+type SE = visualization::Event<UserInfo>;
 type TC = ();
 type TW = ();
 
@@ -77,7 +78,7 @@ fn main() {
     let mut shutdown_wait = 0;
     let args = Args::parse();
     env_logger::builder().format_timestamp_millis().init();
-    let mut builder = SdnBuilder::<(), SC, SE, TC, TW>::new(args.node_id, args.udp_port, vec![]);
+    let mut builder = SdnBuilder::<(), SC, SE, TC, TW, UserInfo>::new(args.node_id, args.udp_port, vec![]);
     builder.set_authorization(StaticKeyAuthorization::new(&args.password));
 
     for seed in args.seeds {
@@ -85,8 +86,8 @@ fn main() {
     }
 
     let mut controller = match args.backend {
-        BackendType::Poll => builder.build::<PollBackend<SdnOwner, 128, 128>>(args.workers),
-        BackendType::Polling => builder.build::<PollingBackend<SdnOwner, 128, 128>>(args.workers),
+        BackendType::Poll => builder.build::<PollBackend<SdnOwner, 128, 128>>(args.workers, args.node_id),
+        BackendType::Polling => builder.build::<PollingBackend<SdnOwner, 128, 128>>(args.workers, args.node_id),
     };
 
     if args.kv_subscribe {

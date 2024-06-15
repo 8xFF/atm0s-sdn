@@ -11,8 +11,9 @@ use atm0s_sdn::{
 };
 use sans_io_runtime::backend::PollingBackend;
 
-type SC = visualization::Control;
-type SE = visualization::Event;
+type UserInfo = u32;
+type SC = visualization::Control<UserInfo>;
+type SE = visualization::Event<UserInfo>;
 type TC = ();
 type TW = ();
 
@@ -45,10 +46,11 @@ fn expect_event(node: &mut SdnController<(), SC, SE, TC, TW>, expected: dht_kv::
 }
 
 fn build_node(node_id: NodeId, udp_port: u16) -> (SdnController<(), SC, SE, TC, TW>, NodeAddr) {
-    let mut builder = SdnBuilder::<(), SC, SE, TC, TW>::new(node_id, udp_port, vec![]);
+    let mut builder = SdnBuilder::<(), SC, SE, TC, TW, UserInfo>::new(node_id, udp_port, vec![]);
     builder.set_authorization(StaticKeyAuthorization::new("password-here"));
     let node_addr = builder.node_addr();
-    let node = builder.build::<PollingBackend<SdnOwner, 16, 16>>(2);
+    let node_info = node_id;
+    let node = builder.build::<PollingBackend<SdnOwner, 16, 16>>(2, node_info);
     (node, node_addr)
 }
 

@@ -4,7 +4,7 @@ use atm0s_sdn::{
     sans_io_runtime::backend::{PollBackend, PollingBackend},
     services::visualization::ConnectionInfo,
 };
-use atm0s_sdn::{NodeAddr, NodeId};
+use atm0s_sdn::{NodeAddr, NodeId, SdnControllerUtils};
 use atm0s_sdn::{SdnBuilder, SdnExtIn, SdnExtOut, SdnOwner};
 use clap::{Parser, ValueEnum};
 use futures_util::{SinkExt, StreamExt};
@@ -24,7 +24,8 @@ use poem::{
 #[cfg(feature = "embed")]
 use rust_embed::RustEmbed;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use std::time::Instant;
 use std::{
     collections::HashMap,
     net::SocketAddr,
@@ -100,8 +101,12 @@ struct Args {
     collector: bool,
 }
 
-type SC = visualization::Control;
-type SE = visualization::Event;
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct VisualNodeInfo {
+    livetime: u32,
+}
+type SC = visualization::Control<VisualNodeInfo>;
+type SE = visualization::Event<VisualNodeInfo>;
 type TC = ();
 type TW = ();
 
@@ -117,6 +122,7 @@ struct ConnInfo {
 #[derive(Debug, Clone, Serialize)]
 struct NodeInfo {
     id: NodeId,
+    info: VisualNodeInfo,
     connections: Vec<ConnInfo>,
 }
 
@@ -131,7 +137,7 @@ enum WebsocketMessage {
 #[derive(Debug)]
 struct WebsocketCtx {
     channel: tokio::sync::broadcast::Sender<WebsocketMessage>,
-    snapshot: HashMap<NodeId, Vec<ConnInfo>>,
+    snapshot: HashMap<NodeId, (VisualNodeInfo, Vec<ConnInfo>)>,
 }
 
 impl WebsocketCtx {
@@ -143,9 +149,9 @@ impl WebsocketCtx {
         }
     }
 
-    pub fn set_snapshot(&mut self, snapshot: Vec<(NodeId, Vec<ConnectionInfo>)>) {
+    pub fn set_snapshot(&mut self, snapshot: Vec<(NodeId, VisualNodeInfo, Vec<ConnectionInfo>)>) {
         self.snapshot.clear();
-        for (id, connections) in snapshot {
+        for (id, info, connections) in snapshot {
             let conns = connections
                 .into_iter()
                 .map(|c| ConnInfo {
@@ -156,13 +162,13 @@ impl WebsocketCtx {
                     rtt_ms: c.rtt_ms,
                 })
                 .collect();
-            self.snapshot.insert(id, conns);
+            self.snapshot.insert(id, (info, conns));
         }
     }
 
-    pub fn set_node(&mut self, delta: (NodeId, Vec<ConnectionInfo>)) {
+    pub fn set_node(&mut self, delta: (NodeId, VisualNodeInfo, Vec<ConnectionInfo>)) {
         let connections: Vec<ConnInfo> = delta
-            .1
+            .2
             .into_iter()
             .map(|c| ConnInfo {
                 uuid: c.conn.session(),
@@ -172,8 +178,12 @@ impl WebsocketCtx {
                 rtt_ms: c.rtt_ms,
             })
             .collect();
-        self.snapshot.insert(delta.0, connections.clone());
-        if let Err(e) = self.channel.send(WebsocketMessage::Update(NodeInfo { id: delta.0, connections })) {
+        self.snapshot.insert(delta.0, (delta.1.clone(), connections.clone()));
+        if let Err(e) = self.channel.send(WebsocketMessage::Update(NodeInfo {
+            id: delta.0,
+            info: delta.1,
+            connections,
+        })) {
             log::debug!("Failed to send delta: {}", e);
         }
     }
@@ -188,8 +198,9 @@ impl WebsocketCtx {
     pub fn get_snapshot(&self) -> Vec<NodeInfo> {
         self.snapshot
             .iter()
-            .map(|(id, connections)| NodeInfo {
+            .map(|(id, (info, connections))| NodeInfo {
                 id: *id,
+                info: info.clone(),
                 connections: connections.clone(),
             })
             .collect()
@@ -235,7 +246,7 @@ async fn main() {
     let mut shutdown_wait = 0;
     let args = Args::parse();
     tracing_subscriber::fmt::init();
-    let mut builder = SdnBuilder::<(), SC, SE, TC, TW>::new(args.node_id, args.udp_port, args.custom_addrs);
+    let mut builder = SdnBuilder::<(), SC, SE, TC, TW, VisualNodeInfo>::new(args.node_id, args.udp_port, args.custom_addrs);
 
     builder.set_authorization(StaticKeyAuthorization::new(&args.password));
     builder.set_manual_discovery(args.local_tags, args.connect_tags);
@@ -250,15 +261,16 @@ async fn main() {
         builder.add_seed(seed);
     }
 
+    let node_info = VisualNodeInfo { livetime: 0 };
     let mut controller = match args.backend {
-        BackendType::Poll => builder.build::<PollBackend<SdnOwner, 128, 128>>(args.workers),
-        BackendType::Polling => builder.build::<PollingBackend<SdnOwner, 128, 128>>(args.workers),
+        BackendType::Poll => builder.build::<PollBackend<SdnOwner, 128, 128>>(args.workers, node_info),
+        BackendType::Polling => builder.build::<PollingBackend<SdnOwner, 128, 128>>(args.workers, node_info),
     };
 
     let ctx = Arc::new(Mutex::new(WebsocketCtx::new()));
 
     if args.collector {
-        controller.send_to(0, SdnExtIn::ServicesControl(visualization::SERVICE_ID.into(), (), visualization::Control::Subscribe));
+        controller.service_control(visualization::SERVICE_ID.into(), (), visualization::Control::Subscribe);
         let ctx_c = ctx.clone();
         tokio::spawn(async move {
             let route = Route::new().at("/ws", get(ws.data(ctx_c)));
@@ -275,6 +287,8 @@ async fn main() {
         });
     }
 
+    let started_at = Instant::now();
+    let mut count = 0;
     while controller.process().is_some() {
         if term.load(Ordering::Relaxed) {
             if shutdown_wait == 200 {
@@ -284,6 +298,16 @@ async fn main() {
             shutdown_wait += 1;
             controller.shutdown();
         }
+        if count % 500 == 0 {
+            //each 5 seconds
+            controller.service_control(
+                visualization::SERVICE_ID.into(),
+                (),
+                visualization::Control::UpdateInfo(VisualNodeInfo {
+                    livetime: started_at.elapsed().as_secs() as u32,
+                }),
+            );
+        }
         while let Some(event) = controller.pop_event() {
             match event {
                 SdnExtOut::ServicesEvent(_service, (), event) => match event {
@@ -291,9 +315,9 @@ async fn main() {
                         log::info!("Got all: {:?}", all);
                         ctx.lock().await.set_snapshot(all);
                     }
-                    visualization::Event::NodeChanged(node, changed) => {
+                    visualization::Event::NodeChanged(node, info, changed) => {
                         log::debug!("Node changed: {:?} {:?}", node, changed);
-                        ctx.lock().await.set_node((node, changed));
+                        ctx.lock().await.set_node((node, info, changed));
                     }
                     visualization::Event::NodeRemoved(node) => {
                         log::info!("Node removed: {:?}", node);
@@ -304,6 +328,7 @@ async fn main() {
             }
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
+        count += 1;
     }
 
     log::info!("Server shutdown");

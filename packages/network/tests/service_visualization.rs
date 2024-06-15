@@ -5,17 +5,22 @@ use atm0s_sdn_network::{
     services::visualization::{self, ConnectionInfo, Control, Event, VisualizationServiceBuilder},
     ExtIn, ExtOut,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::simulator::{node_to_addr, NetworkSimulator, TestNode};
 
 mod simulator;
 
-fn node_changed(node: NodeId, remotes: &[(NodeId, ConnId)]) -> ExtOut<(), Event> {
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
+struct NodeInfo(u8);
+
+fn node_changed(node: NodeId, info: NodeInfo, remotes: &[(NodeId, ConnId)]) -> ExtOut<(), Event<NodeInfo>> {
     ExtOut::ServicesEvent(
         visualization::SERVICE_ID.into(),
         (),
         Event::NodeChanged(
             node,
+            info,
             remotes
                 .iter()
                 .map(|(n, c)| ConnectionInfo {
@@ -33,10 +38,12 @@ fn node_changed(node: NodeId, remotes: &[(NodeId, ConnId)]) -> ExtOut<(), Event>
 fn service_visualization_simple() {
     let node1 = 1;
     let node2 = 2;
-    let mut sim = NetworkSimulator::<Control, Event, (), ()>::new(0);
+    let node1_info = NodeInfo(1);
+    let node2_info = NodeInfo(2);
+    let mut sim = NetworkSimulator::<Control<NodeInfo>, Event<NodeInfo>, (), ()>::new(0);
 
-    let _addr1 = sim.add_node(TestNode::new(node1, 1234, vec![Arc::new(VisualizationServiceBuilder::new(true))]));
-    let addr2 = sim.add_node(TestNode::new(node2, 1235, vec![Arc::new(VisualizationServiceBuilder::new(false))]));
+    let _addr1 = sim.add_node(TestNode::new(node1, 1234, vec![Arc::new(VisualizationServiceBuilder::new(node1_info.clone(), true))]));
+    let addr2 = sim.add_node(TestNode::new(node2, 1235, vec![Arc::new(VisualizationServiceBuilder::new(node2_info.clone(), false))]));
 
     sim.control(node1, ExtIn::ServicesControl(visualization::SERVICE_ID.into(), (), Control::Subscribe));
 
@@ -48,7 +55,10 @@ fn service_visualization_simple() {
     assert_eq!(sim.pop_res(), Some((node1, ExtOut::ServicesEvent(visualization::SERVICE_ID.into(), (), Event::GotAll(vec![])))));
     assert_eq!(
         sim.pop_res(),
-        Some((node1, ExtOut::ServicesEvent(visualization::SERVICE_ID.into(), (), Event::NodeChanged(node1, vec![]))))
+        Some((
+            node1,
+            ExtOut::ServicesEvent(visualization::SERVICE_ID.into(), (), Event::NodeChanged(node1, node1_info.clone(), vec![]))
+        ))
     );
 
     sim.control(node1, ExtIn::ConnectTo(addr2));
@@ -58,9 +68,9 @@ fn service_visualization_simple() {
         sim.process(1000);
     }
 
-    assert_eq!(sim.pop_res(), Some((node1, node_changed(node1, &[(node2, ConnId::from_out(0, 1000))]))));
+    assert_eq!(sim.pop_res(), Some((node1, node_changed(node1, node1_info, &[(node2, ConnId::from_out(0, 1000))]))));
 
-    assert_eq!(sim.pop_res(), Some((node1, node_changed(node2, &[(node1, ConnId::from_in(0, 1000))]))));
+    assert_eq!(sim.pop_res(), Some((node1, node_changed(node2, node2_info, &[(node1, ConnId::from_in(0, 1000))]))));
 }
 
 /// 3 nodes: Master <--> Master <--> Agent
@@ -72,11 +82,14 @@ fn service_visualization_multi_collectors() {
     let node1 = 1;
     let node2 = 2;
     let node3 = 3;
-    let mut sim = NetworkSimulator::<Control, Event, (), ()>::new(0);
+    let node1_info = NodeInfo(1);
+    let node2_info = NodeInfo(2);
+    let node3_info = NodeInfo(3);
+    let mut sim = NetworkSimulator::<Control<NodeInfo>, Event<NodeInfo>, (), ()>::new(0);
 
-    let _addr1 = sim.add_node(TestNode::new(node1, 1234, vec![Arc::new(VisualizationServiceBuilder::new(true))]));
-    let addr2 = sim.add_node(TestNode::new(node2, 1235, vec![Arc::new(VisualizationServiceBuilder::new(true))]));
-    let addr3 = sim.add_node(TestNode::new(node3, 1236, vec![Arc::new(VisualizationServiceBuilder::new(false))]));
+    let _addr1 = sim.add_node(TestNode::new(node1, 1234, vec![Arc::new(VisualizationServiceBuilder::new(node1_info.clone(), true))]));
+    let addr2 = sim.add_node(TestNode::new(node2, 1235, vec![Arc::new(VisualizationServiceBuilder::new(node2_info.clone(), true))]));
+    let addr3 = sim.add_node(TestNode::new(node3, 1236, vec![Arc::new(VisualizationServiceBuilder::new(node3_info.clone(), false))]));
 
     sim.control(node1, ExtIn::ServicesControl(visualization::SERVICE_ID.into(), (), Control::Subscribe));
     sim.control(node2, ExtIn::ServicesControl(visualization::SERVICE_ID.into(), (), Control::Subscribe));
@@ -90,11 +103,17 @@ fn service_visualization_multi_collectors() {
     assert_eq!(sim.pop_res(), Some((node2, ExtOut::ServicesEvent(visualization::SERVICE_ID.into(), (), Event::GotAll(vec![])))));
     assert_eq!(
         sim.pop_res(),
-        Some((node1, ExtOut::ServicesEvent(visualization::SERVICE_ID.into(), (), Event::NodeChanged(node1, vec![]))))
+        Some((
+            node1,
+            ExtOut::ServicesEvent(visualization::SERVICE_ID.into(), (), Event::NodeChanged(node1, node1_info.clone(), vec![]))
+        ))
     );
     assert_eq!(
         sim.pop_res(),
-        Some((node2, ExtOut::ServicesEvent(visualization::SERVICE_ID.into(), (), Event::NodeChanged(node2, vec![]))))
+        Some((
+            node2,
+            ExtOut::ServicesEvent(visualization::SERVICE_ID.into(), (), Event::NodeChanged(node2, node2_info.clone(), vec![]))
+        ))
     );
 
     sim.control(node1, ExtIn::ConnectTo(addr2));
@@ -118,9 +137,9 @@ fn service_visualization_multi_collectors() {
         }
     }
 
-    let get_key = |a: &ExtOut<(), Event>| -> u32 {
+    let get_key = |a: &ExtOut<(), Event<NodeInfo>>| -> u32 {
         match a {
-            ExtOut::ServicesEvent(_service, _, Event::NodeChanged(node, _)) => *node,
+            ExtOut::ServicesEvent(_service, _, Event::NodeChanged(node, _, _)) => *node,
             _ => panic!("Unexpected event: {:?}", a),
         }
     };
@@ -131,18 +150,18 @@ fn service_visualization_multi_collectors() {
     assert_eq!(
         node1_events,
         vec![
-            node_changed(node1, &[(node2, ConnId::from_out(0, 1000))]),
-            node_changed(node2, &[(node3, ConnId::from_out(0, 1000)), (node1, ConnId::from_in(0, 1000))]),
-            node_changed(node3, &[(node2, ConnId::from_in(0, 1000))]),
+            node_changed(node1, node1_info.clone(), &[(node2, ConnId::from_out(0, 1000))]),
+            node_changed(node2, node2_info.clone(), &[(node3, ConnId::from_out(0, 1000)), (node1, ConnId::from_in(0, 1000))]),
+            node_changed(node3, node3_info.clone(), &[(node2, ConnId::from_in(0, 1000))]),
         ]
     );
 
     assert_eq!(
         node2_events,
         vec![
-            node_changed(node1, &[(node2, ConnId::from_out(0, 1000))]),
-            node_changed(node2, &[(node3, ConnId::from_out(0, 1000)), (node1, ConnId::from_in(0, 1000))]),
-            node_changed(node3, &[(node2, ConnId::from_in(0, 1000))]),
+            node_changed(node1, node1_info, &[(node2, ConnId::from_out(0, 1000))]),
+            node_changed(node2, node2_info, &[(node3, ConnId::from_out(0, 1000)), (node1, ConnId::from_in(0, 1000))]),
+            node_changed(node3, node3_info, &[(node2, ConnId::from_in(0, 1000))]),
         ]
     );
 }
