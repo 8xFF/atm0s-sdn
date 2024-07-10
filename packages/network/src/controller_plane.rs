@@ -1,6 +1,7 @@
 use std::{collections::VecDeque, fmt::Debug, hash::Hash, sync::Arc};
 
 use atm0s_sdn_identity::NodeId;
+use atm0s_sdn_router::shadow::ShadowRouterHistory;
 use rand::RngCore;
 use sans_io_runtime::{return_if_none, return_if_some, TaskSwitcher, TaskSwitcherBranch, TaskSwitcherChild};
 
@@ -49,6 +50,7 @@ pub struct ControllerPlaneCfg<UserData, SC, SE, TC, TW> {
     pub authorization: Arc<dyn Authorization>,
     pub handshake_builder: Arc<dyn HandshakeBuilder>,
     pub random: Box<dyn RngCore + Send + Sync>,
+    pub history: Arc<dyn ShadowRouterHistory>,
 }
 
 pub struct ControllerPlane<UserData, SC, SE, TC, TW> {
@@ -60,6 +62,7 @@ pub struct ControllerPlane<UserData, SC, SE, TC, TW> {
     services: TaskSwitcherBranch<ServiceManager<UserData, SC, SE, TC, TW>, services::Output<UserData, SE, TW>>,
     switcher: TaskSwitcher,
     queue: VecDeque<Output<UserData, SE, TW>>,
+    history: Arc<dyn ShadowRouterHistory>,
 }
 
 impl<UserData, SC, SE, TC, TW> ControllerPlane<UserData, SC, SE, TC, TW>
@@ -89,6 +92,7 @@ where
             services: TaskSwitcherBranch::new(ServiceManager::new(cfg.services), TaskType::Service),
             switcher: TaskSwitcher::new(3), //3 types: Neighbours, Feature, Service
             queue: VecDeque::new(),
+            history: cfg.history,
         }
     }
 
@@ -102,6 +106,7 @@ where
             .input(&mut self.switcher)
             .on_shared_input(&self.service_ctx, now_ms, ServiceSharedInput::Tick(self.tick_count));
         self.tick_count += 1;
+        self.history.set_ts(now_ms);
     }
 
     pub fn on_event(&mut self, now_ms: u64, event: Input<UserData, SC, SE, TC>) {

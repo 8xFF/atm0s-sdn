@@ -132,6 +132,7 @@ impl<SC: Debug, SE: Debug, TC: Debug, TW: Debug> TestNode<SC, SE, TC, TW> {
         let authorization: Arc<StaticKeyAuthorization> = Arc::new(StaticKeyAuthorization::new("demo-key"));
         let handshake_builder = Arc::new(HandshakeBuilderXDA);
         let random = Box::new(StepRng::new(1000, 5));
+        let history = Arc::new(SingleThreadDataWorkerHistory::default());
         Self {
             node_id,
             worker: SdnWorker::new(SdnWorkerCfg {
@@ -143,12 +144,9 @@ impl<SC: Debug, SE: Debug, TC: Debug, TW: Debug> TestNode<SC, SE, TC, TW> {
                     authorization,
                     handshake_builder,
                     random,
+                    history: history.clone(),
                 }),
-                data: DataPlaneCfg {
-                    worker_id: 0,
-                    services,
-                    history: Arc::new(SingleThreadDataWorkerHistory::default()),
-                },
+                data: DataPlaneCfg { worker_id: 0, services, history },
             }),
         }
     }

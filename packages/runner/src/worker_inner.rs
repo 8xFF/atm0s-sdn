@@ -161,6 +161,7 @@ impl<UserData: 'static + Eq + Copy + Hash + Debug, SC: Debug, SE: Debug, TC: Deb
                         session: controller.session,
                         random: Box::new(OsRng::default()),
                         services: cfg.services.clone(),
+                        history: cfg.history.clone(),
                     }),
                     data: DataPlaneCfg {
                         worker_id: worker,
