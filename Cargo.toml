@@ -25,4 +25,4 @@ clap = { version = "4.4", features = ["derive", "env"] }
 mockall = "0.12.1"
 num_enum = "0.7.2"
 convert-enum = "0.1.0"
-sans-io-runtime = { git = "https://github.com/giangndm/sans-io-runtime.git", rev = "c781cef12b2a435b5e31a6ede69d301a23719452" }
+sans-io-runtime = "0.1.0"
