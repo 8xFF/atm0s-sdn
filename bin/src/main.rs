@@ -5,7 +5,7 @@ use atm0s_sdn::{
     services::visualization::ConnectionInfo,
 };
 use atm0s_sdn::{NodeAddr, NodeId, SdnControllerUtils};
-use atm0s_sdn::{SdnBuilder, SdnExtIn, SdnExtOut, SdnOwner};
+use atm0s_sdn::{SdnBuilder, SdnExtOut, SdnOwner};
 use clap::{Parser, ValueEnum};
 use futures_util::{SinkExt, StreamExt};
 #[cfg(not(feature = "embed"))]
@@ -103,7 +103,7 @@ struct Args {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct VisualNodeInfo {
-    livetime: u32,
+    uptime: u32,
 }
 type SC = visualization::Control<VisualNodeInfo>;
 type SE = visualization::Event<VisualNodeInfo>;
@@ -261,7 +261,7 @@ async fn main() {
         builder.add_seed(seed);
     }
 
-    let node_info = VisualNodeInfo { livetime: 0 };
+    let node_info = VisualNodeInfo { uptime: 0 };
     let mut controller = match args.backend {
         BackendType::Poll => builder.build::<PollBackend<SdnOwner, 128, 128>>(args.workers, node_info),
         BackendType::Polling => builder.build::<PollingBackend<SdnOwner, 128, 128>>(args.workers, node_info),
@@ -304,7 +304,7 @@ async fn main() {
                 visualization::SERVICE_ID.into(),
                 (),
                 visualization::Control::UpdateInfo(VisualNodeInfo {
-                    livetime: started_at.elapsed().as_secs() as u32,
+                    uptime: started_at.elapsed().as_secs() as u32,
                 }),
             );
         }

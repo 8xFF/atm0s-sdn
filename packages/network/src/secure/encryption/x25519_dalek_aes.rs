@@ -243,7 +243,7 @@ mod tests {
     }
 
     #[test]
-    fn multi_thread_encyption_simulate() {
+    fn multi_thread_encryption_simulate() {
         let mut client = HandshakeRequesterXDA::default();
         let mut server = HandshakeResponderXDA::default();
 

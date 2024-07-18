@@ -1,5 +1,5 @@
 //! Source Hint is a way we create a notification tree for sources and subscribers.
-//! Because if this method is not latency focus thefore it only used for low frequency message like Source Changed notification.
+//! Because if this method is not latency focus therefore it only used for low frequency message like Source Changed notification.
 //!
 //! The main idea is instead of a single node take care of all subscribers, which can cause overload and waste of resource,
 //! we create a tree of nodes that relay the message to the next hop.
@@ -15,7 +15,7 @@
 //!     - to next hop
 //!
 //! For ensure keep the tree clean and sync, each Subscriber and Source will resend message in each 1 seconds for keep alive.
-//! For solve the case which network chaged cause root node changed, a node receive Register or Subscribe will reply with a RegisterOk, SubscribeOk
+//! For solve the case which network changed cause root node changed, a node receive Register or Subscribe will reply with a RegisterOk, SubscribeOk
 //! for that, the sender will know the real next hop and only accept notification from selected node.
 
 use std::{

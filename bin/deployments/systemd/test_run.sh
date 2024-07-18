@@ -34,7 +34,7 @@ for server in "${!servers[@]}"; do
             continue
         fi
 
-        echo "Runing test from $node_id $name to $target_node_id $target_name, $public_ip, $target_public_ip"
+        echo "Running test from $node_id $name to $target_node_id $target_name, $public_ip, $target_public_ip"
 
         ssh -p $ssh_port "${servers[$server]}" "ping -c 1 $target_public_ip | jc --ping > /tmp/$node_id-$target_node_id-ping-public.json"
         ssh -p $ssh_port "${servers[$server]}" "ping -c 1 $target_vpn_ip | jc --ping > /tmp/$node_id-$target_node_id-ping-vpn.json"

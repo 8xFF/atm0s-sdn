@@ -49,7 +49,7 @@ We are working with some potential partners to integrate the network in real-wor
 
 ### Build-in features
 
-- [x] Router sync: automaticaly sync routing table between nodes for implementing Smart-Routing
+- [x] Router sync: automatically sync routing table between nodes for implementing Smart-Routing
 - [x] Pubsub: Publish/Subscribe
 - [x] DHT Multi-Map: Key-Value store
 - [x] Node Alias: Each node can have multiple alias
@@ -111,9 +111,9 @@ You can also enable vpn feature in each node by add `--vpn` flag. After that, ea
 
 ### Network optimizer
 
-We run 9 nodes accross Asia, Us, Europe with Digital Ocean and some local ISP in Vietnam and test the latency between each node. The result show that the network can speed up latency by maximum 48.5% compare to normal routing.
+We run 9 nodes across Asia, Us, Europe with Digital Ocean and some local ISP in Vietnam and test the latency between each node. The result show that the network can speed up latency by maximum 48.5% compare to normal routing.
 
-Maximun optimized:
+Maximum optimized:
 
 |      | US    | EU     | ASIA |
 | ---- | ----- | ------ | ---- |

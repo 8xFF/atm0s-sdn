@@ -20,7 +20,7 @@ enum State {
         last_pong_ms: u64,
         ping_seq: u64,
         stats: ConnectionStats,
-        /// handshake_req, hanshake_res, remote_session
+        /// handshake_req, handshake_res, remote_session
         handshake: Option<(Vec<u8>, Vec<u8>, u64)>,
     },
     Disconnecting {
@@ -405,8 +405,8 @@ mod tests {
 
     #[test]
     fn should_handle_outgoing_connect_correct() {
-        let mut client_hanshake = MockHandshakeBuilder::default();
-        client_hanshake.expect_requester().returning(move || {
+        let mut client_handshake = MockHandshakeBuilder::default();
+        client_handshake.expect_requester().returning(move || {
             let mut requester = MockHandshakeRequester::default();
             requester.expect_create_public_request().return_once(|| Ok(vec![1, 2, 3]));
             requester
@@ -415,7 +415,7 @@ mod tests {
             Box::new(requester)
         });
         let remote: SocketAddr = "1.2.3.4:1000".parse().expect("Should parse");
-        let mut client = NeighbourConnection::new_outgoing(Arc::new(client_hanshake), 1, 2, 1000, remote, 100);
+        let mut client = NeighbourConnection::new_outgoing(Arc::new(client_handshake), 1, 2, 1000, remote, 100);
         assert_eq!(
             client.pop_output(),
             Some(Output::Net(
@@ -446,8 +446,8 @@ mod tests {
 
     #[test]
     fn should_handle_incoming_connect_correct() {
-        let mut server_hanshake = MockHandshakeBuilder::default();
-        server_hanshake.expect_responder().returning(move || {
+        let mut server_handshake = MockHandshakeBuilder::default();
+        server_handshake.expect_responder().returning(move || {
             let mut responder = MockHandshakeResponder::default();
             responder
                 .expect_process_public_request()
@@ -455,7 +455,7 @@ mod tests {
             Box::new(responder)
         });
         let remote: SocketAddr = "1.2.3.4:1000".parse().expect("Should parse");
-        let mut server = NeighbourConnection::new_incoming(Arc::new(server_hanshake), 1, 2, 1000, remote, 100);
+        let mut server = NeighbourConnection::new_incoming(Arc::new(server_handshake), 1, 2, 1000, remote, 100);
         server.on_input(
             1100,
             2,
