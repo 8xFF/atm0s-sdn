@@ -79,22 +79,15 @@ pub struct TransportMsgHeader {
     pub from_node: Option<NodeId>,
 }
 
+impl Default for TransportMsgHeader {
+    fn default() -> Self {
+        Self::build(0, 0, RouteRule::Direct)
+    }
+}
+
 impl TransportMsgHeader {
     pub fn is_secure(first_byte: u8) -> bool {
         first_byte & 0b0010_0000 != 0
-    }
-
-    /// Builds a message with the given service_id, route rule.
-    pub fn new() -> Self {
-        Self {
-            version: 0,
-            encrypt: false,
-            route: RouteRule::Direct,
-            ttl: DEFAULT_MSG_TTL,
-            feature: 0,
-            meta: 0,
-            from_node: None,
-        }
     }
 
     pub fn build(feature: u8, meta: u8, route: RouteRule) -> Self {
@@ -331,7 +324,7 @@ impl TransportMsg {
     ///
     /// A new `TransportMsg` instance.
     pub fn build(feature: u8, meta: u8, route: RouteRule, payload: &[u8]) -> Self {
-        let header = TransportMsgHeader::new().set_feature(feature).set_meta(meta).set_route(route);
+        let header = TransportMsgHeader::build(feature, meta, route);
         let header_size = header.serialize_size();
         let mut buffer = vec![0; header_size + payload.len()];
         let header_size = header.to_bytes(&mut buffer[0..header_size]).expect("Should serialize header");
@@ -533,7 +526,7 @@ mod tests {
         assert_eq!(header.feature, 2);
         assert_eq!(header.meta, 3);
         assert_eq!(header.route, RouteRule::Direct);
-        assert_eq!(header.encrypt, true);
+        assert!(header.encrypt);
         assert_eq!(header.from_node, None);
     }
 
@@ -638,7 +631,7 @@ mod tests {
 
     #[test]
     fn msg_build_raw() {
-        let msg = TransportMsg::build_raw(TransportMsgHeader::new(), &[1, 2, 3, 4]);
+        let msg = TransportMsg::build_raw(TransportMsgHeader::default(), &[1, 2, 3, 4]);
         let buf = msg.get_buf().to_vec();
         let msg2 = TransportMsg::try_from(buf).expect("");
         assert_eq!(msg, msg2);

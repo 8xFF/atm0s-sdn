@@ -7,9 +7,6 @@ use atm0s_sdn_router::{shadow::ShadowRouter, RouteRule};
 use super::BufferMut;
 use super::{Buffer, ConnectionCtx, ConnectionEvent, ServiceId, TransportMsgHeader, Ttl};
 
-///
-///
-
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct NetIncomingMeta {
     pub source: Option<NodeId>,
@@ -114,7 +111,7 @@ pub enum FeatureOutput<Event, ToWorker> {
     NeighboursDisconnectFrom(NodeId),
 }
 
-impl<'a, Event, ToWorker> FeatureOutput<Event, ToWorker> {
+impl<Event, ToWorker> FeatureOutput<Event, ToWorker> {
     pub fn into2<Event2, ToWorker2>(self) -> FeatureOutput<Event2, ToWorker2>
     where
         Event2: From<Event>,
@@ -138,12 +135,9 @@ pub struct FeatureContext {
 
 pub trait Feature<Control, Event, ToController, ToWorker> {
     fn on_shared_input(&mut self, _ctx: &FeatureContext, _now: u64, _input: FeatureSharedInput);
-    fn on_input<'a>(&mut self, _ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'a, Control, ToController>);
+    fn on_input(&mut self, _ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'_, Control, ToController>);
     fn pop_output(&mut self, _ctx: &FeatureContext) -> Option<FeatureOutput<Event, ToWorker>>;
 }
-
-///
-///
 
 pub enum FeatureWorkerInput<'a, Control, ToWorker> {
     /// First bool is flag for broadcast or not

@@ -8,12 +8,14 @@ use crate::features::{FeaturesControl, FeaturesEvent};
 
 /// To manage the services we need to create an object that will hold the services
 pub struct ServiceWorkerManager<ServiceControl, ServiceEvent, ToController, ToWorker> {
+    #[allow(clippy::type_complexity)]
     services: [Option<Box<dyn ServiceWorker<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>>; 256],
     switcher: TaskSwitcher,
     _tmp: PhantomData<ServiceControl>,
 }
 
 impl<ServiceControl, ServiceEvent, ToController, ToWorker> ServiceWorkerManager<ServiceControl, ServiceEvent, ToController, ToWorker> {
+    #[allow(clippy::type_complexity)]
     pub fn new(services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>>) -> Self {
         let max_service_id = services.iter().map(|s| s.service_id()).max().unwrap_or(0);
         Self {
@@ -24,11 +26,9 @@ impl<ServiceControl, ServiceEvent, ToController, ToWorker> ServiceWorkerManager<
     }
 
     pub fn on_tick(&mut self, ctx: &ServiceWorkerCtx, now: u64, tick_count: u64) {
-        for service in self.services.iter_mut() {
-            if let Some(service) = service {
-                self.switcher.queue_flag_task(service.service_id() as usize);
-                service.on_tick(ctx, now, tick_count);
-            }
+        for service in self.services.iter_mut().flatten() {
+            self.switcher.queue_flag_task(service.service_id() as usize);
+            service.on_tick(ctx, now, tick_count);
         }
     }
 
@@ -47,11 +47,12 @@ impl<ServiceControl, ServiceEvent, ToController, ToWorker> ServiceWorkerManager<
         out
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn pop_output(&mut self, ctx: &ServiceWorkerCtx) -> Option<(ServiceId, ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController>)> {
         loop {
             let s = &mut self.switcher;
             let index = s.queue_current()?;
-            if let Some(Some(service)) = self.services.get_mut(index as usize) {
+            if let Some(Some(service)) = self.services.get_mut(index) {
                 if let Some(output) = s.queue_process(service.pop_output(ctx)) {
                     return Some(((index as u8).into(), output));
                 }

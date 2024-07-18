@@ -61,6 +61,7 @@ impl TryFrom<u8> for TaskType {
 
 pub struct ControllerPlaneCfg<SC, SE, TC, TW> {
     pub session: u64,
+    #[allow(clippy::type_complexity)]
     pub services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
     pub authorization: Arc<dyn Authorization>,
     pub handshake_builder: Arc<dyn HandshakeBuilder>,
@@ -182,6 +183,7 @@ impl<SC, SE, TC, TW> ControllerPlane<SC, SE, TC, TW> {
     }
 
     pub fn pop_output(&mut self, now_ms: u64) -> Option<Output<SE, TW>> {
+        #[allow(clippy::never_loop)]
         while let Some(out) = self.queue.pop_front() {
             return Some(out);
         }

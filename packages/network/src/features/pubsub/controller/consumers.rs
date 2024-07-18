@@ -93,7 +93,7 @@ impl RelayConsumers {
     }
 
     pub fn conn_disconnected(&mut self, _now: u64, remote: SocketAddr) {
-        if let Some(_) = self.remotes.remove(&remote) {
+        if self.remotes.remove(&remote).is_some() {
             self.queue.push_back(RelayWorkerControl::RouteDelRemote(remote));
         }
     }
@@ -131,7 +131,7 @@ mod tests {
         assert_eq!(consumers.pop_output(), None);
 
         assert_eq!(consumers.relay_dests(), (&[FeatureControlActor::Controller] as &[_], false));
-        assert_eq!(consumers.should_clear(), false);
+        assert!(!consumers.should_clear());
 
         consumers.on_local_unsub(100, FeatureControlActor::Controller);
 
@@ -139,7 +139,7 @@ mod tests {
         assert_eq!(consumers.pop_output(), None);
 
         assert_eq!(consumers.relay_dests(), (&[] as &[_], false));
-        assert_eq!(consumers.should_clear(), true);
+        assert!(consumers.should_clear());
     }
 
     #[test]
@@ -156,7 +156,7 @@ mod tests {
         assert_eq!(consumers.pop_output(), None);
 
         assert_eq!(consumers.relay_dests(), (&[FeatureControlActor::Controller, FeatureControlActor::Service(1.into())] as &[_], false));
-        assert_eq!(consumers.should_clear(), false);
+        assert!(!consumers.should_clear());
 
         consumers.on_local_unsub(100, FeatureControlActor::Controller);
 
@@ -164,7 +164,7 @@ mod tests {
         assert_eq!(consumers.pop_output(), None);
 
         assert_eq!(consumers.relay_dests(), (&[FeatureControlActor::Service(1.into())] as &[_], false));
-        assert_eq!(consumers.should_clear(), false);
+        assert!(!consumers.should_clear());
 
         consumers.on_local_unsub(100, FeatureControlActor::Service(1.into()));
 
@@ -172,7 +172,7 @@ mod tests {
         assert_eq!(consumers.pop_output(), None);
 
         assert_eq!(consumers.relay_dests(), (&[] as &[_], false));
-        assert_eq!(consumers.should_clear(), true);
+        assert!(consumers.should_clear());
     }
 
     #[test]
@@ -188,7 +188,7 @@ mod tests {
         assert_eq!(consumers.pop_output(), None);
 
         assert_eq!(consumers.relay_dests(), (&[] as &[_], true));
-        assert_eq!(consumers.should_clear(), false);
+        assert!(!consumers.should_clear());
 
         consumers.on_remote(100, remote, RelayControl::Unsub(1000));
 
@@ -197,7 +197,7 @@ mod tests {
         assert_eq!(consumers.pop_output(), None);
 
         assert_eq!(consumers.relay_dests(), (&[] as &[_], false));
-        assert_eq!(consumers.should_clear(), true);
+        assert!(consumers.should_clear());
     }
 
     #[test]
@@ -220,7 +220,7 @@ mod tests {
         assert_eq!(consumers.pop_output(), None);
 
         assert_eq!(consumers.relay_dests(), (&[] as &[_], true));
-        assert_eq!(consumers.should_clear(), false);
+        assert!(!consumers.should_clear());
 
         consumers.on_remote(100, remote1, RelayControl::Unsub(1000));
 
@@ -229,7 +229,7 @@ mod tests {
         assert_eq!(consumers.pop_output(), None);
 
         assert_eq!(consumers.relay_dests(), (&[] as &[_], true));
-        assert_eq!(consumers.should_clear(), false);
+        assert!(!consumers.should_clear());
 
         consumers.on_remote(200, remote2, RelayControl::Unsub(1001));
 
@@ -238,7 +238,7 @@ mod tests {
         assert_eq!(consumers.pop_output(), None);
 
         assert_eq!(consumers.relay_dests(), (&[] as &[_], false));
-        assert_eq!(consumers.should_clear(), true);
+        assert!(consumers.should_clear());
     }
 
     #[test]
@@ -259,7 +259,7 @@ mod tests {
         assert_eq!(consumers.pop_output(), None);
 
         assert_eq!(consumers.relay_dests(), (&[FeatureControlActor::Controller] as &[_], true));
-        assert_eq!(consumers.should_clear(), false);
+        assert!(!consumers.should_clear());
 
         consumers.on_remote(100, remote1, RelayControl::Unsub(1000));
 
@@ -268,7 +268,7 @@ mod tests {
         assert_eq!(consumers.pop_output(), None);
 
         assert_eq!(consumers.relay_dests(), (&[FeatureControlActor::Controller] as &[_], false));
-        assert_eq!(consumers.should_clear(), false);
+        assert!(!consumers.should_clear());
 
         consumers.on_local_unsub(200, FeatureControlActor::Controller);
 
@@ -276,7 +276,7 @@ mod tests {
         assert_eq!(consumers.pop_output(), None);
 
         assert_eq!(consumers.relay_dests(), (&[] as &[_], false));
-        assert_eq!(consumers.should_clear(), true);
+        assert!(consumers.should_clear());
     }
 
     #[test]

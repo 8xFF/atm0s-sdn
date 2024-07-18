@@ -165,7 +165,9 @@ impl MapSlot {
                 *self = MapSlot::Remote { key, version, value: Some(data) };
                 Some((ClientMapCommand::OnSetAck(key, source, version), true))
             }
-            MapSlot::Remote { version: old_version, .. } => {
+            MapSlot::Remote { version: old_version, .. } =>
+            {
+                #[allow(clippy::comparison_chain)]
                 if old_version.0 < version.0 {
                     *self = MapSlot::Remote { key, version, value: Some(data) };
                     Some((ClientMapCommand::OnSetAck(key, source, version), true))

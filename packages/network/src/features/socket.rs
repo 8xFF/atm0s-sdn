@@ -70,7 +70,7 @@ impl Default for SocketFeature {
 impl Feature<Control, Event, ToController, ToWorker> for SocketFeature {
     fn on_shared_input(&mut self, _ctx: &FeatureContext, _now: u64, _input: FeatureSharedInput) {}
 
-    fn on_input<'a>(&mut self, ctx: &FeatureContext, _now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
+    fn on_input(&mut self, ctx: &FeatureContext, _now_ms: u64, input: FeatureInput<'_, Control, ToController>) {
         match input {
             FeatureInput::Control(actor, control) => match control {
                 Control::Bind(port) => {
@@ -193,7 +193,7 @@ pub struct SocketFeatureWorker {
 
 impl SocketFeatureWorker {
     fn process_incoming(&self, from_node: NodeId, buf: &[u8], meta: u8) -> Option<FeatureWorkerOutput<'static, Control, Event, ToController>> {
-        let (pkt_src, pkt_dest, data) = deserialize_msg(&buf)?;
+        let (pkt_src, pkt_dest, data) = deserialize_msg(buf)?;
         let socket = self.sockets.get(&pkt_dest)?;
         if let Some((dest_node, dest_port)) = socket.target {
             if dest_node != from_node {
@@ -291,11 +291,11 @@ fn serialize_msg(buf: &mut [u8], src: u16, dest: u16, data: &[u8]) -> Option<usi
     }
     buf[..2].copy_from_slice(&src.to_be_bytes());
     buf[2..4].copy_from_slice(&dest.to_be_bytes());
-    buf[4..(4 + data.len())].copy_from_slice(&data);
+    buf[4..(4 + data.len())].copy_from_slice(data);
     Some(data.len() + 4)
 }
 
-fn deserialize_msg<'a>(buf: &'a [u8]) -> Option<(u16, u16, &'a [u8])> {
+fn deserialize_msg(buf: &[u8]) -> Option<(u16, u16, &[u8])> {
     if buf.len() < 4 {
         log::debug!("[SocketFeature] Invalid message length: {}, min is 4 bytes", buf.len());
         return None;

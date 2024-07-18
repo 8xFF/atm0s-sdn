@@ -77,11 +77,11 @@ impl NodeIdType for NodeId {
     fn layer(&self, index: u8) -> u8 {
         assert!(index <= 3);
 
-        (*self >> 8 * index) as u8
+        (*self >> (8 * index)) as u8
     }
 
     fn build(geo1: u8, geo2: u8, group: u8, index: u8) -> Self {
-        ((geo1 as u32) << 8 * 3) | ((geo2 as u32) << 8 * 2) | ((group as u32) << 8) | (index as u32)
+        ((geo1 as u32) << (8 * 3)) | ((geo2 as u32) << (8 * 2)) | ((group as u32) << 8) | (index as u32)
     }
 
     fn build2(zone_id: u16, group: u8, index: u8) -> Self {
@@ -89,11 +89,11 @@ impl NodeIdType for NodeId {
     }
 
     fn geo1(&self) -> u8 {
-        (*self >> 8 * 3) as u8
+        (*self >> (8 * 3)) as u8
     }
 
     fn geo2(&self) -> u8 {
-        (*self >> 8 * 2) as u8
+        (*self >> (8 * 2)) as u8
     }
 
     fn group(&self) -> u8 {

@@ -77,13 +77,18 @@ enum TaskType {
 
 enum QueueOutput<SC, SE, TC> {
     Feature(Features, FeatureWorkerOutput<'static, FeaturesControl, FeaturesEvent, FeaturesToController>),
+    // ASK: this one is never used.
+    // Please give inputs on wether to remove this.
+    // Did not want to simply silence the error
     Service(ServiceId, ServiceWorkerOutput<FeaturesControl, FeaturesEvent, SC, SE, TC>),
     Net(NetOutput<'static>),
 }
 
+type DataPlaneCfgService<SC, SE, TC, TW> = Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>;
+
 pub struct DataPlaneCfg<SC, SE, TC, TW> {
     pub worker_id: u16,
-    pub services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
+    pub services: Vec<DataPlaneCfgService<SC, SE, TC, TW>>,
     pub history: Arc<dyn ShadowRouterHistory>,
 }
 
@@ -125,11 +130,11 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
         self.feature_ctx.router.derive_action(&rule, source, relay_from)
     }
 
-    pub fn on_tick<'a>(&mut self, now_ms: u64) {
+    pub fn on_tick(&mut self, now_ms: u64) {
         log::trace!("[DataPlane] on_tick: {}", now_ms);
         self.switcher.queue_flag_all();
         self.features.on_tick(&mut self.feature_ctx, now_ms, self.tick_count);
-        self.services.on_tick(&mut self.service_ctx, now_ms, self.tick_count);
+        self.services.on_tick(&self.service_ctx, now_ms, self.tick_count);
         self.tick_count += 1;
     }
 
@@ -150,7 +155,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 }
                 ExtIn::ServicesControl(service, control) => {
                     let actor = ServiceControlActor::Worker(self.worker_id);
-                    let out = self.services.on_input(&mut self.service_ctx, now_ms, service, ServiceWorkerInput::Control(actor, control))?;
+                    let out = self.services.on_input(&self.service_ctx, now_ms, service, ServiceWorkerInput::Control(actor, control))?;
                     Some(self.convert_services(now_ms, service, out))
                 }
             },
@@ -177,7 +182,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                 Some(self.convert_features(now_ms, feature, out))
             }
             Input::Event(LogicEvent::Service(service, to)) => {
-                let out = self.services.on_input(&mut self.service_ctx, now_ms, service, ServiceWorkerInput::FromController(to))?;
+                let out = self.services.on_input(&self.service_ctx, now_ms, service, ServiceWorkerInput::FromController(to))?;
                 Some(self.convert_services(now_ms, service, out))
             }
             Input::Event(LogicEvent::ExtFeaturesEvent(worker, event)) => {
@@ -233,7 +238,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                     }
                 }
                 1 => {
-                    let out = self.services.pop_output(&mut self.service_ctx);
+                    let out = self.services.pop_output(&self.service_ctx);
                     if let Some((feature, out)) = self.switcher.queue_process(out) {
                         return Some(self.convert_services(now_ms, feature, out));
                     }
@@ -282,7 +287,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                     }
                 }
                 if remotes.is_empty() {
-                    self.pop_output(now_ms).map(|e| e.into())
+                    self.pop_output(now_ms)
                 } else {
                     self.build_send_to_multi_from_mut(now_ms, remotes, buf).map(|e: NetOutput<'_>| e.into())
                 }
@@ -345,7 +350,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
                     }
                 }
                 FeatureControlActor::Service(service) => {
-                    if let Some(out) = self.services.on_input(&mut self.service_ctx, now_ms, service, ServiceWorkerInput::FeatureEvent(event)) {
+                    if let Some(out) = self.services.on_input(&self.service_ctx, now_ms, service, ServiceWorkerInput::FeatureEvent(event)) {
                         self.convert_services(now_ms, service, out)
                     } else {
                         Output::Continue
@@ -438,7 +443,7 @@ impl<SC, SE, TC, TW> DataPlane<SC, SE, TC, TW> {
             for remote in remotes {
                 if let Some(conn) = self.conns.get_mut(&remote) {
                     let mut buf = BufferMut::build(&buf, 0, 12 + 16);
-                    if let Some(_) = conn.encrypt_if_need(now, &mut buf) {
+                    if conn.encrypt_if_need(now, &mut buf).is_some() {
                         let out = NetOutput::UdpPacket(remote, buf.freeze());
                         self.queue_output.push_back(QueueOutput::Net(out));
                     }

@@ -30,6 +30,7 @@ pub struct SdnBuilder<SC, SE, TC, TW> {
     tick_ms: u64,
     visualization_collector: bool,
     seeds: Vec<NodeAddr>,
+    #[allow(clippy::type_complexity)]
     services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
     #[cfg(feature = "vpn")]
     vpn_enable: bool,

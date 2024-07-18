@@ -36,7 +36,7 @@ impl FeatureWorkerManager {
             vpn: vpn::VpnFeatureWorker,
             dht_kv: dht_kv::DhtKvFeatureWorker::default(),
             pubsub: pubsub::PubSubFeatureWorker::new(),
-            alias: alias::AliasFeatureWorker::default(),
+            alias: alias::AliasFeatureWorker,
             socket: socket::SocketFeatureWorker::default(),
             switcher: TaskSwitcher::new(8),
         }
@@ -54,6 +54,7 @@ impl FeatureWorkerManager {
         self.socket.on_tick(ctx, now_ms, tick_count);
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn on_network_raw<'a>(
         &mut self,
         ctx: &mut FeatureWorkerContext,

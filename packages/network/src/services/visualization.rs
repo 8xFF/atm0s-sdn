@@ -65,12 +65,12 @@ pub struct VisualizationService<SC, SE, TC, TW> {
     _tmp: std::marker::PhantomData<(SC, TC, TW)>,
 }
 
-impl<SC, SE, TC, TW> VisualizationService<SC, SE, TC, TW>
+impl<SC, SE, TC, TW> Default for VisualizationService<SC, SE, TC, TW>
 where
     SC: From<Control> + TryInto<Control>,
     SE: From<Event> + TryInto<Event>,
 {
-    pub fn new() -> Self {
+    fn default() -> Self {
         Self {
             broadcast_seq: 0,
             last_ping: 0,
@@ -81,7 +81,13 @@ where
             _tmp: std::marker::PhantomData,
         }
     }
+}
 
+impl<SC, SE, TC, TW> VisualizationService<SC, SE, TC, TW>
+where
+    SC: From<Control> + TryInto<Control>,
+    SE: From<Event> + TryInto<Event>,
+{
     fn fire_event(&mut self, event: Event) {
         for sub in self.subscribers.iter() {
             self.queue.push_back(ServiceOutput::Event(*sub, event.clone().into()));
@@ -252,7 +258,7 @@ where
     }
 
     fn create(&self) -> Box<dyn Service<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>> {
-        Box::new(VisualizationService::new())
+        Box::new(VisualizationService::default())
     }
 
     fn create_worker(&self) -> Box<dyn ServiceWorker<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>> {
@@ -308,7 +314,7 @@ mod test {
     fn agent_should_prediotic_sending_snapshot() {
         let node_id = 1;
         let ctx = ServiceCtx { node_id, session: 0 };
-        let mut service = VisualizationService::<Control, Event, (), ()>::new();
+        let mut service = VisualizationService::<Control, Event, (), ()>::default();
 
         assert_eq!(service.pop_output(&ctx), None);
 
@@ -336,7 +342,7 @@ mod test {
     #[test]
     fn agent_handle_connection_event() {
         let node_id = 1;
-        let mut service = VisualizationService::<Control, Event, (), ()>::new();
+        let mut service = VisualizationService::<Control, Event, (), ()>::default();
 
         let node2 = 2;
         let node3 = 3;
@@ -357,7 +363,7 @@ mod test {
     fn collector_handle_snapshot_correct() {
         let node_id = 1;
         let ctx = ServiceCtx { node_id, session: 0 };
-        let mut service = VisualizationService::<Control, Event, (), ()>::new();
+        let mut service = VisualizationService::<Control, Event, (), ()>::default();
 
         let node2 = 2;
 

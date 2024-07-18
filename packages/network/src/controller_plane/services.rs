@@ -8,10 +8,12 @@ use crate::features::{FeaturesControl, FeaturesEvent};
 
 /// To manage the services we need to create an object that will hold the services
 pub struct ServiceManager<ServiceControl, ServiceEvent, ToController, ToWorker> {
+    #[allow(clippy::type_complexity)]
     services: [Option<Box<dyn Service<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>>; 256],
     switcher: TaskSwitcher,
 }
 
+#[allow(clippy::type_complexity)]
 impl<ServiceControl, ServiceEvent, ToController, ToWorker> ServiceManager<ServiceControl, ServiceEvent, ToController, ToWorker> {
     pub fn new(services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>>) -> Self {
         let max_service_id = services.iter().map(|s| s.service_id()).max().unwrap_or(0);
@@ -22,20 +24,16 @@ impl<ServiceControl, ServiceEvent, ToController, ToWorker> ServiceManager<Servic
     }
 
     pub fn on_shared_input(&mut self, ctx: &ServiceCtx, now: u64, input: ServiceSharedInput) {
-        for service in self.services.iter_mut() {
-            if let Some(service) = service {
-                self.switcher.queue_flag_task(service.service_id() as usize);
-                service.on_shared_input(ctx, now, input.clone());
-            }
+        for service in self.services.iter_mut().flatten() {
+            self.switcher.queue_flag_task(service.service_id() as usize);
+            service.on_shared_input(ctx, now, input.clone());
         }
     }
 
     pub fn on_input(&mut self, ctx: &ServiceCtx, now: u64, id: ServiceId, input: ServiceInput<FeaturesEvent, ServiceControl, ToController>) {
-        if let Some(service) = self.services.get_mut(*id as usize) {
-            if let Some(service) = service {
-                self.switcher.queue_flag_task(*id as usize);
-                service.on_input(ctx, now, input);
-            }
+        if let Some(Some(service)) = self.services.get_mut(*id as usize) {
+            self.switcher.queue_flag_task(*id as usize);
+            service.on_input(ctx, now, input);
         }
     }
 
@@ -45,7 +43,7 @@ impl<ServiceControl, ServiceEvent, ToController, ToWorker> ServiceManager<Servic
             let index = s.queue_current()? as u8;
             if let Some(Some(service)) = self.services.get_mut(index as usize) {
                 if let Some(output) = s.queue_process(service.pop_output(ctx)) {
-                    return Some(((index as u8).into(), output));
+                    return Some((index.into(), output));
                 }
             } else {
                 s.queue_process::<()>(None);

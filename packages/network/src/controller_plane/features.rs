@@ -33,14 +33,14 @@ impl FeatureManager {
             router_sync: router_sync::RouterSyncFeature::new(node, services),
             vpn: vpn::VpnFeature::default(),
             dht_kv: dht_kv::DhtKvFeature::new(node, session),
-            pubsub: pubsub::PubSubFeature::new(),
+            pubsub: pubsub::PubSubFeature::default(),
             alias: alias::AliasFeature::default(),
             socket: socket::SocketFeature::default(),
             switcher: TaskSwitcher::new(8),
         }
     }
 
-    pub fn on_shared_input<'a>(&mut self, ctx: &FeatureContext, now_ms: u64, input: FeatureSharedInput) {
+    pub fn on_shared_input(&mut self, ctx: &FeatureContext, now_ms: u64, input: FeatureSharedInput) {
         self.switcher.queue_flag_all();
         self.data.on_shared_input(ctx, now_ms, input.clone());
         self.neighbours.on_shared_input(ctx, now_ms, input.clone());
@@ -52,7 +52,7 @@ impl FeatureManager {
         self.socket.on_shared_input(ctx, now_ms, input);
     }
 
-    pub fn on_input<'a>(&mut self, ctx: &FeatureContext, now_ms: u64, feature: Features, input: FeaturesInput<'a>) {
+    pub fn on_input(&mut self, ctx: &FeatureContext, now_ms: u64, feature: Features, input: FeaturesInput<'_>) {
         self.switcher.queue_flag_task(feature as usize);
         match input {
             FeatureInput::FromWorker(to) => match to {
@@ -98,7 +98,7 @@ impl FeatureManager {
         }
     }
 
-    pub fn pop_output<'a>(&mut self, ctx: &FeatureContext) -> Option<(Features, FeaturesOutput)> {
+    pub fn pop_output(&mut self, ctx: &FeatureContext) -> Option<(Features, FeaturesOutput)> {
         let s = &mut self.switcher;
         loop {
             match (s.queue_current()? as u8).try_into().ok()? {

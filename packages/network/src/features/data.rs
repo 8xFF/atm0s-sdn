@@ -44,26 +44,23 @@ pub struct DataFeature {
 
 impl Feature<Control, Event, ToController, ToWorker> for DataFeature {
     fn on_shared_input(&mut self, _ctx: &FeatureContext, now: u64, input: FeatureSharedInput) {
-        match input {
-            FeatureSharedInput::Tick(_) => {
-                //clean timeout ping
-                let mut timeout_list = Vec::new();
-                for (id, (sent_ms, _, _)) in self.waits.iter() {
-                    if now >= sent_ms + 2000 {
-                        timeout_list.push(*id);
-                    }
-                }
-
-                for id in timeout_list {
-                    let (_, actor, dest) = self.waits.remove(&id).expect("Should have");
-                    self.queue.push_back(FeatureOutput::Event(actor, Event::Pong(dest, None)));
+        if let FeatureSharedInput::Tick(_) = input {
+            //clean timeout ping
+            let mut timeout_list = Vec::new();
+            for (id, (sent_ms, _, _)) in self.waits.iter() {
+                if now >= sent_ms + 2000 {
+                    timeout_list.push(*id);
                 }
             }
-            _ => {}
+
+            for id in timeout_list {
+                let (_, actor, dest) = self.waits.remove(&id).expect("Should have");
+                self.queue.push_back(FeatureOutput::Event(actor, Event::Pong(dest, None)));
+            }
         }
     }
 
-    fn on_input<'a>(&mut self, ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
+    fn on_input(&mut self, ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'_, Control, ToController>) {
         match input {
             FeatureInput::Control(actor, control) => match control {
                 Control::Ping(dest) => {
@@ -78,7 +75,7 @@ impl Feature<Control, Event, ToController, ToWorker> for DataFeature {
                     })
                     .expect("should work");
                     let rule = RouteRule::ToNode(dest);
-                    self.queue.push_back(FeatureOutput::SendRoute(rule, NetOutgoingMeta::default(), msg.into()));
+                    self.queue.push_back(FeatureOutput::SendRoute(rule, NetOutgoingMeta::default(), msg));
                 }
                 Control::SendRule(rule, ttl, data) => {
                     let data = match actor {
@@ -87,7 +84,7 @@ impl Feature<Control, Event, ToController, ToWorker> for DataFeature {
                         FeatureControlActor::Service(service) => DataMsg::DataService { service: *service, data },
                     };
                     let msg = bincode::serialize(&data).expect("should work");
-                    self.queue.push_back(FeatureOutput::SendRoute(rule, ttl, msg.into()));
+                    self.queue.push_back(FeatureOutput::SendRoute(rule, ttl, msg));
                 }
             },
             FeatureInput::Net(_, meta, buf) | FeatureInput::Local(meta, buf) => {
@@ -104,7 +101,7 @@ impl Feature<Control, Event, ToController, ToWorker> for DataFeature {
                             log::info!("[DataFeature] Got ping from: {}", from);
                             let msg = bincode::serialize(&DataMsg::Pong { id, ts }).expect("should work");
                             let rule = RouteRule::ToNode(from);
-                            self.queue.push_back(FeatureOutput::SendRoute(rule, NetOutgoingMeta::default(), msg.into()));
+                            self.queue.push_back(FeatureOutput::SendRoute(rule, NetOutgoingMeta::default(), msg));
                         }
                         DataMsg::DataController { data } => {
                             self.queue.push_back(FeatureOutput::Event(FeatureControlActor::Controller, Event::Recv(meta, data)));

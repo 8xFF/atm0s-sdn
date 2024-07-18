@@ -42,7 +42,7 @@ pub trait Service<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, 
     fn service_id(&self) -> u8;
     fn service_name(&self) -> &str;
 
-    fn on_shared_input<'a>(&mut self, _ctx: &ServiceCtx, _now: u64, _input: ServiceSharedInput);
+    fn on_shared_input(&mut self, _ctx: &ServiceCtx, _now: u64, _input: ServiceSharedInput);
     fn on_input(&mut self, _ctx: &ServiceCtx, _now: u64, input: ServiceInput<FeaturesEvent, ServiceControl, ToController>);
     fn pop_output(&mut self, _ctx: &ServiceCtx) -> Option<ServiceOutput<FeaturesControl, ServiceEvent, ToWorker>>;
 }

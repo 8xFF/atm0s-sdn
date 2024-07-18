@@ -9,7 +9,7 @@ pub struct Path(pub ConnId, pub Metric);
 
 impl PartialOrd for Path {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.1.partial_cmp(&other.1)
+        Some(self.cmp(other))
     }
 }
 

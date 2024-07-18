@@ -33,8 +33,8 @@ vpn = ["sans-io-runtime/tun-tap", "atm0s-sdn-network/vpn"]
 
 [[example]]
 name = "simple_node"
-features = ["vpn"]
+# features = ["vpn"]
 
 [[example]]
 name = "simple_kv"
-features = []
+# features = []

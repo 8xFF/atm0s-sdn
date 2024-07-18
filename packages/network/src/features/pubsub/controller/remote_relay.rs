@@ -116,8 +116,8 @@ impl GenericRelay for RemoteRelay {
                 Self::pop_consumers_out(consumers, &mut self.queue);
                 // If remote is next, this will not be consumers, because it will cause loop deps
                 if *next == remote {
-                    let consumers = std::mem::replace(consumers, Default::default());
-                    let feedbacks = std::mem::replace(feedbacks, Default::default());
+                    let consumers = std::mem::take(consumers);
+                    let feedbacks = std::mem::take(feedbacks);
                     self.state = RelayState::Binding { consumers, feedbacks };
                     self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendSub(self.uuid, None)));
                 } else if consumers.should_clear() {
@@ -230,8 +230,8 @@ impl GenericRelay for RemoteRelay {
                     RelayState::Binding { consumers, feedbacks } => {
                         log::info!("[Relay] SubOK for binding relay {} from {remote} => switched to Bound with this remote", self.uuid);
                         self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteSetSource(remote)));
-                        let consumers = std::mem::replace(consumers, Default::default());
-                        let feedbacks = std::mem::replace(feedbacks, Default::default());
+                        let consumers = std::mem::take(consumers);
+                        let feedbacks = std::mem::take(feedbacks);
                         self.state = RelayState::Bound {
                             next: remote,
                             consumers,
@@ -267,12 +267,9 @@ impl GenericRelay for RemoteRelay {
                     log::warn!("[Relay] UnsubOK for wrong relay session {uuid} vs {}", uuid);
                     return;
                 }
-                match &mut self.state {
-                    RelayState::Unbinding { .. } => {
-                        log::info!("[Relay] UnsubOK for unbinding relay {} from {remote} => switched to Unbound", self.uuid);
-                        self.state = RelayState::Unbound;
-                    }
-                    _ => {}
+                if let RelayState::Unbinding { .. } = &mut self.state {
+                    log::info!("[Relay] UnsubOK for unbinding relay {} from {remote} => switched to Unbound", self.uuid);
+                    self.state = RelayState::Unbound;
                 }
             }
             RelayControl::RouteChanged(uuid) => {
@@ -280,17 +277,14 @@ impl GenericRelay for RemoteRelay {
                     log::warn!("[Relay] RouteChanged for wrong relay session {uuid} vs {}", uuid);
                     return;
                 }
-                match &mut self.state {
-                    RelayState::Bound { consumers, .. } => {
-                        let (locals, has_remote) = consumers.relay_dests();
-                        if has_remote {
-                            self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendRouteChanged));
-                        }
-                        for actor in locals {
-                            self.queue.push_back(GenericRelayOutput::RouteChanged(*actor));
-                        }
+                if let RelayState::Bound { consumers, .. } = &mut self.state {
+                    let (locals, has_remote) = consumers.relay_dests();
+                    if has_remote {
+                        self.queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendRouteChanged));
                     }
-                    _ => {}
+                    for actor in locals {
+                        self.queue.push_back(GenericRelayOutput::RouteChanged(*actor));
+                    }
                 }
             }
             RelayControl::Feedback(fb) => match &mut self.state {

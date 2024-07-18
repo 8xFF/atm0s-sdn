@@ -28,7 +28,7 @@ pub struct VpnFeature {}
 impl Feature<Control, Event, ToController, ToWorker> for VpnFeature {
     fn on_shared_input(&mut self, _ctx: &FeatureContext, _now: u64, _input: crate::base::FeatureSharedInput) {}
 
-    fn on_input<'a>(&mut self, _ctx: &FeatureContext, _now_ms: u64, _input: FeatureInput<'a, Control, ToController>) {}
+    fn on_input(&mut self, _ctx: &FeatureContext, _now_ms: u64, _input: FeatureInput<'_, Control, ToController>) {}
 
     fn pop_output<'a>(&mut self, _ctx: &FeatureContext) -> Option<FeatureOutput<Event, ToWorker>> {
         None

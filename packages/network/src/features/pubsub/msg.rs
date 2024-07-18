@@ -66,10 +66,7 @@ pub enum RelayControl {
 
 impl RelayControl {
     pub fn should_create(&self) -> bool {
-        match self {
-            RelayControl::Sub(_) => true,
-            _ => false,
-        }
+        matches!(self, RelayControl::Sub(_))
     }
 }
 
@@ -97,15 +94,13 @@ pub enum SourceHint {
 
 impl SourceHint {
     pub fn should_create(&self) -> bool {
-        match self {
-            SourceHint::Register { .. } => true,
-            SourceHint::Subscribe(_) => true,
-            _ => false,
-        }
+        matches!(self, SourceHint::Register { .. } | SourceHint::Subscribe(_))
     }
 }
 
 pub enum PubsubMessageError {
+    // Ask this one is never used. Please give inputs on how to use this.
+    // Did not want to simply silence the error
     TransportError(TransportMsgHeaderError),
     DeserializeError,
 }

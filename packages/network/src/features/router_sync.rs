@@ -46,11 +46,7 @@ impl RouterSyncFeature {
 
     fn send_sync_to(router: &Router, queue: &mut VecDeque<FeatureOutput<Event, ToWorker>>, conn: ConnId, node: NodeId) {
         let sync = router.create_sync(node);
-        queue.push_back(FeatureOutput::SendDirect(
-            conn,
-            NetOutgoingMeta::new(false, 1.into(), 0, true),
-            bincode::serialize(&sync).expect("").into(),
-        ));
+        queue.push_back(FeatureOutput::SendDirect(conn, NetOutgoingMeta::new(false, 1.into(), 0, true), bincode::serialize(&sync).expect("")));
     }
 }
 
@@ -95,24 +91,21 @@ impl Feature<Control, Event, ToController, ToWorker> for RouterSyncFeature {
         }
     }
 
-    fn on_input<'a>(&mut self, _ctx: &FeatureContext, _now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
-        match input {
-            FeatureInput::Net(ctx, meta, buf) => {
-                if !meta.secure {
-                    log::warn!("[RouterSync] reject unsecure message");
-                    return;
-                }
-                if let Some((_node, _remote, metric)) = self.conns.get(&ctx.conn) {
-                    if let Ok(sync) = bincode::deserialize::<RouterSync>(&buf) {
-                        self.router.apply_sync(ctx.conn, metric.clone(), sync);
-                    } else {
-                        log::warn!("[RouterSync] Receive invalid sync from {}", ctx.remote);
-                    }
-                } else {
-                    log::warn!("[RouterSync] Receive sync from unknown connection {}", ctx.remote);
-                }
+    fn on_input(&mut self, _ctx: &FeatureContext, _now_ms: u64, input: FeatureInput<'_, Control, ToController>) {
+        if let FeatureInput::Net(ctx, meta, buf) = input {
+            if !meta.secure {
+                log::warn!("[RouterSync] reject unsecure message");
+                return;
             }
-            _ => {}
+            if let Some((_node, _remote, metric)) = self.conns.get(&ctx.conn) {
+                if let Ok(sync) = bincode::deserialize::<RouterSync>(&buf) {
+                    self.router.apply_sync(ctx.conn, metric.clone(), sync);
+                } else {
+                    log::warn!("[RouterSync] Receive invalid sync from {}", ctx.remote);
+                }
+            } else {
+                log::warn!("[RouterSync] Receive sync from unknown connection {}", ctx.remote);
+            }
         }
     }
 
@@ -190,15 +183,15 @@ mod tests {
         let mut table_sync = [None, None, None, None];
 
         for _ in 0..NUMBER_SERVICES {
-            service_sync.0.push((rand::random(), Metric::new(0, (0..NUMBER_NODE_PATH).into_iter().collect::<Vec<_>>(), 0)));
+            service_sync.0.push((rand::random(), Metric::new(0, (0..NUMBER_NODE_PATH).collect::<Vec<_>>(), 0)));
         }
 
-        for i in 0..4 {
+        for item in &mut table_sync {
             let mut table = TableSync(vec![]);
             for _ in 0..NUMBER_NEIGHBORS {
-                table.0.push((rand::random(), Metric::new(0, (0..NUMBER_NODE_PATH).into_iter().collect::<Vec<_>>(), 0)));
+                table.0.push((rand::random(), Metric::new(0, (0..NUMBER_NODE_PATH).collect::<Vec<_>>(), 0)));
             }
-            table_sync[i] = Some(table);
+            *item = Some(table);
         }
 
         let sync = RouterSync(service_sync, table_sync);

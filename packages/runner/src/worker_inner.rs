@@ -44,6 +44,8 @@ pub struct ControllerCfg {
     pub session: u64,
     pub auth: Arc<dyn Authorization>,
     pub handshake: Arc<dyn HandshakeBuilder>,
+    // ASK: Why is this never used?
+    // This is redefined in SdnInnerCfg below
     pub tick_ms: u64,
     #[cfg(feature = "vpn")]
     pub vpn_tun_device: Option<sans_io_runtime::backend::tun::TunDevice>,
@@ -51,9 +53,11 @@ pub struct ControllerCfg {
 
 pub struct SdnInnerCfg<SC, SE, TC, TW> {
     pub node_id: NodeId,
+    // ASK: Maybe we should somehow use controller.unwrap().tick_ms?
     pub tick_ms: u64,
     pub udp_port: u16,
     pub controller: Option<ControllerCfg>,
+    #[allow(clippy::type_complexity)]
     pub services: Vec<Arc<dyn ServiceBuilder<FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
     pub history: Arc<dyn ShadowRouterHistory>,
     #[cfg(feature = "vpn")]
@@ -78,9 +82,11 @@ pub struct SdnWorkerInner<SC, SE, TC, TW> {
     udp_backend_slot: Option<usize>,
     #[cfg(feature = "vpn")]
     tun_backend_slot: Option<usize>,
+    #[allow(clippy::type_complexity)]
     queue: VecDeque<WorkerInnerOutput<'static, SdnOwner, SdnExtOut<SE>, SdnChannel, SdnEvent<SC, SE, TC, TW>, SdnSpawnCfg>>,
 }
 
+#[allow(clippy::type_complexity)]
 impl<SC: Debug, SE: Debug, TC: Debug, TW: Debug> SdnWorkerInner<SC, SE, TC, TW> {
     fn convert_output<'a>(
         &mut self,

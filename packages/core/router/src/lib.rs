@@ -21,9 +21,9 @@ impl ServiceBroadcastLevel {
     }
 }
 
-impl Into<u8> for ServiceBroadcastLevel {
-    fn into(self) -> u8 {
-        match self {
+impl From<ServiceBroadcastLevel> for u8 {
+    fn from(val: ServiceBroadcastLevel) -> Self {
+        match val {
             ServiceBroadcastLevel::Global => 0,
             ServiceBroadcastLevel::Geo1 => 1,
             ServiceBroadcastLevel::Geo2 => 2,

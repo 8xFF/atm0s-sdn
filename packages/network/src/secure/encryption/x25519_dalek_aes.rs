@@ -87,13 +87,13 @@ impl EncryptorXDA {
         let key = Key::<Aes256Gcm>::from_slice(shared_key);
         Self {
             key: shared_key.to_vec(),
-            aes: Aes256Gcm::new(&key),
+            aes: Aes256Gcm::new(key),
         }
     }
 }
 
 impl Encryptor for EncryptorXDA {
-    fn encrypt<'a>(&mut self, now_ms: u64, buf: &mut BufferMut<'a>) -> Result<(), EncryptionError> {
+    fn encrypt(&mut self, now_ms: u64, buf: &mut BufferMut<'_>) -> Result<(), EncryptionError> {
         let mut nonce = Aes256Gcm::generate_nonce(&mut OsRng);
         nonce[4..].copy_from_slice(&now_ms.to_be_bytes());
         self.aes.encrypt_in_place(&nonce, &[], &mut BufferMut2(buf)).map_err(|_| EncryptionError::EncryptFailed)?;
@@ -119,7 +119,7 @@ impl DecryptorXDA {
         let key = Key::<Aes256Gcm>::from_slice(shared_key);
         Self {
             key: shared_key.to_vec(),
-            aes: Aes256Gcm::new(&key),
+            aes: Aes256Gcm::new(key),
         }
     }
 }
@@ -131,7 +131,7 @@ impl Debug for DecryptorXDA {
 }
 
 impl Decryptor for DecryptorXDA {
-    fn decrypt<'a>(&mut self, now_ms: u64, data: &mut BufferMut<'a>) -> Result<(), DecryptionError> {
+    fn decrypt(&mut self, now_ms: u64, data: &mut BufferMut<'_>) -> Result<(), DecryptionError> {
         let nonce = if let Some(nonce) = data.pop_back(12) {
             nonce.to_vec()
         } else {

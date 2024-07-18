@@ -52,9 +52,9 @@ impl Feature<Control, Event, ToController, ToWorker> for NeighboursFeature {
         }
     }
 
-    fn on_input<'a>(&mut self, _ctx: &FeatureContext, _now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
-        match input {
-            FeatureInput::Control(actor, control) => match control {
+    fn on_input(&mut self, _ctx: &FeatureContext, _now_ms: u64, input: FeatureInput<'_, Control, ToController>) {
+        if let FeatureInput::Control(actor, control) = input {
+            match control {
                 Control::Sub => {
                     if !self.subs.contains(&actor) {
                         log::info!("[Neighbours] Sub to neighbours from {:?}", actor);
@@ -73,8 +73,7 @@ impl Feature<Control, Event, ToController, ToWorker> for NeighboursFeature {
                 Control::DisconnectFrom(node) => {
                     self.output.push_back(FeatureOutput::NeighboursDisconnectFrom(node));
                 }
-            },
-            _ => {}
+            }
         }
     }
 

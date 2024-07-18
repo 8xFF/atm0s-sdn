@@ -46,6 +46,7 @@ pub trait GenericRelay {
     fn pop_output(&mut self) -> Option<GenericRelayOutput>;
 }
 
+#[derive(Default)]
 pub struct PubSubFeature {
     relays: HashMap<RelayId, Box<dyn GenericRelay>>,
     source_hints: HashMap<ChannelId, SourceHintLogic>,
@@ -53,14 +54,6 @@ pub struct PubSubFeature {
 }
 
 impl PubSubFeature {
-    pub fn new() -> Self {
-        Self {
-            relays: HashMap::new(),
-            source_hints: HashMap::new(),
-            queue: VecDeque::new(),
-        }
-    }
-
     fn get_relay(&mut self, ctx: &FeatureContext, relay_id: RelayId, auto_create: bool) -> Option<&mut Box<dyn GenericRelay>> {
         if !self.relays.contains_key(&relay_id) && auto_create {
             let relay: Box<dyn GenericRelay> = if ctx.node_id == relay_id.1 {
@@ -183,7 +176,7 @@ impl PubSubFeature {
     }
 
     fn on_remote_relay_control(&mut self, ctx: &FeatureContext, now: u64, remote: SocketAddr, relay_id: RelayId, control: RelayControl) {
-        if let Some(_) = self.get_relay(ctx, relay_id, control.should_create()) {
+        if self.get_relay(ctx, relay_id, control.should_create()).is_some() {
             let relay: &mut Box<dyn GenericRelay> = self.relays.get_mut(&relay_id).expect("Should have relay");
             log::debug!("[PubSubFeatureController] Remote control for {:?} from {:?}: {:?}", relay_id, remote, control);
             relay.on_remote(now, remote, control);
@@ -219,7 +212,7 @@ impl PubSubFeature {
                 GenericRelayOutput::Feedback(actors, fb) => {
                     log::debug!("[PubsubController] Feedback for {:?} {:?} to actors {:?}", relay_id, fb, actors);
                     for actor in actors {
-                        queue.push_back(FeatureOutput::Event(actor, Event(relay_id.0, ChannelEvent::FeedbackData(fb.clone()))));
+                        queue.push_back(FeatureOutput::Event(actor, Event(relay_id.0, ChannelEvent::FeedbackData(fb))));
                     }
                 }
             };
@@ -287,19 +280,18 @@ impl Feature<Control, Event, ToController, ToWorker> for PubSubFeature {
                     self.pop_single_source_hint(ctx, now, channel);
                 }
             }
-            FeatureSharedInput::Connection(event) => match event {
-                ConnectionEvent::Disconnected(ctx) => {
+            FeatureSharedInput::Connection(event) => {
+                if let ConnectionEvent::Disconnected(ctx) = event {
                     for (relay_id, relay) in self.relays.iter_mut() {
                         relay.conn_disconnected(now, ctx.remote);
                         Self::pop_single_relay(*relay_id, relay, &mut self.queue);
                     }
                 }
-                _ => {}
-            },
+            }
         }
     }
 
-    fn on_input<'a>(&mut self, ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'a, Control, ToController>) {
+    fn on_input(&mut self, ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'_, Control, ToController>) {
         match input {
             FeatureInput::FromWorker(ToController::RelayControl(remote, relay_id, control)) => {
                 self.on_remote_relay_control(ctx, now_ms, remote, relay_id, control);
