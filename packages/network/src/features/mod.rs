@@ -12,7 +12,7 @@ pub mod vpn;
 /// This is a helper struct to help FeatureManager to manage the features
 ///
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, num_enum::TryFromPrimitive, num_enum::IntoPrimitive)]
 #[repr(u8)]
 pub enum Features {
     Neighbours = neighbours::FEATURE_ID,
@@ -23,24 +23,6 @@ pub enum Features {
     PubSub = pubsub::FEATURE_ID,
     Alias = alias::FEATURE_ID,
     Socket = socket::FEATURE_ID,
-}
-
-impl TryFrom<u8> for Features {
-    type Error = ();
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            neighbours::FEATURE_ID => Ok(Features::Neighbours),
-            data::FEATURE_ID => Ok(Features::Data),
-            router_sync::FEATURE_ID => Ok(Features::RouterSync),
-            vpn::FEATURE_ID => Ok(Features::Vpn),
-            dht_kv::FEATURE_ID => Ok(Features::DhtKv),
-            pubsub::FEATURE_ID => Ok(Features::PubSub),
-            alias::FEATURE_ID => Ok(Features::Alias),
-            socket::FEATURE_ID => Ok(Features::Socket),
-            _ => Err(()),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, convert_enum::From)]
@@ -110,18 +92,18 @@ impl FeaturesToController {
 }
 
 #[derive(Debug, Clone, convert_enum::From)]
-pub enum FeaturesToWorker {
+pub enum FeaturesToWorker<UserData> {
     Neighbours(neighbours::ToWorker),
     Data(data::ToWorker),
     RouterSync(router_sync::ToWorker),
     Vpn(vpn::ToWorker),
     DhtKv(dht_kv::ToWorker),
-    PubSub(pubsub::ToWorker),
+    PubSub(pubsub::ToWorker<UserData>),
     Alias(alias::ToWorker),
-    Socket(socket::ToWorker),
+    Socket(socket::ToWorker<UserData>),
 }
 
-impl FeaturesToWorker {
+impl<UserData> FeaturesToWorker<UserData> {
     pub fn to_feature(&self) -> Features {
         match self {
             Self::Neighbours(_) => Features::Neighbours,

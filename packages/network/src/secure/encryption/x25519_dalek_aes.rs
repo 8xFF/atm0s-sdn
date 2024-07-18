@@ -10,7 +10,7 @@ use aes_gcm::{
 use rand::rngs::OsRng;
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
-use crate::base::{BufferMut, DecryptionError, Decryptor, EncryptionError, Encryptor, HandshakeBuilder, HandshakeError, HandshakeRequester, HandshakeResponder};
+use crate::base::{Buffer as BufferMut, DecryptionError, Decryptor, EncryptionError, Encryptor, HandshakeBuilder, HandshakeError, HandshakeRequester, HandshakeResponder};
 
 const MSG_TIMEOUT_MS: u64 = 5000; // after 5 seconds message is considered expired
 
@@ -93,7 +93,7 @@ impl EncryptorXDA {
 }
 
 impl Encryptor for EncryptorXDA {
-    fn encrypt<'a>(&mut self, now_ms: u64, buf: &mut BufferMut<'a>) -> Result<(), EncryptionError> {
+    fn encrypt<'a>(&mut self, now_ms: u64, buf: &mut BufferMut) -> Result<(), EncryptionError> {
         let mut nonce = Aes256Gcm::generate_nonce(&mut OsRng);
         nonce[4..].copy_from_slice(&now_ms.to_be_bytes());
         self.aes.encrypt_in_place(&nonce, &[], &mut BufferMut2(buf)).map_err(|_| EncryptionError::EncryptFailed)?;
@@ -131,7 +131,7 @@ impl Debug for DecryptorXDA {
 }
 
 impl Decryptor for DecryptorXDA {
-    fn decrypt<'a>(&mut self, now_ms: u64, data: &mut BufferMut<'a>) -> Result<(), DecryptionError> {
+    fn decrypt(&mut self, now_ms: u64, data: &mut BufferMut) -> Result<(), DecryptionError> {
         let nonce = if let Some(nonce) = data.pop_back(12) {
             nonce.to_vec()
         } else {
@@ -154,9 +154,9 @@ impl Decryptor for DecryptorXDA {
     }
 }
 
-struct BufferMut2<'a, 'b>(&'a mut BufferMut<'b>);
+struct BufferMut2<'a>(&'a mut BufferMut);
 
-impl<'a, 'b> Buffer for BufferMut2<'a, 'b> {
+impl<'a> Buffer for BufferMut2<'a> {
     fn extend_from_slice(&mut self, other: &[u8]) -> aes_gcm::aead::Result<()> {
         self.0.push_back(other);
         Ok(())
@@ -175,13 +175,13 @@ impl<'a, 'b> Buffer for BufferMut2<'a, 'b> {
     }
 }
 
-impl<'a, 'b> AsRef<[u8]> for BufferMut2<'a, 'b> {
+impl<'a> AsRef<[u8]> for BufferMut2<'a> {
     fn as_ref(&self) -> &[u8] {
         self.0.deref()
     }
 }
 
-impl<'a, 'b> AsMut<[u8]> for BufferMut2<'a, 'b> {
+impl<'a> AsMut<[u8]> for BufferMut2<'a> {
     fn as_mut(&mut self) -> &mut [u8] {
         self.0.deref_mut()
     }
@@ -191,7 +191,7 @@ impl<'a, 'b> AsMut<[u8]> for BufferMut2<'a, 'b> {
 mod tests {
     use std::ops::Deref;
 
-    use crate::base::{BufferMut, HandshakeRequester, HandshakeResponder};
+    use crate::base::{Buffer as BufferMut, HandshakeRequester, HandshakeResponder};
 
     use super::{HandshakeRequesterXDA, HandshakeResponderXDA};
 
@@ -243,7 +243,7 @@ mod tests {
     }
 
     #[test]
-    fn multi_thread_encyption_simulate() {
+    fn multi_thread_encryption_simulate() {
         let mut client = HandshakeRequesterXDA::default();
         let mut server = HandshakeResponderXDA::default();
 

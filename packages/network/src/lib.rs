@@ -3,8 +3,8 @@ use std::net::SocketAddr;
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 use atm0s_sdn_router::RouteRule;
 use base::{FeatureControlActor, NeighboursControl, NetIncomingMeta, NetOutgoingMeta, SecureContext, ServiceControlActor, ServiceId};
-pub use convert_enum;
 use features::{Features, FeaturesControl, FeaturesEvent, FeaturesToController, FeaturesToWorker};
+use sans_io_runtime::Buffer;
 
 #[cfg(feature = "fuzz")]
 pub mod _fuzz_export;
@@ -16,50 +16,49 @@ pub mod secure;
 pub mod services;
 pub mod worker;
 
-#[derive(Debug, Clone, convert_enum::From)]
-pub enum ExtIn<ServicesControl> {
+#[derive(Debug, Clone)]
+pub enum ExtIn<UserData, ServicesControl> {
     ConnectTo(NodeAddr),
     DisconnectFrom(NodeId),
-    FeaturesControl(FeaturesControl),
-    #[convert_enum(optout)]
-    ServicesControl(ServiceId, ServicesControl),
+    FeaturesControl(UserData, FeaturesControl),
+    ServicesControl(ServiceId, UserData, ServicesControl),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ExtOut<ServicesEvent> {
-    FeaturesEvent(FeaturesEvent),
-    ServicesEvent(ServiceId, ServicesEvent),
+pub enum ExtOut<UserData, ServicesEvent> {
+    FeaturesEvent(UserData, FeaturesEvent),
+    ServicesEvent(ServiceId, UserData, ServicesEvent),
 }
 
 #[derive(Debug, Clone)]
-pub enum LogicControl<SC, SE, TC> {
+pub enum LogicControl<UserData, SC, SE, TC> {
     Feature(FeaturesToController),
     Service(ServiceId, TC),
     NetNeighbour(SocketAddr, NeighboursControl),
-    NetRemote(Features, ConnId, NetIncomingMeta, Vec<u8>),
-    NetLocal(Features, NetIncomingMeta, Vec<u8>),
-    FeaturesControl(FeatureControlActor, FeaturesControl),
-    ServicesControl(ServiceControlActor, ServiceId, SC),
+    NetRemote(Features, ConnId, NetIncomingMeta, Buffer),
+    NetLocal(Features, NetIncomingMeta, Buffer),
+    FeaturesControl(FeatureControlActor<UserData>, FeaturesControl),
+    ServicesControl(ServiceControlActor<UserData>, ServiceId, SC),
     ServiceEvent(ServiceId, FeaturesEvent),
-    ExtFeaturesEvent(FeaturesEvent),
-    ExtServicesEvent(ServiceId, SE),
+    ExtFeaturesEvent(UserData, FeaturesEvent),
+    ExtServicesEvent(ServiceId, UserData, SE),
 }
 
 #[derive(Debug, Clone)]
-pub enum LogicEvent<SE, TW> {
+pub enum LogicEvent<UserData, SE, TW> {
     NetNeighbour(SocketAddr, NeighboursControl),
-    NetDirect(Features, SocketAddr, ConnId, NetOutgoingMeta, Vec<u8>),
-    NetRoute(Features, RouteRule, NetOutgoingMeta, Vec<u8>),
+    NetDirect(Features, SocketAddr, ConnId, NetOutgoingMeta, Buffer),
+    NetRoute(Features, RouteRule, NetOutgoingMeta, Buffer),
 
     Pin(ConnId, NodeId, SocketAddr, SecureContext),
     UnPin(ConnId),
     /// first bool is flag for broadcast or not
-    Feature(bool, FeaturesToWorker),
+    Feature(bool, FeaturesToWorker<UserData>),
     Service(ServiceId, TW),
     /// first u16 is worker id
-    ExtFeaturesEvent(u16, FeaturesEvent),
+    ExtFeaturesEvent(u16, UserData, FeaturesEvent),
     /// first u16 is worker id
-    ExtServicesEvent(u16, ServiceId, SE),
+    ExtServicesEvent(u16, ServiceId, UserData, SE),
 }
 
 pub enum LogicEventDest {
@@ -68,7 +67,7 @@ pub enum LogicEventDest {
     Worker(u16),
 }
 
-impl<SE, TW> LogicEvent<SE, TW> {
+impl<UserData, SE, TW> LogicEvent<UserData, SE, TW> {
     pub fn dest(&self) -> LogicEventDest {
         match self {
             LogicEvent::Pin(..) => LogicEventDest::Broadcast,
@@ -79,8 +78,8 @@ impl<SE, TW> LogicEvent<SE, TW> {
             LogicEvent::NetNeighbour(_, _) => LogicEventDest::Any,
             LogicEvent::NetDirect(_, _, _, _, _) => LogicEventDest::Any,
             LogicEvent::NetRoute(_, _, _, _) => LogicEventDest::Any,
-            LogicEvent::ExtFeaturesEvent(worker, _) => LogicEventDest::Worker(*worker),
-            LogicEvent::ExtServicesEvent(worker, _, _) => LogicEventDest::Worker(*worker),
+            LogicEvent::ExtFeaturesEvent(worker, _, _) => LogicEventDest::Worker(*worker),
+            LogicEvent::ExtServicesEvent(worker, _, _, _) => LogicEventDest::Worker(*worker),
         }
     }
 }

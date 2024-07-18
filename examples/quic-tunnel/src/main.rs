@@ -152,7 +152,7 @@ async fn tunnel_incoming_quic(connecting: Connecting, dest_tunnel: SocketAddr) -
 
 async fn tunnel_outgoing_quic(socket: VirtualUdpSocket, stream: TcpStream, remote: SocketAddr, dest_node: NodeId) -> Result<(), Error> {
     let mut config = EndpointConfig::default();
-    //Note that client mtu size shoud be smaller than server's
+    //Note that client mtu size should be smaller than server's
     config.max_udp_payload_size(1400).expect("Should config quinn client max_size to 1400");
     let mut endpoint = Endpoint::new_with_abstract_socket(config, None, socket, Arc::new(TokioRuntime)).expect("Should create endpoint");
     endpoint.set_default_client_config(quinn_plaintext::client_config());

@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 
 use atm0s_sdn_identity::NodeId;
 
-use crate::base::FeatureControlActor;
+use crate::base::{FeatureControlActor, FeatureOutput, FeatureWorkerOutput};
 
 use self::msg::{RelayControl, RelayId, SourceHint};
 
@@ -43,7 +43,7 @@ pub enum ChannelEvent {
 pub struct Event(pub ChannelId, pub ChannelEvent);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RelayWorkerControl {
+pub enum RelayWorkerControl<UserData> {
     SendSub(u64, Option<SocketAddr>),
     SendUnsub(u64, SocketAddr),
     SendSubOk(u64, SocketAddr),
@@ -52,13 +52,13 @@ pub enum RelayWorkerControl {
     SendFeedback(Feedback, SocketAddr),
     RouteSetSource(SocketAddr),
     RouteDelSource(SocketAddr),
-    RouteSetLocal(FeatureControlActor),
-    RouteDelLocal(FeatureControlActor),
+    RouteSetLocal(FeatureControlActor<UserData>),
+    RouteDelLocal(FeatureControlActor<UserData>),
     RouteSetRemote(SocketAddr, u64),
     RouteDelRemote(SocketAddr),
 }
 
-impl RelayWorkerControl {
+impl<UserData> RelayWorkerControl<UserData> {
     pub fn is_broadcast(&self) -> bool {
         match self {
             RelayWorkerControl::SendSub(_, _) => false,
@@ -72,8 +72,8 @@ impl RelayWorkerControl {
 }
 
 #[derive(Debug, Clone)]
-pub enum ToWorker {
-    RelayControl(RelayId, RelayWorkerControl),
+pub enum ToWorker<UserData> {
+    RelayControl(RelayId, RelayWorkerControl<UserData>),
     SourceHint(ChannelId, Option<SocketAddr>, SourceHint),
     RelayData(RelayId, Vec<u8>),
 }
@@ -83,3 +83,6 @@ pub enum ToController {
     RelayControl(SocketAddr, RelayId, RelayControl),
     SourceHint(SocketAddr, ChannelId, SourceHint),
 }
+
+pub type Output<UserData> = FeatureOutput<UserData, Event, ToWorker<UserData>>;
+pub type WorkerOutput<UserData> = FeatureWorkerOutput<UserData, Control, Event, ToController>;

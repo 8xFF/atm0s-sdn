@@ -30,7 +30,7 @@ fn service_manual_discovery_three_nodes() {
         vec![Arc::new(ManualDiscoveryServiceBuilder::new(build_addr(node3), vec!["demo".to_string()], vec![]))],
     ));
 
-    sim.control(node1, ExtIn::FeaturesControl(FeaturesControl::Neighbours(neighbours::Control::Sub)));
+    sim.control(node1, ExtIn::FeaturesControl((), FeaturesControl::Neighbours(neighbours::Control::Sub)));
 
     sim.control(node1, ExtIn::ConnectTo(addr2));
     sim.control(node2, ExtIn::ConnectTo(addr3));
@@ -42,10 +42,16 @@ fn service_manual_discovery_three_nodes() {
 
     assert_eq!(
         sim.pop_res(),
-        Some((node1, ExtOut::FeaturesEvent(FeaturesEvent::Neighbours(neighbours::Event::Connected(node2, ConnId::from_out(0, 1000))))))
+        Some((
+            node1,
+            ExtOut::FeaturesEvent((), FeaturesEvent::Neighbours(neighbours::Event::Connected(node2, ConnId::from_out(0, 1000))))
+        ))
     );
     assert_eq!(
         sim.pop_res(),
-        Some((node1, ExtOut::FeaturesEvent(FeaturesEvent::Neighbours(neighbours::Event::Connected(node3, ConnId::from_out(0, 1005))))))
+        Some((
+            node1,
+            ExtOut::FeaturesEvent((), FeaturesEvent::Neighbours(neighbours::Event::Connected(node3, ConnId::from_out(0, 1005))))
+        ))
     );
 }
