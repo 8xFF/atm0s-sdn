@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
+    fmt::Debug,
     net::SocketAddr,
 };
 
@@ -24,39 +25,47 @@ mod source_hint;
 use atm0s_sdn_identity::NodeId;
 use local_relay::LocalRelay;
 use remote_relay::RemoteRelay;
+use sans_io_runtime::TaskSwitcherChild;
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum GenericRelayOutput {
-    ToWorker(RelayWorkerControl),
-    RouteChanged(FeatureControlActor),
-    Feedback(Vec<FeatureControlActor>, Feedback),
+pub enum GenericRelayOutput<UserData> {
+    ToWorker(RelayWorkerControl<UserData>),
+    RouteChanged(FeatureControlActor<UserData>),
+    Feedback(Vec<FeatureControlActor<UserData>>, Feedback),
 }
 
-pub trait GenericRelay {
+pub trait GenericRelay<UserData> {
     fn on_tick(&mut self, now: u64);
-    fn on_pub_start(&mut self, actor: FeatureControlActor);
-    fn on_pub_stop(&mut self, actor: FeatureControlActor);
-    fn on_local_sub(&mut self, now: u64, actor: FeatureControlActor);
-    fn on_local_feedback(&mut self, now: u64, actor: FeatureControlActor, feedback: Feedback);
-    fn on_local_unsub(&mut self, now: u64, actor: FeatureControlActor);
+    fn on_pub_start(&mut self, actor: FeatureControlActor<UserData>);
+    fn on_pub_stop(&mut self, actor: FeatureControlActor<UserData>);
+    fn on_local_sub(&mut self, now: u64, actor: FeatureControlActor<UserData>);
+    fn on_local_feedback(&mut self, now: u64, actor: FeatureControlActor<UserData>, feedback: Feedback);
+    fn on_local_unsub(&mut self, now: u64, actor: FeatureControlActor<UserData>);
     fn on_remote(&mut self, now: u64, remote: SocketAddr, control: RelayControl);
     fn conn_disconnected(&mut self, now: u64, remote: SocketAddr);
     fn should_clear(&self) -> bool;
-    fn relay_dests(&self) -> Option<(&[FeatureControlActor], bool)>;
-    fn pop_output(&mut self) -> Option<GenericRelayOutput>;
+    fn relay_dests(&self) -> Option<(&[FeatureControlActor<UserData>], bool)>;
+    fn pop_output(&mut self) -> Option<GenericRelayOutput<UserData>>;
 }
 
-#[derive(Default)]
-pub struct PubSubFeature {
-    relays: HashMap<RelayId, Box<dyn GenericRelay>>,
-    source_hints: HashMap<ChannelId, SourceHintLogic>,
-    queue: VecDeque<FeatureOutput<Event, ToWorker>>,
+pub struct PubSubFeature<UserData> {
+    relays: HashMap<RelayId, Box<dyn GenericRelay<UserData>>>,
+    source_hints: HashMap<ChannelId, SourceHintLogic<UserData>>,
+    queue: VecDeque<FeatureOutput<UserData, Event, ToWorker<UserData>>>,
 }
 
-impl PubSubFeature {
-    fn get_relay(&mut self, ctx: &FeatureContext, relay_id: RelayId, auto_create: bool) -> Option<&mut Box<dyn GenericRelay>> {
+impl<UserData: 'static + Eq + Copy + Debug> PubSubFeature<UserData> {
+    pub fn new() -> Self {
+        Self {
+            relays: HashMap::new(),
+            source_hints: HashMap::new(),
+            queue: VecDeque::new(),
+        }
+    }
+
+    fn get_relay(&mut self, ctx: &FeatureContext, relay_id: RelayId, auto_create: bool) -> Option<&mut Box<dyn GenericRelay<UserData>>> {
         if !self.relays.contains_key(&relay_id) && auto_create {
-            let relay: Box<dyn GenericRelay> = if ctx.node_id == relay_id.1 {
+            let relay: Box<dyn GenericRelay<UserData>> = if ctx.node_id == relay_id.1 {
                 log::info!("[PubSubFeatureController] Creating new LocalRelay: {:?}", relay_id);
                 Box::new(LocalRelay::default())
             } else {
@@ -68,7 +77,7 @@ impl PubSubFeature {
         self.relays.get_mut(&relay_id)
     }
 
-    fn get_source_hint(&mut self, node_id: NodeId, session: u64, channel: ChannelId, auto_create: bool) -> Option<&mut SourceHintLogic> {
+    fn get_source_hint(&mut self, node_id: NodeId, session: u64, channel: ChannelId, auto_create: bool) -> Option<&mut SourceHintLogic<UserData>> {
         if !self.source_hints.contains_key(&channel) && auto_create {
             log::info!("[PubSubFeatureController] Creating new SourceHintLogic: {}", channel);
             self.source_hints.insert(channel, SourceHintLogic::new(node_id, session));
@@ -76,7 +85,7 @@ impl PubSubFeature {
         self.source_hints.get_mut(&channel)
     }
 
-    fn on_local(&mut self, ctx: &FeatureContext, now: u64, actor: FeatureControlActor, channel: ChannelId, control: ChannelControl) {
+    fn on_local(&mut self, ctx: &FeatureContext, now: u64, actor: FeatureControlActor<UserData>, channel: ChannelId, control: ChannelControl) {
         match control {
             ChannelControl::SubAuto => {
                 log::info!("[PubSubFeatureController] SubAuto for {} from {:?}", channel, actor);
@@ -176,8 +185,8 @@ impl PubSubFeature {
     }
 
     fn on_remote_relay_control(&mut self, ctx: &FeatureContext, now: u64, remote: SocketAddr, relay_id: RelayId, control: RelayControl) {
-        if self.get_relay(ctx, relay_id, control.should_create()).is_some() {
-            let relay: &mut Box<dyn GenericRelay> = self.relays.get_mut(&relay_id).expect("Should have relay");
+        if let Some(_) = self.get_relay(ctx, relay_id, control.should_create()) {
+            let relay: &mut Box<dyn GenericRelay<UserData>> = self.relays.get_mut(&relay_id).expect("Should have relay");
             log::debug!("[PubSubFeatureController] Remote control for {:?} from {:?}: {:?}", relay_id, remote, control);
             relay.on_remote(now, remote, control);
             Self::pop_single_relay(relay_id, relay, &mut self.queue);
@@ -204,7 +213,7 @@ impl PubSubFeature {
         }
     }
 
-    fn pop_single_relay(relay_id: RelayId, relay: &mut Box<dyn GenericRelay>, queue: &mut VecDeque<FeatureOutput<Event, ToWorker>>) {
+    fn pop_single_relay(relay_id: RelayId, relay: &mut Box<dyn GenericRelay<UserData>>, queue: &mut VecDeque<FeatureOutput<UserData, Event, ToWorker<UserData>>>) {
         while let Some(control) = relay.pop_output() {
             match control {
                 GenericRelayOutput::ToWorker(control) => queue.push_back(FeatureOutput::ToWorker(true, ToWorker::RelayControl(relay_id, control))),
@@ -246,7 +255,7 @@ impl PubSubFeature {
     }
 }
 
-impl Feature<Control, Event, ToController, ToWorker> for PubSubFeature {
+impl<UserData: 'static + Eq + Copy + Debug> Feature<UserData, Control, Event, ToController, ToWorker<UserData>> for PubSubFeature<UserData> {
     fn on_shared_input(&mut self, ctx: &FeatureContext, now: u64, input: FeatureSharedInput) {
         match input {
             FeatureSharedInput::Tick(_) => {
@@ -291,7 +300,7 @@ impl Feature<Control, Event, ToController, ToWorker> for PubSubFeature {
         }
     }
 
-    fn on_input(&mut self, ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'_, Control, ToController>) {
+    fn on_input<'a>(&mut self, ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'a, UserData, Control, ToController>) {
         match input {
             FeatureInput::FromWorker(ToController::RelayControl(remote, relay_id, control)) => {
                 self.on_remote_relay_control(ctx, now_ms, remote, relay_id, control);
@@ -305,8 +314,11 @@ impl Feature<Control, Event, ToController, ToWorker> for PubSubFeature {
             _ => panic!("Unexpected input"),
         }
     }
+}
 
-    fn pop_output<'a>(&mut self, _ctx: &FeatureContext) -> Option<FeatureOutput<Event, ToWorker>> {
+impl<UserData> TaskSwitcherChild<FeatureOutput<UserData, Event, ToWorker<UserData>>> for PubSubFeature<UserData> {
+    type Time = u64;
+    fn pop_output(&mut self, _now: u64) -> Option<FeatureOutput<UserData, Event, ToWorker<UserData>>> {
         self.queue.pop_front()
     }
 }

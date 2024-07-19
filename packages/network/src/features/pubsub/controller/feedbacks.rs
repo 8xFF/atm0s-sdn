@@ -1,23 +1,25 @@
-use std::{collections::VecDeque, net::SocketAddr};
+use std::{collections::VecDeque, fmt::Debug, net::SocketAddr};
+
+use derivative::Derivative;
 
 use crate::{base::FeatureControlActor, features::pubsub::msg::Feedback};
 
 #[derive(Debug, PartialEq, Eq)]
-enum FeedbackSource {
-    Local(FeatureControlActor),
+enum FeedbackSource<UserData> {
+    Local(FeatureControlActor<UserData>),
     Remote(SocketAddr),
 }
 
 #[derive(Debug, Default)]
-struct SingleFeedbackKind {
+struct SingleFeedbackKind<UserData> {
     kind: u8,
-    feedbacks: Vec<(FeedbackSource, Feedback, u64)>,
+    feedbacks: Vec<(FeedbackSource<UserData>, Feedback, u64)>,
     feedbacks_updated: bool,
     last_feedback_ts: Option<u64>,
 }
 
-impl SingleFeedbackKind {
-    fn on_local_feedback(&mut self, now: u64, actor: FeatureControlActor, fb: Feedback) {
+impl<UserData: Eq> SingleFeedbackKind<UserData> {
+    fn on_local_feedback(&mut self, now: u64, actor: FeatureControlActor<UserData>, fb: Feedback) {
         self.feedbacks_updated = true;
         let source = FeedbackSource::Local(actor);
         if let Some(index) = self.feedbacks.iter().position(|(a, _, _)| *a == source) {
@@ -65,19 +67,20 @@ impl SingleFeedbackKind {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct FeedbacksAggerator {
-    feedbacks: Vec<SingleFeedbackKind>,
+#[derive(Debug, Derivative)]
+#[derivative(Default(bound = ""))]
+pub struct FeedbacksAggerator<UserData> {
+    feedbacks: Vec<SingleFeedbackKind<UserData>>,
     queue: VecDeque<Feedback>,
 }
 
-impl FeedbacksAggerator {
+impl<UserData: Eq + Debug> FeedbacksAggerator<UserData> {
     pub fn on_tick(&mut self, now: u64) {
         log::debug!("[FeedbacksAggerator] on tick {now}");
         self.process_feedbacks(now);
     }
 
-    pub fn on_local_feedback(&mut self, now: u64, actor: FeatureControlActor, fb: Feedback) {
+    pub fn on_local_feedback(&mut self, now: u64, actor: FeatureControlActor<UserData>, fb: Feedback) {
         log::debug!("[FeedbacksAggerator] on local_feedback from {:?} {:?}", actor, fb);
         let kind = self.get_fb_kind(fb.kind);
         kind.on_local_feedback(now, actor, fb);
@@ -108,7 +111,7 @@ impl FeedbacksAggerator {
         self.feedbacks.retain(|x| !x.feedbacks.is_empty());
     }
 
-    fn get_fb_kind(&mut self, kind: u8) -> &mut SingleFeedbackKind {
+    fn get_fb_kind(&mut self, kind: u8) -> &mut SingleFeedbackKind<UserData> {
         if let Some(index) = self.feedbacks.iter().position(|x| x.kind == kind) {
             &mut self.feedbacks[index]
         } else {
@@ -134,7 +137,7 @@ mod test {
     fn aggerator_single() {
         let mut aggerator = FeedbacksAggerator::default();
         let fb = Feedback::simple(0, 10, 1000, 2000);
-        aggerator.on_local_feedback(1, FeatureControlActor::Controller, fb);
+        aggerator.on_local_feedback(1, FeatureControlActor::Controller(()), fb);
         aggerator.on_tick(2);
         assert_eq!(aggerator.pop_output(), Some(fb));
         assert_eq!(aggerator.pop_output(), None);
@@ -144,12 +147,12 @@ mod test {
     fn aggerator_single_rewrite() {
         let mut aggerator = FeedbacksAggerator::default();
         let fb = Feedback::simple(0, 10, 1000, 2000);
-        aggerator.on_local_feedback(0, FeatureControlActor::Controller, fb);
+        aggerator.on_local_feedback(0, FeatureControlActor::Controller(()), fb);
         assert_eq!(aggerator.pop_output(), Some(fb));
         assert_eq!(aggerator.pop_output(), None);
 
         let fb = Feedback::simple(0, 11, 1000, 2000);
-        aggerator.on_local_feedback(2, FeatureControlActor::Controller, fb);
+        aggerator.on_local_feedback(2, FeatureControlActor::Controller(()), fb);
         aggerator.on_tick(2000);
         assert_eq!(aggerator.pop_output(), Some(fb));
         assert_eq!(aggerator.pop_output(), None);
@@ -159,12 +162,12 @@ mod test {
     fn aggerator_multi_sources() {
         let mut aggerator = FeedbacksAggerator::default();
         let fb = Feedback::simple(0, 10, 1000, 2000);
-        aggerator.on_local_feedback(1, FeatureControlActor::Controller, fb);
+        aggerator.on_local_feedback(1, FeatureControlActor::Controller(()), fb);
         assert_eq!(aggerator.pop_output(), Some(fb));
         assert_eq!(aggerator.pop_output(), None);
 
         let fb = Feedback::simple(0, 20, 1500, 3000);
-        aggerator.on_local_feedback(2, FeatureControlActor::Worker(0), fb);
+        aggerator.on_local_feedback(2, FeatureControlActor::Worker(0, ()), fb);
 
         aggerator.on_tick(1000);
         assert_eq!(
@@ -186,10 +189,10 @@ mod test {
     fn aggerator_multi_types() {
         let mut aggerator = FeedbacksAggerator::default();
         let fb1 = Feedback::simple(0, 10, 1000, 2000);
-        aggerator.on_local_feedback(1, FeatureControlActor::Controller, fb1);
+        aggerator.on_local_feedback(1, FeatureControlActor::Controller(()), fb1);
 
         let fb2 = Feedback::simple(1, 20, 1500, 3000);
-        aggerator.on_local_feedback(2, FeatureControlActor::Controller, fb2);
+        aggerator.on_local_feedback(2, FeatureControlActor::Controller(()), fb2);
 
         aggerator.on_tick(3);
         assert_eq!(aggerator.pop_output(), Some(fb1));
@@ -201,7 +204,7 @@ mod test {
     fn aggerator_auto_clear_kind_nodata() {
         let mut aggerator = FeedbacksAggerator::default();
         let fb1 = Feedback::simple(0, 10, 1000, 2000);
-        aggerator.on_local_feedback(0, FeatureControlActor::Controller, fb1);
+        aggerator.on_local_feedback(0, FeatureControlActor::Controller(()), fb1);
 
         assert_eq!(aggerator.feedbacks.len(), 1);
 

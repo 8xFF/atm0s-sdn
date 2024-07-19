@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 
 use atm0s_sdn_identity::{ConnId, NodeId};
 
-use crate::base::{BufferMut, SecureContext, TransportMsgHeader};
+use crate::base::{Buffer, SecureContext, TransportMsgHeader};
 
 pub struct DataPlaneConnection {
     node: NodeId,
@@ -26,7 +26,7 @@ impl DataPlaneConnection {
     }
 
     /// This will encrypt without first byte, which is used for TransportMsgHeader meta
-    pub fn encrypt_if_need(&mut self, now: u64, buf: &mut BufferMut<'_>) -> Option<()> {
+    pub fn encrypt_if_need(&mut self, now: u64, buf: &mut Buffer) -> Option<()> {
         if buf.len() < 1 {
             return None;
         }
@@ -41,7 +41,7 @@ impl DataPlaneConnection {
     }
 
     /// This will encrypt without first byte, which is used for TransportMsgHeader meta
-    pub fn decrypt_if_need(&mut self, now: u64, buf: &mut BufferMut<'_>) -> Option<()> {
+    pub fn decrypt_if_need(&mut self, now: u64, buf: &mut Buffer) -> Option<()> {
         if buf.len() < 1 {
             return None;
         }

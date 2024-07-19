@@ -44,10 +44,6 @@ pub struct ClusterLogic {
 }
 
 impl ClusterLogic {
-    pub fn on_tick(&mut self, now: Instant) -> Option<Output> {
-        None
-    }
-
     pub fn on_input(&mut self, now: Instant, input: Input) -> Option<Output> {
         match input {
             Input::Pubsub(pubsub::Event(channel, event)) => match event {
@@ -130,9 +126,5 @@ impl ClusterLogic {
                 )))
             }
         }
-    }
-
-    pub fn pop_output(&mut self, now: Instant) -> Option<Output> {
-        None
     }
 }

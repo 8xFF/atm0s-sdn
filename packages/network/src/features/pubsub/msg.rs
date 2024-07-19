@@ -1,6 +1,7 @@
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_router::RouteRule;
 use atm0s_sdn_utils::simple_pub_type;
+use sans_io_runtime::Buffer;
 use serde::{Deserialize, Serialize};
 
 use crate::base::{TransportMsg, TransportMsgHeader, TransportMsgHeaderError};
@@ -112,22 +113,19 @@ pub enum PubsubMessage {
     Data(RelayId, Vec<u8>),
 }
 
-impl PubsubMessage {
-    pub fn write_to(&self, dest: &mut [u8]) -> Option<usize> {
-        let header = TransportMsgHeader::build(FEATURE_ID, 0, RouteRule::Direct);
-        let msg = TransportMsg::from_payload_bincode(header, &self);
-        let buf = msg.take();
-        let len = buf.len();
-        dest[..len].copy_from_slice(&buf);
-        Some(len)
-    }
-}
-
 impl TryFrom<&[u8]> for PubsubMessage {
     type Error = PubsubMessageError;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         let msg = TransportMsg::try_from(value).map_err(PubsubMessageError::TransportError)?;
         msg.get_payload_bincode().map_err(|_| PubsubMessageError::DeserializeError)
+    }
+}
+
+impl Into<Buffer> for PubsubMessage {
+    fn into(self) -> Buffer {
+        let header = TransportMsgHeader::build(FEATURE_ID, 0, RouteRule::Direct);
+        let msg = TransportMsg::from_payload_bincode(header, &self);
+        msg.take()
     }
 }

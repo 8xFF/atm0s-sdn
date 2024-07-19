@@ -1,10 +1,17 @@
-use std::collections::{HashMap, VecDeque};
+use std::{
+    collections::{HashMap, VecDeque},
+    fmt::Debug,
+};
 
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_router::RouteRule;
+use derivative::Derivative;
+use sans_io_runtime::{collections::DynamicDeque, TaskSwitcherChild};
 use serde::{Deserialize, Serialize};
 
-use crate::base::{Feature, FeatureContext, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker, NetIncomingMeta, NetOutgoingMeta};
+use crate::base::{
+    Feature, FeatureContext, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker, FeatureWorkerInput, FeatureWorkerOutput, NetIncomingMeta, NetOutgoingMeta,
+};
 
 pub const FEATURE_ID: u8 = 1;
 pub const FEATURE_NAME: &str = "data_transfer";
@@ -12,13 +19,15 @@ pub const FEATURE_NAME: &str = "data_transfer";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Control {
     Ping(NodeId),
-    SendRule(RouteRule, NetOutgoingMeta, Vec<u8>),
+    DataListen(u16),
+    DataUnlisten(u16),
+    DataSendRule(u16, RouteRule, NetOutgoingMeta, Vec<u8>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     Pong(NodeId, Option<u16>),
-    Recv(NetIncomingMeta, Vec<u8>),
+    Recv(u16, NetIncomingMeta, Vec<u8>),
 }
 
 #[derive(Debug, Clone)]
@@ -31,40 +40,56 @@ pub struct ToController;
 enum DataMsg {
     Ping { id: u64, ts: u64, from: NodeId },
     Pong { id: u64, ts: u64 },
-    DataController { data: Vec<u8> },
-    DataService { service: u8, data: Vec<u8> },
+    Data(u16, Vec<u8>),
 }
 
-#[derive(Default)]
-pub struct DataFeature {
-    waits: HashMap<u64, (u64, FeatureControlActor, NodeId)>,
+pub type Output<UserData> = FeatureOutput<UserData, Event, ToWorker>;
+pub type WorkerOutput<UserData> = FeatureWorkerOutput<UserData, Control, Event, ToController>;
+
+pub struct DataFeature<UserData> {
+    waits: HashMap<u64, (u64, FeatureControlActor<UserData>, NodeId)>,
     ping_seq: u64,
-    queue: VecDeque<FeatureOutput<Event, ToWorker>>,
+    queue: VecDeque<Output<UserData>>,
+    data_dest: HashMap<u16, FeatureControlActor<UserData>>,
 }
 
-impl Feature<Control, Event, ToController, ToWorker> for DataFeature {
+impl<UserData> Default for DataFeature<UserData> {
+    fn default() -> Self {
+        Self {
+            waits: HashMap::new(),
+            ping_seq: 0,
+            queue: VecDeque::new(),
+            data_dest: HashMap::new(),
+        }
+    }
+}
+
+impl<UserData: Copy> Feature<UserData, Control, Event, ToController, ToWorker> for DataFeature<UserData> {
     fn on_shared_input(&mut self, _ctx: &FeatureContext, now: u64, input: FeatureSharedInput) {
-        if let FeatureSharedInput::Tick(_) = input {
-            //clean timeout ping
-            let mut timeout_list = Vec::new();
-            for (id, (sent_ms, _, _)) in self.waits.iter() {
-                if now >= sent_ms + 2000 {
-                    timeout_list.push(*id);
+        match input {
+            FeatureSharedInput::Tick(_) => {
+                //clean timeout ping
+                let mut timeout_list = Vec::new();
+                for (id, (sent_ms, _, _)) in self.waits.iter() {
+                    if now >= sent_ms + 2000 {
+                        timeout_list.push(*id);
+                    }
+                }
+
+                for id in timeout_list {
+                    let (_, actor, dest) = self.waits.remove(&id).expect("Should have");
+                    self.queue.push_back(FeatureOutput::Event(actor, Event::Pong(dest, None)));
                 }
             }
-
-            for id in timeout_list {
-                let (_, actor, dest) = self.waits.remove(&id).expect("Should have");
-                self.queue.push_back(FeatureOutput::Event(actor, Event::Pong(dest, None)));
-            }
+            _ => {}
         }
     }
 
-    fn on_input(&mut self, ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'_, Control, ToController>) {
+    fn on_input<'a>(&mut self, ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'a, UserData, Control, ToController>) {
         match input {
             FeatureInput::Control(actor, control) => match control {
                 Control::Ping(dest) => {
-                    log::info!("[DataFeature] Sending Ping to: {}", dest);
+                    log::info!("[DataFeature] send ping to: {}", dest);
                     let seq = self.ping_seq;
                     self.ping_seq += 1;
                     self.waits.insert(seq, (now_ms, actor, dest));
@@ -75,39 +100,41 @@ impl Feature<Control, Event, ToController, ToWorker> for DataFeature {
                     })
                     .expect("should work");
                     let rule = RouteRule::ToNode(dest);
-                    self.queue.push_back(FeatureOutput::SendRoute(rule, NetOutgoingMeta::default(), msg));
+                    self.queue.push_back(FeatureOutput::SendRoute(rule, NetOutgoingMeta::default(), msg.into()));
                 }
-                Control::SendRule(rule, ttl, data) => {
-                    let data = match actor {
-                        FeatureControlActor::Controller => DataMsg::DataController { data },
-                        FeatureControlActor::Worker(_) => todo!(),
-                        FeatureControlActor::Service(service) => DataMsg::DataService { service: *service, data },
-                    };
+                Control::DataListen(port) => {
+                    self.data_dest.insert(port, actor);
+                }
+                Control::DataUnlisten(port) => {
+                    self.data_dest.remove(&port);
+                }
+                Control::DataSendRule(port, rule, ttl, data) => {
+                    let data = DataMsg::Data(port, data);
                     let msg = bincode::serialize(&data).expect("should work");
-                    self.queue.push_back(FeatureOutput::SendRoute(rule, ttl, msg));
+                    self.queue.push_back(FeatureOutput::SendRoute(rule, ttl, msg.into()));
                 }
             },
             FeatureInput::Net(_, meta, buf) | FeatureInput::Local(meta, buf) => {
+                log::debug!("[DataFeature] on message from {:?} len {}", meta.source, buf.len());
                 if let Ok(msg) = bincode::deserialize::<DataMsg>(&buf) {
                     match msg {
                         DataMsg::Pong { id, ts } => {
                             if let Some((_, actor, dest)) = self.waits.remove(&id) {
                                 self.queue.push_back(FeatureOutput::Event(actor, Event::Pong(dest, Some((now_ms - ts) as u16))));
                             } else {
-                                log::warn!("[DataFeature] Pong with unknown id: {}", id);
+                                log::warn!("[DataFeature] pong with unknown id: {}", id);
                             }
                         }
                         DataMsg::Ping { id, ts, from } => {
-                            log::info!("[DataFeature] Got ping from: {}", from);
+                            log::info!("[DataFeature] got ping from: {}", from);
                             let msg = bincode::serialize(&DataMsg::Pong { id, ts }).expect("should work");
                             let rule = RouteRule::ToNode(from);
-                            self.queue.push_back(FeatureOutput::SendRoute(rule, NetOutgoingMeta::default(), msg));
+                            self.queue.push_back(FeatureOutput::SendRoute(rule, NetOutgoingMeta::default(), msg.into()));
                         }
-                        DataMsg::DataController { data } => {
-                            self.queue.push_back(FeatureOutput::Event(FeatureControlActor::Controller, Event::Recv(meta, data)));
-                        }
-                        DataMsg::DataService { service, data } => {
-                            self.queue.push_back(FeatureOutput::Event(FeatureControlActor::Service(service.into()), Event::Recv(meta, data)));
+                        DataMsg::Data(port, data) => {
+                            if let Some(actor) = self.data_dest.get(&port) {
+                                self.queue.push_back(FeatureOutput::Event(*actor, Event::Recv(port, meta, data)));
+                            }
                         }
                     }
                 }
@@ -115,13 +142,39 @@ impl Feature<Control, Event, ToController, ToWorker> for DataFeature {
             _ => {}
         }
     }
+}
 
-    fn pop_output<'a>(&mut self, _ctx: &FeatureContext) -> Option<FeatureOutput<Event, ToWorker>> {
+impl<UserData> TaskSwitcherChild<Output<UserData>> for DataFeature<UserData> {
+    type Time = u64;
+    fn pop_output(&mut self, _now: u64) -> Option<Output<UserData>> {
         self.queue.pop_front()
     }
 }
 
-#[derive(Default)]
-pub struct DataFeatureWorker {}
+#[derive(Derivative)]
+#[derivative(Default(bound = ""))]
+pub struct DataFeatureWorker<UserData> {
+    queue: DynamicDeque<WorkerOutput<UserData>, 1>,
+}
 
-impl FeatureWorker<Control, Event, ToController, ToWorker> for DataFeatureWorker {}
+impl<UserData: Debug> FeatureWorker<UserData, Control, Event, ToController, ToWorker> for DataFeatureWorker<UserData> {
+    fn on_input(&mut self, _ctx: &mut crate::base::FeatureWorkerContext, _now: u64, input: crate::base::FeatureWorkerInput<UserData, Control, ToWorker>) {
+        match input {
+            FeatureWorkerInput::Control(actor, control) => self.queue.push_back(FeatureWorkerOutput::ForwardControlToController(actor, control)),
+            FeatureWorkerInput::Network(conn, header, buf) => self.queue.push_back(FeatureWorkerOutput::ForwardNetworkToController(conn, header, buf)),
+            #[cfg(feature = "vpn")]
+            FeatureWorkerInput::TunPkt(..) => {}
+            FeatureWorkerInput::FromController(..) => {
+                log::warn!("No handler for FromController");
+            }
+            FeatureWorkerInput::Local(header, buf) => self.queue.push_back(FeatureWorkerOutput::ForwardLocalToController(header, buf)),
+        }
+    }
+}
+
+impl<UserData> TaskSwitcherChild<WorkerOutput<UserData>> for DataFeatureWorker<UserData> {
+    type Time = u64;
+    fn pop_output(&mut self, _now: u64) -> Option<WorkerOutput<UserData>> {
+        self.queue.pop_front()
+    }
+}

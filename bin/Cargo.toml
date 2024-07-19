@@ -2,6 +2,10 @@
 name = "atm0s-sdn-standalone"
 version = "0.1.0"
 edition = "2021"
+repository = "https://github.com/8xFF/atm0s-sdn"
+description = "Decentralized Ultra-Low-Latency Software Defined Network"
+license = "MIT"
+publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -10,14 +14,14 @@ signal-hook = "0.3.17"
 log.workspace = true
 clap.workspace = true
 serde.workspace = true
-atm0s-sdn = { path = "../packages/runner", version = "0.1.10", features = ["vpn"] }
-tokio = { version = "1.36.0", features = ["full"] }
+atm0s-sdn = { path = "../packages/runner", version = "0.2.0", features = ["vpn"] }
+tokio = { version = "1", features = ["full"] }
 poem = { version = "2.0", features = ["embed", "static-files", "websocket"] }
 rust-embed = { version = "8.2", optional = true }
 
-futures-util = "0.3.30"
-tracing-subscriber = "0.3.18"
-serde_json = "1.0.114"
+futures-util = "0.3"
+tracing-subscriber = "0.3"
+serde_json = "1.0"
 
 [features]
 default = ["embed"]

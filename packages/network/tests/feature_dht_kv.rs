@@ -10,12 +10,12 @@ use crate::simulator::{NetworkSimulator, TestNode};
 
 mod simulator;
 
-fn control(control: Control) -> ExtIn<()> {
-    ExtIn::FeaturesControl(FeaturesControl::DhtKv(control))
+fn control(control: Control) -> ExtIn<(), ()> {
+    ExtIn::FeaturesControl((), FeaturesControl::DhtKv(control))
 }
 
-fn event(event: Event) -> ExtOut<()> {
-    ExtOut::FeaturesEvent(FeaturesEvent::DhtKv(event))
+fn event(event: Event) -> ExtOut<(), ()> {
+    ExtOut::FeaturesEvent((), FeaturesEvent::DhtKv(event))
 }
 
 #[test]

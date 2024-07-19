@@ -1,4 +1,7 @@
-use std::collections::{HashMap, VecDeque};
+use std::{
+    collections::{HashMap, VecDeque},
+    fmt::Debug,
+};
 
 use crate::{
     base::FeatureControlActor,
@@ -205,9 +208,9 @@ impl MapSlot {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum LocalMapOutput {
+pub enum LocalMapOutput<UserData> {
     Remote(ClientMapCommand),
-    Local(FeatureControlActor, MapEvent),
+    Local(FeatureControlActor<UserData>, MapEvent),
 }
 
 enum SubState {
@@ -219,15 +222,15 @@ enum SubState {
 
 /// LocalMap manage state of map, which is a collection of MapSlot.
 /// We allow multi-source for a single sub-key with reason for solving conflict between nodes.
-pub struct LocalMap {
+pub struct LocalMap<UserData> {
     session: NodeSession,
     slots: HashMap<(Key, NodeSession), MapSlot>,
-    subscribers: Vec<FeatureControlActor>,
+    subscribers: Vec<FeatureControlActor<UserData>>,
     sub_state: SubState,
-    queue: VecDeque<LocalMapOutput>,
+    queue: VecDeque<LocalMapOutput<UserData>>,
 }
 
-impl LocalMap {
+impl<UserData: Eq + Copy + Debug> LocalMap<UserData> {
     pub fn new(session: NodeSession) -> Self {
         Self {
             session,
@@ -283,7 +286,7 @@ impl LocalMap {
         }
     }
 
-    pub fn on_control(&mut self, now: u64, actor: FeatureControlActor, control: MapControl) -> Option<ClientMapCommand> {
+    pub fn on_control(&mut self, now: u64, actor: FeatureControlActor<UserData>, control: MapControl) -> Option<ClientMapCommand> {
         match control {
             MapControl::Set(key, data) => {
                 let slot = self.get_slot(key, self.session, true).expect("Must have slot for set");
@@ -474,7 +477,7 @@ impl LocalMap {
         }
     }
 
-    pub fn pop_action(&mut self) -> Option<LocalMapOutput> {
+    pub fn pop_action(&mut self) -> Option<LocalMapOutput<UserData>> {
         self.queue.pop_front()
     }
 
@@ -505,7 +508,7 @@ impl LocalMap {
         }
     }
 
-    fn restore_events(&mut self, actor: FeatureControlActor, only_local: bool) {
+    fn restore_events(&mut self, actor: FeatureControlActor<UserData>, only_local: bool) {
         for ((key, source), slot) in self.slots.iter() {
             if only_local && self.session != *source {
                 continue;
@@ -680,7 +683,7 @@ mod test {
     #[test]
     fn map_handle_control_set_del_correct() {
         let session = NodeSession(1, 2);
-        let actor = FeatureControlActor::Controller;
+        let actor = FeatureControlActor::Controller(());
         let mut map = LocalMap::new(session);
 
         let key = Key(1);
@@ -701,7 +704,7 @@ mod test {
     #[test]
     fn map_handle_sub_with_local_data_correct() {
         let session = NodeSession(1, 2);
-        let actor = FeatureControlActor::Controller;
+        let actor = FeatureControlActor::Controller(());
         let mut map = LocalMap::new(session);
 
         let key = Key(1);
@@ -722,7 +725,7 @@ mod test {
     #[test]
     fn map_unsub_ok() {
         let session = NodeSession(1, 2);
-        let actor = FeatureControlActor::Controller;
+        let actor = FeatureControlActor::Controller(());
         let mut map = LocalMap::new(session);
 
         let relay = NodeSession(5, 6);
@@ -745,7 +748,7 @@ mod test {
     #[test]
     fn map_handle_auto_resend_sub_unsub() {
         let session = NodeSession(1, 2);
-        let actor = FeatureControlActor::Controller;
+        let actor = FeatureControlActor::Controller(());
         let mut map = LocalMap::new(session);
 
         assert_eq!(map.on_control(102, actor, MapControl::Sub), Some(ClientMapCommand::Sub(102, None)));
@@ -757,7 +760,7 @@ mod test {
     #[test]
     fn map_handle_set_del_ack() {
         let session = NodeSession(1, 2);
-        let actor = FeatureControlActor::Controller;
+        let actor = FeatureControlActor::Controller(());
         let mut map = LocalMap::new(session);
 
         let relay = NodeSession(3, 4);
@@ -772,7 +775,7 @@ mod test {
     #[test]
     fn map_reject_event_unknown_relay() {
         let session = NodeSession(1, 2);
-        let mut map = LocalMap::new(session);
+        let mut map = LocalMap::<()>::new(session);
 
         let key = Key(1);
         let source = NodeSession(3, 4);
@@ -795,7 +798,7 @@ mod test {
     #[test]
     fn map_handle_sub_with_remote_data_correct() {
         let session = NodeSession(1, 2);
-        let actor = FeatureControlActor::Controller;
+        let actor = FeatureControlActor::Controller(());
         let mut map = LocalMap::new(session);
 
         let key = Key(1);
@@ -835,7 +838,7 @@ mod test {
     #[test]
     fn map_handle_switch_new_relay() {
         let session = NodeSession(1, 2);
-        let actor = FeatureControlActor::Controller;
+        let actor = FeatureControlActor::Controller(());
         let mut map = LocalMap::new(session);
 
         let key = Key(1);
@@ -896,11 +899,11 @@ mod test {
 
         let key = Key(1);
 
-        assert_eq!(map.on_control(100, FeatureControlActor::Controller, MapControl::Sub), Some(ClientMapCommand::Sub(100, None)));
+        assert_eq!(map.on_control(100, FeatureControlActor::Controller(()), MapControl::Sub), Some(ClientMapCommand::Sub(100, None)));
         assert_eq!(map.on_server(100, relay, ServerMapEvent::SubOk(100)), None);
 
         assert_eq!(
-            map.on_control(100, FeatureControlActor::Controller, MapControl::Set(key, vec![1, 2, 3, 4])),
+            map.on_control(100, FeatureControlActor::Controller(()), MapControl::Set(key, vec![1, 2, 3, 4])),
             Some(ClientMapCommand::Set(key, Version(100), vec![1, 2, 3, 4]))
         );
 

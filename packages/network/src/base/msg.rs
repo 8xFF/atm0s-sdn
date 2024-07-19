@@ -2,6 +2,7 @@ use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_router::{RouteRule, ServiceBroadcastLevel};
 use atm0s_sdn_utils::simple_pub_type;
 use bytes::BufMut;
+use sans_io_runtime::Buffer;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
@@ -79,15 +80,22 @@ pub struct TransportMsgHeader {
     pub from_node: Option<NodeId>,
 }
 
-impl Default for TransportMsgHeader {
-    fn default() -> Self {
-        Self::build(0, 0, RouteRule::Direct)
-    }
-}
-
 impl TransportMsgHeader {
     pub fn is_secure(first_byte: u8) -> bool {
         first_byte & 0b0010_0000 != 0
+    }
+
+    /// Builds a message with the given service_id, route rule.
+    pub fn new() -> Self {
+        Self {
+            version: 0,
+            encrypt: false,
+            route: RouteRule::Direct,
+            ttl: DEFAULT_MSG_TTL,
+            feature: 0,
+            meta: 0,
+            from_node: None,
+        }
     }
 
     pub fn build(feature: u8, meta: u8, route: RouteRule) -> Self {
@@ -275,7 +283,7 @@ impl TransportMsgHeader {
 #[derive(Clone, Debug, Eq, PartialEq)]
 /// A struct representing a transport message.
 pub struct TransportMsg {
-    buffer: Vec<u8>,
+    buffer: Buffer,
     pub header: TransportMsgHeader,
     pub payload_start: usize,
 }
@@ -298,14 +306,12 @@ impl TransportMsg {
     /// # Returns
     ///
     /// A new `TransportMsg` instance.
-    pub fn build_raw(header: TransportMsgHeader, payload: &[u8]) -> Self {
+    pub fn build_raw(header: TransportMsgHeader, mut payload: Buffer) -> Self {
         let header_size = header.serialize_size();
-        let mut buffer = vec![0; header_size + payload.len()];
-        let header_size = header.to_bytes(&mut buffer[0..header_size]).expect("Should serialize header");
-
-        buffer[header_size..].copy_from_slice(payload);
+        let _ = header.to_bytes(payload.front_mut(header_size)).expect("Should serialize header");
+        payload.move_front_left(header_size);
         Self {
-            buffer,
+            buffer: payload,
             header,
             payload_start: header_size,
         }
@@ -324,12 +330,13 @@ impl TransportMsg {
     ///
     /// A new `TransportMsg` instance.
     pub fn build(feature: u8, meta: u8, route: RouteRule, payload: &[u8]) -> Self {
-        let header = TransportMsgHeader::build(feature, meta, route);
+        let header = TransportMsgHeader::new().set_feature(feature).set_meta(meta).set_route(route);
         let header_size = header.serialize_size();
-        let mut buffer = vec![0; header_size + payload.len()];
-        let header_size = header.to_bytes(&mut buffer[0..header_size]).expect("Should serialize header");
+        let mut buffer = Buffer::new(0, header_size + payload.len());
+        let _ = header.to_bytes(buffer.back_mut(header_size)).expect("Should serialize header");
+        buffer.move_back_right(header_size);
+        buffer.push_back(payload);
 
-        buffer[header_size..].copy_from_slice(payload);
         Self {
             buffer,
             header,
@@ -338,7 +345,7 @@ impl TransportMsg {
     }
 
     /// Takes ownership of the message and returns its buffer.
-    pub fn take(self) -> Vec<u8> {
+    pub fn take(self) -> Buffer {
         self.buffer
     }
 
@@ -382,10 +389,13 @@ impl TransportMsg {
     /// A new `TransportMsg` instance.
     pub fn from_payload_bincode<M: Serialize>(header: TransportMsgHeader, msg: &M) -> Self {
         let header_size = header.serialize_size();
-        let payload_size = bincode::serialized_size(msg).expect("Should serialize payload");
-        let mut buffer = vec![0; header_size + payload_size as usize];
-        header.to_bytes(&mut buffer[0..header_size]);
-        bincode::serialize_into(&mut buffer[header_size..], msg).expect("Should serialize payload");
+        let payload_size = bincode::serialized_size(msg).expect("Should serialize payload") as usize;
+        let mut buffer = Buffer::new(0, header_size + payload_size);
+        let _ = header.to_bytes(buffer.back_mut(header_size)).expect("Should serialize header");
+        buffer.move_back_right(header_size);
+        bincode::serialize_into(buffer.back_mut(payload_size), msg).expect("Should serialize payload");
+        buffer.move_back_right(payload_size);
+
         Self {
             buffer,
             header,
@@ -399,7 +409,7 @@ impl TryFrom<Vec<u8>> for TransportMsg {
     fn try_from(buffer: Vec<u8>) -> Result<Self, Self::Error> {
         let header = TransportMsgHeader::try_from(buffer.as_slice())?;
         Ok(Self {
-            buffer,
+            buffer: buffer.into(),
             payload_start: header.serialize_size(),
             header,
         })
@@ -411,7 +421,7 @@ impl TryFrom<&[u8]> for TransportMsg {
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
         let header = TransportMsgHeader::try_from(bytes)?;
         Ok(Self {
-            buffer: bytes.to_vec(),
+            buffer: bytes.to_vec().into(),
             payload_start: header.serialize_size(),
             header,
         })
@@ -526,7 +536,7 @@ mod tests {
         assert_eq!(header.feature, 2);
         assert_eq!(header.meta, 3);
         assert_eq!(header.route, RouteRule::Direct);
-        assert!(header.encrypt);
+        assert_eq!(header.encrypt, true);
         assert_eq!(header.from_node, None);
     }
 
@@ -623,7 +633,7 @@ mod tests {
     #[test]
     fn msg_simple() {
         let msg = TransportMsg::build(0, 0, RouteRule::Direct, &[1, 2, 3, 4]);
-        let buf = msg.get_buf().to_vec();
+        let buf = msg.get_buf();
         let msg2 = TransportMsg::try_from(buf).expect("");
         assert_eq!(msg, msg2);
         assert_eq!(msg.payload(), &[1, 2, 3, 4]);
@@ -631,7 +641,7 @@ mod tests {
 
     #[test]
     fn msg_build_raw() {
-        let msg = TransportMsg::build_raw(TransportMsgHeader::default(), &[1, 2, 3, 4]);
+        let msg = TransportMsg::build_raw(TransportMsgHeader::new(), vec![1, 2, 3, 4].into());
         let buf = msg.get_buf().to_vec();
         let msg2 = TransportMsg::try_from(buf).expect("");
         assert_eq!(msg, msg2);

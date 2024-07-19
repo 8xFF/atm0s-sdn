@@ -7,12 +7,10 @@ use std::{
 };
 
 use atm0s_sdn::{
-    builder::SdnBuilder,
     features::{socket, FeaturesControl, FeaturesEvent},
-    sans_io_runtime::{backend::PollBackend, Owner},
+    sans_io_runtime::backend::PollingBackend,
     services::visualization,
-    tasks::{SdnExtIn, SdnExtOut},
-    NodeAddr, NodeId,
+    NodeAddr, NodeId, SdnBuilder, SdnExtIn, SdnExtOut, SdnOwner,
 };
 use tokio::sync::mpsc::{Receiver, Sender};
 
@@ -27,7 +25,7 @@ pub async fn run_sdn(node_id: NodeId, udp_port: u16, seeds: Vec<NodeAddr>, worke
     let term = Arc::new(AtomicBool::new(false));
     signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&term)).expect("Should register hook");
     let mut shutdown_wait = 0;
-    let mut builder = SdnBuilder::<SC, SE, TC, TW>::new(node_id, udp_port, vec![]);
+    let mut builder = SdnBuilder::<(), SC, SE, TC, TW>::new(node_id, udp_port, vec![]);
 
     builder.set_manual_discovery(vec!["tunnel".to_string()], vec!["tunnel".to_string()]);
     builder.set_visualization_collector(false);
@@ -36,7 +34,7 @@ pub async fn run_sdn(node_id: NodeId, udp_port: u16, seeds: Vec<NodeAddr>, worke
         builder.add_seed(seed);
     }
 
-    let mut controller = builder.build::<PollBackend<128, 128>>(workers);
+    let mut controller = builder.build::<PollingBackend<SdnOwner, 128, 128>>(workers);
     while controller.process().is_some() {
         if term.load(Ordering::Relaxed) {
             if shutdown_wait == 200 {
@@ -50,21 +48,21 @@ pub async fn run_sdn(node_id: NodeId, udp_port: u16, seeds: Vec<NodeAddr>, worke
             // log::info!("Command: {:?}", c);
             match c {
                 OutEvent::Bind(port) => {
-                    controller.send_to(Owner::worker(0), SdnExtIn::FeaturesControl(FeaturesControl::Socket(socket::Control::Bind(port))));
+                    controller.send_to(0, SdnExtIn::FeaturesControl((), FeaturesControl::Socket(socket::Control::Bind(port))));
                 }
                 OutEvent::Pkt(pkt) => {
                     let send = socket::Control::SendTo(pkt.local_port, pkt.remote, pkt.remote_port, pkt.data, pkt.meta);
-                    controller.send_to(Owner::worker(0), SdnExtIn::FeaturesControl(FeaturesControl::Socket(send)));
+                    controller.send_to(0, SdnExtIn::FeaturesControl((), FeaturesControl::Socket(send)));
                 }
                 OutEvent::Unbind(port) => {
-                    controller.send_to(Owner::worker(0), SdnExtIn::FeaturesControl(FeaturesControl::Socket(socket::Control::Unbind(port))));
+                    controller.send_to(0, SdnExtIn::FeaturesControl((), FeaturesControl::Socket(socket::Control::Unbind(port))));
                 }
             }
         }
         while let Some(event) = controller.pop_event() {
             // log::info!("Event: {:?}", event);
             match event {
-                SdnExtOut::FeaturesEvent(FeaturesEvent::Socket(socket::Event::RecvFrom(local_port, remote, remote_port, data, meta))) => {
+                SdnExtOut::FeaturesEvent(_, FeaturesEvent::Socket(socket::Event::RecvFrom(local_port, remote, remote_port, data, meta))) => {
                     if let Err(e) = tx.try_send(NetworkPkt {
                         local_port,
                         remote,

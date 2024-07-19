@@ -1,5 +1,6 @@
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_utils::simple_pub_type;
+use sans_io_runtime::TaskSwitcherChild;
 
 use super::ConnectionEvent;
 
@@ -8,9 +9,9 @@ simple_pub_type!(ServiceId, u8);
 /// First part is Service, which is running inside the controller.
 
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
-pub enum ServiceControlActor {
-    Controller,
-    Worker(u16),
+pub enum ServiceControlActor<UserData> {
+    Controller(UserData),
+    Worker(u16, UserData),
 }
 
 #[derive(Debug, Clone)]
@@ -20,15 +21,15 @@ pub enum ServiceSharedInput {
 }
 
 #[derive(Debug)]
-pub enum ServiceInput<FeaturesEvent, ServiceControl, ToController> {
-    Control(ServiceControlActor, ServiceControl),
+pub enum ServiceInput<UserData, FeaturesEvent, ServiceControl, ToController> {
+    Control(ServiceControlActor<UserData>, ServiceControl),
     FromWorker(ToController),
     FeatureEvent(FeaturesEvent),
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum ServiceOutput<FeaturesControl, ServiceEvent, ToWorker> {
-    Event(ServiceControlActor, ServiceEvent),
+pub enum ServiceOutput<UserData, FeaturesControl, ServiceEvent, ToWorker> {
+    Event(ServiceControlActor<UserData>, ServiceEvent),
     FeatureControl(FeaturesControl),
     BroadcastWorkers(ToWorker),
 }
@@ -38,65 +39,67 @@ pub struct ServiceCtx {
     pub session: u64,
 }
 
-pub trait Service<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker> {
+pub trait Service<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker> {
     fn service_id(&self) -> u8;
     fn service_name(&self) -> &str;
+    fn on_shared_input<'a>(&mut self, _ctx: &ServiceCtx, _now: u64, _input: ServiceSharedInput);
+    fn on_input(&mut self, _ctx: &ServiceCtx, _now: u64, input: ServiceInput<UserData, FeaturesEvent, ServiceControl, ToController>);
+    fn pop_output2(&mut self, _now: u64) -> Option<ServiceOutput<UserData, FeaturesControl, ServiceEvent, ToWorker>>;
+}
 
-    fn on_shared_input(&mut self, _ctx: &ServiceCtx, _now: u64, _input: ServiceSharedInput);
-    fn on_input(&mut self, _ctx: &ServiceCtx, _now: u64, input: ServiceInput<FeaturesEvent, ServiceControl, ToController>);
-    fn pop_output(&mut self, _ctx: &ServiceCtx) -> Option<ServiceOutput<FeaturesControl, ServiceEvent, ToWorker>>;
+impl<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker> TaskSwitcherChild<ServiceOutput<UserData, FeaturesControl, ServiceEvent, ToWorker>>
+    for Box<dyn Service<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>
+{
+    type Time = u64;
+    fn pop_output(&mut self, now: u64) -> Option<ServiceOutput<UserData, FeaturesControl, ServiceEvent, ToWorker>> {
+        self.pop_output2(now)
+    }
 }
 
 /// Second part is Worker, which is running inside each data plane workers.
 
-pub enum ServiceWorkerInput<FeaturesEvent, ServiceControl, ToWorker> {
-    Control(ServiceControlActor, ServiceControl),
+pub enum ServiceWorkerInput<UserData, FeaturesEvent, ServiceControl, ToWorker> {
+    Control(ServiceControlActor<UserData>, ServiceControl),
     FromController(ToWorker),
     FeatureEvent(FeaturesEvent),
 }
 
-pub enum ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController> {
-    ForwardControlToController(ServiceControlActor, ServiceControl),
+pub enum ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController> {
+    ForwardControlToController(ServiceControlActor<UserData>, ServiceControl),
     ForwardFeatureEventToController(FeaturesEvent),
     ToController(ToController),
     FeatureControl(FeaturesControl),
-    Event(ServiceControlActor, ServiceEvent),
+    Event(ServiceControlActor<UserData>, ServiceEvent),
 }
 
 pub struct ServiceWorkerCtx {
     pub node_id: NodeId,
 }
 
-pub trait ServiceWorker<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker> {
+pub trait ServiceWorker<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker> {
     fn service_id(&self) -> u8;
     fn service_name(&self) -> &str;
-    fn on_tick(&mut self, _ctx: &ServiceWorkerCtx, _now: u64, _tick_count: u64) {}
-    fn on_input(
-        &mut self,
-        _ctx: &ServiceWorkerCtx,
-        _now: u64,
-        input: ServiceWorkerInput<FeaturesEvent, ServiceControl, ToWorker>,
-    ) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController>> {
-        match input {
-            ServiceWorkerInput::Control(actor, control) => Some(ServiceWorkerOutput::ForwardControlToController(actor, control)),
-            ServiceWorkerInput::FeatureEvent(event) => Some(ServiceWorkerOutput::ForwardFeatureEventToController(event)),
-            ServiceWorkerInput::FromController(_) => {
-                log::warn!("No handler for FromController in {}", self.service_name());
-                None
-            }
-        }
-    }
-    fn pop_output(&mut self, _ctx: &ServiceWorkerCtx) -> Option<ServiceWorkerOutput<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController>> {
-        None
+    fn on_tick(&mut self, _ctx: &ServiceWorkerCtx, _now: u64, _tick_count: u64);
+    fn on_input(&mut self, _ctx: &ServiceWorkerCtx, _now: u64, input: ServiceWorkerInput<UserData, FeaturesEvent, ServiceControl, ToWorker>);
+    fn pop_output2(&mut self, _now: u64) -> Option<ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController>>;
+}
+
+impl<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>
+    TaskSwitcherChild<ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController>>
+    for Box<dyn ServiceWorker<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>
+{
+    type Time = u64;
+    fn pop_output(&mut self, now: u64) -> Option<ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController>> {
+        self.pop_output2(now)
     }
 }
 
-pub trait ServiceBuilder<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>: Send + Sync {
+pub trait ServiceBuilder<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>: Send + Sync {
     fn service_id(&self) -> u8;
     fn service_name(&self) -> &str;
     fn discoverable(&self) -> bool {
         true
     }
-    fn create(&self) -> Box<dyn Service<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>;
-    fn create_worker(&self) -> Box<dyn ServiceWorker<FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>;
+    fn create(&self) -> Box<dyn Service<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>;
+    fn create_worker(&self) -> Box<dyn ServiceWorker<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>;
 }
