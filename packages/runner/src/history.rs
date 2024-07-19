@@ -64,11 +64,11 @@ mod tests {
     fn simple_work() {
         let history = DataWorkerHistory::default();
 
-        assert_eq!(history.already_received_broadcast(Some(1), 1, 1), false);
-        assert_eq!(history.already_received_broadcast(Some(1), 1, 1), true);
+        assert!(!history.already_received_broadcast(Some(1), 1, 1));
+        assert!(history.already_received_broadcast(Some(1), 1, 1));
 
         //after timeout
         history.set_ts(HISTORY_TIMEOUT_MS);
-        assert_eq!(history.already_received_broadcast(Some(1), 1, 1), false);
+        assert!(!history.already_received_broadcast(Some(1), 1, 1));
     }
 }

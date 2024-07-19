@@ -22,7 +22,7 @@ fn process(nodes: &mut [&mut SdnController<(), SC, SE, TC, TW>], timeout_ms: u64
     while count < timeout_ms / 10 {
         std::thread::sleep(Duration::from_millis(10));
         count += 1;
-        for node in nodes.into_iter() {
+        for node in nodes.iter_mut() {
             if node.process().is_none() {
                 panic!("Node is shutdown");
             }
@@ -33,8 +33,7 @@ fn process(nodes: &mut [&mut SdnController<(), SC, SE, TC, TW>], timeout_ms: u64
 fn expect_event(node: &mut SdnController<(), SC, SE, TC, TW>, expected: dht_kv::Event) {
     match node.pop_event() {
         Some(SdnExtOut::FeaturesEvent((), FeaturesEvent::DhtKv(event))) => {
-            assert_eq!(event, expected);
-            return;
+            assert_eq!(event, expected)
         }
         Some(event) => {
             panic!("Unexpected event: {:?}", event)

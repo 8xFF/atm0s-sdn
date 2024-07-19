@@ -108,11 +108,11 @@ impl<UserData, SC, SE, TC: Debug, TW: Debug> Service<UserData, FeaturesControl, 
         match input {
             ServiceSharedInput::Tick(_) => self.check_nodes(now),
             ServiceSharedInput::Connection(ConnectionEvent::Connected(ctx, _)) => {
-                let entry = self.conns.entry(ctx.node).or_insert_with(Vec::new);
+                let entry = self.conns.entry(ctx.node).or_default();
                 entry.push(ctx.conn);
             }
             ServiceSharedInput::Connection(ConnectionEvent::Disconnected(ctx)) => {
-                let entry = self.conns.entry(ctx.node).or_insert_with(Vec::new);
+                let entry = self.conns.entry(ctx.node).or_default();
                 entry.retain(|&conn| conn != ctx.conn);
 
                 if entry.is_empty() {
@@ -125,8 +125,8 @@ impl<UserData, SC, SE, TC: Debug, TW: Debug> Service<UserData, FeaturesControl, 
     }
 
     fn on_input(&mut self, _ctx: &ServiceCtx, now: u64, input: ServiceInput<UserData, FeaturesEvent, SC, TC>) {
-        match input {
-            ServiceInput::FeatureEvent(FeaturesEvent::DhtKv(KvEvent::MapEvent(map, event))) => match event {
+        if let ServiceInput::FeatureEvent(FeaturesEvent::DhtKv(KvEvent::MapEvent(map, event))) = input {
+            match event {
                 MapEvent::OnSet(_, source, value) => {
                     if source == self.node_addr.node_id() {
                         return;
@@ -140,16 +140,15 @@ impl<UserData, SC, SE, TC: Debug, TW: Debug> Service<UserData, FeaturesControl, 
                 }
                 MapEvent::OnDel(_, source) => {
                     self.nodes.remove(&source);
-                    if !self.removing_list.contains_key(&source) {
+                    self.removing_list.entry(source).or_insert_with(|| {
                         log::info!("ManualDiscoveryService node {source} removed tag {map} => push to removing_list");
-                        self.removing_list.insert(source, now);
-                    }
+                        now
+                    });
                 }
                 MapEvent::OnRelaySelected(node) => {
                     log::info!("ManualDiscoveryService relay {node} selected for tag {map}");
                 }
-            },
-            _ => {}
+            }
         }
     }
 

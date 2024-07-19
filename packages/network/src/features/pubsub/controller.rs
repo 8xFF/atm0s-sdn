@@ -54,6 +54,12 @@ pub struct PubSubFeature<UserData> {
     queue: VecDeque<FeatureOutput<UserData, Event, ToWorker<UserData>>>,
 }
 
+impl<UserData: 'static + Eq + Copy + Debug> Default for PubSubFeature<UserData> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<UserData: 'static + Eq + Copy + Debug> PubSubFeature<UserData> {
     pub fn new() -> Self {
         Self {
@@ -185,7 +191,7 @@ impl<UserData: 'static + Eq + Copy + Debug> PubSubFeature<UserData> {
     }
 
     fn on_remote_relay_control(&mut self, ctx: &FeatureContext, now: u64, remote: SocketAddr, relay_id: RelayId, control: RelayControl) {
-        if let Some(_) = self.get_relay(ctx, relay_id, control.should_create()) {
+        if self.get_relay(ctx, relay_id, control.should_create()).is_some() {
             let relay: &mut Box<dyn GenericRelay<UserData>> = self.relays.get_mut(&relay_id).expect("Should have relay");
             log::debug!("[PubSubFeatureController] Remote control for {:?} from {:?}: {:?}", relay_id, remote, control);
             relay.on_remote(now, remote, control);
@@ -300,7 +306,7 @@ impl<UserData: 'static + Eq + Copy + Debug> Feature<UserData, Control, Event, To
         }
     }
 
-    fn on_input<'a>(&mut self, ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'a, UserData, Control, ToController>) {
+    fn on_input(&mut self, ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'_, UserData, Control, ToController>) {
         match input {
             FeatureInput::FromWorker(ToController::RelayControl(remote, relay_id, control)) => {
                 self.on_remote_relay_control(ctx, now_ms, remote, relay_id, control);

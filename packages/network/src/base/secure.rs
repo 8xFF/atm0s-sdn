@@ -48,7 +48,7 @@ pub enum EncryptionError {
 
 #[mockall::automock]
 pub trait Encryptor: Debug + Send + Sync {
-    fn encrypt<'a>(&mut self, now_ms: u64, data: &mut Buffer) -> Result<(), EncryptionError>;
+    fn encrypt(&mut self, now_ms: u64, data: &mut Buffer) -> Result<(), EncryptionError>;
     fn clone_box(&self) -> Box<dyn Encryptor>;
 }
 
@@ -67,7 +67,7 @@ pub enum DecryptionError {
 
 #[mockall::automock]
 pub trait Decryptor: Debug + Send + Sync {
-    fn decrypt<'a>(&mut self, now_ms: u64, data: &mut Buffer) -> Result<(), DecryptionError>;
+    fn decrypt(&mut self, now_ms: u64, data: &mut Buffer) -> Result<(), DecryptionError>;
     fn clone_box(&self) -> Box<dyn Decryptor>;
 }
 

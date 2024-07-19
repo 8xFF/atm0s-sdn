@@ -6,9 +6,6 @@ use sans_io_runtime::TaskSwitcherChild;
 
 use super::{Buffer, ConnectionCtx, ConnectionEvent, ServiceId, TransportMsgHeader, Ttl};
 
-///
-///
-
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct NetIncomingMeta {
     pub source: Option<NodeId>,
@@ -126,7 +123,7 @@ pub enum FeatureOutput<UserData, Event, ToWorker> {
     NeighboursDisconnectFrom(NodeId),
 }
 
-impl<'a, UserData, Event, ToWorker> FeatureOutput<UserData, Event, ToWorker> {
+impl<UserData, Event, ToWorker> FeatureOutput<UserData, Event, ToWorker> {
     pub fn into2<UserData2, Event2, ToWorker2>(self) -> FeatureOutput<UserData2, Event2, ToWorker2>
     where
         UserData2: From<UserData>,
@@ -151,11 +148,8 @@ pub struct FeatureContext {
 
 pub trait Feature<UserData, Control, Event, ToController, ToWorker>: TaskSwitcherChild<FeatureOutput<UserData, Event, ToWorker>> {
     fn on_shared_input(&mut self, _ctx: &FeatureContext, _now: u64, _input: FeatureSharedInput);
-    fn on_input<'a>(&mut self, _ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'a, UserData, Control, ToController>);
+    fn on_input(&mut self, _ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'_, UserData, Control, ToController>);
 }
-
-///
-///
 
 pub enum FeatureWorkerInput<UserData, Control, ToWorker> {
     /// First bool is flag for broadcast or not
@@ -184,7 +178,7 @@ pub enum FeatureWorkerOutput<UserData, Control, Event, ToController> {
     TunPkt(Buffer),
 }
 
-impl<'a, UserData, Control, Event, ToController> FeatureWorkerOutput<UserData, Control, Event, ToController> {
+impl<UserData, Control, Event, ToController> FeatureWorkerOutput<UserData, Control, Event, ToController> {
     pub fn into2<UserData2, Control2, Event2, ToController2>(self) -> FeatureWorkerOutput<UserData2, Control2, Event2, ToController2>
     where
         UserData2: From<UserData>,

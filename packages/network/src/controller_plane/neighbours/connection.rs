@@ -14,9 +14,8 @@ enum State {
         at_ms: u64,
         requester: Option<Box<dyn HandshakeRequester>>,
     },
-    // ASK: this one is never used.
-    // Please give inputs on wether to remove this.
-    // Did not want to simply silence the error
+    // TODO: Use thiserror and warn on dead_code
+    #[allow(dead_code)]
     ConnectError(NeighboursConnectError),
     ConnectTimeout,
     Connected {
@@ -146,30 +145,28 @@ impl NeighbourConnection {
 
     pub fn on_tick(&mut self, now_ms: u64) {
         match &mut self.state {
-            State::Connecting { at_ms, requester } => {
-                if let Some(requester) = requester {
-                    if now_ms - *at_ms >= CONNECT_TIMEOUT_MS {
-                        self.state = State::ConnectTimeout;
-                        self.output.push_back(Output::Event(ConnectionEvent::ConnectTimeout));
-                        log::warn!("[NeighbourConnection] Connection timeout to {} after {} ms", self.remote, CONNECT_TIMEOUT_MS);
-                    } else if now_ms - *at_ms >= RETRY_CMD_MS {
-                        if let Ok(request_buf) = requester.create_public_request() {
-                            self.output.push_back(self.generate_control(
-                                now_ms,
-                                NeighboursControlCmds::ConnectRequest {
-                                    to: self.node,
-                                    session: self.conn.session(),
-                                    handshake: request_buf,
-                                },
-                            ));
-                            log::info!("[NeighbourConnection] Resend connect request to {}, dest_node {}", self.remote, self.node);
-                        } else {
-                            log::warn!(
-                                "[NeighbourConnection] Cannot create handshake for resending connect request to {}, dest_node {}",
-                                self.remote,
-                                self.node
-                            );
-                        }
+            State::Connecting { at_ms, requester: Some(requester) } => {
+                if now_ms - *at_ms >= CONNECT_TIMEOUT_MS {
+                    self.state = State::ConnectTimeout;
+                    self.output.push_back(Output::Event(ConnectionEvent::ConnectTimeout));
+                    log::warn!("[NeighbourConnection] Connection timeout to {} after {} ms", self.remote, CONNECT_TIMEOUT_MS);
+                } else if now_ms - *at_ms >= RETRY_CMD_MS {
+                    if let Ok(request_buf) = requester.create_public_request() {
+                        self.output.push_back(self.generate_control(
+                            now_ms,
+                            NeighboursControlCmds::ConnectRequest {
+                                to: self.node,
+                                session: self.conn.session(),
+                                handshake: request_buf,
+                            },
+                        ));
+                        log::info!("[NeighbourConnection] Resend connect request to {}, dest_node {}", self.remote, self.node);
+                    } else {
+                        log::warn!(
+                            "[NeighbourConnection] Cannot create handshake for resending connect request to {}, dest_node {}",
+                            self.remote,
+                            self.node
+                        );
                     }
                 }
             }

@@ -56,6 +56,7 @@ impl<UserData: Eq + Debug + Copy> FeatureWorkerManager<UserData> {
         self.socket.input(&mut self.switcher).on_tick(ctx, now_ms, tick_count);
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn on_network_raw(&mut self, ctx: &mut FeatureWorkerContext, feature: Features, now_ms: u64, conn: ConnId, remote: SocketAddr, header: TransportMsgHeader, buf: Buffer) {
         match feature {
             Features::Neighbours => self.neighbours.input(&mut self.switcher).on_network_raw(ctx, now_ms, conn, remote, header, buf),

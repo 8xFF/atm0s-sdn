@@ -80,6 +80,12 @@ pub struct TransportMsgHeader {
     pub from_node: Option<NodeId>,
 }
 
+impl Default for TransportMsgHeader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TransportMsgHeader {
     pub fn is_secure(first_byte: u8) -> bool {
         first_byte & 0b0010_0000 != 0
@@ -536,7 +542,7 @@ mod tests {
         assert_eq!(header.feature, 2);
         assert_eq!(header.meta, 3);
         assert_eq!(header.route, RouteRule::Direct);
-        assert_eq!(header.encrypt, true);
+        assert!(header.encrypt);
         assert_eq!(header.from_node, None);
     }
 

@@ -122,10 +122,10 @@ impl TryFrom<&[u8]> for PubsubMessage {
     }
 }
 
-impl Into<Buffer> for PubsubMessage {
-    fn into(self) -> Buffer {
+impl From<PubsubMessage> for Buffer {
+    fn from(val: PubsubMessage) -> Self {
         let header = TransportMsgHeader::build(FEATURE_ID, 0, RouteRule::Direct);
-        let msg = TransportMsg::from_payload_bincode(header, &self);
+        let msg = TransportMsg::from_payload_bincode(header, &val);
         msg.take()
     }
 }

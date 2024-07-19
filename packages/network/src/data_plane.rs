@@ -74,6 +74,7 @@ enum TaskType {
 
 pub struct DataPlaneCfg<UserData, SC, SE, TC, TW> {
     pub worker_id: u16,
+    #[allow(clippy::type_complexity)]
     pub services: Vec<Arc<dyn ServiceBuilder<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
     pub history: Arc<dyn ShadowRouterHistory>,
 }
@@ -84,6 +85,7 @@ pub struct DataPlane<UserData, SC, SE, TC, TW> {
     feature_ctx: FeatureWorkerContext,
     service_ctx: ServiceWorkerCtx,
     features: TaskSwitcherBranch<FeatureWorkerManager<UserData>, features::Output<UserData>>,
+    #[allow(clippy::type_complexity)]
     services: TaskSwitcherBranch<ServiceWorkerManager<UserData, SC, SE, TC, TW>, services::Output<UserData, SC, SE, TC>>,
     conns: HashMap<SocketAddr, DataPlaneConnection>,
     conns_reverse: HashMap<ConnId, SocketAddr>,
@@ -122,7 +124,7 @@ where
     pub fn on_tick(&mut self, now_ms: u64) {
         log::trace!("[DataPlane] on_tick: {}", now_ms);
         self.features.input(&mut self.switcher).on_tick(&mut self.feature_ctx, now_ms, self.tick_count);
-        self.services.input(&mut self.switcher).on_tick(&mut self.service_ctx, now_ms, self.tick_count);
+        self.services.input(&mut self.switcher).on_tick(&self.service_ctx, now_ms, self.tick_count);
         self.tick_count += 1;
     }
 
@@ -146,7 +148,7 @@ where
                     let actor = ServiceControlActor::Worker(self.worker_id, userdata);
                     self.services
                         .input(&mut self.switcher)
-                        .on_input(&mut self.service_ctx, now_ms, service, ServiceWorkerInput::Control(actor, control));
+                        .on_input(&self.service_ctx, now_ms, service, ServiceWorkerInput::Control(actor, control));
                 }
             },
             Input::Worker(CrossWorker::Feature(userdata, event)) => self.queue.push_back(Output::Ext(ExtOut::FeaturesEvent(userdata, event))),
@@ -176,7 +178,7 @@ where
             Input::Event(LogicEvent::Service(service, to)) => {
                 self.services
                     .input(&mut self.switcher)
-                    .on_input(&mut self.service_ctx, now_ms, service, ServiceWorkerInput::FromController(to));
+                    .on_input(&self.service_ctx, now_ms, service, ServiceWorkerInput::FromController(to));
             }
             Input::Event(LogicEvent::ExtFeaturesEvent(worker, userdata, event)) => {
                 assert_eq!(self.worker_id, worker);
@@ -196,7 +198,7 @@ where
                 let header = meta.to_header(feature as u8, RouteRule::Direct, self.feature_ctx.node_id);
                 let conn = return_if_none!(self.conns.get_mut(&remote));
                 let msg = TransportMsg::build_raw(header, buf);
-                if let Some(pkt) = Self::build_send_to_from_mut(now_ms, conn, remote, msg.take().into()) {
+                if let Some(pkt) = Self::build_send_to_from_mut(now_ms, conn, remote, msg.take()) {
                     self.queue.push_back(pkt.into());
                 }
             }
@@ -273,7 +275,7 @@ where
                 let meta = meta.to_incoming(self.feature_ctx.node_id);
                 self.features
                     .input(&mut self.switcher)
-                    .on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::Local(meta, buf.into()));
+                    .on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::Local(meta, buf));
             }
             RouteAction::Next(remote) => {
                 log::debug!("[DataPlane] outgoing route rule {:?} is go with remote {remote}", rule);
@@ -322,7 +324,7 @@ where
                 FeatureControlActor::Service(service) => {
                     self.services
                         .input(&mut self.switcher)
-                        .on_input(&mut self.service_ctx, now_ms, service, ServiceWorkerInput::FeatureEvent(event));
+                        .on_input(&self.service_ctx, now_ms, service, ServiceWorkerInput::FeatureEvent(event));
                 }
             },
             FeatureWorkerOutput::SendDirect(conn, meta, buf) => {
@@ -330,8 +332,7 @@ where
                     let conn = self.conns.get_mut(addr).expect("Should have");
                     let header = meta.to_header(feature as u8, RouteRule::Direct, self.feature_ctx.node_id);
                     let msg = TransportMsg::build_raw(header, buf);
-                    self.queue
-                        .push_back(Self::build_send_to_from_mut(now_ms, conn, *addr, msg.take().into()).expect("Should have output").into())
+                    self.queue.push_back(Self::build_send_to_from_mut(now_ms, conn, *addr, msg.take()).expect("Should have output").into())
                 }
             }
             FeatureWorkerOutput::SendRoute(rule, ttl, buf) => {
@@ -399,7 +400,7 @@ where
             for remote in remotes {
                 if let Some(conn) = self.conns.get_mut(&remote) {
                     let mut buf = Buffer::build(&buf, 0, 12 + 16);
-                    if let Some(_) = conn.encrypt_if_need(now, &mut buf) {
+                    if conn.encrypt_if_need(now, &mut buf).is_some() {
                         let out = NetOutput::UdpPacket(remote, buf);
                         self.queue.push_back(Output::Net(out));
                     }

@@ -50,7 +50,9 @@ pub struct SdnWorkerCfg<UserData, SC, SE, TC, TW> {
 
 pub struct SdnWorker<UserData, SC, SE, TC, TW> {
     tick_ms: u64,
+    #[allow(clippy::type_complexity)]
     controller: Option<TaskSwitcherBranch<ControllerPlane<UserData, SC, SE, TC, TW>, controller_plane::Output<UserData, SE, TW>>>,
+    #[allow(clippy::type_complexity)]
     data: TaskSwitcherBranch<DataPlane<UserData, SC, SE, TC, TW>, data_plane::Output<UserData, SC, SE, TC>>,
     data_shutdown: bool,
     switcher: TaskSwitcher,

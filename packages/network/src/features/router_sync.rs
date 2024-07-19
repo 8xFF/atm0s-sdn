@@ -100,24 +100,21 @@ impl<UserData> Feature<UserData, Control, Event, ToController, ToWorker> for Rou
         }
     }
 
-    fn on_input<'a>(&mut self, _ctx: &FeatureContext, _now_ms: u64, input: FeatureInput<'a, UserData, Control, ToController>) {
-        match input {
-            FeatureInput::Net(ctx, meta, buf) => {
-                if !meta.secure {
-                    log::warn!("[RouterSync] reject unsecure message");
-                    return;
-                }
-                if let Some((_node, _remote, metric)) = self.conns.get(&ctx.conn) {
-                    if let Ok(sync) = bincode::deserialize::<RouterSync>(&buf) {
-                        self.router.apply_sync(ctx.conn, metric.clone(), sync);
-                    } else {
-                        log::warn!("[RouterSync] Receive invalid sync from {}", ctx.remote);
-                    }
-                } else {
-                    log::warn!("[RouterSync] Receive sync from unknown connection {}", ctx.remote);
-                }
+    fn on_input(&mut self, _ctx: &FeatureContext, _now_ms: u64, input: FeatureInput<'_, UserData, Control, ToController>) {
+        if let FeatureInput::Net(ctx, meta, buf) = input {
+            if !meta.secure {
+                log::warn!("[RouterSync] reject unsecure message");
+                return;
             }
-            _ => {}
+            if let Some((_node, _remote, metric)) = self.conns.get(&ctx.conn) {
+                if let Ok(sync) = bincode::deserialize::<RouterSync>(&buf) {
+                    self.router.apply_sync(ctx.conn, metric.clone(), sync);
+                } else {
+                    log::warn!("[RouterSync] Receive invalid sync from {}", ctx.remote);
+                }
+            } else {
+                log::warn!("[RouterSync] Receive sync from unknown connection {}", ctx.remote);
+            }
         }
     }
 }
@@ -205,15 +202,15 @@ mod tests {
         let mut table_sync = [None, None, None, None];
 
         for _ in 0..NUMBER_SERVICES {
-            service_sync.0.push((rand::random(), Metric::new(0, (0..NUMBER_NODE_PATH).into_iter().collect::<Vec<_>>(), 0)));
+            service_sync.0.push((rand::random(), Metric::new(0, (0..NUMBER_NODE_PATH).collect::<Vec<_>>(), 0)));
         }
 
-        for i in 0..4 {
+        for i in &mut table_sync {
             let mut table = TableSync(vec![]);
             for _ in 0..NUMBER_NEIGHBORS {
-                table.0.push((rand::random(), Metric::new(0, (0..NUMBER_NODE_PATH).into_iter().collect::<Vec<_>>(), 0)));
+                table.0.push((rand::random(), Metric::new(0, (0..NUMBER_NODE_PATH).collect::<Vec<_>>(), 0)));
             }
-            table_sync[i] = Some(table);
+            *i = Some(table);
         }
 
         let sync = RouterSync(service_sync, table_sync);

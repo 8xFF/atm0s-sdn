@@ -123,7 +123,7 @@ impl NeighboursManager {
 
 impl TaskSwitcherChild<Output> for NeighboursManager {
     type Time = u64;
-    fn pop_output(&mut self, now: u64) -> Option<Output> {
+    fn pop_output(&mut self, _now: u64) -> Option<Output> {
         if let Some(output) = self.queue.pop_front() {
             return Some(output);
         }

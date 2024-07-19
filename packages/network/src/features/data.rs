@@ -66,26 +66,23 @@ impl<UserData> Default for DataFeature<UserData> {
 
 impl<UserData: Copy> Feature<UserData, Control, Event, ToController, ToWorker> for DataFeature<UserData> {
     fn on_shared_input(&mut self, _ctx: &FeatureContext, now: u64, input: FeatureSharedInput) {
-        match input {
-            FeatureSharedInput::Tick(_) => {
-                //clean timeout ping
-                let mut timeout_list = Vec::new();
-                for (id, (sent_ms, _, _)) in self.waits.iter() {
-                    if now >= sent_ms + 2000 {
-                        timeout_list.push(*id);
-                    }
-                }
-
-                for id in timeout_list {
-                    let (_, actor, dest) = self.waits.remove(&id).expect("Should have");
-                    self.queue.push_back(FeatureOutput::Event(actor, Event::Pong(dest, None)));
+        if let FeatureSharedInput::Tick(_) = input {
+            //clean timeout ping
+            let mut timeout_list = Vec::new();
+            for (id, (sent_ms, _, _)) in self.waits.iter() {
+                if now >= sent_ms + 2000 {
+                    timeout_list.push(*id);
                 }
             }
-            _ => {}
+
+            for id in timeout_list {
+                let (_, actor, dest) = self.waits.remove(&id).expect("Should have");
+                self.queue.push_back(FeatureOutput::Event(actor, Event::Pong(dest, None)));
+            }
         }
     }
 
-    fn on_input<'a>(&mut self, ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'a, UserData, Control, ToController>) {
+    fn on_input(&mut self, ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'_, UserData, Control, ToController>) {
         match input {
             FeatureInput::Control(actor, control) => match control {
                 Control::Ping(dest) => {

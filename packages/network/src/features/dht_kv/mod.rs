@@ -98,7 +98,7 @@ impl<UserData: Eq + Copy + Debug> Feature<UserData, Control, Event, ToController
         }
     }
 
-    fn on_input<'a>(&mut self, _ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'a, UserData, Control, ToController>) {
+    fn on_input(&mut self, _ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'_, UserData, Control, ToController>) {
         match input {
             FeatureInput::Control(actor, control) => {
                 log::debug!("[DhtKv] on ext input: actor={:?}, control={:?}", actor, control);

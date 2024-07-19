@@ -46,6 +46,7 @@ enum TaskType {
 
 pub struct ControllerPlaneCfg<UserData, SC, SE, TC, TW> {
     pub session: u64,
+    #[allow(clippy::type_complexity)]
     pub services: Vec<Arc<dyn ServiceBuilder<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
     pub authorization: Arc<dyn Authorization>,
     pub handshake_builder: Arc<dyn HandshakeBuilder>,
@@ -59,6 +60,7 @@ pub struct ControllerPlane<UserData, SC, SE, TC, TW> {
     service_ctx: ServiceCtx,
     neighbours: TaskSwitcherBranch<NeighboursManager, neighbours::Output>,
     features: TaskSwitcherBranch<FeatureManager<UserData>, features::Output<UserData>>,
+    #[allow(clippy::type_complexity)]
     services: TaskSwitcherBranch<ServiceManager<UserData, SC, SE, TC, TW>, services::Output<UserData, SE, TW>>,
     switcher: TaskSwitcher,
     queue: VecDeque<Output<UserData, SE, TW>>,

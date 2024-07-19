@@ -97,41 +97,39 @@ impl<UserData: Debug + Copy> AliasFeature<UserData> {
                 if self.local_slots.contains_key(&alias) {
                     log::debug!("[AliasFeature] Found alias {} at local", alias);
                     self.queue.push_back(FeatureOutput::Event(actor, Event::QueryResult(alias, Some(FoundLocation::Local))));
-                } else {
-                    if let Some(slot) = self.queries.get_mut(&alias) {
-                        log::debug!("[AliasFeature] Alias {} is already in query state => push to wait queue", alias);
-                        slot.waiters.push(actor);
-                    } else if let Some(slot) = self.hint_slots.get(&alias) {
-                        if slot.ts + HINT_TIMEOUT_MS >= now_ms {
-                            log::debug!("[AliasFeature] Alias {alias} is very newly added ({} vs now {}) to hint {} => reuse", slot.ts, now_ms, slot.node);
-                            self.queue.push_back(FeatureOutput::Event(actor, Event::QueryResult(alias, Some(FoundLocation::CachedHint(slot.node)))));
-                        } else {
-                            log::debug!("[AliasFeature] Alias {alias} is not in query state but has hint {} => check hint", slot.node);
-                            self.queries.insert(
-                                alias,
-                                QuerySlot {
-                                    waiters: vec![actor],
-                                    state: QueryState::CheckHint(slot.node, now_ms),
-                                    service,
-                                    level,
-                                },
-                            );
-                            Self::send_to(&mut self.queue, RouteRule::ToNode(slot.node), Message::Check(alias));
-                        }
+                } else if let Some(slot) = self.queries.get_mut(&alias) {
+                    log::debug!("[AliasFeature] Alias {} is already in query state => push to wait queue", alias);
+                    slot.waiters.push(actor);
+                } else if let Some(slot) = self.hint_slots.get(&alias) {
+                    if slot.ts + HINT_TIMEOUT_MS >= now_ms {
+                        log::debug!("[AliasFeature] Alias {alias} is very newly added ({} vs now {}) to hint {} => reuse", slot.ts, now_ms, slot.node);
+                        self.queue.push_back(FeatureOutput::Event(actor, Event::QueryResult(alias, Some(FoundLocation::CachedHint(slot.node)))));
                     } else {
-                        log::debug!("[AliasFeature] Alias {alias} is not in query state and has no hint => scan");
+                        log::debug!("[AliasFeature] Alias {alias} is not in query state but has hint {} => check hint", slot.node);
                         self.queries.insert(
                             alias,
                             QuerySlot {
                                 waiters: vec![actor],
-                                state: QueryState::Scan(now_ms),
+                                state: QueryState::CheckHint(slot.node, now_ms),
                                 service,
                                 level,
                             },
                         );
-                        let seq = Self::gen_seq(&mut self.scan_seq);
-                        Self::send_to(&mut self.queue, RouteRule::ToServices(service, level, seq), Message::Scan(alias));
+                        Self::send_to(&mut self.queue, RouteRule::ToNode(slot.node), Message::Check(alias));
                     }
+                } else {
+                    log::debug!("[AliasFeature] Alias {alias} is not in query state and has no hint => scan");
+                    self.queries.insert(
+                        alias,
+                        QuerySlot {
+                            waiters: vec![actor],
+                            state: QueryState::Scan(now_ms),
+                            service,
+                            level,
+                        },
+                    );
+                    let seq = Self::gen_seq(&mut self.scan_seq);
+                    Self::send_to(&mut self.queue, RouteRule::ToServices(service, level, seq), Message::Scan(alias));
                 }
             }
             Control::Unregister { alias } => {
@@ -221,42 +219,39 @@ impl<UserData: Debug + Copy> AliasFeature<UserData> {
 
 impl<UserData: Debug + Copy> Feature<UserData, Control, Event, ToController, ToWorker> for AliasFeature<UserData> {
     fn on_shared_input(&mut self, _ctx: &FeatureContext, now: u64, input: FeatureSharedInput) {
-        match input {
-            FeatureSharedInput::Tick(_) => {
-                let mut timeout = vec![];
-                for (alias, slot) in &mut self.queries {
-                    match &slot.state {
-                        QueryState::CheckHint(hint, started_at) => {
-                            if now >= *started_at + HINT_TIMEOUT_MS {
-                                log::debug!("[AliasFeature] check {alias} hint node {hint} timeout => switch to Scan");
+        if let FeatureSharedInput::Tick(_) = input {
+            let mut timeout = vec![];
+            for (alias, slot) in &mut self.queries {
+                match &slot.state {
+                    QueryState::CheckHint(hint, started_at) => {
+                        if now >= *started_at + HINT_TIMEOUT_MS {
+                            log::debug!("[AliasFeature] check {alias} hint node {hint} timeout => switch to Scan");
 
-                                let seq = self.scan_seq;
-                                self.scan_seq = self.scan_seq.wrapping_add(1);
-                                slot.state = QueryState::Scan(now);
-                                Self::send_to(&mut self.queue, RouteRule::ToServices(slot.service, slot.level, seq), Message::Scan(*alias));
-                            }
-                        }
-                        QueryState::Scan(started_at) => {
-                            if now >= *started_at + SCAN_TIMEOUT_MS {
-                                timeout.push(*alias);
-                            }
+                            let seq = self.scan_seq;
+                            self.scan_seq = self.scan_seq.wrapping_add(1);
+                            slot.state = QueryState::Scan(now);
+                            Self::send_to(&mut self.queue, RouteRule::ToServices(slot.service, slot.level, seq), Message::Scan(*alias));
                         }
                     }
-                }
-
-                for alias in timeout {
-                    let slot = self.queries.remove(&alias).expect("Should have slot");
-                    log::debug!("[AliasFeature] scan {alias} timeout => notify waiters {:?}", slot.waiters);
-                    for actor in slot.waiters {
-                        self.queue.push_back(FeatureOutput::Event(actor, Event::QueryResult(alias, None)));
+                    QueryState::Scan(started_at) => {
+                        if now >= *started_at + SCAN_TIMEOUT_MS {
+                            timeout.push(*alias);
+                        }
                     }
                 }
             }
-            _ => {}
+
+            for alias in timeout {
+                let slot = self.queries.remove(&alias).expect("Should have slot");
+                log::debug!("[AliasFeature] scan {alias} timeout => notify waiters {:?}", slot.waiters);
+                for actor in slot.waiters {
+                    self.queue.push_back(FeatureOutput::Event(actor, Event::QueryResult(alias, None)));
+                }
+            }
         }
     }
 
-    fn on_input<'a>(&mut self, _ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'a, UserData, Control, ToController>) {
+    fn on_input(&mut self, _ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'_, UserData, Control, ToController>) {
         match input {
             FeatureInput::Control(actor, control) => self.process_control(now_ms, actor, control),
             FeatureInput::Local(meta, msg) | FeatureInput::Net(_, meta, msg) => {
@@ -264,9 +259,8 @@ impl<UserData: Debug + Copy> Feature<UserData, Control, Event, ToController, ToW
                     log::warn!("[AliasFeature] reject unsecure message");
                     return;
                 }
-                match (meta.source, bincode::deserialize::<Message>(&msg)) {
-                    (Some(from), Ok(msg)) => self.process_remote(now_ms, from, msg),
-                    _ => {}
+                if let (Some(from), Ok(msg)) = (meta.source, bincode::deserialize::<Message>(&msg)) {
+                    self.process_remote(now_ms, from, msg)
                 }
             }
             _ => {}

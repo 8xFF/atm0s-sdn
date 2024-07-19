@@ -135,7 +135,7 @@ mod tests {
         assert_eq!(consumers.pop_output(), None);
 
         assert_eq!(consumers.relay_dests(), (&[FeatureControlActor::Controller(())] as &[_], false));
-        assert_eq!(consumers.should_clear(), false);
+        assert!(!consumers.should_clear());
 
         consumers.on_local_unsub(100, FeatureControlActor::Controller(()));
 
@@ -160,7 +160,7 @@ mod tests {
         assert_eq!(consumers.pop_output(), None);
 
         assert_eq!(consumers.relay_dests(), (&[FeatureControlActor::Controller(()), FeatureControlActor::Service(1.into())] as &[_], false));
-        assert_eq!(consumers.should_clear(), false);
+        assert!(!consumers.should_clear());
 
         consumers.on_local_unsub(100, FeatureControlActor::Controller(()));
 
@@ -263,7 +263,7 @@ mod tests {
         assert_eq!(consumers.pop_output(), None);
 
         assert_eq!(consumers.relay_dests(), (&[FeatureControlActor::Controller(())] as &[_], true));
-        assert_eq!(consumers.should_clear(), false);
+        assert!(!consumers.should_clear());
 
         consumers.on_remote(100, remote1, RelayControl::Unsub(1000));
 
@@ -272,7 +272,7 @@ mod tests {
         assert_eq!(consumers.pop_output(), None);
 
         assert_eq!(consumers.relay_dests(), (&[FeatureControlActor::Controller(())] as &[_], false));
-        assert_eq!(consumers.should_clear(), false);
+        assert!(!consumers.should_clear());
 
         consumers.on_local_unsub(200, FeatureControlActor::Controller(()));
 

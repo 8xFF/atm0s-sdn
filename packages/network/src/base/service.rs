@@ -42,7 +42,7 @@ pub struct ServiceCtx {
 pub trait Service<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker> {
     fn service_id(&self) -> u8;
     fn service_name(&self) -> &str;
-    fn on_shared_input<'a>(&mut self, _ctx: &ServiceCtx, _now: u64, _input: ServiceSharedInput);
+    fn on_shared_input(&mut self, _ctx: &ServiceCtx, _now: u64, _input: ServiceSharedInput);
     fn on_input(&mut self, _ctx: &ServiceCtx, _now: u64, input: ServiceInput<UserData, FeaturesEvent, ServiceControl, ToController>);
     fn pop_output2(&mut self, _now: u64) -> Option<ServiceOutput<UserData, FeaturesControl, ServiceEvent, ToWorker>>;
 }
