@@ -100,8 +100,6 @@ impl SourceHint {
 }
 
 pub enum PubsubMessageError {
-    // Ask this one is never used. Please give inputs on how to use this.
-    // Did not want to simply silence the error
     TransportError(TransportMsgHeaderError),
     DeserializeError,
 }
