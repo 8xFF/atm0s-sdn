@@ -9,7 +9,6 @@ use crate::features::{FeaturesControl, FeaturesEvent};
 pub type Output<UserData, ServiceEvent, ToWorker> = (ServiceId, ServiceOutput<UserData, FeaturesControl, ServiceEvent, ToWorker>);
 
 /// To manage the services we need to create an object that will hold the services
-
 pub struct ServiceManager<UserData, ServiceControl, ServiceEvent, ToController, ToWorker> {
     services: [Option<
         TaskSwitcherBranch<

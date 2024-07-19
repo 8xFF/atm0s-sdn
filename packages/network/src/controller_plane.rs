@@ -174,8 +174,6 @@ where
         }
     }
 
-    // fn pop_features(&mut self, now_ms: u64) -> Option<Output<SE, TW>> {
-    // let (feature, out) = self.features.pop_output(&self.feature_ctx)?;
     fn pop_neighbours(&mut self, now_ms: u64) {
         let out = return_if_none!(self.neighbours.pop_output(now_ms, &mut self.switcher));
         match out {

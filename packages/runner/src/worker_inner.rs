@@ -45,14 +45,12 @@ pub struct ControllerCfg {
     pub session: u64,
     pub auth: Arc<dyn Authorization>,
     pub handshake: Arc<dyn HandshakeBuilder>,
-    // pub tick_ms: u64,
     #[cfg(feature = "vpn")]
     pub vpn_tun_device: Option<sans_io_runtime::backend::tun::TunDevice>,
 }
 
 pub struct SdnInnerCfg<UserData, SC, SE, TC, TW> {
     pub node_id: NodeId,
-    // ASK: Maybe we should somehow use controller.unwrap().tick_ms?
     pub tick_ms: u64,
     pub udp_port: u16,
     pub controller: Option<ControllerCfg>,

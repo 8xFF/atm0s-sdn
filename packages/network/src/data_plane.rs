@@ -142,7 +142,6 @@ where
                         .input(&mut self.switcher)
                         .on_input(&mut self.feature_ctx, feature, now_ms, FeatureWorkerInput::Control(actor, control));
                 }
-
                 ExtIn::ServicesControl(service, userdata, control) => {
                     let actor = ServiceControlActor::Worker(self.worker_id, userdata);
                     self.services
@@ -255,7 +254,6 @@ where
                             .on_network_raw(&mut self.feature_ctx, feature, now_ms, conn.conn(), remote, header, buf.clone());
                     }
                 }
-
                 if !remotes.is_empty() {
                     if let Some(out) = self.build_send_to_multi_from_mut(now_ms, remotes, buf) {
                         self.queue.push_back(out.into());
