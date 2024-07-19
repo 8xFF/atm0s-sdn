@@ -2,6 +2,10 @@
 name = "atm0s-sdn-standalone"
 version = "0.1.0"
 edition = "2021"
+repository = "https://github.com/8xFF/atm0s-sdn"
+description = "Decentralized Ultra-Low-Latency Software Defined Network"
+license = "MIT"
+publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
