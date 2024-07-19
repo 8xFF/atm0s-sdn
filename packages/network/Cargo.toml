@@ -1,6 +1,6 @@
 [package]
 name = "atm0s-sdn-network"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2021"
 description = "Main network-plane of atm0s-sdn"
 license = "MIT"
@@ -8,9 +8,9 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-atm0s-sdn-utils = { path = "../core/utils", version = "0.1.1" }
-atm0s-sdn-identity = { path = "../core/identity", version = "0.2.0" }
-atm0s-sdn-router = { path = "../core/router", version = "0.1.4" }
+atm0s-sdn-utils = { path = "../core/utils", version = "0.2.0" }
+atm0s-sdn-identity = { path = "../core/identity", version = "0.3.0" }
+atm0s-sdn-router = { path = "../core/router", version = "0.2.0" }
 sans-io-runtime = { workspace = true, default-features = false }
 rand = { workspace = true }
 mockall = { workspace = true }
@@ -31,7 +31,6 @@ derivative = "2.2"
 
 [dev-dependencies]
 env_logger = { workspace = true }
-atm0s-sdn-router = { path = "../core/router", version = "0.1.4" }
 
 [features]
 default = ["fuzz"]
