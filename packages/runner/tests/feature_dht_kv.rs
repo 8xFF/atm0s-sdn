@@ -1,4 +1,7 @@
-use std::time::Duration;
+use std::{
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    time::Duration,
+};
 
 use atm0s_sdn::{
     features::{
@@ -46,7 +49,7 @@ fn expect_event(node: &mut SdnController<(), SC, SE, TC, TW>, expected: dht_kv::
 }
 
 fn build_node(node_id: NodeId, udp_port: u16) -> (SdnController<(), SC, SE, TC, TW>, NodeAddr) {
-    let mut builder = SdnBuilder::<(), SC, SE, TC, TW, UserInfo>::new(node_id, udp_port, vec![]);
+    let mut builder = SdnBuilder::<(), SC, SE, TC, TW, UserInfo>::new(node_id, &[SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, udp_port))], vec![]);
     builder.set_authorization(StaticKeyAuthorization::new("password-here"));
     let node_addr = builder.node_addr();
     let node_info = node_id;

@@ -29,7 +29,7 @@ pub struct SdnBuilder<UserData, SC, SE, TC, TW, NodeInfo> {
     node_addr: NodeAddr,
     node_id: NodeId,
     session: u64,
-    udp_port: u16,
+    bind_addrs: Vec<SocketAddr>,
     tick_ms: u64,
     visualization_collector: bool,
     seeds: Vec<NodeAddr>,
@@ -52,8 +52,10 @@ where
     TC: 'static + Clone + Send + Sync,
     TW: 'static + Clone + Send + Sync,
 {
-    pub fn new(node_id: NodeId, udp_port: u16, custom_ip: Vec<SocketAddr>) -> Self {
-        let node_addr = generate_node_addr(node_id, udp_port, custom_ip);
+    pub fn new(node_id: NodeId, bind_addrs: &[SocketAddr], custom_ip: Vec<SocketAddr>) -> Self {
+        assert!(bind_addrs.len() == 1, "Current implementation only support single bind_addr");
+        assert!(!bind_addrs[0].ip().is_unspecified(), "Don't support unspecified bind_addr");
+        let node_addr = generate_node_addr(node_id, bind_addrs, custom_ip);
         log::info!("Created node on addr {}", node_addr);
 
         Self {
@@ -63,7 +65,7 @@ where
             node_id,
             tick_ms: 1000,
             session: thread_rng().next_u64(),
-            udp_port,
+            bind_addrs: bind_addrs.to_vec(),
             visualization_collector: false,
             seeds: vec![],
             services: vec![],
@@ -159,7 +161,7 @@ where
             SdnInnerCfg {
                 node_id: self.node_id,
                 tick_ms: self.tick_ms,
-                udp_port: self.udp_port,
+                bind_addrs: self.bind_addrs.to_vec(),
                 services: self.services.clone(),
                 history: history.clone(),
                 controller: Some(ControllerCfg {
@@ -181,7 +183,7 @@ where
                 SdnInnerCfg {
                     node_id: self.node_id,
                     tick_ms: self.tick_ms,
-                    udp_port: self.udp_port,
+                    bind_addrs: self.bind_addrs.to_vec(),
                     services: self.services.clone(),
                     history: history.clone(),
                     controller: None,
@@ -202,29 +204,33 @@ where
     }
 }
 
-pub fn generate_node_addr(node_id: u32, udp_port: u16, custom_ips: Vec<SocketAddr>) -> NodeAddr {
+pub fn generate_node_addr(node_id: u32, bind_addrs: &[SocketAddr], custom_ips: Vec<SocketAddr>) -> NodeAddr {
     let mut addr_builder = NodeAddrBuilder::new(node_id);
-    for (name, ip) in local_ip_address::list_afinet_netifas().expect("Should have local ip addresses") {
-        match ip {
+    for bind_addr in bind_addrs {
+        match bind_addr.ip() {
             IpAddr::V4(ip) => {
-                log::info!("Added ip {}:\t{:?}", name, ip);
+                log::info!("Added ipv4 {}", ip);
                 addr_builder.add_protocol(Protocol::Ip4(ip));
-                addr_builder.add_protocol(Protocol::Udp(udp_port));
+                addr_builder.add_protocol(Protocol::Udp(bind_addr.port()));
             }
             IpAddr::V6(ip) => {
-                log::warn!("Ignoring ipv6 address: {}", ip);
+                log::info!("Added ipv6 {}", ip);
+                addr_builder.add_protocol(Protocol::Ip6(ip));
+                addr_builder.add_protocol(Protocol::Udp(bind_addr.port()));
             }
         }
     }
     for ip in custom_ips {
         match ip {
             SocketAddr::V4(ip) => {
-                log::info!("Added custom ip:\t{:?}", ip);
+                log::info!("Added custom ipv4:\t{:?}", ip);
                 addr_builder.add_protocol(Protocol::Ip4(*ip.ip()));
                 addr_builder.add_protocol(Protocol::Udp(ip.port()));
             }
             SocketAddr::V6(ip) => {
-                log::warn!("Ignoring ipv6 address: {}", ip);
+                log::info!("Added custom ipv6:\t{:?}", ip);
+                addr_builder.add_protocol(Protocol::Ip6(*ip.ip()));
+                addr_builder.add_protocol(Protocol::Udp(ip.port()));
             }
         }
     }
