@@ -1,11 +1,4 @@
-use std::{
-    collections::VecDeque,
-    fmt::Debug,
-    hash::Hash,
-    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
-    sync::Arc,
-    time::Instant,
-};
+use std::{collections::VecDeque, fmt::Debug, hash::Hash, net::SocketAddr, sync::Arc, time::Instant};
 
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_network::{
@@ -52,7 +45,7 @@ pub struct ControllerCfg {
 pub struct SdnInnerCfg<UserData, SC, SE, TC, TW> {
     pub node_id: NodeId,
     pub tick_ms: u64,
-    pub udp_port: u16,
+    pub bind_addr: SocketAddr,
     pub controller: Option<ControllerCfg>,
     pub services: Vec<Arc<dyn ServiceBuilder<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
     pub history: Arc<dyn ShadowRouterHistory>,
@@ -138,10 +131,9 @@ impl<UserData: 'static + Eq + Copy + Hash + Debug, SC: Debug, SE: Debug, TC: Deb
     for SdnWorkerInner<UserData, SC, SE, TC, TW>
 {
     fn build(worker: u16, cfg: SdnInnerCfg<UserData, SC, SE, TC, TW>) -> Self {
-        let addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), cfg.udp_port));
         let mut queue = VecDeque::from([
             WorkerInnerOutput::Bus(BusControl::Channel(SdnOwner, BusChannelControl::Subscribe(SdnChannel::Worker(worker)))),
-            WorkerInnerOutput::Net(SdnOwner, BackendOutgoing::UdpListen { addr, reuse: true }),
+            WorkerInnerOutput::Net(SdnOwner, BackendOutgoing::UdpListen { addr: cfg.bind_addr, reuse: true }),
         ]);
         #[cfg(feature = "vpn")]
         if let Some(fd) = cfg.vpn_tun_fd {

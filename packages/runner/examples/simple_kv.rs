@@ -10,6 +10,7 @@ use atm0s_sdn_network::{
 use clap::{Parser, ValueEnum};
 use sans_io_runtime::backend::{PollBackend, PollingBackend};
 use std::{
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -35,7 +36,7 @@ struct Args {
 
     /// Listen address
     #[arg(short, long)]
-    udp_port: u16,
+    bind_addr: SocketAddr,
 
     /// Address of node we should connect to
     #[arg(short, long)]
@@ -78,7 +79,7 @@ fn main() {
     let mut shutdown_wait = 0;
     let args = Args::parse();
     env_logger::builder().format_timestamp_millis().init();
-    let mut builder = SdnBuilder::<(), SC, SE, TC, TW, UserInfo>::new(args.node_id, args.udp_port, vec![]);
+    let mut builder = SdnBuilder::<(), SC, SE, TC, TW, UserInfo>::new(args.node_id, args.bind_addr, vec![]);
     builder.set_authorization(StaticKeyAuthorization::new(&args.password));
 
     for seed in args.seeds {
