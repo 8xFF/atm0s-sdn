@@ -168,8 +168,12 @@ impl NeighbourConnection {
                     }
                 }
             }
-            State::IncomingWait { at_ms: _ } => {
-                // maybe we need handle timeout here
+            State::IncomingWait { at_ms } => {
+                if now_ms - *at_ms >= CONNECT_TIMEOUT_MS {
+                    self.state = State::ConnectTimeout;
+                    self.output.push_back(Output::Event(ConnectionEvent::ConnectTimeout));
+                    log::warn!("[NeighbourConnection] Connection timeout from {} after {} ms", self.remote, CONNECT_TIMEOUT_MS);
+                }
             }
             State::Connected { ping_seq, last_pong_ms, .. } => {
                 if now_ms - *last_pong_ms >= CONNECTION_TIMEOUT_MS {
@@ -212,7 +216,7 @@ impl NeighbourConnection {
             NeighboursControlCmds::ConnectRequest { to, session, handshake } => {
                 let result = if self.local == to && self.node == from {
                     match &mut self.state {
-                        State::IncomingWait { at_ms } => {
+                        State::IncomingWait { .. } => {
                             let mut responder = self.handshake_builder.responder();
                             match responder.process_public_request(&handshake) {
                                 Ok((encryptor, decryptor, response)) => {
@@ -232,7 +236,7 @@ impl NeighbourConnection {
                                 }
                             }
                         }
-                        State::OutgoingWait { requester, .. } => {
+                        State::OutgoingWait { .. } => {
                             if self.conn.session() >= session {
                                 //check if we can replace the existing connection to accept the new one
                                 log::warn!(
