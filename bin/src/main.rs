@@ -1,3 +1,5 @@
+#![allow(clippy::bool_assert_comparison)]
+
 use atm0s_sdn::secure::StaticKeyAuthorization;
 use atm0s_sdn::services::visualization;
 use atm0s_sdn::{

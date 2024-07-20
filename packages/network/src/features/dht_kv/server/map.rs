@@ -326,9 +326,9 @@ mod test {
     fn map_slot_set_del_correct() {
         let mut slot = MapSlot::new();
 
-        assert!(slot.set(0, Version(0), vec![1, 2, 3]));
+        assert_eq!(slot.set(0, Version(0), vec![1, 2, 3]), true);
         assert_eq!(slot.dump(), Some((Version(0), vec![1, 2, 3])));
-        assert!(slot.set(0, Version(1), vec![1, 2, 4]));
+        assert_eq!(slot.set(0, Version(1), vec![1, 2, 4]), true);
         assert_eq!(slot.dump(), Some((Version(1), vec![1, 2, 4])));
         assert_eq!(slot.del(0, Version(1)), Some(Version(1)));
         assert_eq!(slot.dump(), None);
@@ -338,7 +338,7 @@ mod test {
     fn map_slot_set_del_newer_version_correct() {
         let mut slot = MapSlot::new();
 
-        assert!(slot.set(0, Version(0), vec![1, 2, 3]));
+        assert_eq!(slot.set(0, Version(0), vec![1, 2, 3]), true);
         assert_eq!(slot.dump(), Some((Version(0), vec![1, 2, 3])));
         assert_eq!(slot.del(0, Version(100)), Some(Version(0)));
         assert_eq!(slot.dump(), None);
@@ -348,9 +348,9 @@ mod test {
     fn map_slot_set_del_invalid() {
         let mut slot = MapSlot::new();
 
-        assert!(slot.set(0, Version(100), vec![1, 2, 3]));
+        assert_eq!(slot.set(0, Version(100), vec![1, 2, 3]), true);
         assert_eq!(slot.dump(), Some((Version(100), vec![1, 2, 3])));
-        assert!(!slot.set(0, Version(1), vec![1, 2, 4]));
+        assert_eq!(slot.set(0, Version(1), vec![1, 2, 4]), false);
         assert_eq!(slot.dump(), Some((Version(100), vec![1, 2, 3])));
         assert_eq!(slot.del(0, Version(1)), None);
         assert_eq!(slot.dump(), Some((Version(100), vec![1, 2, 3])));

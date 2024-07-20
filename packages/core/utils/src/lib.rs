@@ -1,3 +1,5 @@
+#![allow(clippy::bool_assert_comparison)]
+
 pub mod error_handle;
 pub mod hash;
 pub mod init_array;

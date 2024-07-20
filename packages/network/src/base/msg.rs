@@ -542,7 +542,7 @@ mod tests {
         assert_eq!(header.feature, 2);
         assert_eq!(header.meta, 3);
         assert_eq!(header.route, RouteRule::Direct);
-        assert!(header.encrypt);
+        assert_eq!(header.encrypt, true);
         assert_eq!(header.from_node, None);
     }
 

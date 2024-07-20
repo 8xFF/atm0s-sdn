@@ -1,3 +1,5 @@
+#![allow(clippy::bool_assert_comparison)]
+
 mod conn_id;
 mod node_addr;
 mod node_id;

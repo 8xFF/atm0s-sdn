@@ -1,3 +1,5 @@
+#![allow(clippy::bool_assert_comparison)]
+
 use atm0s_sdn_identity::{NodeId, NodeIdType};
 pub mod core;
 pub mod shadow;
