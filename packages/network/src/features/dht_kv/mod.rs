@@ -62,12 +62,12 @@ pub enum MapEvent {
     OnRelaySelected(NodeId),
 }
 
-type EventMapGetRs = Result<Vec<(Key, NodeSession, Version, Vec<u8>)>, GetError>;
+type MapGetRs = Result<Vec<(Key, NodeSession, Version, Vec<u8>)>, GetError>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     MapEvent(Map, MapEvent),
-    MapGetRes(Map, EventMapGetRs),
+    MapGetRes(Map, MapGetRs),
 }
 
 #[derive(Debug, Clone)]
