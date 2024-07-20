@@ -1,11 +1,4 @@
-use std::{
-    collections::VecDeque,
-    fmt::Debug,
-    hash::Hash,
-    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
-    sync::Arc,
-    time::Instant,
-};
+use std::{collections::VecDeque, fmt::Debug, hash::Hash, net::SocketAddr, sync::Arc, time::Instant};
 
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_network::{
@@ -52,7 +45,7 @@ pub struct ControllerCfg {
 pub struct SdnInnerCfg<UserData, SC, SE, TC, TW> {
     pub node_id: NodeId,
     pub tick_ms: u64,
-    pub udp_port: u16,
+    pub bind_addrs: Vec<SocketAddr>,
     pub controller: Option<ControllerCfg>,
     #[allow(clippy::type_complexity)]
     pub services: Vec<Arc<dyn ServiceBuilder<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
@@ -141,7 +134,10 @@ impl<UserData: 'static + Eq + Copy + Hash + Debug, SC: Debug, SE: Debug, TC: Deb
     for SdnWorkerInner<UserData, SC, SE, TC, TW>
 {
     fn build(worker: u16, cfg: SdnInnerCfg<UserData, SC, SE, TC, TW>) -> Self {
-        let addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), cfg.udp_port));
+        // TODO implement multi bind_addrs;
+        assert!(cfg.bind_addrs.len() == 1, "Current implementation only support single bind_addr");
+        assert!(!cfg.bind_addrs[0].ip().is_unspecified(), "Current implementation only support non unspecified bind_addr");
+        let addr = cfg.bind_addrs[0];
         let mut queue = VecDeque::from([
             WorkerInnerOutput::Bus(BusControl::Channel(SdnOwner, BusChannelControl::Subscribe(SdnChannel::Worker(worker)))),
             WorkerInnerOutput::Net(SdnOwner, BackendOutgoing::UdpListen { addr, reuse: true }),

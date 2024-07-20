@@ -59,8 +59,8 @@ struct Args {
     node_id: NodeId,
 
     /// Listen address
-    #[arg(env, short, long, default_value_t = 0)]
-    udp_port: u16,
+    #[arg(env, short, long, default_value = "127.0.0.1:10000")]
+    bind_addr: SocketAddr,
 
     /// Address of node we should connect to
     #[arg(env, short, long)]
@@ -71,7 +71,7 @@ struct Args {
     password: String,
 
     /// Backend type
-    #[arg(env, short, long, default_value = "polling")]
+    #[arg(env, long, default_value = "polling")]
     backend: BackendType,
 
     /// Enable Tun-Tap interface for create a vpn network between nodes
@@ -248,7 +248,7 @@ async fn main() {
     let mut shutdown_wait = 0;
     let args = Args::parse();
     tracing_subscriber::fmt::init();
-    let mut builder = SdnBuilder::<(), SC, SE, TC, TW, VisualNodeInfo>::new(args.node_id, args.udp_port, args.custom_addrs);
+    let mut builder = SdnBuilder::<(), SC, SE, TC, TW, VisualNodeInfo>::new(args.node_id, &[args.bind_addr], args.custom_addrs);
 
     builder.set_authorization(StaticKeyAuthorization::new(&args.password));
     builder.set_manual_discovery(args.local_tags, args.connect_tags);
