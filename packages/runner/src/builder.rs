@@ -53,6 +53,7 @@ where
     TW: 'static + Clone + Send + Sync,
 {
     pub fn new(node_id: NodeId, bind_addr: SocketAddr, custom_ip: Vec<SocketAddr>) -> Self {
+        assert!(!bind_addr.ip().is_unspecified(), "Don't support unspecified bind_addr");
         let node_addr = generate_node_addr(node_id, bind_addr, custom_ip);
         log::info!("Created node on addr {}", node_addr);
 

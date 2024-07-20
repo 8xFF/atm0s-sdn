@@ -10,7 +10,7 @@ use atm0s_sdn_network::{
 use clap::{Parser, ValueEnum};
 use sans_io_runtime::backend::{PollBackend, PollingBackend};
 use std::{
-    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    net::SocketAddr,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,

@@ -69,7 +69,7 @@ struct Args {
     password: String,
 
     /// Backend type
-    #[arg(env, short, long, default_value = "polling")]
+    #[arg(env, long, default_value = "polling")]
     backend: BackendType,
 
     /// Enable Tun-Tap interface for create a vpn network between nodes
