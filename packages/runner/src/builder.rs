@@ -29,7 +29,7 @@ pub struct SdnBuilder<UserData, SC, SE, TC, TW, NodeInfo> {
     node_addr: NodeAddr,
     node_id: NodeId,
     session: u64,
-    bind_addr: SocketAddr,
+    bind_addrs: Vec<SocketAddr>,
     tick_ms: u64,
     visualization_collector: bool,
     seeds: Vec<NodeAddr>,
@@ -52,9 +52,10 @@ where
     TC: 'static + Clone + Send + Sync,
     TW: 'static + Clone + Send + Sync,
 {
-    pub fn new(node_id: NodeId, bind_addr: SocketAddr, custom_ip: Vec<SocketAddr>) -> Self {
-        assert!(!bind_addr.ip().is_unspecified(), "Don't support unspecified bind_addr");
-        let node_addr = generate_node_addr(node_id, bind_addr, custom_ip);
+    pub fn new(node_id: NodeId, bind_addrs: &[SocketAddr], custom_ip: Vec<SocketAddr>) -> Self {
+        assert!(bind_addrs.len() == 1, "Current implementation only support single bind_addr");
+        assert!(!bind_addrs[0].ip().is_unspecified(), "Don't support unspecified bind_addr");
+        let node_addr = generate_node_addr(node_id, bind_addrs, custom_ip);
         log::info!("Created node on addr {}", node_addr);
 
         Self {
@@ -64,7 +65,7 @@ where
             node_id,
             tick_ms: 1000,
             session: thread_rng().next_u64(),
-            bind_addr,
+            bind_addrs: bind_addrs.to_vec(),
             visualization_collector: false,
             seeds: vec![],
             services: vec![],
@@ -160,7 +161,7 @@ where
             SdnInnerCfg {
                 node_id: self.node_id,
                 tick_ms: self.tick_ms,
-                bind_addr: self.bind_addr,
+                bind_addrs: self.bind_addrs.to_vec(),
                 services: self.services.clone(),
                 history: history.clone(),
                 controller: Some(ControllerCfg {
@@ -182,7 +183,7 @@ where
                 SdnInnerCfg {
                     node_id: self.node_id,
                     tick_ms: self.tick_ms,
-                    bind_addr: self.bind_addr,
+                    bind_addrs: self.bind_addrs.to_vec(),
                     services: self.services.clone(),
                     history: history.clone(),
                     controller: None,
@@ -203,18 +204,20 @@ where
     }
 }
 
-pub fn generate_node_addr(node_id: u32, bind_addr: SocketAddr, custom_ips: Vec<SocketAddr>) -> NodeAddr {
+pub fn generate_node_addr(node_id: u32, bind_addrs: &[SocketAddr], custom_ips: Vec<SocketAddr>) -> NodeAddr {
     let mut addr_builder = NodeAddrBuilder::new(node_id);
-    match bind_addr.ip() {
-        IpAddr::V4(ip) => {
-            log::info!("Added ipv4 {}", ip);
-            addr_builder.add_protocol(Protocol::Ip4(ip));
-            addr_builder.add_protocol(Protocol::Udp(bind_addr.port()));
-        }
-        IpAddr::V6(ip) => {
-            log::info!("Added ipv6 {}", ip);
-            addr_builder.add_protocol(Protocol::Ip6(ip));
-            addr_builder.add_protocol(Protocol::Udp(bind_addr.port()));
+    for bind_addr in bind_addrs {
+        match bind_addr.ip() {
+            IpAddr::V4(ip) => {
+                log::info!("Added ipv4 {}", ip);
+                addr_builder.add_protocol(Protocol::Ip4(ip));
+                addr_builder.add_protocol(Protocol::Udp(bind_addr.port()));
+            }
+            IpAddr::V6(ip) => {
+                log::info!("Added ipv6 {}", ip);
+                addr_builder.add_protocol(Protocol::Ip6(ip));
+                addr_builder.add_protocol(Protocol::Udp(bind_addr.port()));
+            }
         }
     }
     for ip in custom_ips {

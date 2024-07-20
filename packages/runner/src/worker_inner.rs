@@ -45,7 +45,7 @@ pub struct ControllerCfg {
 pub struct SdnInnerCfg<UserData, SC, SE, TC, TW> {
     pub node_id: NodeId,
     pub tick_ms: u64,
-    pub bind_addr: SocketAddr,
+    pub bind_addrs: Vec<SocketAddr>,
     pub controller: Option<ControllerCfg>,
     pub services: Vec<Arc<dyn ServiceBuilder<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
     pub history: Arc<dyn ShadowRouterHistory>,
@@ -131,9 +131,13 @@ impl<UserData: 'static + Eq + Copy + Hash + Debug, SC: Debug, SE: Debug, TC: Deb
     for SdnWorkerInner<UserData, SC, SE, TC, TW>
 {
     fn build(worker: u16, cfg: SdnInnerCfg<UserData, SC, SE, TC, TW>) -> Self {
+        // TODO implement multi bind_addrs;
+        assert!(cfg.bind_addrs.len() == 1, "Current implementation only support single bind_addr");
+        assert!(!cfg.bind_addrs[0].ip().is_unspecified(), "Current implementation only support non unspecified bind_addr");
+        let addr = cfg.bind_addrs[0];
         let mut queue = VecDeque::from([
             WorkerInnerOutput::Bus(BusControl::Channel(SdnOwner, BusChannelControl::Subscribe(SdnChannel::Worker(worker)))),
-            WorkerInnerOutput::Net(SdnOwner, BackendOutgoing::UdpListen { addr: cfg.bind_addr, reuse: true }),
+            WorkerInnerOutput::Net(SdnOwner, BackendOutgoing::UdpListen { addr, reuse: true }),
         ]);
         #[cfg(feature = "vpn")]
         if let Some(fd) = cfg.vpn_tun_fd {

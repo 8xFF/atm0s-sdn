@@ -79,7 +79,7 @@ fn main() {
     let mut shutdown_wait = 0;
     let args = Args::parse();
     env_logger::builder().format_timestamp_millis().init();
-    let mut builder = SdnBuilder::<(), SC, SE, TC, TW, UserInfo>::new(args.node_id, args.bind_addr, vec![]);
+    let mut builder = SdnBuilder::<(), SC, SE, TC, TW, UserInfo>::new(args.node_id, &[args.bind_addr], vec![]);
     builder.set_authorization(StaticKeyAuthorization::new(&args.password));
 
     for seed in args.seeds {

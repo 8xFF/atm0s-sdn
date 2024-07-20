@@ -246,7 +246,7 @@ async fn main() {
     let mut shutdown_wait = 0;
     let args = Args::parse();
     tracing_subscriber::fmt::init();
-    let mut builder = SdnBuilder::<(), SC, SE, TC, TW, VisualNodeInfo>::new(args.node_id, args.bind_addr, args.custom_addrs);
+    let mut builder = SdnBuilder::<(), SC, SE, TC, TW, VisualNodeInfo>::new(args.node_id, &[args.bind_addr], args.custom_addrs);
 
     builder.set_authorization(StaticKeyAuthorization::new(&args.password));
     builder.set_manual_discovery(args.local_tags, args.connect_tags);
