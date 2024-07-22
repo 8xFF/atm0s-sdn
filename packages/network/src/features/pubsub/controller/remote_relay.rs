@@ -6,12 +6,13 @@
 
 use crate::{
     base::FeatureControlActor,
+    data_plane::NetPair,
     features::pubsub::{
         msg::{Feedback, RelayControl},
         RelayWorkerControl,
     },
 };
-use std::{collections::VecDeque, fmt::Debug, net::SocketAddr};
+use std::{collections::VecDeque, fmt::Debug};
 
 use super::{consumers::RelayConsumers, feedbacks::FeedbacksAggerator, GenericRelay, GenericRelayOutput, RELAY_STICKY_MS, RELAY_TIMEOUT};
 
@@ -24,11 +25,11 @@ enum RelayState<UserData> {
     Bound {
         consumers: RelayConsumers<UserData>,
         feedbacks: FeedbacksAggerator<UserData>,
-        next: SocketAddr,
+        next: NetPair,
         sticky_session_at: u64,
     },
     Unbinding {
-        next: SocketAddr,
+        next: NetPair,
         started_at: u64,
     },
     Unbound,
@@ -55,7 +56,7 @@ impl<UserData: Eq + Copy + Debug> RemoteRelay<UserData> {
         }
     }
 
-    fn pop_feedbacks_out(remote: SocketAddr, feedbacks: &mut FeedbacksAggerator<UserData>, queue: &mut VecDeque<GenericRelayOutput<UserData>>) {
+    fn pop_feedbacks_out(remote: NetPair, feedbacks: &mut FeedbacksAggerator<UserData>, queue: &mut VecDeque<GenericRelayOutput<UserData>>) {
         while let Some(fb) = feedbacks.pop_output() {
             queue.push_back(GenericRelayOutput::ToWorker(RelayWorkerControl::SendFeedback(fb, remote)));
         }
@@ -109,7 +110,7 @@ impl<UserData: Eq + Copy + Debug> GenericRelay<UserData> for RemoteRelay<UserDat
         }
     }
 
-    fn conn_disconnected(&mut self, now: u64, remote: SocketAddr) {
+    fn conn_disconnected(&mut self, now: u64, remote: NetPair) {
         match &mut self.state {
             RelayState::Bound { consumers, feedbacks, next, .. } => {
                 consumers.conn_disconnected(now, remote);
@@ -219,7 +220,7 @@ impl<UserData: Eq + Copy + Debug> GenericRelay<UserData> for RemoteRelay<UserDat
         }
     }
 
-    fn on_remote(&mut self, now: u64, remote: SocketAddr, control: RelayControl) {
+    fn on_remote(&mut self, now: u64, remote: NetPair, control: RelayControl) {
         match control {
             RelayControl::SubOK(uuid) => {
                 if uuid != self.uuid {
@@ -352,10 +353,9 @@ impl<UserData: Eq + Copy + Debug> GenericRelay<UserData> for RemoteRelay<UserDat
 
 #[cfg(test)]
 mod tests {
-    use std::net::SocketAddr;
-
     use crate::{
         base::FeatureControlActor,
+        data_plane::NetPair,
         features::pubsub::{
             controller::{GenericRelay, GenericRelayOutput, RELAY_STICKY_MS, RELAY_TIMEOUT},
             msg::RelayControl,
@@ -365,7 +365,7 @@ mod tests {
 
     use super::RemoteRelay;
 
-    fn create_local_bound_relay(uuid: u64, actor: FeatureControlActor<()>, remote: SocketAddr) -> RemoteRelay<()> {
+    fn create_local_bound_relay(uuid: u64, actor: FeatureControlActor<()>, remote: NetPair) -> RemoteRelay<()> {
         let mut relay = RemoteRelay::new(uuid);
 
         relay.on_local_sub(0, actor);
@@ -396,7 +396,7 @@ mod tests {
         assert!(!relay.should_clear());
 
         //fake SubOk
-        let remote = SocketAddr::from(([127, 0, 0, 1], 1234));
+        let remote = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2000").expect("Should parse pair");
         relay.on_remote(200, remote, RelayControl::SubOK(1000));
         assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteSetSource(remote))));
 
@@ -422,7 +422,7 @@ mod tests {
     fn on_remote_sub_unsub() {
         let mut relay = RemoteRelay::<()>::new(1000);
 
-        let consumer = SocketAddr::from(([127, 0, 0, 1], 1000));
+        let consumer = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2001").expect("Should parse pair");
 
         relay.on_remote(100, consumer, RelayControl::Sub(2000));
 
@@ -433,7 +433,7 @@ mod tests {
         assert!(!relay.should_clear());
 
         //fake SubOk
-        let remote = SocketAddr::from(([127, 0, 0, 1], 1234));
+        let remote = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2000").expect("Should parse pair");
         relay.on_remote(200, remote, RelayControl::SubOK(1000));
         assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteSetSource(remote))));
 
@@ -477,7 +477,7 @@ mod tests {
 
     #[test]
     fn retry_sending_unsub() {
-        let remote = SocketAddr::from(([127, 0, 0, 1], 1234));
+        let remote = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2000").expect("Should parse pair");
         let mut relay = create_local_bound_relay(1000, FeatureControlActor::Controller(()), remote);
 
         relay.on_local_unsub(300, FeatureControlActor::Controller(()));
@@ -508,7 +508,7 @@ mod tests {
 
     #[test]
     fn retry_sending_sub_after_disconnected_to_next() {
-        let remote = SocketAddr::from(([127, 0, 0, 1], 1234));
+        let remote = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2000").expect("Should parse pair");
         let mut relay = create_local_bound_relay(1000, FeatureControlActor::Controller(()), remote);
 
         //simulate next is disconnected
@@ -522,7 +522,7 @@ mod tests {
     fn consumer_disconnected_should_unsub_if_empty() {
         let mut relay = RemoteRelay::<()>::new(1000);
 
-        let consumer = SocketAddr::from(([127, 0, 0, 1], 1000));
+        let consumer = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2001").expect("Should parse pair");
 
         relay.on_remote(100, consumer, RelayControl::Sub(2000));
 
@@ -533,7 +533,7 @@ mod tests {
         assert!(!relay.should_clear());
 
         //fake SubOk
-        let remote = SocketAddr::from(([127, 0, 0, 1], 1234));
+        let remote = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2000").expect("Should parse pair");
         relay.on_remote(200, remote, RelayControl::SubOK(1000));
         assert_eq!(relay.pop_output(), Some(GenericRelayOutput::ToWorker(RelayWorkerControl::RouteSetSource(remote))));
 
@@ -548,7 +548,7 @@ mod tests {
 
     #[test]
     fn sticky_session_timeout_should_fire_bind_without_remote_hint() {
-        let remote = SocketAddr::from(([127, 0, 0, 1], 1234));
+        let remote = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2000").expect("Should parse pair");
         let mut relay = create_local_bound_relay(1000, FeatureControlActor::Controller(()), remote);
 
         //default resend sub
@@ -564,10 +564,10 @@ mod tests {
 
     #[test]
     fn sticky_session_timeout_bind_to_new_remote() {
-        let remote = SocketAddr::from(([127, 0, 0, 1], 1234));
+        let remote = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2000").expect("Should parse pair");
         let mut relay = create_local_bound_relay(1000, FeatureControlActor::Controller(()), remote);
 
-        let remote2 = SocketAddr::from(([127, 0, 0, 2], 1234));
+        let remote2 = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2001").expect("Should parse pair");
 
         //after timeout should bind without remote hint
         relay.on_tick(RELAY_STICKY_MS);
@@ -585,7 +585,7 @@ mod tests {
 
     #[test]
     fn next_node_notify_route_changed() {
-        let remote = SocketAddr::from(([127, 0, 0, 1], 1234));
+        let remote = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2000").expect("Should parse pair");
         let mut relay = create_local_bound_relay(1000, FeatureControlActor::Controller(()), remote);
 
         //fake RouteChanged

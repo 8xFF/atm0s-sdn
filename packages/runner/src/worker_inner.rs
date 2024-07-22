@@ -1,10 +1,17 @@
-use std::{collections::VecDeque, fmt::Debug, hash::Hash, net::SocketAddr, sync::Arc, time::Instant};
+use std::{
+    collections::{HashMap, VecDeque},
+    fmt::Debug,
+    hash::Hash,
+    net::SocketAddr,
+    sync::Arc,
+    time::Instant,
+};
 
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_network::{
     base::{Authorization, HandshakeBuilder, ServiceBuilder},
     controller_plane::ControllerPlaneCfg,
-    data_plane::{DataPlaneCfg, NetInput, NetOutput},
+    data_plane::{DataPlaneCfg, NetInput, NetOutput, NetPair},
     features::{FeaturesControl, FeaturesEvent},
     worker::{SdnWorker, SdnWorkerBusEvent, SdnWorkerCfg, SdnWorkerInput, SdnWorkerOutput},
     ExtIn, ExtOut,
@@ -69,7 +76,8 @@ pub struct SdnWorkerInner<UserData, SC, SE, TC, TW> {
     timer: TimePivot,
     #[cfg(feature = "vpn")]
     _vpn_tun_device: Option<sans_io_runtime::backend::tun::TunDevice>,
-    udp_backend_slot: Option<usize>,
+    bind_addrs: HashMap<SocketAddr, usize>,
+    bind_slots: HashMap<usize, SocketAddr>,
     #[cfg(feature = "vpn")]
     tun_backend_slot: Option<usize>,
     #[allow(clippy::type_complexity)]
@@ -90,16 +98,15 @@ impl<UserData: 'static + Eq + Copy + Hash + Debug, SC: Debug, SE: Debug, TC: Deb
             }
             SdnWorkerOutput::Net(net) => {
                 let out = match net {
-                    NetOutput::UdpPacket(dest, data) => BackendOutgoing::UdpPacket {
-                        slot: self.udp_backend_slot.expect("Should have backend slot"),
-                        to: dest,
+                    NetOutput::UdpPacket(pair, data) => BackendOutgoing::UdpPacket {
+                        slot: *self.bind_addrs.get(&pair.local)?,
+                        to: pair.remote,
                         data,
                     },
-                    NetOutput::UdpPackets(dests, data) => BackendOutgoing::UdpPackets {
-                        slot: self.udp_backend_slot.expect("Should have backend slot"),
-                        to: dests,
-                        data,
-                    },
+                    NetOutput::UdpPackets(pairs, data) => {
+                        let to = pairs.into_iter().map(|p| self.bind_addrs.get(&p.local).map(|s| (*s, p.remote))).flatten().collect::<Vec<_>>();
+                        BackendOutgoing::UdpPackets2 { to, data }
+                    }
                     #[cfg(feature = "vpn")]
                     NetOutput::TunPacket(data) => BackendOutgoing::TunPacket {
                         slot: self.tun_backend_slot.expect("should have tun"),
@@ -134,14 +141,12 @@ impl<UserData: 'static + Eq + Copy + Hash + Debug, SC: Debug, SE: Debug, TC: Deb
     for SdnWorkerInner<UserData, SC, SE, TC, TW>
 {
     fn build(worker: u16, cfg: SdnInnerCfg<UserData, SC, SE, TC, TW>) -> Self {
-        // TODO implement multi bind_addrs;
-        assert!(cfg.bind_addrs.len() == 1, "Current implementation only support single bind_addr");
-        assert!(!cfg.bind_addrs[0].ip().is_unspecified(), "Current implementation only support non unspecified bind_addr");
-        let addr = cfg.bind_addrs[0];
-        let mut queue = VecDeque::from([
-            WorkerInnerOutput::Bus(BusControl::Channel(SdnOwner, BusChannelControl::Subscribe(SdnChannel::Worker(worker)))),
-            WorkerInnerOutput::Net(SdnOwner, BackendOutgoing::UdpListen { addr, reuse: true }),
-        ]);
+        let mut queue = VecDeque::from([WorkerInnerOutput::Bus(BusControl::Channel(SdnOwner, BusChannelControl::Subscribe(SdnChannel::Worker(worker))))]);
+
+        for addr in &cfg.bind_addrs {
+            queue.push_back(WorkerInnerOutput::Net(SdnOwner, BackendOutgoing::UdpListen { addr: *addr, reuse: true }));
+        }
+
         #[cfg(feature = "vpn")]
         if let Some(fd) = cfg.vpn_tun_fd {
             queue.push_back(WorkerInnerOutput::Net(SdnOwner, BackendOutgoing::TunBind { fd }));
@@ -155,6 +160,7 @@ impl<UserData: 'static + Eq + Copy + Hash + Debug, SC: Debug, SE: Debug, TC: Deb
                     node_id: cfg.node_id,
                     tick_ms: cfg.tick_ms,
                     controller: Some(ControllerPlaneCfg {
+                        bind_addrs: cfg.bind_addrs,
                         authorization: controller.auth,
                         handshake_builder: controller.handshake,
                         session: controller.session,
@@ -173,7 +179,8 @@ impl<UserData: 'static + Eq + Copy + Hash + Debug, SC: Debug, SE: Debug, TC: Deb
                 _vpn_tun_device: controller.vpn_tun_device,
                 state: State::Running,
                 queue,
-                udp_backend_slot: None,
+                bind_addrs: Default::default(),
+                bind_slots: Default::default(),
                 #[cfg(feature = "vpn")]
                 tun_backend_slot: None,
             }
@@ -196,7 +203,8 @@ impl<UserData: 'static + Eq + Copy + Hash + Debug, SC: Debug, SE: Debug, TC: Deb
                 _vpn_tun_device: None,
                 state: State::Running,
                 queue,
-                udp_backend_slot: None,
+                bind_addrs: Default::default(),
+                bind_slots: Default::default(),
                 #[cfg(feature = "vpn")]
                 tun_backend_slot: None,
             }
@@ -212,7 +220,7 @@ impl<UserData: 'static + Eq + Copy + Hash + Debug, SC: Debug, SE: Debug, TC: Deb
     }
 
     fn spawn(&mut self, _now: Instant, _cfg: SdnSpawnCfg) {
-        todo!("Spawn not implemented")
+        panic!("Spawn not supported")
     }
 
     fn on_tick(&mut self, now: Instant) {
@@ -225,9 +233,17 @@ impl<UserData: 'static + Eq + Copy + Hash + Debug, SC: Debug, SE: Debug, TC: Deb
         match event {
             WorkerInnerInput::Net(_, event) => match event {
                 BackendIncoming::UdpListenResult { bind: _, result } => {
-                    self.udp_backend_slot = Some(result.expect("Should have slot").1);
+                    if let Ok((addr, slot)) = result {
+                        log::info!("Worker {} bind addr {addr} to slot {slot}", self.worker);
+                        self.bind_addrs.insert(addr, slot);
+                        self.bind_slots.insert(slot, addr);
+                    }
                 }
-                BackendIncoming::UdpPacket { slot: _, from, data } => self.worker_inner.on_event(now_ms, SdnWorkerInput::Net(NetInput::UdpPacket(from, data))),
+                BackendIncoming::UdpPacket { slot, from, data } => {
+                    let local = *self.bind_slots.get(&slot).expect("Should have local addr");
+                    let pair = NetPair::new(local, from);
+                    self.worker_inner.on_event(now_ms, SdnWorkerInput::Net(NetInput::UdpPacket(pair, data)))
+                }
                 #[cfg(feature = "vpn")]
                 BackendIncoming::TunBindResult { result } => {
                     self.tun_backend_slot = Some(result.expect("Should have slot"));

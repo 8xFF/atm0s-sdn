@@ -1,13 +1,13 @@
-use std::{collections::VecDeque, fmt::Debug, net::SocketAddr};
+use std::{collections::VecDeque, fmt::Debug};
 
 use derivative::Derivative;
 
-use crate::{base::FeatureControlActor, features::pubsub::msg::Feedback};
+use crate::{base::FeatureControlActor, data_plane::NetPair, features::pubsub::msg::Feedback};
 
 #[derive(Debug, PartialEq, Eq)]
 enum FeedbackSource<UserData> {
     Local(FeatureControlActor<UserData>),
-    Remote(SocketAddr),
+    Remote(NetPair),
 }
 
 #[derive(Debug, Default)]
@@ -29,7 +29,7 @@ impl<UserData: Eq> SingleFeedbackKind<UserData> {
         }
     }
 
-    fn on_remote_feedback(&mut self, now: u64, remote: SocketAddr, fb: Feedback) {
+    fn on_remote_feedback(&mut self, now: u64, remote: NetPair, fb: Feedback) {
         self.feedbacks_updated = true;
         let source = FeedbackSource::Remote(remote);
         if let Some(index) = self.feedbacks.iter().position(|(a, _, _)| *a == source) {
@@ -89,7 +89,7 @@ impl<UserData: Eq + Debug> FeedbacksAggerator<UserData> {
         }
     }
 
-    pub fn on_remote_feedback(&mut self, now: u64, remote: SocketAddr, fb: Feedback) {
+    pub fn on_remote_feedback(&mut self, now: u64, remote: NetPair, fb: Feedback) {
         log::debug!("[FeedbacksAggerator] on remote_feedback from {} {:?}", remote, fb);
         let kind = self.get_fb_kind(fb.kind);
         kind.on_remote_feedback(now, remote, fb);

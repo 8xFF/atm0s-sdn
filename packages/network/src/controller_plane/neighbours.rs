@@ -7,7 +7,10 @@ use std::{
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId, Protocol};
 use sans_io_runtime::TaskSwitcherChild;
 
-use crate::base::{self, Authorization, ConnectionCtx, HandshakeBuilder, NeighboursControl, NeighboursControlCmds, SecureContext};
+use crate::{
+    base::{self, Authorization, ConnectionCtx, HandshakeBuilder, NeighboursControl, NeighboursControlCmds, SecureContext},
+    data_plane::NetPair,
+};
 
 use self::connection::{ConnectionEvent, NeighbourConnection};
 
@@ -16,19 +19,20 @@ mod connection;
 pub enum Input {
     ConnectTo(NodeAddr),
     DisconnectFrom(NodeId),
-    Control(SocketAddr, NeighboursControl),
+    Control(NetPair, NeighboursControl),
     ShutdownRequest,
 }
 
 pub enum Output {
-    Control(SocketAddr, NeighboursControl),
+    Control(NetPair, NeighboursControl),
     Event(base::ConnectionEvent),
     ShutdownResponse,
 }
 
 pub struct NeighboursManager {
     node_id: NodeId,
-    connections: HashMap<SocketAddr, NeighbourConnection>,
+    bind_addrs: Vec<SocketAddr>,
+    connections: HashMap<NetPair, NeighbourConnection>,
     neighbours: HashMap<ConnId, ConnectionCtx>,
     queue: VecDeque<Output>,
     shutdown: bool,
@@ -38,9 +42,10 @@ pub struct NeighboursManager {
 }
 
 impl NeighboursManager {
-    pub fn new(node_id: NodeId, authorization: Arc<dyn Authorization>, handshake_builder: Arc<dyn HandshakeBuilder>, random: Box<dyn rand::RngCore>) -> Self {
+    pub fn new(node_id: NodeId, bind_addrs: Vec<SocketAddr>, authorization: Arc<dyn Authorization>, handshake_builder: Arc<dyn HandshakeBuilder>, random: Box<dyn rand::RngCore>) -> Self {
         Self {
             node_id,
+            bind_addrs,
             connections: HashMap::new(),
             neighbours: HashMap::new(),
             queue: VecDeque::new(),
@@ -66,14 +71,21 @@ impl NeighboursManager {
             Input::ConnectTo(addr) => {
                 let dest_node = addr.node_id();
                 let dests = get_node_addr_dests(addr);
-                for remote in dests {
-                    if self.connections.contains_key(&remote) {
-                        continue;
+                for local in &self.bind_addrs {
+                    for remote in &dests {
+                        if local.is_ipv4() != remote.is_ipv4() {
+                            continue;
+                        }
+
+                        let pair = NetPair::new(*local, *remote);
+                        if self.connections.contains_key(&pair) {
+                            continue;
+                        }
+                        log::info!("[Neighbours] Sending connect request from {local} to {remote}, dest_node {dest_node}");
+                        let session_id = self.random.next_u64();
+                        let conn = NeighbourConnection::new_outgoing(self.handshake_builder.clone(), self.node_id, dest_node, session_id, pair, now_ms);
+                        self.connections.insert(pair, conn);
                     }
-                    log::info!("[Neighbours] Sending connect request to {}, dest_node {}", remote, dest_node);
-                    let session_id = self.random.next_u64();
-                    let conn = NeighbourConnection::new_outgoing(self.handshake_builder.clone(), self.node_id, dest_node, session_id, remote, now_ms);
-                    self.connections.insert(remote, conn);
                 }
             }
             Input::DisconnectFrom(node) => {

@@ -43,13 +43,13 @@ impl<UserData: Debug + Copy + Hash + Eq> Feature<UserData, Control, Event, ToCon
     fn on_shared_input(&mut self, _ctx: &FeatureContext, _now: u64, input: FeatureSharedInput) {
         match input {
             FeatureSharedInput::Connection(ConnectionEvent::Connected(ctx, _)) => {
-                log::debug!("[Neighbours] Connected to {}, fire event to {:?}", ctx.remote, self.subs);
+                log::debug!("[Neighbours] Connected {}, fire event to {:?}", ctx.pair, self.subs);
                 for sub in self.subs.iter() {
                     self.output.push_back(FeatureOutput::Event(*sub, Event::Connected(ctx.node, ctx.conn)));
                 }
             }
             FeatureSharedInput::Connection(ConnectionEvent::Disconnected(ctx)) => {
-                log::debug!("[Neighbours] Disconnected to {}, fire event to {:?}", ctx.remote, self.subs);
+                log::debug!("[Neighbours] Disconnected {}, fire event to {:?}", ctx.pair, self.subs);
                 for sub in self.subs.iter() {
                     self.output.push_back(FeatureOutput::Event(*sub, Event::Disconnected(ctx.node, ctx.conn)));
                 }

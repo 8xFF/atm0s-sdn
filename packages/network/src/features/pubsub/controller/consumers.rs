@@ -1,13 +1,13 @@
 use std::{
     collections::{HashMap, VecDeque},
     fmt::Debug,
-    net::SocketAddr,
 };
 
 use derivative::Derivative;
 
 use crate::{
     base::FeatureControlActor,
+    data_plane::NetPair,
     features::pubsub::{msg::RelayControl, RelayWorkerControl},
 };
 
@@ -21,7 +21,7 @@ struct RelayRemote {
 #[derive(Derivative)]
 #[derivative(Default(bound = ""))]
 pub struct RelayConsumers<UserData> {
-    remotes: HashMap<SocketAddr, RelayRemote>,
+    remotes: HashMap<NetPair, RelayRemote>,
     locals: Vec<FeatureControlActor<UserData>>,
     queue: VecDeque<RelayWorkerControl<UserData>>,
 }
@@ -61,7 +61,7 @@ impl<UserData: Eq + Debug + Copy> RelayConsumers<UserData> {
         }
     }
 
-    pub fn on_remote(&mut self, now: u64, remote: SocketAddr, control: RelayControl) {
+    pub fn on_remote(&mut self, now: u64, remote: NetPair, control: RelayControl) {
         match control {
             RelayControl::Sub(uuid) => {
                 if let Some(slot) = self.remotes.get_mut(&remote) {
@@ -96,7 +96,7 @@ impl<UserData: Eq + Debug + Copy> RelayConsumers<UserData> {
         }
     }
 
-    pub fn conn_disconnected(&mut self, _now: u64, remote: SocketAddr) {
+    pub fn conn_disconnected(&mut self, _now: u64, remote: NetPair) {
         if self.remotes.remove(&remote).is_some() {
             self.queue.push_back(RelayWorkerControl::RouteDelRemote(remote));
         }
@@ -117,10 +117,9 @@ impl<UserData: Eq + Debug + Copy> RelayConsumers<UserData> {
 
 #[cfg(test)]
 mod tests {
-    use std::net::SocketAddr;
-
     use crate::{
         base::FeatureControlActor,
+        data_plane::NetPair,
         features::pubsub::{controller::RELAY_TIMEOUT, msg::RelayControl, RelayWorkerControl},
     };
 
@@ -183,7 +182,7 @@ mod tests {
     fn relay_remote_should_work_single_sub() {
         let mut consumers = RelayConsumers::<()>::default();
 
-        let remote = SocketAddr::from(([127, 0, 0, 1], 8080));
+        let remote = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2000").expect("Should parse pair");
 
         consumers.on_remote(0, remote, RelayControl::Sub(1000));
 
@@ -208,8 +207,8 @@ mod tests {
     fn relay_remote_should_work_multi_subs() {
         let mut consumers = RelayConsumers::<()>::default();
 
-        let remote1 = SocketAddr::from(([127, 0, 0, 1], 8080));
-        let remote2 = SocketAddr::from(([127, 0, 0, 2], 8080));
+        let remote1 = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2000").expect("Should parse pair");
+        let remote2 = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2001").expect("Should parse pair");
 
         consumers.on_remote(0, remote1, RelayControl::Sub(1000));
 
@@ -249,7 +248,7 @@ mod tests {
     fn relay_should_work_both_local_and_remote() {
         let mut consumers = RelayConsumers::default();
 
-        let remote1 = SocketAddr::from(([127, 0, 0, 1], 8080));
+        let remote1 = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2000").expect("Should parse pair");
 
         consumers.on_remote(0, remote1, RelayControl::Sub(1000));
 
@@ -287,7 +286,7 @@ mod tests {
     fn clear_timeout_remote() {
         let mut consumers = RelayConsumers::<()>::default();
 
-        let remote1 = SocketAddr::from(([127, 0, 0, 1], 8080));
+        let remote1 = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2000").expect("Should parse pair");
 
         consumers.on_remote(0, remote1, RelayControl::Sub(1000));
 

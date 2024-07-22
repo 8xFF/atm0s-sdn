@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, fmt::Debug, hash::Hash, sync::Arc};
+use std::{collections::VecDeque, fmt::Debug, hash::Hash, net::SocketAddr, sync::Arc};
 
 use atm0s_sdn_identity::NodeId;
 use atm0s_sdn_router::shadow::ShadowRouterHistory;
@@ -46,6 +46,7 @@ enum TaskType {
 
 pub struct ControllerPlaneCfg<UserData, SC, SE, TC, TW> {
     pub session: u64,
+    pub bind_addrs: Vec<SocketAddr>,
     #[allow(clippy::type_complexity)]
     pub services: Vec<Arc<dyn ServiceBuilder<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
     pub authorization: Arc<dyn Authorization>,
@@ -89,7 +90,10 @@ where
             tick_count: 0,
             feature_ctx: FeatureContext { node_id, session: cfg.session },
             service_ctx: ServiceCtx { node_id, session: cfg.session },
-            neighbours: TaskSwitcherBranch::new(NeighboursManager::new(node_id, cfg.authorization, cfg.handshake_builder, cfg.random), TaskType::Neighbours),
+            neighbours: TaskSwitcherBranch::new(
+                NeighboursManager::new(node_id, cfg.bind_addrs, cfg.authorization, cfg.handshake_builder, cfg.random),
+                TaskType::Neighbours,
+            ),
             features: TaskSwitcherBranch::new(FeatureManager::new(node_id, cfg.session, service_ids), TaskType::Feature),
             services: TaskSwitcherBranch::new(ServiceManager::new(cfg.services), TaskType::Service),
             switcher: TaskSwitcher::new(3), //3 types: Neighbours, Feature, Service
@@ -132,8 +136,8 @@ where
                     .input(&mut self.switcher)
                     .on_input(&self.service_ctx, now_ms, service, ServiceInput::Control(ServiceControlActor::Controller(userdata), control));
             }
-            Input::Control(LogicControl::NetNeighbour(remote, control)) => {
-                self.neighbours.input(&mut self.switcher).on_input(now_ms, neighbours::Input::Control(remote, control));
+            Input::Control(LogicControl::NetNeighbour(pair, control)) => {
+                self.neighbours.input(&mut self.switcher).on_input(now_ms, neighbours::Input::Control(pair, control));
             }
             Input::Control(LogicControl::Feature(to)) => {
                 self.features
@@ -188,7 +192,7 @@ where
                     .input(&mut self.switcher)
                     .on_shared_input(&self.service_ctx, now_ms, ServiceSharedInput::Connection(event.clone()));
                 match event {
-                    ConnectionEvent::Connected(ctx, secure) => self.queue.push_back(Output::Event(LogicEvent::Pin(ctx.conn, ctx.node, ctx.remote, secure))),
+                    ConnectionEvent::Connected(ctx, secure) => self.queue.push_back(Output::Event(LogicEvent::Pin(ctx.conn, ctx.node, ctx.pair, secure))),
                     ConnectionEvent::Stats(_ctx, _stats) => {}
                     ConnectionEvent::Disconnected(ctx) => self.queue.push_back(Output::Event(LogicEvent::UnPin(ctx.conn))),
                 }
@@ -214,7 +218,7 @@ where
             FeatureOutput::SendDirect(conn, meta, buf) => {
                 log::debug!("[ControllerPlane] SendDirect to conn: {:?}, len: {}", conn, buf.len());
                 let conn_ctx = return_if_none!(self.neighbours.conn(conn));
-                self.queue.push_back(Output::Event(LogicEvent::NetDirect(feature, conn_ctx.remote, conn, meta, buf)))
+                self.queue.push_back(Output::Event(LogicEvent::NetDirect(feature, conn_ctx.pair, conn, meta, buf)))
             }
             FeatureOutput::SendRoute(rule, ttl, buf) => {
                 log::debug!("[ControllerPlane] SendRoute to rule: {:?}, len: {}", rule, buf.len());

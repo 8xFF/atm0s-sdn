@@ -21,13 +21,12 @@
 use std::{
     collections::{BTreeMap, VecDeque},
     fmt::Debug,
-    net::SocketAddr,
 };
 
 use atm0s_sdn_identity::NodeId;
 use derivative::Derivative;
 
-use crate::{base::FeatureControlActor, features::pubsub::msg::SourceHint};
+use crate::{base::FeatureControlActor, data_plane::NetPair, features::pubsub::msg::SourceHint};
 
 const TIMEOUT_MS: u64 = 10_000;
 
@@ -41,7 +40,7 @@ pub enum LocalCmd {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Output<UserData> {
-    SendRemote(Option<SocketAddr>, SourceHint),
+    SendRemote(Option<NetPair>, SourceHint),
     SubscribeSource(Vec<FeatureControlActor<UserData>>, NodeId),
     UnsubscribeSource(Vec<FeatureControlActor<UserData>>, NodeId),
 }
@@ -52,10 +51,10 @@ pub struct SourceHintLogic<UserData> {
     node_id: NodeId,
     session_id: u64,
     remote_sources: BTreeMap<NodeId, u64>,
-    remote_subscribers: BTreeMap<SocketAddr, u64>,
+    remote_subscribers: BTreeMap<NetPair, u64>,
     local_sources: Vec<FeatureControlActor<UserData>>,
     local_subscribers: Vec<FeatureControlActor<UserData>>,
-    next_hop: Option<SocketAddr>,
+    next_hop: Option<NetPair>,
     queue: VecDeque<Output<UserData>>,
 }
 
@@ -208,7 +207,7 @@ impl<UserData: Eq + Copy + Debug> SourceHintLogic<UserData> {
         }
     }
 
-    pub fn on_remote(&mut self, now_ms: u64, remote: SocketAddr, cmd: SourceHint) {
+    pub fn on_remote(&mut self, now_ms: u64, remote: NetPair, cmd: SourceHint) {
         match cmd {
             SourceHint::Register { source, to_root } => {
                 // We dont accept register from local source, this ocurs when subscribe and next-hop reply with all sources include it self
@@ -359,9 +358,7 @@ impl<UserData: Eq + Copy + Debug> SourceHintLogic<UserData> {
 
 #[cfg(test)]
 mod tests {
-    use std::{net::SocketAddr, vec};
-
-    use crate::{base::FeatureControlActor, features::pubsub::controller::source_hint::TIMEOUT_MS};
+    use crate::{base::FeatureControlActor, data_plane::NetPair, features::pubsub::controller::source_hint::TIMEOUT_MS};
 
     use super::{LocalCmd, Output, SourceHint, SourceHintLogic};
 
@@ -405,7 +402,7 @@ mod tests {
         assert_eq!(sh.pop_output(), Some(Output::SendRemote(None, SourceHint::Subscribe(session_id))));
         assert_eq!(sh.pop_output(), None);
 
-        let remote = SocketAddr::new([127, 0, 0, 1].into(), 1234);
+        let remote = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2000").expect("Should parse pair");
 
         sh.on_remote(100, remote, SourceHint::Sources(vec![2, 3]));
         assert_eq!(sh.pop_output(), Some(Output::SubscribeSource(vec![FeatureControlActor::Controller(())], 2)));
@@ -443,7 +440,7 @@ mod tests {
         let session_id = 1234;
         let mut sh = SourceHintLogic::new(node_id, session_id);
 
-        let remote = SocketAddr::new([127, 0, 0, 1].into(), 1234);
+        let remote = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2000").expect("Should parse pair");
         let remote_session_id = 4321;
 
         //fake a local source
@@ -465,7 +462,7 @@ mod tests {
         let session_id = 1234;
         let mut sh = SourceHintLogic::new(node_id, session_id);
 
-        let remote = SocketAddr::new([127, 0, 0, 1].into(), 1234);
+        let remote = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2000").expect("Should parse pair");
         let remote_node_id = 2;
 
         //remote register should send event
@@ -511,7 +508,7 @@ mod tests {
         let session_id = 1234;
         let mut sh = SourceHintLogic::<()>::new(node_id, session_id);
 
-        let remote = SocketAddr::new([127, 0, 0, 1].into(), 1234);
+        let remote = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2000").expect("Should parse pair");
         let remote_node_id = 2;
 
         //remote register should send event
@@ -542,11 +539,11 @@ mod tests {
         let session_id = 1234;
         let mut sh = SourceHintLogic::<()>::new(node_id, session_id);
 
-        let remote1 = SocketAddr::new([127, 0, 0, 1].into(), 1234);
+        let remote1 = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2000").expect("Should parse pair");
         let remote1_node_id = 2;
         let remote1_session_id = 4321;
 
-        let remote2 = SocketAddr::new([127, 0, 0, 2].into(), 1234);
+        let remote2 = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2001").expect("Should parse pair");
         let remote2_session_id = 4322;
 
         //remote subscribe should receive a subscribe ok and snapshot of sources
@@ -629,7 +626,7 @@ mod tests {
         let session_id = 1234;
         let mut sh = SourceHintLogic::new(node_id, session_id);
 
-        let remote = SocketAddr::new([127, 0, 0, 1].into(), 1234);
+        let remote = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2000").expect("Should parse pair");
         // let remote_node_id = 2;
         let remote_session_id = 4321;
 
@@ -679,7 +676,7 @@ mod tests {
         assert_eq!(sh.pop_output(), Some(Output::SendRemote(None, SourceHint::Subscribe(session_id))));
         assert_eq!(sh.pop_output(), None);
 
-        let remote = SocketAddr::new([127, 0, 0, 1].into(), 1234);
+        let remote = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2000").expect("Should parse pair");
         let remote_node_id = 2;
 
         sh.on_remote(
@@ -729,7 +726,7 @@ mod tests {
         assert_eq!(sh.pop_output(), Some(Output::SendRemote(None, SourceHint::Subscribe(session_id))));
         assert_eq!(sh.pop_output(), None);
 
-        let remote = SocketAddr::new([127, 0, 0, 1].into(), 1234);
+        let remote = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2000").expect("Should parse pair");
         let remote_node_id = 2;
 
         sh.on_remote(0, remote, SourceHint::SubscribeOk(session_id));
@@ -764,7 +761,7 @@ mod tests {
         let session_id = 1234;
         let mut sh = SourceHintLogic::<()>::new(node_id, session_id);
 
-        let remote = SocketAddr::new([127, 0, 0, 1].into(), 1234);
+        let remote = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2000").expect("Should parse pair");
         let remote_session_id = 4321;
 
         sh.on_remote(0, remote, SourceHint::Subscribe(remote_session_id));
@@ -796,8 +793,8 @@ mod tests {
         assert_eq!(sh.pop_output(), Some(Output::SendRemote(None, SourceHint::Subscribe(session_id))));
         assert_eq!(sh.pop_output(), None);
 
-        let remote1 = SocketAddr::new([127, 0, 0, 1].into(), 1234);
-        let remote2 = SocketAddr::new([127, 0, 0, 2].into(), 1234);
+        let remote1 = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2000").expect("Should parse pair");
+        let remote2 = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2001").expect("Should parse pair");
 
         sh.on_remote(0, remote1, SourceHint::SubscribeOk(session_id));
 
@@ -827,7 +824,7 @@ mod tests {
         let session_id = 1234;
         let mut sh = SourceHintLogic::<()>::new(node_id, session_id);
 
-        let remote1 = SocketAddr::new([127, 0, 0, 1].into(), 1234);
+        let remote1 = NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2000").expect("Should parse pair");
         sh.on_remote(0, remote1, SourceHint::SubscribeOk(session_id));
         sh.on_remote(0, remote1, SourceHint::Sources(vec![node_id]));
 

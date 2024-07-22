@@ -1,8 +1,9 @@
-use std::net::SocketAddr;
-
 use atm0s_sdn_identity::NodeId;
 
-use crate::base::{FeatureControlActor, FeatureOutput, FeatureWorkerOutput};
+use crate::{
+    base::{FeatureControlActor, FeatureOutput, FeatureWorkerOutput},
+    data_plane::NetPair,
+};
 
 use self::msg::{RelayControl, RelayId, SourceHint};
 
@@ -44,18 +45,18 @@ pub struct Event(pub ChannelId, pub ChannelEvent);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RelayWorkerControl<UserData> {
-    SendSub(u64, Option<SocketAddr>),
-    SendUnsub(u64, SocketAddr),
-    SendSubOk(u64, SocketAddr),
-    SendUnsubOk(u64, SocketAddr),
+    SendSub(u64, Option<NetPair>),
+    SendUnsub(u64, NetPair),
+    SendSubOk(u64, NetPair),
+    SendUnsubOk(u64, NetPair),
     SendRouteChanged,
-    SendFeedback(Feedback, SocketAddr),
-    RouteSetSource(SocketAddr),
-    RouteDelSource(SocketAddr),
+    SendFeedback(Feedback, NetPair),
+    RouteSetSource(NetPair),
+    RouteDelSource(NetPair),
     RouteSetLocal(FeatureControlActor<UserData>),
     RouteDelLocal(FeatureControlActor<UserData>),
-    RouteSetRemote(SocketAddr, u64),
-    RouteDelRemote(SocketAddr),
+    RouteSetRemote(NetPair, u64),
+    RouteDelRemote(NetPair),
 }
 
 impl<UserData> RelayWorkerControl<UserData> {
@@ -74,14 +75,14 @@ impl<UserData> RelayWorkerControl<UserData> {
 #[derive(Debug, Clone)]
 pub enum ToWorker<UserData> {
     RelayControl(RelayId, RelayWorkerControl<UserData>),
-    SourceHint(ChannelId, Option<SocketAddr>, SourceHint),
+    SourceHint(ChannelId, Option<NetPair>, SourceHint),
     RelayData(RelayId, Vec<u8>),
 }
 
 #[derive(Debug, Clone)]
 pub enum ToController {
-    RelayControl(SocketAddr, RelayId, RelayControl),
-    SourceHint(SocketAddr, ChannelId, SourceHint),
+    RelayControl(NetPair, RelayId, RelayControl),
+    SourceHint(NetPair, ChannelId, SourceHint),
 }
 
 pub type Output<UserData> = FeatureOutput<UserData, Event, ToWorker<UserData>>;
