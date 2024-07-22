@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-v0.2.1...atm0s-sdn-v0.2.2) - 2024-07-22
+
+### Added
+- listen multiple UDP addresses ([#175](https://github.com/8xFF/atm0s-sdn/pull/175))
+
 ## [0.2.1](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-v0.2.0...atm0s-sdn-v0.2.1) - 2024-07-22
 
 ### Fixed
