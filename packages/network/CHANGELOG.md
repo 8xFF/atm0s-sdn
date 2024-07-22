@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-network-v0.4.0...atm0s-sdn-network-v0.4.1) - 2024-07-22
+
+### Fixed
+- switch to single bind for resolve connect error with multi-addresses machine ([#172](https://github.com/8xFF/atm0s-sdn/pull/172))
+
+### Other
+- clippy fixes ([#167](https://github.com/8xFF/atm0s-sdn/pull/167))
+
 ## [0.3.1](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-network-v0.3.0...atm0s-sdn-network-v0.3.1) - 2024-01-24
 
 ### Other
