@@ -25,4 +25,4 @@ clap = { version = "4.4", features = ["derive", "env"] }
 mockall = "0.12.1"
 num_enum = "0.7.2"
 convert-enum = "0.1.0"
-sans-io-runtime = "0.1.0"
+sans-io-runtime = { version = "0.1.0", default-features = false }

@@ -110,7 +110,7 @@ impl<UserData: Eq + Copy + Debug> SourceHintLogic<UserData> {
         if !self.local_sources.is_empty() {
             log::debug!("[SourceHint] ReSend Register({}) to root node", self.node_id);
             self.queue.push_back(Output::SendRemote(None, SourceHint::Register { source: self.node_id, to_root: true }));
-            for (remote, _) in &self.remote_subscribers {
+            for remote in self.remote_subscribers.keys() {
                 log::debug!("[SourceHint] ReSend Register({}) to subscribe {remote} node", self.node_id);
                 self.queue.push_back(Output::SendRemote(Some(*remote), SourceHint::Register { source: self.node_id, to_root: false }));
             }
@@ -134,7 +134,7 @@ impl<UserData: Eq + Copy + Debug> SourceHintLogic<UserData> {
                     }
 
                     if self.local_sources.len() == 1 {
-                        for (remote, _) in &self.remote_subscribers {
+                        for remote in self.remote_subscribers.keys() {
                             log::info!("[SourceHint] Notify Register({}) to subscribe {remote} node", self.node_id);
                             self.queue.push_back(Output::SendRemote(Some(*remote), SourceHint::Register { source: self.node_id, to_root: false }));
                         }
@@ -155,7 +155,7 @@ impl<UserData: Eq + Copy + Debug> SourceHintLogic<UserData> {
                     }
 
                     if self.local_sources.is_empty() {
-                        for (remote, _) in &self.remote_subscribers {
+                        for remote in self.remote_subscribers.keys() {
                             log::info!("[SourceHint] Notify Unregister({}) to subscribe {remote} node", self.node_id);
                             self.queue.push_back(Output::SendRemote(Some(*remote), SourceHint::Unregister { source: self.node_id, to_root: false }));
                         }
@@ -228,7 +228,7 @@ impl<UserData: Eq + Copy + Debug> SourceHintLogic<UserData> {
                     self.queue.push_back(Output::SendRemote(None, SourceHint::Register { source, to_root: true }));
                 }
 
-                for (subscriber, _) in &self.remote_subscribers {
+                for subscriber in self.remote_subscribers.keys() {
                     if subscriber.eq(&remote) {
                         // for avoiding loop, we only send to other subscribers except sender
                         continue;
@@ -264,7 +264,7 @@ impl<UserData: Eq + Copy + Debug> SourceHintLogic<UserData> {
                     self.queue.push_back(Output::SendRemote(None, SourceHint::Unregister { source, to_root: true }));
                 }
 
-                for (subscriber, _) in &self.remote_subscribers {
+                for subscriber in self.remote_subscribers.keys() {
                     if subscriber.eq(&remote) {
                         // for avoiding loop, we only send to other subscribers except sender
                         continue;
@@ -630,6 +630,7 @@ mod tests {
         let mut sh = SourceHintLogic::new(node_id, session_id);
 
         let remote = SocketAddr::new([127, 0, 0, 1].into(), 1234);
+        // let remote_node_id = 2;
         let remote_session_id = 4321;
 
         //fake a local source with a remote subscribe

@@ -17,6 +17,8 @@ enum State {
     IncomingWait {
         at_ms: u64,
     },
+    // TODO: Use thiserror and warn on dead_code
+    #[allow(dead_code)]
     ConnectError(NeighboursConnectError),
     ConnectTimeout,
     Connected {

@@ -12,7 +12,9 @@ const HISTORY_TIMEOUT_MS: u64 = 2000;
 #[derive(Debug, Default)]
 pub struct DataWorkerHistory {
     now_ms: AtomicU64,
+    #[allow(clippy::type_complexity)]
     queue: Mutex<VecDeque<(u64, (Option<NodeId>, u8, u16))>>,
+    #[allow(clippy::type_complexity)]
     map: Mutex<HashMap<(Option<NodeId>, u8, u16), bool>>,
 }
 

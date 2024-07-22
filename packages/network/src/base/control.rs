@@ -38,6 +38,7 @@ pub struct NeighboursControl {
 }
 
 impl NeighboursControl {
+    #[allow(clippy::result_unit_err)]
     pub fn validate(&self, now: u64, auth: &dyn Authorization) -> Result<NeighboursControlCmds, ()> {
         auth.validate(self.from, &self.cmd, &self.signature).ok_or(())?;
         let (ts, cmd) = bincode::DefaultOptions::new().with_limit(1499).deserialize::<(u64, NeighboursControlCmds)>(&self.cmd).map_err(|_| ())?;

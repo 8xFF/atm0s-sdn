@@ -80,6 +80,12 @@ pub struct TransportMsgHeader {
     pub from_node: Option<NodeId>,
 }
 
+impl Default for TransportMsgHeader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TransportMsgHeader {
     pub fn is_secure(first_byte: u8) -> bool {
         first_byte & 0b0010_0000 != 0

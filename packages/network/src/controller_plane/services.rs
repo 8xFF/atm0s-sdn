@@ -10,6 +10,7 @@ pub type Output<UserData, ServiceEvent, ToWorker> = (ServiceId, ServiceOutput<Us
 
 /// To manage the services we need to create an object that will hold the services
 pub struct ServiceManager<UserData, ServiceControl, ServiceEvent, ToController, ToWorker> {
+    #[allow(clippy::type_complexity)]
     services: [Option<
         TaskSwitcherBranch<
             Box<dyn Service<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>,
@@ -19,6 +20,7 @@ pub struct ServiceManager<UserData, ServiceControl, ServiceEvent, ToController, 
     switcher: TaskSwitcher,
 }
 
+#[allow(clippy::type_complexity)]
 impl<UserData, ServiceControl, ServiceEvent, ToController, ToWorker> ServiceManager<UserData, ServiceControl, ServiceEvent, ToController, ToWorker> {
     pub fn new(services: Vec<Arc<dyn ServiceBuilder<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>>) -> Self {
         let max_service_id = services.iter().map(|s| s.service_id()).max().unwrap_or(0);
@@ -29,19 +31,15 @@ impl<UserData, ServiceControl, ServiceEvent, ToController, ToWorker> ServiceMana
     }
 
     pub fn on_shared_input(&mut self, ctx: &ServiceCtx, now: u64, input: ServiceSharedInput) {
-        for service in self.services.iter_mut() {
-            if let Some(service) = service {
-                service.input(&mut self.switcher).on_shared_input(ctx, now, input.clone());
-            }
+        for service in self.services.iter_mut().flatten() {
+            service.input(&mut self.switcher).on_shared_input(ctx, now, input.clone());
         }
     }
 
     pub fn on_input(&mut self, ctx: &ServiceCtx, now: u64, id: ServiceId, input: ServiceInput<UserData, FeaturesEvent, ServiceControl, ToController>) {
-        if let Some(service) = self.services.get_mut(*id as usize) {
-            if let Some(service) = service {
-                self.switcher.flag_task(*id as usize);
-                service.input(&mut self.switcher).on_input(ctx, now, input);
-            }
+        if let Some(Some(service)) = self.services.get_mut(*id as usize) {
+            self.switcher.flag_task(*id as usize);
+            service.input(&mut self.switcher).on_input(ctx, now, input);
         }
     }
 }

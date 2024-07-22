@@ -76,6 +76,7 @@ pub enum TestNodeIn<SC> {
     ExtWorker(ExtIn<(), SC>),
     Udp(SocketAddr, Buffer),
     #[cfg(feature = "vpn")]
+    #[allow(dead_code)]
     Tun(Buffer),
 }
 
@@ -85,6 +86,7 @@ pub enum TestNodeOut<SE> {
     ExtWorker(ExtOut<(), SE>),
     Udp(Vec<SocketAddr>, Buffer),
     #[cfg(feature = "vpn")]
+    #[allow(dead_code)]
     Tun(Buffer),
     Continue,
 }
@@ -99,6 +101,7 @@ pub fn build_addr(node_id: NodeId) -> NodeAddr {
 #[derive(Debug, Default)]
 struct SingleThreadDataWorkerHistory {
     queue: Mutex<Vec<(Option<NodeId>, u8, u16)>>,
+    #[allow(clippy::type_complexity)]
     map: Mutex<HashMap<(Option<NodeId>, u8, u16), bool>>,
 }
 
@@ -126,6 +129,7 @@ pub struct TestNode<SC, SE, TC, TW> {
     worker: SdnWorker<(), SC, SE, TC, TW>,
 }
 
+#[allow(clippy::type_complexity)]
 impl<SC: Debug, SE: Debug, TC: Debug, TW: Debug> TestNode<SC, SE, TC, TW> {
     pub fn new(node_id: NodeId, session: u64, services: Vec<Arc<dyn ServiceBuilder<(), FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>) -> Self {
         let _log = AutoContext::new(node_id);
@@ -247,10 +251,12 @@ impl<SC: Debug, SE: Debug, TC: Debug + Clone, TW: Debug + Clone> NetworkSimulato
         self.output.pop_front()
     }
 
+    #[allow(dead_code)]
     pub fn control_worker(&mut self, node: NodeId, control: ExtIn<(), SC>) {
         self.input_worker.push_back((node, control));
     }
 
+    #[allow(dead_code)]
     pub fn pop_res_worker(&mut self) -> Option<(NodeId, ExtOut<(), SE>)> {
         self.output_worker.pop_front()
     }

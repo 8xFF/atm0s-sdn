@@ -46,14 +46,12 @@ impl RemoteStorage {
             ClientCommand::MapCmd(key, cmd) => {
                 let map = if let Some(map) = self.maps.get_mut(&key) {
                     map
+                } else if cmd.is_creator() {
+                    log::info!("[DhtKvServer] Creating new map: {}", key);
+                    self.maps.insert(key, RemoteMap::new(self.session));
+                    self.maps.get_mut(&key).expect("Must have value with previous inserted")
                 } else {
-                    if cmd.is_creator() {
-                        log::info!("[DhtKvServer] Creating new map: {}", key);
-                        self.maps.insert(key, RemoteMap::new(self.session));
-                        self.maps.get_mut(&key).expect("Must have value with previous inserted")
-                    } else {
-                        return;
-                    }
+                    return;
                 };
 
                 if let Some(event) = map.on_client(now, remote, cmd) {

@@ -39,11 +39,7 @@ pub enum MapControl {
 
 impl MapControl {
     pub fn is_creator(&self) -> bool {
-        match self {
-            MapControl::Set(_, _) => true,
-            MapControl::Sub => true,
-            _ => false,
-        }
+        matches!(self, MapControl::Set(_, _) | MapControl::Sub)
     }
 }
 
@@ -66,10 +62,12 @@ pub enum MapEvent {
     OnRelaySelected(NodeId),
 }
 
+type MapGetRs = Result<Vec<(Key, NodeSession, Version, Vec<u8>)>, GetError>;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     MapEvent(Map, MapEvent),
-    MapGetRes(Map, Result<Vec<(Key, NodeSession, Version, Vec<u8>)>, GetError>),
+    MapGetRes(Map, MapGetRs),
 }
 
 #[derive(Debug, Clone)]
@@ -95,15 +93,12 @@ impl<UserData: Eq + Copy + Debug> DhtKvFeature<UserData> {
 
 impl<UserData: Eq + Copy + Debug> Feature<UserData, Control, Event, ToController, ToWorker> for DhtKvFeature<UserData> {
     fn on_shared_input(&mut self, _ctx: &FeatureContext, now: u64, input: FeatureSharedInput) {
-        match input {
-            FeatureSharedInput::Tick(_) => {
-                self.internal.on_tick(now);
-            }
-            _ => {}
+        if let FeatureSharedInput::Tick(_) = input {
+            self.internal.on_tick(now);
         }
     }
 
-    fn on_input<'a>(&mut self, _ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'a, UserData, Control, ToController>) {
+    fn on_input(&mut self, _ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'_, UserData, Control, ToController>) {
         match input {
             FeatureInput::Control(actor, control) => {
                 log::debug!("[DhtKv] on ext input: actor={:?}, control={:?}", actor, control);

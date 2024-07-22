@@ -455,8 +455,8 @@ mod tests {
 
             for i in 0..100 {
                 let key: u32 = rand::random();
-                let next_a = router_a.closest_node(key, &vec![]);
-                let next_b = router_b.closest_node(key, &vec![]);
+                let next_a = router_a.closest_node(key, &[]);
+                let next_b = router_b.closest_node(key, &[]);
                 match (next_a, next_b) {
                     (Some(a), Some(b)) => {
                         panic!("Step {}, Wrong with key {} => {:?} {:?}", i, key, a, b);

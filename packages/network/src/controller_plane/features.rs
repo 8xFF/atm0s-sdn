@@ -45,7 +45,7 @@ impl<UserData: 'static + Hash + Eq + Copy + Debug> FeatureManager<UserData> {
         }
     }
 
-    pub fn on_shared_input<'a>(&mut self, ctx: &FeatureContext, now_ms: u64, input: FeatureSharedInput) {
+    pub fn on_shared_input(&mut self, ctx: &FeatureContext, now_ms: u64, input: FeatureSharedInput) {
         self.data.input(&mut self.switcher).on_shared_input(ctx, now_ms, input.clone());
         self.neighbours.input(&mut self.switcher).on_shared_input(ctx, now_ms, input.clone());
         self.router_sync.input(&mut self.switcher).on_shared_input(ctx, now_ms, input.clone());
@@ -56,7 +56,7 @@ impl<UserData: 'static + Hash + Eq + Copy + Debug> FeatureManager<UserData> {
         self.socket.input(&mut self.switcher).on_shared_input(ctx, now_ms, input);
     }
 
-    pub fn on_input<'a>(&mut self, ctx: &FeatureContext, now_ms: u64, feature: Features, input: FeaturesInput<'a, UserData>) {
+    pub fn on_input(&mut self, ctx: &FeatureContext, now_ms: u64, feature: Features, input: FeaturesInput<'_, UserData>) {
         match input {
             FeatureInput::FromWorker(to) => match to {
                 FeaturesToController::Data(to) => self.data.input(&mut self.switcher).on_input(ctx, now_ms, FeatureInput::FromWorker(to)),

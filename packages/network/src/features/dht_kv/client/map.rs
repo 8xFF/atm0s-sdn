@@ -168,16 +168,14 @@ impl MapSlot {
                 *self = MapSlot::Remote { key, version, value: Some(data) };
                 Some((ClientMapCommand::OnSetAck(key, source, version), true))
             }
-            MapSlot::Remote { version: old_version, .. } => {
-                if old_version.0 < version.0 {
+            MapSlot::Remote { version: old_version, .. } => match old_version.0.cmp(&version.0) {
+                std::cmp::Ordering::Less => {
                     *self = MapSlot::Remote { key, version, value: Some(data) };
                     Some((ClientMapCommand::OnSetAck(key, source, version), true))
-                } else if old_version.0 == version.0 {
-                    Some((ClientMapCommand::OnSetAck(key, source, version), false))
-                } else {
-                    None
                 }
-            }
+                std::cmp::Ordering::Equal => Some((ClientMapCommand::OnSetAck(key, source, version), false)),
+                std::cmp::Ordering::Greater => None,
+            },
             _ => None,
         }
     }

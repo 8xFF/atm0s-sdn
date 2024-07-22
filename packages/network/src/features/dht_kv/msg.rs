@@ -36,11 +36,7 @@ pub enum ClientMapCommand {
 
 impl ClientMapCommand {
     pub fn is_creator(&self) -> bool {
-        match self {
-            ClientMapCommand::Set(_, _, _) => true,
-            ClientMapCommand::Sub(_, _) => true,
-            _ => false,
-        }
+        matches!(self, ClientMapCommand::Set(_, _, _) | ClientMapCommand::Sub(_, _))
     }
 }
 

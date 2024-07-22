@@ -54,6 +54,12 @@ pub struct PubSubFeature<UserData> {
     queue: VecDeque<FeatureOutput<UserData, Event, ToWorker<UserData>>>,
 }
 
+impl<UserData: 'static + Eq + Copy + Debug> Default for PubSubFeature<UserData> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<UserData: 'static + Eq + Copy + Debug> PubSubFeature<UserData> {
     pub fn new() -> Self {
         Self {
@@ -185,7 +191,7 @@ impl<UserData: 'static + Eq + Copy + Debug> PubSubFeature<UserData> {
     }
 
     fn on_remote_relay_control(&mut self, ctx: &FeatureContext, now: u64, remote: SocketAddr, relay_id: RelayId, control: RelayControl) {
-        if let Some(_) = self.get_relay(ctx, relay_id, control.should_create()) {
+        if self.get_relay(ctx, relay_id, control.should_create()).is_some() {
             let relay: &mut Box<dyn GenericRelay<UserData>> = self.relays.get_mut(&relay_id).expect("Should have relay");
             log::debug!("[PubSubFeatureController] Remote control for {:?} from {:?}: {:?}", relay_id, remote, control);
             relay.on_remote(now, remote, control);
@@ -221,7 +227,7 @@ impl<UserData: 'static + Eq + Copy + Debug> PubSubFeature<UserData> {
                 GenericRelayOutput::Feedback(actors, fb) => {
                     log::debug!("[PubsubController] Feedback for {:?} {:?} to actors {:?}", relay_id, fb, actors);
                     for actor in actors {
-                        queue.push_back(FeatureOutput::Event(actor, Event(relay_id.0, ChannelEvent::FeedbackData(fb.clone()))));
+                        queue.push_back(FeatureOutput::Event(actor, Event(relay_id.0, ChannelEvent::FeedbackData(fb))));
                     }
                 }
             };
@@ -289,19 +295,18 @@ impl<UserData: 'static + Eq + Copy + Debug> Feature<UserData, Control, Event, To
                     self.pop_single_source_hint(ctx, now, channel);
                 }
             }
-            FeatureSharedInput::Connection(event) => match event {
-                ConnectionEvent::Disconnected(ctx) => {
+            FeatureSharedInput::Connection(event) => {
+                if let ConnectionEvent::Disconnected(ctx) = event {
                     for (relay_id, relay) in self.relays.iter_mut() {
                         relay.conn_disconnected(now, ctx.remote);
                         Self::pop_single_relay(*relay_id, relay, &mut self.queue);
                     }
                 }
-                _ => {}
-            },
+            }
         }
     }
 
-    fn on_input<'a>(&mut self, ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'a, UserData, Control, ToController>) {
+    fn on_input(&mut self, ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'_, UserData, Control, ToController>) {
         match input {
             FeatureInput::FromWorker(ToController::RelayControl(remote, relay_id, control)) => {
                 self.on_remote_relay_control(ctx, now_ms, remote, relay_id, control);

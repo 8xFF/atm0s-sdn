@@ -144,8 +144,8 @@ fn service_visualization_multi_collectors() {
         }
     };
 
-    node1_events.sort_by(|a, b| get_key(a).cmp(&get_key(b)));
-    node2_events.sort_by(|a, b| get_key(a).cmp(&get_key(b)));
+    node1_events.sort_by_key(get_key);
+    node2_events.sort_by_key(get_key);
 
     assert_eq!(
         node1_events,

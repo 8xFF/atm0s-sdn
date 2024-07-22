@@ -67,10 +67,7 @@ pub enum RelayControl {
 
 impl RelayControl {
     pub fn should_create(&self) -> bool {
-        match self {
-            RelayControl::Sub(_) => true,
-            _ => false,
-        }
+        matches!(self, RelayControl::Sub(_))
     }
 }
 
@@ -98,11 +95,7 @@ pub enum SourceHint {
 
 impl SourceHint {
     pub fn should_create(&self) -> bool {
-        match self {
-            SourceHint::Register { .. } => true,
-            SourceHint::Subscribe(_) => true,
-            _ => false,
-        }
+        matches!(self, SourceHint::Register { .. } | SourceHint::Subscribe(_))
     }
 }
 
@@ -127,10 +120,10 @@ impl TryFrom<&[u8]> for PubsubMessage {
     }
 }
 
-impl Into<Buffer> for PubsubMessage {
-    fn into(self) -> Buffer {
+impl From<PubsubMessage> for Buffer {
+    fn from(val: PubsubMessage) -> Self {
         let header = TransportMsgHeader::build(FEATURE_ID, 0, RouteRule::Direct);
-        let msg = TransportMsg::from_payload_bincode(header, &self);
+        let msg = TransportMsg::from_payload_bincode(header, &val);
         msg.take()
     }
 }

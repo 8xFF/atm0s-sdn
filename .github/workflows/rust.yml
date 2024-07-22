@@ -2,25 +2,49 @@ name: Rust
 
 on:
   push:
-    branches: [ "master" ]
+    branches: ["master"]
+    paths-ignore:
+      - "docs/**"
+
   pull_request:
-    branches: [ "master" ]
+    branches: ["master"]
+    paths-ignore:
+      - "docs/**"
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-
+  code-coverage:
     runs-on: ubuntu-latest
     env:
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust
-        run: rustup update stable
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt install -y libsoxr-dev libopus-dev libssl-dev libfdk-aac-dev
+
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Running cargo test
+        run: cargo test --all-features --workspace
       - name: Generate code coverage
         run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
       - name: Upload coverage to Codecov
@@ -29,3 +53,34 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
           files: lcov.info
           fail_ci_if_error: false
+  cargo-deny:
+    name: cargo-deny
+
+    # TODO: remove this matrix when https://github.com/EmbarkStudios/cargo-deny/issues/324 is resolved
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - x86_64-unknown-linux-gnu
+          # - x86_64-unknown-linux-musl
+          - aarch64-unknown-linux-gnu
+          # - arm-unknown-linux-gnueabihf
+          # - armv7-unknown-linux-gnueabihf
+          # - mips-unknown-linux-gnu
+          # - mips64-unknown-linux-gnuabi64
+          # - mips64el-unknown-linux-gnuabi64
+          # - mipsel-unknown-linux-gnu
+          # - aarch64-unknown-linux-musl
+          - x86_64-apple-darwin
+          - aarch64-apple-darwin
+          # - x86_64-pc-windows-gnu
+          # - x86_64-pc-windows-msvc
+
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v1
+        with:
+          command: check
+          log-level: error
+          arguments: --all-features --target ${{ matrix.platform }}

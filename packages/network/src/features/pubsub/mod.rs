@@ -60,14 +60,14 @@ pub enum RelayWorkerControl<UserData> {
 
 impl<UserData> RelayWorkerControl<UserData> {
     pub fn is_broadcast(&self) -> bool {
-        match self {
-            RelayWorkerControl::SendSub(_, _) => false,
-            RelayWorkerControl::SendUnsub(_, _) => false,
-            RelayWorkerControl::SendSubOk(_, _) => false,
-            RelayWorkerControl::SendUnsubOk(_, _) => false,
-            RelayWorkerControl::SendRouteChanged => false,
-            _ => true,
-        }
+        !matches!(
+            self,
+            RelayWorkerControl::SendSub(_, _)
+                | RelayWorkerControl::SendUnsub(_, _)
+                | RelayWorkerControl::SendSubOk(_, _)
+                | RelayWorkerControl::SendUnsubOk(_, _)
+                | RelayWorkerControl::SendRouteChanged
+        )
     }
 }
 

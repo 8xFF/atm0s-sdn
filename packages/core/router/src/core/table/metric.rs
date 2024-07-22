@@ -47,9 +47,9 @@ impl Metric {
     pub fn score(&self) -> u32 {
         let based_score = self.latency as u32 + (self.hops.len() as u32 * HOP_PLUS_RTT as u32);
         if self.bandwidth >= BANDWIDTH_LIMIT {
-            return based_score;
+            based_score
         } else {
-            return based_score + BANDWIDTH_SCORE_PENALTY;
+            based_score + BANDWIDTH_SCORE_PENALTY
         }
     }
 

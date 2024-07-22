@@ -73,7 +73,7 @@ impl<UserData> Default for SocketFeature<UserData> {
 impl<UserData: Copy + Debug + Eq> Feature<UserData, Control, Event, ToController, ToWorker<UserData>> for SocketFeature<UserData> {
     fn on_shared_input(&mut self, _ctx: &FeatureContext, _now: u64, _input: FeatureSharedInput) {}
 
-    fn on_input<'a>(&mut self, ctx: &FeatureContext, _now_ms: u64, input: FeatureInput<'a, UserData, Control, ToController>) {
+    fn on_input(&mut self, ctx: &FeatureContext, _now_ms: u64, input: FeatureInput<'_, UserData, Control, ToController>) {
         match input {
             FeatureInput::Control(actor, control) => match control {
                 Control::Bind(port) => {
@@ -298,7 +298,7 @@ fn embed_meta(src: u16, dest: u16, data: &mut Buffer) {
     data.push_front(&src.to_be_bytes());
 }
 
-fn extract_meta<'a>(buf: &mut Buffer) -> Option<(u16, u16)> {
+fn extract_meta(buf: &mut Buffer) -> Option<(u16, u16)> {
     let src_buf2 = buf.pop_front(2)?;
     let src_buf = src_buf2.deref();
     let src = u16::from_be_bytes([src_buf[0], src_buf[1]]);

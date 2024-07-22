@@ -9,6 +9,7 @@ use crate::features::{FeaturesControl, FeaturesEvent};
 pub type Output<UserData, ServiceControl, ServiceEvent, ToController> = (ServiceId, ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController>);
 
 /// To manage the services we need to create an object that will hold the services
+#[allow(clippy::type_complexity)]
 pub struct ServiceWorkerManager<UserData, ServiceControl, ServiceEvent, ToController, ToWorker> {
     services: [Option<
         TaskSwitcherBranch<
@@ -20,6 +21,7 @@ pub struct ServiceWorkerManager<UserData, ServiceControl, ServiceEvent, ToContro
     _tmp: PhantomData<ServiceControl>,
 }
 
+#[allow(clippy::type_complexity)]
 impl<UserData, ServiceControl, ServiceEvent, ToController, ToWorker> ServiceWorkerManager<UserData, ServiceControl, ServiceEvent, ToController, ToWorker> {
     pub fn new(services: Vec<Arc<dyn ServiceBuilder<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>>) -> Self {
         let max_service_id = services.iter().map(|s| s.service_id()).max().unwrap_or(0);
@@ -31,10 +33,8 @@ impl<UserData, ServiceControl, ServiceEvent, ToController, ToWorker> ServiceWork
     }
 
     pub fn on_tick(&mut self, ctx: &ServiceWorkerCtx, now: u64, tick_count: u64) {
-        for service in self.services.iter_mut() {
-            if let Some(service) = service {
-                service.input(&mut self.switcher).on_tick(ctx, now, tick_count);
-            }
+        for service in self.services.iter_mut().flatten() {
+            service.input(&mut self.switcher).on_tick(ctx, now, tick_count);
         }
     }
 
@@ -53,7 +53,7 @@ impl<UserData, ServiceControl, ServiceEvent, ToController, ToWorker> TaskSwitche
     fn pop_output(&mut self, now: u64) -> Option<Output<UserData, ServiceControl, ServiceEvent, ToController>> {
         loop {
             let index = self.switcher.current()?;
-            if let Some(Some(service)) = self.services.get_mut(index as usize) {
+            if let Some(Some(service)) = self.services.get_mut(index) {
                 if let Some(output) = service.pop_output(now, &mut self.switcher) {
                     return Some(((index as u8).into(), output));
                 }

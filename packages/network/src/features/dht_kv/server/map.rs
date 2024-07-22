@@ -250,7 +250,7 @@ impl RemoteMap {
             return;
         }
         let mut remotes = vec![];
-        for (remote, _) in &self.subs {
+        for remote in self.subs.keys() {
             if *remote != source {
                 log::debug!("[ServerMap] Fire event {:?} for key {key} to {}", event, remote.0);
                 remotes.push(*remote);

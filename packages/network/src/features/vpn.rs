@@ -38,7 +38,7 @@ pub struct VpnFeature<UserData> {
 impl<UserData> Feature<UserData, Control, Event, ToController, ToWorker> for VpnFeature<UserData> {
     fn on_shared_input(&mut self, _ctx: &FeatureContext, _now: u64, _input: crate::base::FeatureSharedInput) {}
 
-    fn on_input<'a>(&mut self, _ctx: &FeatureContext, _now_ms: u64, _input: FeatureInput<'a, UserData, Control, ToController>) {}
+    fn on_input(&mut self, _ctx: &FeatureContext, _now_ms: u64, _input: FeatureInput<'_, UserData, Control, ToController>) {}
 }
 
 impl<UserData> TaskSwitcherChild<Output<UserData>> for VpnFeature<UserData> {
@@ -66,13 +66,11 @@ impl<UserData> VpnFeatureWorker<UserData> {
             //This is for current node, just echo back
             rewrite_tun_pkt(&mut pkt);
             self.queue.push_back(FeatureWorkerOutput::TunPkt(pkt));
-        } else {
-            if let RouteAction::Next(remote) = ctx.router.path_to_node(dest) {
-                //TODO decrease TTL
-                //TODO how to avoid copy data here
-                self.queue
-                    .push_back(FeatureWorkerOutput::RawDirect2(remote, TransportMsg::build(FEATURE_ID, 0, RouteRule::ToNode(dest), &pkt).take().into()));
-            }
+        } else if let RouteAction::Next(remote) = ctx.router.path_to_node(dest) {
+            //TODO decrease TTL
+            //TODO how to avoid copy data here
+            self.queue
+                .push_back(FeatureWorkerOutput::RawDirect2(remote, TransportMsg::build(FEATURE_ID, 0, RouteRule::ToNode(dest), &pkt).take()));
         }
     }
 

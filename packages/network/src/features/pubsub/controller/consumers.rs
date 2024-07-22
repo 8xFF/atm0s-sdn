@@ -97,7 +97,7 @@ impl<UserData: Eq + Debug + Copy> RelayConsumers<UserData> {
     }
 
     pub fn conn_disconnected(&mut self, _now: u64, remote: SocketAddr) {
-        if let Some(_) = self.remotes.remove(&remote) {
+        if self.remotes.remove(&remote).is_some() {
             self.queue.push_back(RelayWorkerControl::RouteDelRemote(remote));
         }
     }

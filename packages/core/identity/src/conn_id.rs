@@ -121,11 +121,7 @@ impl Hash for ConnId {
 impl PartialOrd<Self> for ConnId {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         //compare both session and direction
-        if self.session == other.session {
-            self.direction.partial_cmp(&other.direction)
-        } else {
-            self.session.partial_cmp(&other.session)
-        }
+        Some(self.cmp(other))
     }
 }
 

@@ -1,3 +1,5 @@
+#![allow(clippy::bool_assert_comparison)]
+
 use std::net::SocketAddr;
 
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};

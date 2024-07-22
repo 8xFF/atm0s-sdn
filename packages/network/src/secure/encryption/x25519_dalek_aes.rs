@@ -87,7 +87,7 @@ impl EncryptorXDA {
         let key = Key::<Aes256Gcm>::from_slice(shared_key);
         Self {
             key: shared_key.to_vec(),
-            aes: Aes256Gcm::new(&key),
+            aes: Aes256Gcm::new(key),
         }
     }
 }
@@ -119,7 +119,7 @@ impl DecryptorXDA {
         let key = Key::<Aes256Gcm>::from_slice(shared_key);
         Self {
             key: shared_key.to_vec(),
-            aes: Aes256Gcm::new(&key),
+            aes: Aes256Gcm::new(key),
         }
     }
 }

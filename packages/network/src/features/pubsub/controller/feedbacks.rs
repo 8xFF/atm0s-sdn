@@ -49,9 +49,9 @@ impl<UserData: Eq> SingleFeedbackKind<UserData> {
         let mut aggerated_fb: Option<Feedback> = None;
         for (_, fb, _) in &self.feedbacks {
             if let Some(aggerated_fb) = &mut aggerated_fb {
-                *aggerated_fb = aggerated_fb.clone() + fb.clone();
+                *aggerated_fb = *aggerated_fb + *fb;
             } else {
-                aggerated_fb = Some(fb.clone());
+                aggerated_fb = Some(*fb);
             }
         }
         self.feedbacks.retain(|(_, fb, last_ts)| now < last_ts + fb.timeout_ms as u64);

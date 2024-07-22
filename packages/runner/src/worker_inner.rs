@@ -47,6 +47,7 @@ pub struct SdnInnerCfg<UserData, SC, SE, TC, TW> {
     pub tick_ms: u64,
     pub bind_addrs: Vec<SocketAddr>,
     pub controller: Option<ControllerCfg>,
+    #[allow(clippy::type_complexity)]
     pub services: Vec<Arc<dyn ServiceBuilder<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW>>>,
     pub history: Arc<dyn ShadowRouterHistory>,
     #[cfg(feature = "vpn")]
@@ -71,9 +72,11 @@ pub struct SdnWorkerInner<UserData, SC, SE, TC, TW> {
     udp_backend_slot: Option<usize>,
     #[cfg(feature = "vpn")]
     tun_backend_slot: Option<usize>,
+    #[allow(clippy::type_complexity)]
     queue: VecDeque<WorkerInnerOutput<SdnOwner, SdnExtOut<UserData, SE>, SdnChannel, SdnEvent<UserData, SC, SE, TC, TW>, SdnSpawnCfg>>,
 }
 
+#[allow(clippy::type_complexity)]
 impl<UserData: 'static + Eq + Copy + Hash + Debug, SC: Debug, SE: Debug, TC: Debug, TW: Debug> SdnWorkerInner<UserData, SC, SE, TC, TW> {
     fn convert_output(
         &mut self,
@@ -155,7 +158,7 @@ impl<UserData: 'static + Eq + Copy + Hash + Debug, SC: Debug, SE: Debug, TC: Deb
                         authorization: controller.auth,
                         handshake_builder: controller.handshake,
                         session: controller.session,
-                        random: Box::new(OsRng::default()),
+                        random: Box::new(OsRng),
                         services: cfg.services.clone(),
                         history: cfg.history.clone(),
                     }),

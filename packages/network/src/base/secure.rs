@@ -31,11 +31,13 @@ pub trait HandshakeBuilder: Send + Sync {
 #[mockall::automock]
 pub trait HandshakeRequester {
     fn create_public_request(&self) -> Result<Vec<u8>, HandshakeError>;
+    #[allow(clippy::type_complexity)]
     fn process_public_response(&mut self, response: &[u8]) -> Result<(Box<dyn Encryptor>, Box<dyn Decryptor>), HandshakeError>;
 }
 
 #[mockall::automock]
 pub trait HandshakeResponder {
+    #[allow(clippy::type_complexity)]
     fn process_public_request(&mut self, request: &[u8]) -> Result<(Box<dyn Encryptor>, Box<dyn Decryptor>, Vec<u8>), HandshakeError>;
 }
 
@@ -46,7 +48,7 @@ pub enum EncryptionError {
 
 #[mockall::automock]
 pub trait Encryptor: Debug + Send + Sync {
-    fn encrypt<'a>(&mut self, now_ms: u64, data: &mut Buffer) -> Result<(), EncryptionError>;
+    fn encrypt(&mut self, now_ms: u64, data: &mut Buffer) -> Result<(), EncryptionError>;
     fn clone_box(&self) -> Box<dyn Encryptor>;
 }
 
@@ -65,7 +67,7 @@ pub enum DecryptionError {
 
 #[mockall::automock]
 pub trait Decryptor: Debug + Send + Sync {
-    fn decrypt<'a>(&mut self, now_ms: u64, data: &mut Buffer) -> Result<(), DecryptionError>;
+    fn decrypt(&mut self, now_ms: u64, data: &mut Buffer) -> Result<(), DecryptionError>;
     fn clone_box(&self) -> Box<dyn Decryptor>;
 }
 
