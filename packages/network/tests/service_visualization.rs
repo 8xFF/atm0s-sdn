@@ -26,6 +26,7 @@ fn node_changed(node: NodeId, info: NodeInfo, remotes: &[(NodeId, ConnId)]) -> E
                 .map(|(n, c)| ConnectionInfo {
                     conn: *c,
                     dest: *n,
+                    local: node_to_addr(node),
                     remote: node_to_addr(*n),
                     rtt_ms: 0,
                 })

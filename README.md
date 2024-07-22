@@ -90,13 +90,13 @@ cargo build --release
 Running first seed node as a network structure collector:
 
 ```bash
-cargo run -- --collector --local-tags demo --connect-tags demo --node-id 1 --bind-addr 127.0.0.1:10001 --web-addr 0.0.0.0:3000
+cargo run -- --collector --local-tags demo --connect-tags demo --node-id 1 --udp-port 10001 --web-addr 0.0.0.0:3000
 ```
 
 Running second nodes and join to network with seed node (you need to replace with seed node IP if it running on another device):
 
 ```bash
-cargo run -- --local-tags demo --connect-tags mode --seeds 1@/ip4/127.0.0.1/udp/10001 --node-id 2 --bind-addr 127.0.0.1:10002
+cargo run -- --local-tags demo --connect-tags mode --seeds 1@/ip4/127.0.0.1/udp/10001 --node-id 2 --udp-port 10002
 ```
 
 Same with this, we can run more nodes and connect to the network. Remember change node-id and port for not conflict with other nodes.

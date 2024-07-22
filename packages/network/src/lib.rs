@@ -1,10 +1,9 @@
 #![allow(clippy::bool_assert_comparison)]
 
-use std::net::SocketAddr;
-
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 use atm0s_sdn_router::RouteRule;
 use base::{FeatureControlActor, NeighboursControl, NetIncomingMeta, NetOutgoingMeta, SecureContext, ServiceControlActor, ServiceId};
+use data_plane::NetPair;
 use features::{Features, FeaturesControl, FeaturesEvent, FeaturesToController, FeaturesToWorker};
 use sans_io_runtime::Buffer;
 
@@ -36,7 +35,7 @@ pub enum ExtOut<UserData, ServicesEvent> {
 pub enum LogicControl<UserData, SC, SE, TC> {
     Feature(FeaturesToController),
     Service(ServiceId, TC),
-    NetNeighbour(SocketAddr, NeighboursControl),
+    NetNeighbour(NetPair, NeighboursControl),
     NetRemote(Features, ConnId, NetIncomingMeta, Buffer),
     NetLocal(Features, NetIncomingMeta, Buffer),
     FeaturesControl(FeatureControlActor<UserData>, FeaturesControl),
@@ -48,11 +47,11 @@ pub enum LogicControl<UserData, SC, SE, TC> {
 
 #[derive(Debug, Clone)]
 pub enum LogicEvent<UserData, SE, TW> {
-    NetNeighbour(SocketAddr, NeighboursControl),
-    NetDirect(Features, SocketAddr, ConnId, NetOutgoingMeta, Buffer),
+    NetNeighbour(NetPair, NeighboursControl),
+    NetDirect(Features, NetPair, ConnId, NetOutgoingMeta, Buffer),
     NetRoute(Features, RouteRule, NetOutgoingMeta, Buffer),
 
-    Pin(ConnId, NodeId, SocketAddr, SecureContext),
+    Pin(ConnId, NodeId, NetPair, SecureContext),
     UnPin(ConnId),
     /// first bool is flag for broadcast or not
     Feature(bool, FeaturesToWorker<UserData>),

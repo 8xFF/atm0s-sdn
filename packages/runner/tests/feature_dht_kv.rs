@@ -48,7 +48,11 @@ fn expect_event(node: &mut SdnController<(), SC, SE, TC, TW>, expected: dht_kv::
 }
 
 fn build_node(node_id: NodeId, udp_port: u16) -> (SdnController<(), SC, SE, TC, TW>, NodeAddr) {
-    let mut builder = SdnBuilder::<(), SC, SE, TC, TW, UserInfo>::new(node_id, &[SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, udp_port))], vec![]);
+    let addrs = [
+        SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, udp_port)),
+        SocketAddr::new(local_ip_address::local_ip().expect("Should have ip-v4"), udp_port),
+    ];
+    let mut builder = SdnBuilder::<(), SC, SE, TC, TW, UserInfo>::new(node_id, &addrs, vec![]);
     builder.set_authorization(StaticKeyAuthorization::new("password-here"));
     let node_addr = builder.node_addr();
     let node_info = node_id;

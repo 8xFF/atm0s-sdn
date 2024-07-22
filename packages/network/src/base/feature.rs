@@ -1,8 +1,8 @@
-use std::net::SocketAddr;
-
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 use atm0s_sdn_router::{shadow::ShadowRouter, RouteRule};
 use sans_io_runtime::TaskSwitcherChild;
+
+use crate::data_plane::NetPair;
 
 use super::{Buffer, ConnectionCtx, ConnectionEvent, ServiceId, TransportMsgHeader, Ttl};
 
@@ -172,8 +172,8 @@ pub enum FeatureWorkerOutput<UserData, Control, Event, ToController> {
     SendRoute(RouteRule, NetOutgoingMeta, Buffer),
     RawDirect(ConnId, Buffer),
     RawBroadcast(Vec<ConnId>, Buffer),
-    RawDirect2(SocketAddr, Buffer),
-    RawBroadcast2(Vec<SocketAddr>, Buffer),
+    RawDirect2(NetPair, Buffer),
+    RawBroadcast2(Vec<NetPair>, Buffer),
     #[cfg(feature = "vpn")]
     TunPkt(Buffer),
 }
@@ -206,12 +206,12 @@ impl<UserData, Control, Event, ToController> FeatureWorkerOutput<UserData, Contr
 
 pub struct FeatureWorkerContext {
     pub node_id: NodeId,
-    pub router: ShadowRouter<SocketAddr>,
+    pub router: ShadowRouter<NetPair>,
 }
 
 pub trait FeatureWorker<UserData, SdkControl, SdkEvent, ToController, ToWorker>: TaskSwitcherChild<FeatureWorkerOutput<UserData, SdkControl, SdkEvent, ToController>> {
     fn on_tick(&mut self, _ctx: &mut FeatureWorkerContext, _now: u64, _tick_count: u64) {}
-    fn on_network_raw(&mut self, ctx: &mut FeatureWorkerContext, now: u64, conn: ConnId, _remote: SocketAddr, header: TransportMsgHeader, mut buf: Buffer) {
+    fn on_network_raw(&mut self, ctx: &mut FeatureWorkerContext, now: u64, conn: ConnId, _pair: NetPair, header: TransportMsgHeader, mut buf: Buffer) {
         let header_len = header.serialize_size();
         buf.move_front_right(header_len).expect("Buffer should bigger or equal header");
         self.on_input(ctx, now, FeatureWorkerInput::Network(conn, (&header).into(), buf));

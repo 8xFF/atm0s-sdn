@@ -34,6 +34,7 @@ fn data_cmd<UserData, SE, TW>(cmd: data::Control) -> ServiceOutput<UserData, Fea
 pub struct ConnectionInfo {
     pub conn: ConnId,
     pub dest: NodeId,
+    pub local: SocketAddr,
     pub remote: SocketAddr,
     pub rtt_ms: u32,
 }
@@ -143,29 +144,31 @@ where
                 }
             }
             ServiceSharedInput::Connection(ConnectionEvent::Connected(ctx, _)) => {
-                log::info!("[Visualization] New connection from {} to {}, set default rtt_ms to 1000ms", ctx.remote, ctx.node);
+                log::info!("[Visualization] New connection from {} to {}, set default rtt_ms to 1000ms", ctx.pair, ctx.node);
                 self.conns.insert(
                     ctx.conn,
                     ConnectionInfo {
                         conn: ctx.conn,
                         dest: ctx.node,
-                        remote: ctx.remote,
+                        local: ctx.pair.local,
+                        remote: ctx.pair.remote,
                         rtt_ms: 1000,
                     },
                 );
             }
             ServiceSharedInput::Connection(ConnectionEvent::Stats(ctx, stats)) => {
-                log::debug!("[Visualization] Update rtt_ms for connection from {} to {} to {}ms", ctx.remote, ctx.node, stats.rtt_ms);
+                log::debug!("[Visualization] Update rtt_ms for connection from {} to {} to {}ms", ctx.pair, ctx.node, stats.rtt_ms);
                 let entry = self.conns.entry(ctx.conn).or_insert(ConnectionInfo {
                     conn: ctx.conn,
                     dest: ctx.node,
-                    remote: ctx.remote,
+                    local: ctx.pair.local,
+                    remote: ctx.pair.remote,
                     rtt_ms: 1000,
                 });
                 entry.rtt_ms = stats.rtt_ms;
             }
             ServiceSharedInput::Connection(ConnectionEvent::Disconnected(ctx)) => {
-                log::info!("[Visualization] Connection from {} to {} is disconnected", ctx.remote, ctx.node);
+                log::info!("[Visualization] Connection from {} to {} is disconnected", ctx.pair, ctx.node);
                 self.conns.remove(&ctx.conn);
             }
         }
@@ -297,14 +300,13 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::net::SocketAddr;
-
     use atm0s_sdn_identity::{ConnId, NodeId};
     use atm0s_sdn_router::{RouteRule, ServiceBroadcastLevel};
     use serde::{Deserialize, Serialize};
 
     use crate::{
         base::{ConnectionCtx, ConnectionEvent, MockDecryptor, MockEncryptor, NetIncomingMeta, NetOutgoingMeta, SecureContext, Service, ServiceCtx, ServiceInput, ServiceSharedInput, Ttl},
+        data_plane::NetPair,
         features::{
             data::{Control as DataControl, Event as DataEvent},
             FeaturesEvent,
@@ -326,7 +328,7 @@ mod test {
             ConnectionCtx {
                 conn: ConnId::from_in(0, node as u64),
                 node,
-                remote: SocketAddr::from(([127, 0, 0, 1], 1234)),
+                pair: NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2000").expect("Should parse pair"),
             },
             SecureContext {
                 encryptor: Box::new(MockEncryptor::new()),
@@ -339,7 +341,7 @@ mod test {
         ConnectionEvent::Disconnected(ConnectionCtx {
             conn: ConnId::from_in(0, node as u64),
             node,
-            remote: SocketAddr::from(([127, 0, 0, 1], 1234)),
+            pair: NetPair::new_str("1.1.1.1:1000", "2.2.2.2:2000").expect("Should parse pair"),
         })
     }
 

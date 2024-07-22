@@ -25,8 +25,9 @@ bincode.workspace = true
 
 [dev-dependencies]
 env_logger = { workspace = true }
-signal-hook = "0.3.17"
+signal-hook = "0.3"
 clap.workspace = true
+local-ip-address = "0.6"
 
 [features]
 default = []

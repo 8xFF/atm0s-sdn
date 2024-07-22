@@ -4,8 +4,6 @@ mod msg;
 mod secure;
 mod service;
 
-use std::net::SocketAddr;
-
 use atm0s_sdn_identity::{ConnId, NodeId};
 pub use control::*;
 pub use feature::*;
@@ -14,11 +12,13 @@ pub use sans_io_runtime::Buffer;
 pub use secure::*;
 pub use service::*;
 
+use crate::data_plane::NetPair;
+
 #[derive(Debug, Clone)]
 pub struct ConnectionCtx {
     pub conn: ConnId,
     pub node: NodeId,
-    pub remote: SocketAddr,
+    pub pair: NetPair,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

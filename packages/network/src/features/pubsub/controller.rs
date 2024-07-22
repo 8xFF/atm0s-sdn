@@ -1,10 +1,12 @@
 use std::{
     collections::{HashMap, VecDeque},
     fmt::Debug,
-    net::SocketAddr,
 };
 
-use crate::base::{ConnectionEvent, Feature, FeatureContext, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput};
+use crate::{
+    base::{ConnectionEvent, Feature, FeatureContext, FeatureControlActor, FeatureInput, FeatureOutput, FeatureSharedInput},
+    data_plane::NetPair,
+};
 
 use self::source_hint::SourceHintLogic;
 
@@ -41,8 +43,8 @@ pub trait GenericRelay<UserData> {
     fn on_local_sub(&mut self, now: u64, actor: FeatureControlActor<UserData>);
     fn on_local_feedback(&mut self, now: u64, actor: FeatureControlActor<UserData>, feedback: Feedback);
     fn on_local_unsub(&mut self, now: u64, actor: FeatureControlActor<UserData>);
-    fn on_remote(&mut self, now: u64, remote: SocketAddr, control: RelayControl);
-    fn conn_disconnected(&mut self, now: u64, remote: SocketAddr);
+    fn on_remote(&mut self, now: u64, remote: NetPair, control: RelayControl);
+    fn conn_disconnected(&mut self, now: u64, remote: NetPair);
     fn should_clear(&self) -> bool;
     fn relay_dests(&self) -> Option<(&[FeatureControlActor<UserData>], bool)>;
     fn pop_output(&mut self) -> Option<GenericRelayOutput<UserData>>;
@@ -190,7 +192,7 @@ impl<UserData: 'static + Eq + Copy + Debug> PubSubFeature<UserData> {
         }
     }
 
-    fn on_remote_relay_control(&mut self, ctx: &FeatureContext, now: u64, remote: SocketAddr, relay_id: RelayId, control: RelayControl) {
+    fn on_remote_relay_control(&mut self, ctx: &FeatureContext, now: u64, remote: NetPair, relay_id: RelayId, control: RelayControl) {
         if self.get_relay(ctx, relay_id, control.should_create()).is_some() {
             let relay: &mut Box<dyn GenericRelay<UserData>> = self.relays.get_mut(&relay_id).expect("Should have relay");
             log::debug!("[PubSubFeatureController] Remote control for {:?} from {:?}: {:?}", relay_id, remote, control);
@@ -204,7 +206,7 @@ impl<UserData: 'static + Eq + Copy + Debug> PubSubFeature<UserData> {
         }
     }
 
-    fn on_remote_source_hint_control(&mut self, ctx: &FeatureContext, now: u64, remote: SocketAddr, channel: ChannelId, control: SourceHint) {
+    fn on_remote_source_hint_control(&mut self, ctx: &FeatureContext, now: u64, remote: NetPair, channel: ChannelId, control: SourceHint) {
         if let Some(sh) = self.get_source_hint(ctx.node_id, ctx.session, channel, control.should_create()) {
             log::debug!("[PubSubFeatureController] SourceHint control for {:?} from {:?}: {:?}", channel, remote, control);
             sh.on_remote(now, remote, control);
@@ -298,7 +300,7 @@ impl<UserData: 'static + Eq + Copy + Debug> Feature<UserData, Control, Event, To
             FeatureSharedInput::Connection(event) => {
                 if let ConnectionEvent::Disconnected(ctx) = event {
                     for (relay_id, relay) in self.relays.iter_mut() {
-                        relay.conn_disconnected(now, ctx.remote);
+                        relay.conn_disconnected(now, ctx.pair);
                         Self::pop_single_relay(*relay_id, relay, &mut self.queue);
                     }
                 }

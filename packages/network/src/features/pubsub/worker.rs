@@ -1,10 +1,13 @@
-use std::{collections::HashMap, fmt::Debug, net::SocketAddr};
+use std::{collections::HashMap, fmt::Debug};
 
 use atm0s_sdn_identity::ConnId;
 use atm0s_sdn_router::{RouteAction, RouterTable};
 use sans_io_runtime::{collections::DynamicDeque, return_if_err, return_if_none, TaskSwitcherChild};
 
-use crate::base::{Buffer, FeatureControlActor, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, TransportMsgHeader};
+use crate::{
+    base::{Buffer, FeatureControlActor, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, TransportMsgHeader},
+    data_plane::NetPair,
+};
 
 use super::{
     msg::{PubsubMessage, RelayControl, RelayId},
@@ -12,10 +15,10 @@ use super::{
 };
 
 struct WorkerRelay<UserData> {
-    source: Option<SocketAddr>,
+    source: Option<NetPair>,
     locals: Vec<FeatureControlActor<UserData>>,
-    remotes: Vec<SocketAddr>,
-    remotes_uuid: HashMap<SocketAddr, u64>,
+    remotes: Vec<NetPair>,
+    remotes_uuid: HashMap<NetPair, u64>,
 }
 
 impl<UserData> WorkerRelay<UserData> {
@@ -39,7 +42,7 @@ impl<UserData> Default for PubSubFeatureWorker<UserData> {
 }
 
 impl<UserData: Eq + Copy + Debug> FeatureWorker<UserData, Control, Event, ToController, ToWorker<UserData>> for PubSubFeatureWorker<UserData> {
-    fn on_network_raw(&mut self, _ctx: &mut FeatureWorkerContext, _now: u64, _conn: ConnId, remote: SocketAddr, _header: TransportMsgHeader, buf: Buffer) {
+    fn on_network_raw(&mut self, _ctx: &mut FeatureWorkerContext, _now: u64, _conn: ConnId, remote: NetPair, _header: TransportMsgHeader, buf: Buffer) {
         log::debug!("[PubSubWorker] on_network_raw from {}", remote);
         let msg = return_if_err!(PubsubMessage::try_from(&buf as &[u8]));
         match msg {

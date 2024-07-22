@@ -12,7 +12,7 @@ use std::{collections::VecDeque, net::IpAddr};
 use atm0s_sdn_identity::{NodeAddr, NodeAddrBuilder, NodeId, Protocol};
 use atm0s_sdn_network::base::ServiceBuilder;
 use atm0s_sdn_network::controller_plane::ControllerPlaneCfg;
-use atm0s_sdn_network::data_plane::DataPlaneCfg;
+use atm0s_sdn_network::data_plane::{DataPlaneCfg, NetPair};
 use atm0s_sdn_network::features::{FeaturesControl, FeaturesEvent};
 use atm0s_sdn_network::secure::{HandshakeBuilderXDA, StaticKeyAuthorization};
 use atm0s_sdn_network::worker::{SdnWorker, SdnWorkerCfg, SdnWorkerInput, SdnWorkerOutput};
@@ -74,7 +74,7 @@ impl Drop for AutoContext {
 pub enum TestNodeIn<SC> {
     Ext(ExtIn<(), SC>),
     ExtWorker(ExtIn<(), SC>),
-    Udp(SocketAddr, Buffer),
+    Udp(NetPair, Buffer),
     #[cfg(feature = "vpn")]
     #[allow(dead_code)]
     Tun(Buffer),
@@ -84,7 +84,7 @@ pub enum TestNodeIn<SC> {
 pub enum TestNodeOut<SE> {
     Ext(ExtOut<(), SE>),
     ExtWorker(ExtOut<(), SE>),
-    Udp(Vec<SocketAddr>, Buffer),
+    Udp(Vec<NetPair>, Buffer),
     #[cfg(feature = "vpn")]
     #[allow(dead_code)]
     Tun(Buffer),
@@ -144,6 +144,7 @@ impl<SC: Debug, SE: Debug, TC: Debug, TW: Debug> TestNode<SC, SE, TC, TW> {
                 tick_ms: 1,
                 controller: Some(ControllerPlaneCfg {
                     session,
+                    bind_addrs: vec![node_to_addr(node_id)],
                     services: services.clone(),
                     authorization,
                     handshake_builder,
@@ -313,13 +314,13 @@ impl<SC: Debug, SE: Debug, TC: Debug + Clone, TW: Debug + Clone> NetworkSimulato
                 self.output_worker.push_back((node, out));
             }
             TestNodeOut::Udp(dests, data) => {
-                let source_addr = node_to_addr(node);
                 for dest in dests {
-                    log::debug!("Send UDP packet from {} to {}, buf len {}", source_addr, dest, data.len());
-                    let dest_node = addr_to_node(dest);
+                    log::debug!("Send UDP packet from {} to {}, buf len {}", dest.local, dest.remote, data.len());
+                    let dest_node = addr_to_node(dest.remote);
                     let dest_index = *self.nodes_index.get(&dest_node).expect("Node not found");
                     self.switcher.flag_task(dest_index);
-                    self.nodes[dest_index].on_input(now, TestNodeIn::Udp(source_addr, data.clone()));
+                    let in_pair = NetPair::new(dest.remote, dest.local);
+                    self.nodes[dest_index].on_input(now, TestNodeIn::Udp(in_pair, data.clone()));
                 }
             }
             #[cfg(feature = "vpn")]

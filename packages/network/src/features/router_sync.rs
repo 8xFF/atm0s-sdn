@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, VecDeque},
-    net::SocketAddr,
-};
+use std::collections::{HashMap, VecDeque};
 
 use atm0s_sdn_identity::{ConnId, NodeId};
 use atm0s_sdn_router::{
@@ -11,8 +8,9 @@ use atm0s_sdn_router::{
 use derivative::Derivative;
 use sans_io_runtime::{collections::DynamicDeque, TaskSwitcherChild};
 
-use crate::base::{
-    ConnectionEvent, Feature, FeatureContext, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, NetOutgoingMeta,
+use crate::{
+    base::{ConnectionEvent, Feature, FeatureContext, FeatureInput, FeatureOutput, FeatureSharedInput, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, NetOutgoingMeta},
+    data_plane::NetPair,
 };
 
 pub const FEATURE_ID: u8 = 2;
@@ -24,7 +22,7 @@ const INIT_BW: u32 = 100_000_000;
 pub type Control = ();
 pub type Event = ();
 
-pub type ToWorker = ShadowRouterDelta<SocketAddr>;
+pub type ToWorker = ShadowRouterDelta<NetPair>;
 pub type ToController = ();
 
 pub type Output<UserData> = FeatureOutput<UserData, Event, ToWorker>;
@@ -32,7 +30,7 @@ pub type WorkerOutput<UserData> = FeatureWorkerOutput<UserData, Control, Event, 
 
 pub struct RouterSyncFeature<UserData> {
     router: Router,
-    conns: HashMap<ConnId, (NodeId, SocketAddr, Metric)>,
+    conns: HashMap<ConnId, (NodeId, NetPair, Metric)>,
     queue: VecDeque<Output<UserData>>,
     services: Vec<u8>,
 }
@@ -79,20 +77,20 @@ impl<UserData> Feature<UserData, Control, Event, ToController, ToWorker> for Rou
             }
             FeatureSharedInput::Connection(event) => match event {
                 ConnectionEvent::Connected(ctx, _) => {
-                    log::info!("[RouterSync] Connection {} connected", ctx.remote);
+                    log::info!("[RouterSync] Connection {} connected", ctx.pair);
                     let metric = Metric::new(INIT_RTT_MS, vec![ctx.node], INIT_BW);
-                    self.conns.insert(ctx.conn, (ctx.node, ctx.remote, metric.clone()));
+                    self.conns.insert(ctx.conn, (ctx.node, ctx.pair, metric.clone()));
                     self.router.set_direct(ctx.conn, metric);
                     Self::send_sync_to(&self.router, &mut self.queue, ctx.conn, ctx.node);
                 }
                 ConnectionEvent::Stats(ctx, stats) => {
-                    log::debug!("[RouterSync] Connection {} stats rtt_ms {}", ctx.remote, stats.rtt_ms);
+                    log::debug!("[RouterSync] Connection {} stats rtt_ms {}", ctx.pair, stats.rtt_ms);
                     let metric = Metric::new(stats.rtt_ms as u16, vec![ctx.node], INIT_BW);
-                    self.conns.insert(ctx.conn, (ctx.node, ctx.remote, metric.clone()));
+                    self.conns.insert(ctx.conn, (ctx.node, ctx.pair, metric.clone()));
                     self.router.set_direct(ctx.conn, metric);
                 }
                 ConnectionEvent::Disconnected(ctx) => {
-                    log::info!("[RouterSync] Connection {} disconnected", ctx.remote);
+                    log::info!("[RouterSync] Connection {} disconnected", ctx.pair);
                     self.conns.remove(&ctx.conn);
                     self.router.del_direct(ctx.conn);
                 }
@@ -110,10 +108,10 @@ impl<UserData> Feature<UserData, Control, Event, ToController, ToWorker> for Rou
                 if let Ok(sync) = bincode::deserialize::<RouterSync>(&buf) {
                     self.router.apply_sync(ctx.conn, metric.clone(), sync);
                 } else {
-                    log::warn!("[RouterSync] Receive invalid sync from {}", ctx.remote);
+                    log::warn!("[RouterSync] Receive invalid sync from {}", ctx.pair);
                 }
             } else {
-                log::warn!("[RouterSync] Receive sync from unknown connection {}", ctx.remote);
+                log::warn!("[RouterSync] Receive sync from unknown connection {}", ctx.pair);
             }
         }
     }

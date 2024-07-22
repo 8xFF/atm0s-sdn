@@ -59,8 +59,8 @@ struct Args {
     node_id: NodeId,
 
     /// Listen address
-    #[arg(env, short, long, default_value = "127.0.0.1:10000")]
-    bind_addr: SocketAddr,
+    #[arg(env, short, long, default_value_t = 10000)]
+    udp_port: u16,
 
     /// Address of node we should connect to
     #[arg(env, short, long)]
@@ -248,7 +248,19 @@ async fn main() {
     let mut shutdown_wait = 0;
     let args = Args::parse();
     tracing_subscriber::fmt::init();
-    let mut builder = SdnBuilder::<(), SC, SE, TC, TW, VisualNodeInfo>::new(args.node_id, &[args.bind_addr], args.custom_addrs);
+    let addrs = local_ip_address::list_afinet_netifas()
+        .expect("Should have list interfaces")
+        .into_iter()
+        .filter(|(_, ip)| {
+            if ip.is_unspecified() || ip.is_multicast() {
+                false
+            } else {
+                std::net::UdpSocket::bind(SocketAddr::new(*ip, 0)).is_ok()
+            }
+        })
+        .map(|(_name, ip)| SocketAddr::new(ip, args.udp_port))
+        .collect::<Vec<_>>();
+    let mut builder = SdnBuilder::<(), SC, SE, TC, TW, VisualNodeInfo>::new(args.node_id, &addrs, args.custom_addrs);
 
     builder.set_authorization(StaticKeyAuthorization::new(&args.password));
     builder.set_manual_discovery(args.local_tags, args.connect_tags);

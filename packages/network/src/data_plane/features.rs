@@ -1,11 +1,12 @@
 use std::fmt::Debug;
-use std::net::SocketAddr;
 
 use atm0s_sdn_identity::ConnId;
 use sans_io_runtime::{TaskSwitcher, TaskSwitcherBranch, TaskSwitcherChild};
 
 use crate::base::{Buffer, FeatureWorker, FeatureWorkerContext, FeatureWorkerInput, FeatureWorkerOutput, TransportMsgHeader};
 use crate::features::*;
+
+use super::NetPair;
 
 pub type FeaturesWorkerInput<UserData> = FeatureWorkerInput<UserData, FeaturesControl, FeaturesToWorker<UserData>>;
 pub type FeaturesWorkerOutput<UserData> = FeatureWorkerOutput<UserData, FeaturesControl, FeaturesEvent, FeaturesToController>;
@@ -57,16 +58,16 @@ impl<UserData: Eq + Debug + Copy> FeatureWorkerManager<UserData> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn on_network_raw(&mut self, ctx: &mut FeatureWorkerContext, feature: Features, now_ms: u64, conn: ConnId, remote: SocketAddr, header: TransportMsgHeader, buf: Buffer) {
+    pub fn on_network_raw(&mut self, ctx: &mut FeatureWorkerContext, feature: Features, now_ms: u64, conn: ConnId, pair: NetPair, header: TransportMsgHeader, buf: Buffer) {
         match feature {
-            Features::Neighbours => self.neighbours.input(&mut self.switcher).on_network_raw(ctx, now_ms, conn, remote, header, buf),
-            Features::Data => self.data.input(&mut self.switcher).on_network_raw(ctx, now_ms, conn, remote, header, buf),
-            Features::RouterSync => self.router_sync.input(&mut self.switcher).on_network_raw(ctx, now_ms, conn, remote, header, buf),
-            Features::Vpn => self.vpn.input(&mut self.switcher).on_network_raw(ctx, now_ms, conn, remote, header, buf),
-            Features::DhtKv => self.dht_kv.input(&mut self.switcher).on_network_raw(ctx, now_ms, conn, remote, header, buf),
-            Features::PubSub => self.pubsub.input(&mut self.switcher).on_network_raw(ctx, now_ms, conn, remote, header, buf),
-            Features::Alias => self.alias.input(&mut self.switcher).on_network_raw(ctx, now_ms, conn, remote, header, buf),
-            Features::Socket => self.socket.input(&mut self.switcher).on_network_raw(ctx, now_ms, conn, remote, header, buf),
+            Features::Neighbours => self.neighbours.input(&mut self.switcher).on_network_raw(ctx, now_ms, conn, pair, header, buf),
+            Features::Data => self.data.input(&mut self.switcher).on_network_raw(ctx, now_ms, conn, pair, header, buf),
+            Features::RouterSync => self.router_sync.input(&mut self.switcher).on_network_raw(ctx, now_ms, conn, pair, header, buf),
+            Features::Vpn => self.vpn.input(&mut self.switcher).on_network_raw(ctx, now_ms, conn, pair, header, buf),
+            Features::DhtKv => self.dht_kv.input(&mut self.switcher).on_network_raw(ctx, now_ms, conn, pair, header, buf),
+            Features::PubSub => self.pubsub.input(&mut self.switcher).on_network_raw(ctx, now_ms, conn, pair, header, buf),
+            Features::Alias => self.alias.input(&mut self.switcher).on_network_raw(ctx, now_ms, conn, pair, header, buf),
+            Features::Socket => self.socket.input(&mut self.switcher).on_network_raw(ctx, now_ms, conn, pair, header, buf),
         }
     }
 

@@ -1,20 +1,20 @@
-use std::net::SocketAddr;
-
 use atm0s_sdn_identity::{ConnId, NodeId};
 
 use crate::base::{Buffer, SecureContext, TransportMsgHeader};
+
+use super::NetPair;
 
 pub struct DataPlaneConnection {
     node: NodeId,
     conn: ConnId,
     #[allow(unused)]
-    addr: SocketAddr,
+    pair: NetPair,
     secure: SecureContext,
 }
 
 impl DataPlaneConnection {
-    pub fn new(node: NodeId, conn: ConnId, addr: SocketAddr, secure: SecureContext) -> Self {
-        Self { node, conn, addr, secure }
+    pub fn new(node: NodeId, conn: ConnId, pair: NetPair, secure: SecureContext) -> Self {
+        Self { node, conn, pair, secure }
     }
 
     pub fn node(&self) -> NodeId {

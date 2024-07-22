@@ -1,9 +1,10 @@
-use std::{fmt::Debug, net::SocketAddr};
+use std::fmt::Debug;
 
 use derivative::Derivative;
 
 use crate::{
     base::FeatureControlActor,
+    data_plane::NetPair,
     features::pubsub::msg::{Feedback, RelayControl},
 };
 
@@ -49,7 +50,7 @@ impl<UserData: Eq + Debug + Copy> GenericRelay<UserData> for LocalRelay<UserData
         self.consumers.on_local_unsub(now, actor);
     }
 
-    fn on_remote(&mut self, now: u64, remote: SocketAddr, control: RelayControl) {
+    fn on_remote(&mut self, now: u64, remote: NetPair, control: RelayControl) {
         if let RelayControl::Feedback(fb) = control {
             self.feedbacks.on_remote_feedback(now, remote, fb);
         } else {
@@ -57,7 +58,7 @@ impl<UserData: Eq + Debug + Copy> GenericRelay<UserData> for LocalRelay<UserData
         }
     }
 
-    fn conn_disconnected(&mut self, now: u64, remote: SocketAddr) {
+    fn conn_disconnected(&mut self, now: u64, remote: NetPair) {
         self.consumers.conn_disconnected(now, remote);
     }
 
