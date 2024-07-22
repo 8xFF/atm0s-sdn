@@ -104,7 +104,7 @@ impl<UserData: 'static + Eq + Copy + Hash + Debug, SC: Debug, SE: Debug, TC: Deb
                         data,
                     },
                     NetOutput::UdpPackets(pairs, data) => {
-                        let to = pairs.into_iter().map(|p| self.bind_addrs.get(&p.local).map(|s| (*s, p.remote))).flatten().collect::<Vec<_>>();
+                        let to = pairs.into_iter().filter_map(|p| self.bind_addrs.get(&p.local).map(|s| (*s, p.remote))).collect::<Vec<_>>();
                         BackendOutgoing::UdpPackets2 { to, data }
                     }
                     #[cfg(feature = "vpn")]

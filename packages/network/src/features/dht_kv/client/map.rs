@@ -159,9 +159,8 @@ impl MapSlot {
     /// if version is same, we still sending back OnSetAck for avoiding flooding by server resend
     /// Return:
     ///     Option(ClientMapCommand, bool)
-    ///
-    ///    - ClientMapCommand: OnSetAck
-    ///     - bool: true if the slot is updated
+    ///         - ClientMapCommand: OnSetAck
+    ///         - bool: true if the slot is updated
     pub fn on_set(&mut self, _now: u64, key: Key, source: NodeSession, version: Version, data: Vec<u8>) -> Option<(ClientMapCommand, bool)> {
         match self {
             MapSlot::Unspecific { .. } => {
