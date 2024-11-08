@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-network-v0.5.0...atm0s-sdn-network-v0.6.0) - 2024-11-08
+
+### Added
+
+- task clean-up with new sans-io-runtime ([#179](https://github.com/8xFF/atm0s-sdn/pull/179))
+
 ## [0.5.0](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-network-v0.4.1...atm0s-sdn-network-v0.5.0) - 2024-07-22
 
 ### Added
