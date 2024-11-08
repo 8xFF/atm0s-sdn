@@ -20,13 +20,12 @@ pub enum Input {
     ConnectTo(NodeAddr),
     DisconnectFrom(NodeId),
     Control(NetPair, NeighboursControl),
-    ShutdownRequest,
 }
 
 pub enum Output {
     Control(NetPair, NeighboursControl),
     Event(base::ConnectionEvent),
-    ShutdownResponse,
+    OnResourceEmpty,
 }
 
 pub struct NeighboursManager {
@@ -120,21 +119,31 @@ impl NeighboursManager {
                     }
                 }
             }
-            Input::ShutdownRequest => {
-                self.shutdown = true;
-                for conn in self.connections.values_mut() {
-                    conn.disconnect(now_ms);
-                }
-                if self.connections.is_empty() {
-                    self.queue.push_back(Output::ShutdownResponse);
-                }
-            }
+        }
+    }
+
+    pub fn on_shutdown(&mut self, now_ms: u64) {
+        if self.shutdown {
+            return;
+        }
+        self.shutdown = true;
+        for conn in self.connections.values_mut() {
+            conn.disconnect(now_ms);
         }
     }
 }
 
 impl TaskSwitcherChild<Output> for NeighboursManager {
     type Time = u64;
+
+    fn empty_event(&self) -> Output {
+        Output::OnResourceEmpty
+    }
+
+    fn is_empty(&self) -> bool {
+        self.shutdown && self.connections.is_empty() && self.queue.is_empty()
+    }
+
     fn pop_output(&mut self, _now: u64) -> Option<Output> {
         if let Some(output) = self.queue.pop_front() {
             return Some(output);
@@ -184,10 +193,6 @@ impl TaskSwitcherChild<Output> for NeighboursManager {
 
         for remote in to_remove {
             self.connections.remove(&remote);
-
-            if self.shutdown && self.connections.is_empty() {
-                self.queue.push_back(Output::ShutdownResponse);
-            }
         }
 
         self.queue.pop_front()

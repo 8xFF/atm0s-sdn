@@ -72,6 +72,7 @@ pub struct VisualizationService<UserData, SC, SE, TC, TW, Info> {
     conns: BTreeMap<ConnId, ConnectionInfo>,
     network_nodes: BTreeMap<NodeId, NodeInfo<Info>>,
     subscribers: Vec<ServiceControlActor<UserData>>,
+    shutdown: bool,
     _tmp: std::marker::PhantomData<(SC, TC)>,
 }
 
@@ -89,6 +90,7 @@ where
             network_nodes: BTreeMap::new(),
             queue: VecDeque::from([ServiceOutput::FeatureControl(FeaturesControl::Data(data::Control::DataListen(DATA_PORT)))]),
             subscribers: Vec::new(),
+            shutdown: false,
             _tmp: std::marker::PhantomData,
         }
     }
@@ -106,6 +108,10 @@ where
     SC: From<Control<Info>> + TryInto<Control<Info>>,
     SE: From<Event<Info>> + TryInto<Event<Info>>,
 {
+    fn is_service_empty(&self) -> bool {
+        self.shutdown && self.queue.is_empty()
+    }
+
     fn service_id(&self) -> u8 {
         SERVICE_ID
     }
@@ -218,6 +224,11 @@ where
         }
     }
 
+    fn on_shutdown(&mut self, _ctx: &ServiceCtx, _now: u64) {
+        log::info!("[VisualizationService] Shutdown");
+        self.shutdown = true;
+    }
+
     fn pop_output2(&mut self, _now: u64) -> Option<ServiceOutput<UserData, FeaturesControl, SE, TW>> {
         self.queue.pop_front()
     }
@@ -225,9 +236,14 @@ where
 
 pub struct VisualizationServiceWorker<UserData, SC, SE, TC> {
     queue: DynamicDeque<ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC>, 8>,
+    shutdown: bool,
 }
 
 impl<UserData, SC, SE, TC, TW> ServiceWorker<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW> for VisualizationServiceWorker<UserData, SC, SE, TC> {
+    fn is_service_empty(&self) -> bool {
+        self.shutdown && self.queue.is_empty()
+    }
+
     fn service_id(&self) -> u8 {
         SERVICE_ID
     }
@@ -248,6 +264,10 @@ impl<UserData, SC, SE, TC, TW> ServiceWorker<UserData, FeaturesControl, Features
 
     fn pop_output2(&mut self, _now: u64) -> Option<ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC>> {
         self.queue.pop_front()
+    }
+
+    fn on_shutdown(&mut self, _ctx: &ServiceWorkerCtx, _now: u64) {
+        self.shutdown = true;
     }
 }
 
@@ -294,7 +314,10 @@ where
     }
 
     fn create_worker(&self) -> Box<dyn ServiceWorker<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW>> {
-        Box::new(VisualizationServiceWorker { queue: Default::default() })
+        Box::new(VisualizationServiceWorker {
+            queue: Default::default(),
+            shutdown: false,
+        })
     }
 }
 

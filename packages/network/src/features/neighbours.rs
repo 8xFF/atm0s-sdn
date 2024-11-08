@@ -37,6 +37,7 @@ pub type WorkerOutput<UserData> = FeatureWorkerOutput<UserData, Control, Event, 
 pub struct NeighboursFeature<UserData> {
     subs: Vec<FeatureControlActor<UserData>>,
     output: VecDeque<Output<UserData>>,
+    shutdown: bool,
 }
 
 impl<UserData: Debug + Copy + Hash + Eq> Feature<UserData, Control, Event, ToController, ToWorker> for NeighboursFeature<UserData> {
@@ -82,10 +83,24 @@ impl<UserData: Debug + Copy + Hash + Eq> Feature<UserData, Control, Event, ToCon
             }
         }
     }
+
+    fn on_shutdown(&mut self, _ctx: &FeatureContext, _now: u64) {
+        log::info!("[NeighboursFeature] Shutdown");
+        self.shutdown = true;
+    }
 }
 
 impl<UserData> TaskSwitcherChild<Output<UserData>> for NeighboursFeature<UserData> {
     type Time = u64;
+
+    fn is_empty(&self) -> bool {
+        self.shutdown && self.output.is_empty()
+    }
+
+    fn empty_event(&self) -> Output<UserData> {
+        Output::OnResourceEmpty
+    }
+
     fn pop_output(&mut self, _now: u64) -> Option<Output<UserData>> {
         self.output.pop_front()
     }
@@ -95,6 +110,7 @@ impl<UserData> TaskSwitcherChild<Output<UserData>> for NeighboursFeature<UserDat
 #[derivative(Default(bound = ""))]
 pub struct NeighboursFeatureWorker<UserData> {
     queue: DynamicDeque<WorkerOutput<UserData>, 1>,
+    shutdown: bool,
 }
 
 impl<UserData> FeatureWorker<UserData, Control, Event, ToController, ToWorker> for NeighboursFeatureWorker<UserData> {
@@ -110,10 +126,23 @@ impl<UserData> FeatureWorker<UserData, Control, Event, ToController, ToWorker> f
             FeatureWorkerInput::Local(header, buf) => self.queue.push_back(FeatureWorkerOutput::ForwardLocalToController(header, buf)),
         }
     }
+
+    fn on_shutdown(&mut self, _ctx: &mut crate::base::FeatureWorkerContext, _now: u64) {
+        self.shutdown = true;
+    }
 }
 
 impl<UserData> TaskSwitcherChild<WorkerOutput<UserData>> for NeighboursFeatureWorker<UserData> {
     type Time = u64;
+
+    fn is_empty(&self) -> bool {
+        self.shutdown && self.queue.is_empty()
+    }
+
+    fn empty_event(&self) -> WorkerOutput<UserData> {
+        WorkerOutput::OnResourceEmpty
+    }
+
     fn pop_output(&mut self, _now: u64) -> Option<WorkerOutput<UserData>> {
         self.queue.pop_front()
     }

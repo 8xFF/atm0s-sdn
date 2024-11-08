@@ -14,9 +14,16 @@ use crate::simulator::{NetworkSimulator, TestNode};
 
 mod simulator;
 
-struct MockService;
+#[derive(Default)]
+struct MockService {
+    shutdown: bool,
+}
 
 impl Service<(), FeaturesControl, FeaturesEvent, (), (), (), ()> for MockService {
+    fn is_service_empty(&self) -> bool {
+        self.shutdown
+    }
+
     fn service_id(&self) -> u8 {
         0
     }
@@ -29,14 +36,25 @@ impl Service<(), FeaturesControl, FeaturesEvent, (), (), (), ()> for MockService
 
     fn on_shared_input<'a>(&mut self, _ctx: &ServiceCtx, _now: u64, _input: ServiceSharedInput) {}
 
+    fn on_shutdown(&mut self, _ctx: &ServiceCtx, _now: u64) {
+        self.shutdown = true;
+    }
+
     fn pop_output2(&mut self, _now: u64) -> Option<ServiceOutput<(), FeaturesControl, (), ()>> {
         None
     }
 }
 
-struct MockServiceWorker;
+#[derive(Default)]
+struct MockServiceWorker {
+    shutdown: bool,
+}
 
 impl ServiceWorker<(), FeaturesControl, FeaturesEvent, (), (), (), ()> for MockServiceWorker {
+    fn is_service_empty(&self) -> bool {
+        self.shutdown
+    }
+
     fn service_id(&self) -> u8 {
         0
     }
@@ -48,6 +66,10 @@ impl ServiceWorker<(), FeaturesControl, FeaturesEvent, (), (), (), ()> for MockS
     fn on_tick(&mut self, _ctx: &ServiceWorkerCtx, _now: u64, _tick_count: u64) {}
 
     fn on_input(&mut self, _ctx: &ServiceWorkerCtx, _now: u64, _input: ServiceWorkerInput<(), FeaturesEvent, (), ()>) {}
+
+    fn on_shutdown(&mut self, _ctx: &ServiceWorkerCtx, _now: u64) {
+        self.shutdown = true;
+    }
 
     fn pop_output2(&mut self, _now: u64) -> Option<ServiceWorkerOutput<(), FeaturesControl, FeaturesEvent, (), (), ()>> {
         None
@@ -66,11 +88,11 @@ impl ServiceBuilder<(), FeaturesControl, FeaturesEvent, (), (), (), ()> for Mock
     }
 
     fn create(&self) -> Box<dyn Service<(), FeaturesControl, FeaturesEvent, (), (), (), ()>> {
-        Box::new(MockService)
+        Box::new(MockService::default())
     }
 
     fn create_worker(&self) -> Box<dyn ServiceWorker<(), FeaturesControl, FeaturesEvent, (), (), (), ()>> {
-        Box::new(MockServiceWorker)
+        Box::new(MockServiceWorker::default())
     }
 }
 

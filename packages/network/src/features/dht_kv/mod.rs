@@ -81,12 +81,14 @@ pub type WorkerOutput<UserData> = FeatureWorkerOutput<UserData, Control, Event, 
 
 pub struct DhtKvFeature<UserData> {
     internal: internal::DhtKvInternal<UserData>,
+    shutdown: bool,
 }
 
 impl<UserData: Eq + Copy + Debug> DhtKvFeature<UserData> {
     pub fn new(node_id: NodeId, session: u64) -> Self {
         Self {
             internal: internal::DhtKvInternal::new(NodeSession(node_id, session)),
+            shutdown: false,
         }
     }
 }
@@ -122,10 +124,24 @@ impl<UserData: Eq + Copy + Debug> Feature<UserData, Control, Event, ToController
             _ => {}
         }
     }
+
+    fn on_shutdown(&mut self, _ctx: &FeatureContext, _now: u64) {
+        log::info!("[DhtKvFeature] Shutdown");
+        self.shutdown = true;
+    }
 }
 
 impl<UserData: Eq + Copy + Debug> TaskSwitcherChild<FeatureOutput<UserData, Event, ToWorker>> for DhtKvFeature<UserData> {
     type Time = u64;
+
+    fn is_empty(&self) -> bool {
+        self.shutdown
+    }
+
+    fn empty_event(&self) -> FeatureOutput<UserData, Event, ToWorker> {
+        FeatureOutput::OnResourceEmpty
+    }
+
     fn pop_output(&mut self, _now: u64) -> Option<FeatureOutput<UserData, Event, ToWorker>> {
         match self.internal.pop_action()? {
             InternalOutput::Local(service, event) => Some(FeatureOutput::Event(service, event)),
@@ -142,6 +158,7 @@ impl<UserData: Eq + Copy + Debug> TaskSwitcherChild<FeatureOutput<UserData, Even
 #[derivative(Default(bound = ""))]
 pub struct DhtKvFeatureWorker<UserData> {
     queue: DynamicDeque<FeatureWorkerOutput<UserData, Control, Event, ToController>, 1>,
+    shutdown: bool,
 }
 
 impl<UserData> FeatureWorker<UserData, Control, Event, ToController, ToWorker> for DhtKvFeatureWorker<UserData> {
@@ -157,10 +174,23 @@ impl<UserData> FeatureWorker<UserData, Control, Event, ToController, ToWorker> f
             FeatureWorkerInput::Local(header, buf) => self.queue.push_back(FeatureWorkerOutput::ForwardLocalToController(header, buf)),
         }
     }
+
+    fn on_shutdown(&mut self, _ctx: &mut crate::base::FeatureWorkerContext, _now: u64) {
+        self.shutdown = true;
+    }
 }
 
 impl<UserData> TaskSwitcherChild<FeatureWorkerOutput<UserData, Control, Event, ToController>> for DhtKvFeatureWorker<UserData> {
     type Time = u64;
+
+    fn is_empty(&self) -> bool {
+        self.shutdown && self.queue.is_empty()
+    }
+
+    fn empty_event(&self) -> FeatureWorkerOutput<UserData, Control, Event, ToController> {
+        FeatureWorkerOutput::OnResourceEmpty
+    }
+
     fn pop_output(&mut self, _now: u64) -> Option<FeatureWorkerOutput<UserData, Control, Event, ToController>> {
         self.queue.pop_front()
     }

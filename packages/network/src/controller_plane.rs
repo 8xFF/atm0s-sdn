@@ -24,8 +24,6 @@ mod services;
 pub enum Input<UserData, SC, SE, TC> {
     Ext(ExtIn<UserData, SC>),
     Control(LogicControl<UserData, SC, SE, TC>),
-    #[convert_enum(optout)]
-    ShutdownRequest,
 }
 
 #[derive(Debug, Clone, convert_enum::From)]
@@ -33,7 +31,7 @@ pub enum Output<UserData, SE, TW> {
     Ext(ExtOut<UserData, SE>),
     Event(LogicEvent<UserData, SE, TW>),
     #[convert_enum(optout)]
-    ShutdownSuccess,
+    OnResourceEmpty,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, num_enum::TryFromPrimitive, num_enum::IntoPrimitive)]
@@ -65,6 +63,7 @@ pub struct ControllerPlane<UserData, SC, SE, TC, TW> {
     services: TaskSwitcherBranch<ServiceManager<UserData, SC, SE, TC, TW>, services::Output<UserData, SE, TW>>,
     switcher: TaskSwitcher,
     queue: VecDeque<Output<UserData, SE, TW>>,
+    shutdown: bool,
     history: Arc<dyn ShadowRouterHistory>,
 }
 
@@ -98,6 +97,7 @@ where
             services: TaskSwitcherBranch::new(ServiceManager::new(cfg.services), TaskType::Service),
             switcher: TaskSwitcher::new(3), //3 types: Neighbours, Feature, Service
             queue: VecDeque::new(),
+            shutdown: false,
             history: cfg.history,
         }
     }
@@ -174,10 +174,18 @@ where
             Input::Control(LogicControl::ExtServicesEvent(service, userdata, event)) => {
                 self.queue.push_back(Output::Ext(ExtOut::ServicesEvent(service, userdata, event)));
             }
-            Input::ShutdownRequest => {
-                self.neighbours.input(&mut self.switcher).on_input(now_ms, neighbours::Input::ShutdownRequest);
-            }
         }
+    }
+
+    pub fn on_shutdown(&mut self, now_ms: u64) {
+        if self.shutdown {
+            return;
+        }
+        log::info!("[ControllerPlane] Shutdown");
+        self.features.input(&mut self.switcher).on_shutdown(&self.feature_ctx, now_ms);
+        self.services.input(&mut self.switcher).on_shutdown(&self.service_ctx, now_ms);
+        self.neighbours.input(&mut self.switcher).on_shutdown(now_ms);
+        self.shutdown = true;
     }
 
     fn pop_neighbours(&mut self, now_ms: u64) {
@@ -197,12 +205,23 @@ where
                     ConnectionEvent::Disconnected(ctx) => self.queue.push_back(Output::Event(LogicEvent::UnPin(ctx.conn))),
                 }
             }
-            neighbours::Output::ShutdownResponse => self.queue.push_back(Output::ShutdownSuccess),
+            neighbours::Output::OnResourceEmpty => {
+                log::info!("[ControllerPlane] Neighbours OnResourceEmpty");
+            }
         }
     }
 
     fn pop_features(&mut self, now_ms: u64) {
-        let (feature, out) = return_if_none!(self.features.pop_output(now_ms, &mut self.switcher));
+        let out = return_if_none!(self.features.pop_output(now_ms, &mut self.switcher));
+
+        let (feature, out) = match out {
+            features::Output::Output(feature, out) => (feature, out),
+            features::Output::Shutdown => {
+                log::info!("[ControllerPlane] Features Shutdown");
+                return;
+            }
+        };
+
         match out {
             FeatureOutput::ToWorker(is_broadcast, to) => self.queue.push_back(Output::Event(LogicEvent::Feature(is_broadcast, to))),
             FeatureOutput::Event(actor, event) => {
@@ -230,11 +249,23 @@ where
             FeatureOutput::NeighboursDisconnectFrom(node) => {
                 self.neighbours.input(&mut self.switcher).on_input(now_ms, neighbours::Input::DisconnectFrom(node));
             }
+            FeatureOutput::OnResourceEmpty => {
+                log::info!("[ControllerPlane] Feature {feature:?} OnResourceEmpty");
+            }
         }
     }
 
     fn pop_services(&mut self, now_ms: u64) {
-        let (service, out) = return_if_none!(self.services.pop_output(now_ms, &mut self.switcher));
+        let out = return_if_none!(self.services.pop_output(now_ms, &mut self.switcher));
+
+        let (service, out) = match out {
+            services::Output::Output(service, out) => (service, out),
+            services::Output::OnResourceEmpty => {
+                log::info!("[ControllerPlane] Services OnResourceEmpty");
+                return;
+            }
+        };
+
         match out {
             ServiceOutput::FeatureControl(control) => {
                 self.features
@@ -246,6 +277,9 @@ where
                 ServiceControlActor::Worker(worker, userdata) => self.queue.push_back(Output::Event(LogicEvent::ExtServicesEvent(worker, service, userdata, event))),
             },
             ServiceOutput::BroadcastWorkers(to) => self.queue.push_back(Output::Event(LogicEvent::Service(service, to))),
+            ServiceOutput::OnResourceEmpty => {
+                log::info!("[ControllerPlane] Service {service} OnResourceEmpty");
+            }
         }
     }
 }
@@ -255,6 +289,15 @@ where
     UserData: 'static + Hash + Copy + Eq + Debug,
 {
     type Time = u64;
+
+    fn empty_event(&self) -> Output<UserData, SE, TW> {
+        Output::OnResourceEmpty
+    }
+
+    fn is_empty(&self) -> bool {
+        self.shutdown && self.queue.is_empty() && self.neighbours.is_empty() && self.features.is_empty() && self.services.is_empty()
+    }
+
     fn pop_output(&mut self, now_ms: u64) -> Option<Output<UserData, SE, TW>> {
         return_if_some!(self.queue.pop_front());
 

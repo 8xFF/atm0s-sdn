@@ -33,6 +33,7 @@ pub struct RouterSyncFeature<UserData> {
     conns: HashMap<ConnId, (NodeId, NetPair, Metric)>,
     queue: VecDeque<Output<UserData>>,
     services: Vec<u8>,
+    shutdown: bool,
 }
 
 impl<UserData> RouterSyncFeature<UserData> {
@@ -44,6 +45,7 @@ impl<UserData> RouterSyncFeature<UserData> {
             services,
             conns: HashMap::new(),
             queue: VecDeque::new(),
+            shutdown: false,
         }
     }
 
@@ -115,10 +117,24 @@ impl<UserData> Feature<UserData, Control, Event, ToController, ToWorker> for Rou
             }
         }
     }
+
+    fn on_shutdown(&mut self, _ctx: &FeatureContext, _now: u64) {
+        log::info!("[RouterSync] Shutdown");
+        self.shutdown = true;
+    }
 }
 
 impl<UserData> TaskSwitcherChild<Output<UserData>> for RouterSyncFeature<UserData> {
     type Time = u64;
+
+    fn is_empty(&self) -> bool {
+        self.shutdown && self.queue.is_empty()
+    }
+
+    fn empty_event(&self) -> Output<UserData> {
+        Output::OnResourceEmpty
+    }
+
     fn pop_output(&mut self, _now: u64) -> Option<Output<UserData>> {
         if let Some(rule) = self.router.pop_delta() {
             log::debug!("[RouterSync] broadcast to all workers {:?}", rule);
@@ -156,6 +172,7 @@ impl<UserData> TaskSwitcherChild<Output<UserData>> for RouterSyncFeature<UserDat
 #[derivative(Default(bound = ""))]
 pub struct RouterSyncFeatureWorker<UserData> {
     queue: DynamicDeque<WorkerOutput<UserData>, 1>,
+    shutdown: bool,
 }
 
 impl<UserData> FeatureWorker<UserData, Control, Event, ToController, ToWorker> for RouterSyncFeatureWorker<UserData> {
@@ -176,10 +193,24 @@ impl<UserData> FeatureWorker<UserData, Control, Event, ToController, ToWorker> f
             }
         }
     }
+
+    fn on_shutdown(&mut self, _ctx: &mut FeatureWorkerContext, _now: u64) {
+        log::info!("[RouterSyncFeatureWorker] Shutdown");
+        self.shutdown = true;
+    }
 }
 
 impl<UserData> TaskSwitcherChild<WorkerOutput<UserData>> for RouterSyncFeatureWorker<UserData> {
     type Time = u64;
+
+    fn is_empty(&self) -> bool {
+        self.shutdown && self.queue.is_empty()
+    }
+
+    fn empty_event(&self) -> WorkerOutput<UserData> {
+        WorkerOutput::OnResourceEmpty
+    }
+
     fn pop_output(&mut self, _now: u64) -> Option<WorkerOutput<UserData>> {
         self.queue.pop_front()
     }

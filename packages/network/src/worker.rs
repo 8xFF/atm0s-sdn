@@ -21,7 +21,6 @@ pub enum SdnWorkerInput<UserData, SC, SE, TC, TW> {
     ExtWorker(ExtIn<UserData, SC>),
     Net(NetInput),
     Bus(SdnWorkerBusEvent<UserData, SC, SE, TC, TW>),
-    ShutdownRequest,
 }
 
 #[derive(Debug)]
@@ -30,7 +29,7 @@ pub enum SdnWorkerOutput<UserData, SC, SE, TC, TW> {
     ExtWorker(ExtOut<UserData, SE>),
     Net(NetOutput),
     Bus(SdnWorkerBusEvent<UserData, SC, SE, TC, TW>),
-    ShutdownResponse,
+    OnResourceEmpty,
     Continue,
 }
 
@@ -54,7 +53,7 @@ pub struct SdnWorker<UserData, SC, SE, TC, TW> {
     controller: Option<TaskSwitcherBranch<ControllerPlane<UserData, SC, SE, TC, TW>, controller_plane::Output<UserData, SE, TW>>>,
     #[allow(clippy::type_complexity)]
     data: TaskSwitcherBranch<DataPlane<UserData, SC, SE, TC, TW>, data_plane::Output<UserData, SC, SE, TC>>,
-    data_shutdown: bool,
+    shutdown: bool,
     switcher: TaskSwitcher,
     last_tick: Option<u64>,
 }
@@ -70,21 +69,18 @@ where
                 .controller
                 .map(|controller| TaskSwitcherBranch::new(ControllerPlane::new(cfg.node_id, controller), TaskType::Controller)),
             data: TaskSwitcherBranch::new(DataPlane::new(cfg.node_id, cfg.data), TaskType::Data),
-            data_shutdown: false,
+            shutdown: false,
             switcher: TaskSwitcher::new(2),
             last_tick: None,
         }
     }
 
     pub fn tasks(&self) -> usize {
-        let mut tasks = 0;
-        if self.controller.is_some() {
-            tasks += 1;
-        }
-        if !self.data_shutdown {
-            tasks += 1;
-        }
-        tasks
+        1 + self.controller.as_ref().map_or(0, |_| 1)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.shutdown && self.controller.as_ref().map_or(true, |c| c.is_empty()) && self.data.is_empty()
     }
 
     pub fn on_tick(&mut self, now_ms: u64) {
@@ -125,13 +121,19 @@ where
                     self.data.input(&mut self.switcher).on_event(now_ms, data_plane::Input::Worker(cross));
                 }
             },
-            SdnWorkerInput::ShutdownRequest => {
-                if let Some(controller) = &mut self.controller {
-                    controller.input(&mut self.switcher).on_event(now_ms, controller_plane::Input::ShutdownRequest);
-                }
-                self.data.input(&mut self.switcher).on_event(now_ms, data_plane::Input::ShutdownRequest);
-            }
         }
+    }
+
+    pub fn on_shutdown(&mut self, now_ms: u64) {
+        if self.shutdown {
+            return;
+        }
+        log::info!("[SdnWorker] Shutdown");
+        self.data.input(&mut self.switcher).on_shutdown(now_ms);
+        if let Some(controller) = &mut self.controller {
+            controller.input(&mut self.switcher).on_shutdown(now_ms);
+        }
+        self.shutdown = true;
     }
 
     pub fn pop_output2(&mut self, now: u64) -> Option<SdnWorkerOutput<UserData, SC, SE, TC, TW>> {
@@ -170,8 +172,8 @@ where
                     SdnWorkerOutput::Continue
                 }
             },
-            controller_plane::Output::ShutdownSuccess => {
-                self.controller = None;
+            controller_plane::Output::OnResourceEmpty => {
+                log::info!("[SdnWorker] controller plane OnResourceEmpty");
                 SdnWorkerOutput::Continue
             }
         }
@@ -191,8 +193,8 @@ where
                 }
             }
             data_plane::Output::Worker(index, cross) => SdnWorkerOutput::Bus(SdnWorkerBusEvent::Worker(index, cross)),
-            data_plane::Output::ShutdownResponse => {
-                self.data_shutdown = true;
+            data_plane::Output::OnResourceEmpty => {
+                log::info!("[SdnWorker] data plane OnResourceEmpty");
                 SdnWorkerOutput::Continue
             }
             data_plane::Output::Continue => SdnWorkerOutput::Continue,
@@ -205,6 +207,15 @@ where
     UserData: 'static + Copy + Eq + Hash + Debug,
 {
     type Time = u64;
+
+    fn empty_event(&self) -> SdnWorkerOutput<UserData, SC, SE, TC, TW> {
+        SdnWorkerOutput::OnResourceEmpty
+    }
+
+    fn is_empty(&self) -> bool {
+        self.shutdown && self.controller.as_ref().map_or(true, |c| c.is_empty()) && self.data.is_empty()
+    }
+
     fn pop_output(&mut self, now: u64) -> Option<SdnWorkerOutput<UserData, SC, SE, TC, TW>> {
         self.pop_output2(now)
     }

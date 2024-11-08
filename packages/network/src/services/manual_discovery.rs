@@ -37,6 +37,7 @@ pub struct ManualDiscoveryService<UserData, SC, SE, TC, TW> {
     conns: HashMap<NodeId, Vec<ConnId>>,
     removing_list: HashMap<NodeId, u64>,
     last_retry_ms: u64,
+    shutdown: bool,
     _tmp: std::marker::PhantomData<(SC, TC, TW)>,
 }
 
@@ -65,6 +66,7 @@ impl<UserData, SC, SE, TC, TW> ManualDiscoveryService<UserData, SC, SE, TC, TW> 
             queue,
             removing_list: HashMap::new(),
             last_retry_ms: 0,
+            shutdown: false,
             _tmp: std::marker::PhantomData,
         }
     }
@@ -96,6 +98,10 @@ impl<UserData, SC, SE, TC, TW> ManualDiscoveryService<UserData, SC, SE, TC, TW> 
 }
 
 impl<UserData, SC, SE, TC: Debug, TW: Debug> Service<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW> for ManualDiscoveryService<UserData, SC, SE, TC, TW> {
+    fn is_service_empty(&self) -> bool {
+        self.shutdown && self.queue.is_empty()
+    }
+
     fn service_id(&self) -> u8 {
         SERVICE_ID
     }
@@ -152,6 +158,11 @@ impl<UserData, SC, SE, TC: Debug, TW: Debug> Service<UserData, FeaturesControl, 
         }
     }
 
+    fn on_shutdown(&mut self, _ctx: &ServiceCtx, _now: u64) {
+        log::info!("[ManualDiscoveryService] Shutdown");
+        self.shutdown = true;
+    }
+
     fn pop_output2(&mut self, _now: u64) -> Option<ServiceOutput<UserData, FeaturesControl, SE, TW>> {
         self.queue.pop_front()
     }
@@ -159,9 +170,14 @@ impl<UserData, SC, SE, TC: Debug, TW: Debug> Service<UserData, FeaturesControl, 
 
 pub struct ManualDiscoveryServiceWorker<UserData, SC, SE, TC> {
     queue: DynamicDeque<ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC>, 8>,
+    shutdown: bool,
 }
 
 impl<UserData, SC, SE, TC, TW> ServiceWorker<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW> for ManualDiscoveryServiceWorker<UserData, SC, SE, TC> {
+    fn is_service_empty(&self) -> bool {
+        self.shutdown && self.queue.is_empty()
+    }
+
     fn service_id(&self) -> u8 {
         SERVICE_ID
     }
@@ -178,6 +194,11 @@ impl<UserData, SC, SE, TC, TW> ServiceWorker<UserData, FeaturesControl, Features
             ServiceWorkerInput::FeatureEvent(event) => self.queue.push_back(ServiceWorkerOutput::ForwardFeatureEventToController(event)),
             ServiceWorkerInput::FromController(_) => {}
         }
+    }
+
+    fn on_shutdown(&mut self, _ctx: &ServiceWorkerCtx, _now: u64) {
+        log::info!("[ManualDiscoveryServiceWorker] Shutdown");
+        self.shutdown = true;
     }
 
     fn pop_output2(&mut self, _now: u64) -> Option<ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC>> {
@@ -224,7 +245,10 @@ where
     }
 
     fn create_worker(&self) -> Box<dyn ServiceWorker<UserData, FeaturesControl, FeaturesEvent, SC, SE, TC, TW>> {
-        Box::new(ManualDiscoveryServiceWorker { queue: Default::default() })
+        Box::new(ManualDiscoveryServiceWorker {
+            queue: Default::default(),
+            shutdown: false,
+        })
     }
 }
 
