@@ -51,6 +51,7 @@ pub type WorkerOutput<UserData> = FeatureWorkerOutput<UserData, Control, Event, 
 pub struct SocketFeature<UserData> {
     sockets: HashMap<u16, Socket<UserData>>,
     queue: VecDeque<Output<UserData>>,
+    shutdown: bool,
 }
 
 impl<UserData> SocketFeature<UserData> {
@@ -66,6 +67,7 @@ impl<UserData> Default for SocketFeature<UserData> {
         Self {
             sockets: HashMap::new(),
             queue: VecDeque::new(),
+            shutdown: false,
         }
     }
 }
@@ -181,10 +183,23 @@ impl<UserData: Copy + Debug + Eq> Feature<UserData, Control, Event, ToController
             _ => {}
         }
     }
+
+    fn on_shutdown(&mut self, _ctx: &FeatureContext, _now: u64) {
+        self.shutdown = true;
+    }
 }
 
 impl<UserData> TaskSwitcherChild<Output<UserData>> for SocketFeature<UserData> {
     type Time = u64;
+
+    fn is_empty(&self) -> bool {
+        self.shutdown && self.queue.is_empty()
+    }
+
+    fn empty_event(&self) -> Output<UserData> {
+        Output::OnResourceEmpty
+    }
+
     fn pop_output(&mut self, _now: u64) -> Option<Output<UserData>> {
         self.queue.pop_front()
     }
@@ -193,6 +208,7 @@ impl<UserData> TaskSwitcherChild<Output<UserData>> for SocketFeature<UserData> {
 pub struct SocketFeatureWorker<UserData> {
     sockets: HashMap<u16, Socket<UserData>>,
     queue: DynamicDeque<WorkerOutput<UserData>, 16>,
+    shutdown: bool,
 }
 
 impl<UserData: Copy> SocketFeatureWorker<UserData> {
@@ -220,6 +236,7 @@ impl<UserData> Default for SocketFeatureWorker<UserData> {
         Self {
             sockets: HashMap::new(),
             queue: Default::default(),
+            shutdown: false,
         }
     }
 }
@@ -283,10 +300,24 @@ impl<UserData: Clone + Copy + Eq> FeatureWorker<UserData, Control, Event, ToCont
             _ => {}
         }
     }
+
+    fn on_shutdown(&mut self, _ctx: &mut FeatureWorkerContext, _now: u64) {
+        log::info!("[SocketFeatureWorker] Shutdown");
+        self.shutdown = true;
+    }
 }
 
 impl<UserData> TaskSwitcherChild<WorkerOutput<UserData>> for SocketFeatureWorker<UserData> {
     type Time = u64;
+
+    fn is_empty(&self) -> bool {
+        self.shutdown && self.queue.is_empty()
+    }
+
+    fn empty_event(&self) -> WorkerOutput<UserData> {
+        WorkerOutput::OnResourceEmpty
+    }
+
     fn pop_output(&mut self, _now: u64) -> Option<WorkerOutput<UserData>> {
         self.queue.pop_front()
     }

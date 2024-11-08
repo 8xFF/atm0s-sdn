@@ -121,6 +121,7 @@ pub enum FeatureOutput<UserData, Event, ToWorker> {
     SendRoute(RouteRule, NetOutgoingMeta, Buffer),
     NeighboursConnectTo(NodeAddr),
     NeighboursDisconnectFrom(NodeId),
+    OnResourceEmpty,
 }
 
 impl<UserData, Event, ToWorker> FeatureOutput<UserData, Event, ToWorker> {
@@ -137,6 +138,7 @@ impl<UserData, Event, ToWorker> FeatureOutput<UserData, Event, ToWorker> {
             FeatureOutput::SendRoute(rule, ttl, buf) => FeatureOutput::SendRoute(rule, ttl, buf),
             FeatureOutput::NeighboursConnectTo(addr) => FeatureOutput::NeighboursConnectTo(addr),
             FeatureOutput::NeighboursDisconnectFrom(id) => FeatureOutput::NeighboursDisconnectFrom(id),
+            FeatureOutput::OnResourceEmpty => FeatureOutput::OnResourceEmpty,
         }
     }
 }
@@ -149,6 +151,7 @@ pub struct FeatureContext {
 pub trait Feature<UserData, Control, Event, ToController, ToWorker>: TaskSwitcherChild<FeatureOutput<UserData, Event, ToWorker>> {
     fn on_shared_input(&mut self, _ctx: &FeatureContext, _now: u64, _input: FeatureSharedInput);
     fn on_input(&mut self, _ctx: &FeatureContext, now_ms: u64, input: FeatureInput<'_, UserData, Control, ToController>);
+    fn on_shutdown(&mut self, _ctx: &FeatureContext, _now: u64);
 }
 
 pub enum FeatureWorkerInput<UserData, Control, ToWorker> {
@@ -176,6 +179,7 @@ pub enum FeatureWorkerOutput<UserData, Control, Event, ToController> {
     RawBroadcast2(Vec<NetPair>, Buffer),
     #[cfg(feature = "vpn")]
     TunPkt(Buffer),
+    OnResourceEmpty,
 }
 
 impl<UserData, Control, Event, ToController> FeatureWorkerOutput<UserData, Control, Event, ToController> {
@@ -200,6 +204,7 @@ impl<UserData, Control, Event, ToController> FeatureWorkerOutput<UserData, Contr
             FeatureWorkerOutput::RawBroadcast2(conns, buf) => FeatureWorkerOutput::RawBroadcast2(conns, buf),
             #[cfg(feature = "vpn")]
             FeatureWorkerOutput::TunPkt(buf) => FeatureWorkerOutput::TunPkt(buf),
+            FeatureWorkerOutput::OnResourceEmpty => FeatureWorkerOutput::OnResourceEmpty,
         }
     }
 }
@@ -217,4 +222,5 @@ pub trait FeatureWorker<UserData, SdkControl, SdkEvent, ToController, ToWorker>:
         self.on_input(ctx, now, FeatureWorkerInput::Network(conn, (&header).into(), buf));
     }
     fn on_input(&mut self, _ctx: &mut FeatureWorkerContext, _now: u64, input: FeatureWorkerInput<UserData, SdkControl, ToWorker>);
+    fn on_shutdown(&mut self, _ctx: &mut FeatureWorkerContext, _now: u64);
 }

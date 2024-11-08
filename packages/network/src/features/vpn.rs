@@ -33,16 +33,30 @@ pub type WorkerOutput<UserData> = FeatureWorkerOutput<UserData, Control, Event, 
 #[derivative(Default(bound = ""))]
 pub struct VpnFeature<UserData> {
     _tmp: PhantomData<UserData>,
+    shutdown: bool,
 }
 
 impl<UserData> Feature<UserData, Control, Event, ToController, ToWorker> for VpnFeature<UserData> {
     fn on_shared_input(&mut self, _ctx: &FeatureContext, _now: u64, _input: crate::base::FeatureSharedInput) {}
 
     fn on_input(&mut self, _ctx: &FeatureContext, _now_ms: u64, _input: FeatureInput<'_, UserData, Control, ToController>) {}
+
+    fn on_shutdown(&mut self, _ctx: &FeatureContext, _now: u64) {
+        self.shutdown = true;
+    }
 }
 
 impl<UserData> TaskSwitcherChild<Output<UserData>> for VpnFeature<UserData> {
     type Time = u64;
+
+    fn is_empty(&self) -> bool {
+        self.shutdown
+    }
+
+    fn empty_event(&self) -> Output<UserData> {
+        Output::OnResourceEmpty
+    }
+
     fn pop_output(&mut self, _now: u64) -> Option<Output<UserData>> {
         None
     }
@@ -52,6 +66,7 @@ impl<UserData> TaskSwitcherChild<Output<UserData>> for VpnFeature<UserData> {
 #[derivative(Default(bound = ""))]
 pub struct VpnFeatureWorker<UserData> {
     queue: DynamicDeque<WorkerOutput<UserData>, 16>,
+    shutdown: bool,
 }
 
 impl<UserData> VpnFeatureWorker<UserData> {
@@ -91,10 +106,24 @@ impl<UserData> FeatureWorker<UserData, Control, Event, ToController, ToWorker> f
             _ => {}
         }
     }
+
+    fn on_shutdown(&mut self, _ctx: &mut FeatureWorkerContext, _now: u64) {
+        log::info!("[VpnFeatureWorker] Shutdown");
+        self.shutdown = true;
+    }
 }
 
 impl<UserData> TaskSwitcherChild<WorkerOutput<UserData>> for VpnFeatureWorker<UserData> {
     type Time = u64;
+
+    fn is_empty(&self) -> bool {
+        self.shutdown && self.queue.is_empty()
+    }
+
+    fn empty_event(&self) -> WorkerOutput<UserData> {
+        WorkerOutput::OnResourceEmpty
+    }
+
     fn pop_output(&mut self, _now: u64) -> Option<WorkerOutput<UserData>> {
         self.queue.pop_front()
     }

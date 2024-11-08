@@ -54,6 +54,7 @@ pub struct PubSubFeature<UserData> {
     relays: HashMap<RelayId, Box<dyn GenericRelay<UserData>>>,
     source_hints: HashMap<ChannelId, SourceHintLogic<UserData>>,
     queue: VecDeque<FeatureOutput<UserData, Event, ToWorker<UserData>>>,
+    shutdown: bool,
 }
 
 impl<UserData: 'static + Eq + Copy + Debug> Default for PubSubFeature<UserData> {
@@ -68,6 +69,7 @@ impl<UserData: 'static + Eq + Copy + Debug> PubSubFeature<UserData> {
             relays: HashMap::new(),
             source_hints: HashMap::new(),
             queue: VecDeque::new(),
+            shutdown: false,
         }
     }
 
@@ -322,10 +324,24 @@ impl<UserData: 'static + Eq + Copy + Debug> Feature<UserData, Control, Event, To
             _ => panic!("Unexpected input"),
         }
     }
+
+    fn on_shutdown(&mut self, _ctx: &FeatureContext, _now: u64) {
+        log::info!("[PubSubFeatureWorker] Shutdown");
+        self.shutdown = true;
+    }
 }
 
 impl<UserData> TaskSwitcherChild<FeatureOutput<UserData, Event, ToWorker<UserData>>> for PubSubFeature<UserData> {
     type Time = u64;
+
+    fn is_empty(&self) -> bool {
+        self.shutdown && self.queue.is_empty()
+    }
+
+    fn empty_event(&self) -> FeatureOutput<UserData, Event, ToWorker<UserData>> {
+        FeatureOutput::OnResourceEmpty
+    }
+
     fn pop_output(&mut self, _now: u64) -> Option<FeatureOutput<UserData, Event, ToWorker<UserData>>> {
         self.queue.pop_front()
     }

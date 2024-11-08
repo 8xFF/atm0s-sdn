@@ -199,7 +199,7 @@ impl<SC: Debug, SE: Debug, TC: Debug, TW: Debug> TestNode<SC, SE, TC, TW> {
                 self.worker.on_event(now, SdnWorkerInput::Bus(bus));
                 TestNodeOut::Continue
             }
-            SdnWorkerOutput::ShutdownResponse => todo!(),
+            SdnWorkerOutput::OnResourceEmpty => TestNodeOut::Continue,
             SdnWorkerOutput::Continue => TestNodeOut::Continue,
         }
     }

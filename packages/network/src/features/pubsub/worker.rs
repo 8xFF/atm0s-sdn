@@ -30,6 +30,7 @@ impl<UserData> WorkerRelay<UserData> {
 pub struct PubSubFeatureWorker<UserData> {
     relays: HashMap<RelayId, WorkerRelay<UserData>>,
     queue: DynamicDeque<FeatureWorkerOutput<UserData, Control, Event, ToController>, 16>,
+    shutdown: bool,
 }
 
 impl<UserData> Default for PubSubFeatureWorker<UserData> {
@@ -37,6 +38,7 @@ impl<UserData> Default for PubSubFeatureWorker<UserData> {
         Self {
             relays: HashMap::new(),
             queue: Default::default(),
+            shutdown: false,
         }
     }
 }
@@ -235,10 +237,23 @@ impl<UserData: Eq + Copy + Debug> FeatureWorker<UserData, Control, Event, ToCont
             _ => {}
         }
     }
+
+    fn on_shutdown(&mut self, _ctx: &mut FeatureWorkerContext, _now: u64) {
+        self.shutdown = true;
+    }
 }
 
 impl<UserData> TaskSwitcherChild<FeatureWorkerOutput<UserData, Control, Event, ToController>> for PubSubFeatureWorker<UserData> {
     type Time = u64;
+
+    fn is_empty(&self) -> bool {
+        self.shutdown && self.queue.is_empty()
+    }
+
+    fn empty_event(&self) -> FeatureWorkerOutput<UserData, Control, Event, ToController> {
+        FeatureWorkerOutput::OnResourceEmpty
+    }
+
     fn pop_output(&mut self, _now: u64) -> Option<FeatureWorkerOutput<UserData, Control, Event, ToController>> {
         self.queue.pop_front()
     }

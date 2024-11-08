@@ -82,6 +82,7 @@ pub struct AliasFeature<UserData> {
     local_slots: HashMap<u64, u64>,
     queue: VecDeque<Output<UserData>>,
     scan_seq: u16,
+    shutdown: bool,
 }
 
 impl<UserData: Debug + Copy> AliasFeature<UserData> {
@@ -266,10 +267,23 @@ impl<UserData: Debug + Copy> Feature<UserData, Control, Event, ToController, ToW
             _ => {}
         }
     }
+
+    fn on_shutdown(&mut self, _ctx: &FeatureContext, _now: u64) {
+        self.shutdown = true;
+    }
 }
 
 impl<UserData> TaskSwitcherChild<Output<UserData>> for AliasFeature<UserData> {
     type Time = u64;
+
+    fn is_empty(&self) -> bool {
+        self.shutdown && self.queue.is_empty()
+    }
+
+    fn empty_event(&self) -> Output<UserData> {
+        Output::OnResourceEmpty
+    }
+
     fn pop_output(&mut self, _now: u64) -> Option<Output<UserData>> {
         self.queue.pop_front()
     }
@@ -279,6 +293,7 @@ impl<UserData> TaskSwitcherChild<Output<UserData>> for AliasFeature<UserData> {
 #[derivative(Default(bound = ""))]
 pub struct AliasFeatureWorker<UserData> {
     queue: DynamicDeque<WorkerOutput<UserData>, 1>,
+    shutdown: bool,
 }
 
 impl<UserData> FeatureWorker<UserData, Control, Event, ToController, ToWorker> for AliasFeatureWorker<UserData> {
@@ -294,10 +309,24 @@ impl<UserData> FeatureWorker<UserData, Control, Event, ToController, ToWorker> f
             FeatureWorkerInput::Local(header, buf) => self.queue.push_back(FeatureWorkerOutput::ForwardLocalToController(header, buf)),
         }
     }
+
+    fn on_shutdown(&mut self, _ctx: &mut crate::base::FeatureWorkerContext, _now: u64) {
+        log::info!("[AliasFeatureWorker] Shutdown");
+        self.shutdown = true;
+    }
 }
 
 impl<UserData> TaskSwitcherChild<WorkerOutput<UserData>> for AliasFeatureWorker<UserData> {
     type Time = u64;
+
+    fn is_empty(&self) -> bool {
+        self.shutdown && self.queue.is_empty()
+    }
+
+    fn empty_event(&self) -> WorkerOutput<UserData> {
+        WorkerOutput::OnResourceEmpty
+    }
+
     fn pop_output(&mut self, _now: u64) -> Option<WorkerOutput<UserData>> {
         self.queue.pop_front()
     }

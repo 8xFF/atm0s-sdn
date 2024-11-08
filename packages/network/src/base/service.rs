@@ -7,7 +7,6 @@ use super::ConnectionEvent;
 simple_pub_type!(ServiceId, u8);
 
 /// First part is Service, which is running inside the controller.
-
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 pub enum ServiceControlActor<UserData> {
     Controller(UserData),
@@ -32,6 +31,7 @@ pub enum ServiceOutput<UserData, FeaturesControl, ServiceEvent, ToWorker> {
     Event(ServiceControlActor<UserData>, ServiceEvent),
     FeatureControl(FeaturesControl),
     BroadcastWorkers(ToWorker),
+    OnResourceEmpty,
 }
 
 pub struct ServiceCtx {
@@ -40,10 +40,12 @@ pub struct ServiceCtx {
 }
 
 pub trait Service<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker> {
+    fn is_service_empty(&self) -> bool;
     fn service_id(&self) -> u8;
     fn service_name(&self) -> &str;
     fn on_shared_input(&mut self, _ctx: &ServiceCtx, _now: u64, _input: ServiceSharedInput);
     fn on_input(&mut self, _ctx: &ServiceCtx, _now: u64, input: ServiceInput<UserData, FeaturesEvent, ServiceControl, ToController>);
+    fn on_shutdown(&mut self, _ctx: &ServiceCtx, _now: u64);
     fn pop_output2(&mut self, _now: u64) -> Option<ServiceOutput<UserData, FeaturesControl, ServiceEvent, ToWorker>>;
 }
 
@@ -51,6 +53,15 @@ impl<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToC
     for Box<dyn Service<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>
 {
     type Time = u64;
+
+    fn empty_event(&self) -> ServiceOutput<UserData, FeaturesControl, ServiceEvent, ToWorker> {
+        ServiceOutput::OnResourceEmpty
+    }
+
+    fn is_empty(&self) -> bool {
+        self.is_service_empty()
+    }
+
     fn pop_output(&mut self, now: u64) -> Option<ServiceOutput<UserData, FeaturesControl, ServiceEvent, ToWorker>> {
         self.pop_output2(now)
     }
@@ -70,6 +81,7 @@ pub enum ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, ServiceCo
     ToController(ToController),
     FeatureControl(FeaturesControl),
     Event(ServiceControlActor<UserData>, ServiceEvent),
+    OnResourceEmpty,
 }
 
 pub struct ServiceWorkerCtx {
@@ -77,10 +89,12 @@ pub struct ServiceWorkerCtx {
 }
 
 pub trait ServiceWorker<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker> {
+    fn is_service_empty(&self) -> bool;
     fn service_id(&self) -> u8;
     fn service_name(&self) -> &str;
     fn on_tick(&mut self, _ctx: &ServiceWorkerCtx, _now: u64, _tick_count: u64);
     fn on_input(&mut self, _ctx: &ServiceWorkerCtx, _now: u64, input: ServiceWorkerInput<UserData, FeaturesEvent, ServiceControl, ToWorker>);
+    fn on_shutdown(&mut self, _ctx: &ServiceWorkerCtx, _now: u64);
     fn pop_output2(&mut self, _now: u64) -> Option<ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController>>;
 }
 
@@ -89,6 +103,15 @@ impl<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToC
     for Box<dyn ServiceWorker<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>
 {
     type Time = u64;
+
+    fn empty_event(&self) -> ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController> {
+        ServiceWorkerOutput::OnResourceEmpty
+    }
+
+    fn is_empty(&self) -> bool {
+        self.is_service_empty()
+    }
+
     fn pop_output(&mut self, now: u64) -> Option<ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController>> {
         self.pop_output2(now)
     }

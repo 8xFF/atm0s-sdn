@@ -63,16 +63,9 @@ pub struct SdnInnerCfg<UserData, SC, SE, TC, TW> {
 
 pub type SdnSpawnCfg = ();
 
-enum State {
-    Running,
-    Shutdowning,
-    Shutdowned,
-}
-
 pub struct SdnWorkerInner<UserData, SC, SE, TC, TW> {
     worker: u16,
     worker_inner: SdnWorker<UserData, SC, SE, TC, TW>,
-    state: State,
     timer: TimePivot,
     #[cfg(feature = "vpn")]
     _vpn_tun_device: Option<sans_io_runtime::backend::tun::TunDevice>,
@@ -82,6 +75,7 @@ pub struct SdnWorkerInner<UserData, SC, SE, TC, TW> {
     tun_backend_slot: Option<usize>,
     #[allow(clippy::type_complexity)]
     queue: VecDeque<WorkerInnerOutput<SdnOwner, SdnExtOut<UserData, SE>, SdnChannel, SdnEvent<UserData, SC, SE, TC, TW>, SdnSpawnCfg>>,
+    shutdown: bool,
 }
 
 #[allow(clippy::type_complexity)]
@@ -123,15 +117,12 @@ impl<UserData: 'static + Eq + Copy + Hash + Debug, SC: Debug, SE: Debug, TC: Deb
                     BusChannelControl::Publish(SdnChannel::Worker(*worker), true, event),
                 ))),
             },
-            SdnWorkerOutput::ShutdownResponse => {
-                self.state = State::Shutdowned;
-                Some(WorkerInnerOutput::Destroy(SdnOwner))
-            }
             SdnWorkerOutput::Continue => {
                 //we need to continue pop for continue gather output
                 let out = self.worker_inner.pop_output2(now_ms)?;
                 self.convert_output(now_ms, out)
             }
+            SdnWorkerOutput::OnResourceEmpty => Some(WorkerInnerOutput::Continue),
         }
     }
 }
@@ -177,8 +168,8 @@ impl<UserData: 'static + Eq + Copy + Hash + Debug, SC: Debug, SE: Debug, TC: Deb
                 timer: TimePivot::build(),
                 #[cfg(feature = "vpn")]
                 _vpn_tun_device: controller.vpn_tun_device,
-                state: State::Running,
                 queue,
+                shutdown: false,
                 bind_addrs: Default::default(),
                 bind_slots: Default::default(),
                 #[cfg(feature = "vpn")]
@@ -201,8 +192,8 @@ impl<UserData: 'static + Eq + Copy + Hash + Debug, SC: Debug, SE: Debug, TC: Deb
                 timer: TimePivot::build(),
                 #[cfg(feature = "vpn")]
                 _vpn_tun_device: None,
-                state: State::Running,
                 queue,
+                shutdown: false,
                 bind_addrs: Default::default(),
                 bind_slots: Default::default(),
                 #[cfg(feature = "vpn")]
@@ -217,6 +208,10 @@ impl<UserData: 'static + Eq + Copy + Hash + Debug, SC: Debug, SE: Debug, TC: Deb
 
     fn tasks(&self) -> usize {
         self.worker_inner.tasks()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.shutdown && self.queue.is_empty() && self.worker_inner.is_empty()
     }
 
     fn spawn(&mut self, _now: Instant, _cfg: SdnSpawnCfg) {
@@ -269,12 +264,14 @@ impl<UserData: 'static + Eq + Copy + Hash + Debug, SC: Debug, SE: Debug, TC: Deb
     }
 
     fn on_shutdown(&mut self, now: Instant) {
-        if !matches!(self.state, State::Running) {
+        if self.shutdown {
             return;
         }
-
         let now_ms = self.timer.timestamp_ms(now);
-        self.state = State::Shutdowning;
-        self.worker_inner.on_event(now_ms, SdnWorkerInput::ShutdownRequest);
+        self.worker_inner.on_shutdown(now_ms);
+        for slot in self.bind_addrs.values() {
+            self.queue.push_back(WorkerInnerOutput::Net(SdnOwner, BackendOutgoing::UdpUnlisten { slot: *slot }));
+        }
+        self.shutdown = true;
     }
 }

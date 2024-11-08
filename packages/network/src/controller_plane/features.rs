@@ -10,7 +10,10 @@ use crate::features::*;
 pub type FeaturesInput<'a, UserData> = FeatureInput<'a, UserData, FeaturesControl, FeaturesToController>;
 pub type FeaturesOutput<UserData> = FeatureOutput<UserData, FeaturesEvent, FeaturesToWorker<UserData>>;
 
-pub type Output<UserData> = (Features, FeaturesOutput<UserData>);
+pub enum Output<UserData> {
+    Output(Features, FeaturesOutput<UserData>),
+    Shutdown,
+}
 
 ///
 /// FeatureManager is a manager for all features
@@ -28,6 +31,7 @@ pub struct FeatureManager<UserData> {
     alias: TaskSwitcherBranch<alias::AliasFeature<UserData>, alias::Output<UserData>>,
     socket: TaskSwitcherBranch<socket::SocketFeature<UserData>, socket::Output<UserData>>,
     switcher: TaskSwitcher,
+    shutdown: bool,
 }
 
 impl<UserData: 'static + Hash + Eq + Copy + Debug> FeatureManager<UserData> {
@@ -42,6 +46,7 @@ impl<UserData: 'static + Hash + Eq + Copy + Debug> FeatureManager<UserData> {
             alias: TaskSwitcherBranch::default(Features::Alias as usize),
             socket: TaskSwitcherBranch::default(Features::Socket as usize),
             switcher: TaskSwitcher::new(8),
+            shutdown: false,
         }
     }
 
@@ -100,51 +105,84 @@ impl<UserData: 'static + Hash + Eq + Copy + Debug> FeatureManager<UserData> {
             },
         }
     }
+
+    pub fn on_shutdown(&mut self, ctx: &FeatureContext, now_ms: u64) {
+        if self.shutdown {
+            return;
+        }
+        log::info!("[ControllerPlane] Shutdown");
+        self.neighbours.input(&mut self.switcher).on_shutdown(ctx, now_ms);
+        self.data.input(&mut self.switcher).on_shutdown(ctx, now_ms);
+        self.router_sync.input(&mut self.switcher).on_shutdown(ctx, now_ms);
+        self.vpn.input(&mut self.switcher).on_shutdown(ctx, now_ms);
+        self.dht_kv.input(&mut self.switcher).on_shutdown(ctx, now_ms);
+        self.pubsub.input(&mut self.switcher).on_shutdown(ctx, now_ms);
+        self.alias.input(&mut self.switcher).on_shutdown(ctx, now_ms);
+        self.socket.input(&mut self.switcher).on_shutdown(ctx, now_ms);
+        self.shutdown = true;
+    }
 }
 
 impl<UserData: Hash + Eq + Copy + Debug> TaskSwitcherChild<Output<UserData>> for FeatureManager<UserData> {
     type Time = u64;
+
+    fn empty_event(&self) -> Output<UserData> {
+        Output::Shutdown
+    }
+
+    fn is_empty(&self) -> bool {
+        self.shutdown
+            && self.neighbours.is_empty()
+            && self.data.is_empty()
+            && self.router_sync.is_empty()
+            && self.vpn.is_empty()
+            && self.dht_kv.is_empty()
+            && self.pubsub.is_empty()
+            && self.alias.is_empty()
+            && self.socket.is_empty()
+    }
+
     fn pop_output<'a>(&mut self, now: u64) -> Option<Output<UserData>> {
         loop {
             match (self.switcher.current()? as u8).try_into().ok()? {
                 Features::Neighbours => {
                     if let Some(out) = self.neighbours.pop_output(now, &mut self.switcher) {
-                        return Some((Features::Neighbours, out.into2()));
+                        return Some(Output::Output(Features::Neighbours, out.into2()));
                     }
                 }
                 Features::Data => {
                     if let Some(out) = self.data.pop_output(now, &mut self.switcher) {
-                        return Some((Features::Data, out.into2()));
+                        return Some(Output::Output(Features::Data, out.into2()));
                     }
                 }
                 Features::RouterSync => {
                     if let Some(out) = self.router_sync.pop_output(now, &mut self.switcher) {
-                        return Some((Features::RouterSync, out.into2()));
+                        return Some(Output::Output(Features::RouterSync, out.into2()));
                     }
                 }
                 Features::Vpn => {
                     if let Some(out) = self.vpn.pop_output(now, &mut self.switcher) {
-                        return Some((Features::Vpn, out.into2()));
+                        return Some(Output::Output(Features::Vpn, out.into2()));
                     }
                 }
                 Features::DhtKv => {
                     if let Some(out) = self.dht_kv.pop_output(now, &mut self.switcher) {
-                        return Some((Features::DhtKv, out.into2()));
+                        return Some(Output::Output(Features::DhtKv, out.into2()));
                     }
                 }
                 Features::PubSub => {
                     if let Some(out) = self.pubsub.pop_output(now, &mut self.switcher) {
-                        return Some((Features::PubSub, out.into2()));
+                        return Some(Output::Output(Features::PubSub, out.into2()));
                     }
                 }
                 Features::Alias => {
                     if let Some(out) = self.alias.pop_output(now, &mut self.switcher) {
-                        return Some((Features::Alias, out.into2()));
+                        return Some(Output::Output(Features::Alias, out.into2()));
                     }
                 }
                 Features::Socket => {
                     if let Some(out) = self.socket.pop_output(now, &mut self.switcher) {
-                        return Some((Features::Socket, out.into2()));
+                        return Some(Output::Output(Features::Socket, out.into2()));
                     }
                 }
             }

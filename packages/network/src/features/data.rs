@@ -51,6 +51,7 @@ pub struct DataFeature<UserData> {
     ping_seq: u64,
     queue: VecDeque<Output<UserData>>,
     data_dest: HashMap<u16, FeatureControlActor<UserData>>,
+    shutdown: bool,
 }
 
 impl<UserData> Default for DataFeature<UserData> {
@@ -60,6 +61,7 @@ impl<UserData> Default for DataFeature<UserData> {
             ping_seq: 0,
             queue: VecDeque::new(),
             data_dest: HashMap::new(),
+            shutdown: false,
         }
     }
 }
@@ -139,10 +141,23 @@ impl<UserData: Copy> Feature<UserData, Control, Event, ToController, ToWorker> f
             _ => {}
         }
     }
+
+    fn on_shutdown(&mut self, _ctx: &FeatureContext, _now: u64) {
+        self.shutdown = true;
+    }
 }
 
 impl<UserData> TaskSwitcherChild<Output<UserData>> for DataFeature<UserData> {
     type Time = u64;
+
+    fn is_empty(&self) -> bool {
+        self.shutdown && self.queue.is_empty()
+    }
+
+    fn empty_event(&self) -> Output<UserData> {
+        Output::OnResourceEmpty
+    }
+
     fn pop_output(&mut self, _now: u64) -> Option<Output<UserData>> {
         self.queue.pop_front()
     }
@@ -152,6 +167,7 @@ impl<UserData> TaskSwitcherChild<Output<UserData>> for DataFeature<UserData> {
 #[derivative(Default(bound = ""))]
 pub struct DataFeatureWorker<UserData> {
     queue: DynamicDeque<WorkerOutput<UserData>, 1>,
+    shutdown: bool,
 }
 
 impl<UserData: Debug> FeatureWorker<UserData, Control, Event, ToController, ToWorker> for DataFeatureWorker<UserData> {
@@ -167,10 +183,24 @@ impl<UserData: Debug> FeatureWorker<UserData, Control, Event, ToController, ToWo
             FeatureWorkerInput::Local(header, buf) => self.queue.push_back(FeatureWorkerOutput::ForwardLocalToController(header, buf)),
         }
     }
+
+    fn on_shutdown(&mut self, _ctx: &mut crate::base::FeatureWorkerContext, _now: u64) {
+        log::info!("[DataFeatureWorker] Shutdown");
+        self.shutdown = true;
+    }
 }
 
 impl<UserData> TaskSwitcherChild<WorkerOutput<UserData>> for DataFeatureWorker<UserData> {
     type Time = u64;
+
+    fn is_empty(&self) -> bool {
+        self.shutdown && self.queue.is_empty()
+    }
+
+    fn empty_event(&self) -> WorkerOutput<UserData> {
+        WorkerOutput::OnResourceEmpty
+    }
+
     fn pop_output(&mut self, _now: u64) -> Option<WorkerOutput<UserData>> {
         self.queue.pop_front()
     }

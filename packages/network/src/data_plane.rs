@@ -74,7 +74,6 @@ pub enum Input<UserData, SC, SE, TW> {
     Net(NetInput),
     Event(LogicEvent<UserData, SE, TW>),
     Worker(CrossWorker<UserData, SE>),
-    ShutdownRequest,
 }
 
 #[derive(Debug)]
@@ -93,7 +92,7 @@ pub enum Output<UserData, SC, SE, TC> {
     #[convert_enum(optout)]
     Worker(u16, CrossWorker<UserData, SE>),
     #[convert_enum(optout)]
-    ShutdownResponse,
+    OnResourceEmpty,
     #[convert_enum(optout)]
     Continue,
 }
@@ -123,6 +122,7 @@ pub struct DataPlane<UserData, SC, SE, TC, TW> {
     conns: HashMap<NetPair, DataPlaneConnection>,
     conns_reverse: HashMap<ConnId, NetPair>,
     queue: DynamicDeque<Output<UserData, SC, SE, TC>, 16>,
+    shutdown: bool,
     switcher: TaskSwitcher,
 }
 
@@ -146,6 +146,7 @@ where
             conns: HashMap::new(),
             conns_reverse: HashMap::new(),
             queue: DynamicDeque::default(),
+            shutdown: false,
             switcher: TaskSwitcher::new(2),
         }
     }
@@ -246,8 +247,17 @@ where
                     self.conns.remove(&addr);
                 }
             }
-            Input::ShutdownRequest => self.queue.push_back(Output::ShutdownResponse),
         }
+    }
+
+    pub fn on_shutdown(&mut self, now_ms: u64) {
+        if self.shutdown {
+            return;
+        }
+        log::info!("[DataPlane] Shutdown");
+        self.features.input(&mut self.switcher).on_shutdown(&mut self.feature_ctx, now_ms);
+        self.services.input(&mut self.switcher).on_shutdown(&self.service_ctx, now_ms);
+        self.shutdown = true;
     }
 
     fn incoming_route(&mut self, now_ms: u64, pair: NetPair, mut buf: Buffer) {
@@ -339,7 +349,14 @@ where
     }
 
     fn pop_features(&mut self, now_ms: u64) {
-        let (feature, out) = return_if_none!(self.features.pop_output(now_ms, &mut self.switcher));
+        let out = return_if_none!(self.features.pop_output(now_ms, &mut self.switcher));
+        let (feature, out) = match out {
+            features::Output::Output(feature, out) => (feature, out),
+            features::Output::OnResourceEmpty => {
+                log::info!("[DataPlane] Features OnResourceEmpty");
+                return;
+            }
+        };
         match out {
             FeatureWorkerOutput::ForwardControlToController(service, control) => self.queue.push_back(LogicControl::FeaturesControl(service, control).into()),
             FeatureWorkerOutput::ForwardNetworkToController(conn, header, msg) => self.queue.push_back(LogicControl::NetRemote(feature, conn, header, msg).into()),
@@ -394,11 +411,21 @@ where
             }
             #[cfg(feature = "vpn")]
             FeatureWorkerOutput::TunPkt(pkt) => self.queue.push_back(NetOutput::TunPacket(pkt).into()),
+            FeatureWorkerOutput::OnResourceEmpty => {
+                log::info!("[DataPlane] Feature {feature:?} OnResourceEmpty");
+            }
         }
     }
 
     fn pop_services(&mut self, now_ms: u64) {
-        let (service, out) = return_if_none!(self.services.pop_output(now_ms, &mut self.switcher));
+        let out = return_if_none!(self.services.pop_output(now_ms, &mut self.switcher));
+        let (service, out) = match out {
+            services::Output::Output(service, out) => (service, out),
+            services::Output::OnResourceEmpty => {
+                log::info!("[DataPlane] Services OnResourceEmpty");
+                return;
+            }
+        };
         match out {
             ServiceWorkerOutput::ForwardControlToController(actor, control) => self.queue.push_back(LogicControl::ServicesControl(actor, service, control).into()),
             ServiceWorkerOutput::ForwardFeatureEventToController(event) => self.queue.push_back(LogicControl::ServiceEvent(service, event).into()),
@@ -419,6 +446,9 @@ where
                     }
                 }
             },
+            ServiceWorkerOutput::OnResourceEmpty => {
+                log::info!("[DataPlane] Service {service} OnResourceEmpty");
+            }
         }
     }
 
@@ -471,6 +501,15 @@ where
     UserData: 'static + Copy + Eq + Hash + Debug,
 {
     type Time = u64;
+
+    fn empty_event(&self) -> Output<UserData, SC, SE, TC> {
+        Output::OnResourceEmpty
+    }
+
+    fn is_empty(&self) -> bool {
+        self.shutdown && self.queue.is_empty() && self.features.is_empty() && self.services.is_empty()
+    }
+
     fn pop_output(&mut self, now: u64) -> Option<Output<UserData, SC, SE, TC>> {
         return_if_some!(self.queue.pop_front());
 
