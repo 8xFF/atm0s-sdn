@@ -14,9 +14,11 @@ pub enum Output<UserData, ServiceControl, ServiceEvent, ToController> {
 type ServiceBox<UserData, ServiceControl, ServiceEvent, ToController, ToWorker> =
     Box<dyn ServiceWorker<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController, ToWorker>>;
 type ServiceBoxOutput<UserData, ServiceControl, ServiceEvent, ToController> = ServiceWorkerOutput<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToController>;
+type ServiceSwitcher<UserData, ServiceControl, ServiceEvent, ToController, ToWorker> =
+    TaskSwitcherBranch<ServiceBox<UserData, ServiceControl, ServiceEvent, ToController, ToWorker>, ServiceBoxOutput<UserData, ServiceControl, ServiceEvent, ToController>>;
 
 struct ServiceSlot<UserData, ServiceControl, ServiceEvent, ToController, ToWorker> {
-    service: TaskSwitcherBranch<ServiceBox<UserData, ServiceControl, ServiceEvent, ToController, ToWorker>, ServiceBoxOutput<UserData, ServiceControl, ServiceEvent, ToController>>,
+    service: ServiceSwitcher<UserData, ServiceControl, ServiceEvent, ToController, ToWorker>,
     is_empty: bool,
 }
 
