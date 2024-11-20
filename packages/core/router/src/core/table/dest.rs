@@ -1,6 +1,7 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 use atm0s_sdn_identity::{ConnId, NodeId};
+use serde::Serialize;
 
 use super::{Metric, Path};
 
@@ -10,6 +11,9 @@ pub enum DestDelta {
     DelBestPath,
 }
 
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+pub struct DestDump(HashMap<NodeId, Metric>);
+
 #[derive(Debug, Default)]
 pub struct Dest {
     paths: Vec<Path>,
@@ -17,6 +21,10 @@ pub struct Dest {
 }
 
 impl Dest {
+    pub fn dump(&self) -> DestDump {
+        DestDump(self.paths.iter().map(|p| (p.1.over_node(), p.1.clone())).collect())
+    }
+
     pub fn set_path(&mut self, over: ConnId, metric: Metric) {
         let pre_best_conn = self.paths.first().map(|p| p.0);
         match self.index_of(over) {

@@ -163,7 +163,7 @@ impl NeighbourConnection {
                                 handshake: request_buf,
                             },
                         ));
-                        log::info!("[NeighbourConnection] Resend connect request to {}, dest_node {}", self.pair, self.node);
+                        log::debug!("[NeighbourConnection] Resend connect request to {}, dest_node {}", self.pair, self.node);
                     } else {
                         log::warn!("[NeighbourConnection] Cannot create handshake for resending connect request to {}, dest_node {}", self.pair, self.node);
                     }

@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use crate::core::{Metric, Path};
 use crate::core::{Registry, RegistrySync};
 
-use super::registry::RegistryDelta;
-use super::table::{NodeIndex, Table, TableDelta, TableSync};
+use super::registry::{RegisterDump, RegistryDelta};
+use super::table::{NodeIndex, Table, TableDelta, TableDump, TableSync};
 use super::ServiceDestination;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -19,6 +19,13 @@ pub type Layer = u8;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct RouterSync(pub RegistrySync, pub [Option<TableSync>; 4]);
+
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+pub struct RouterDump {
+    node_id: NodeId,
+    services: RegisterDump,
+    layers: [TableDump; 4],
+}
 
 pub struct Router {
     node_id: NodeId,
@@ -34,6 +41,14 @@ impl Router {
             node_id: local_node_id,
             tables,
             service_registry: Registry::new(local_node_id),
+        }
+    }
+
+    pub fn dump(&self) -> RouterDump {
+        RouterDump {
+            node_id: self.node_id,
+            services: self.service_registry.dump(),
+            layers: [self.tables[0].dump(), self.tables[1].dump(), self.tables[2].dump(), self.tables[3].dump()],
         }
     }
 

@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 
 use atm0s_sdn_identity::{ConnId, NodeId};
 use atm0s_sdn_router::{
-    core::{DestDelta, Metric, RegistryDelta, RegistryDestDelta, Router, RouterDelta, RouterSync, TableDelta},
+    core::{DestDelta, Metric, RegistryDelta, RegistryDestDelta, Router, RouterDelta, RouterDump, RouterSync, TableDelta},
     shadow::ShadowRouterDelta,
 };
 use derivative::Derivative;
@@ -19,8 +19,15 @@ pub const FEATURE_NAME: &str = "router_sync";
 const INIT_RTT_MS: u16 = 1000;
 const INIT_BW: u32 = 100_000_000;
 
-pub type Control = ();
-pub type Event = ();
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Control {
+    DumpRouter,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Event {
+    DumpRouter(RouterDump),
+}
 
 pub type ToWorker = ShadowRouterDelta<NetPair>;
 pub type ToController = ();
@@ -101,20 +108,29 @@ impl<UserData> Feature<UserData, Control, Event, ToController, ToWorker> for Rou
     }
 
     fn on_input(&mut self, _ctx: &FeatureContext, _now_ms: u64, input: FeatureInput<'_, UserData, Control, ToController>) {
-        if let FeatureInput::Net(ctx, meta, buf) = input {
-            if !meta.secure {
-                log::warn!("[RouterSync] reject unsecure message");
-                return;
-            }
-            if let Some((_node, _remote, metric)) = self.conns.get(&ctx.conn) {
-                if let Ok(sync) = bincode::deserialize::<RouterSync>(&buf) {
-                    self.router.apply_sync(ctx.conn, metric.clone(), sync);
-                } else {
-                    log::warn!("[RouterSync] Receive invalid sync from {}", ctx.pair);
+        match input {
+            FeatureInput::FromWorker(_) => {}
+            FeatureInput::Control(actor, control) => match control {
+                Control::DumpRouter => {
+                    self.queue.push_back(FeatureOutput::Event(actor, Event::DumpRouter(self.router.dump())));
                 }
-            } else {
-                log::warn!("[RouterSync] Receive sync from unknown connection {}", ctx.pair);
+            },
+            FeatureInput::Net(ctx, meta, buf) => {
+                if !meta.secure {
+                    log::warn!("[RouterSync] reject unsecure message");
+                    return;
+                }
+                if let Some((_node, _remote, metric)) = self.conns.get(&ctx.conn) {
+                    if let Ok(sync) = bincode::deserialize::<RouterSync>(&buf) {
+                        self.router.apply_sync(ctx.conn, metric.clone(), sync);
+                    } else {
+                        log::warn!("[RouterSync] Receive invalid sync from {}", ctx.pair);
+                    }
+                } else {
+                    log::warn!("[RouterSync] Receive sync from unknown connection {}", ctx.pair);
+                }
             }
+            FeatureInput::Local(..) => {}
         }
     }
 

@@ -3,7 +3,7 @@ use std::collections::{HashMap, VecDeque};
 use atm0s_sdn_identity::{ConnId, NodeId, NodeIdType};
 use serde::{Deserialize, Serialize};
 
-pub use dest::{Dest, DestDelta};
+pub use dest::{Dest, DestDelta, DestDump};
 pub use metric::{Metric, BANDWIDTH_LIMIT};
 pub use path::Path;
 
@@ -19,6 +19,12 @@ pub struct TableDelta(pub u8, pub DestDelta);
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct TableSync(pub Vec<(u8, Metric)>);
+
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct TableDump {
+    layer: u8,
+    dests: HashMap<u8, DestDump>,
+}
 
 pub struct Table {
     node_id: NodeId,
@@ -36,6 +42,13 @@ impl Table {
             dests: std::array::from_fn(|_| Dest::default()),
             slots: vec![],
             deltas: VecDeque::new(),
+        }
+    }
+
+    pub fn dump(&self) -> TableDump {
+        TableDump {
+            layer: self.layer,
+            dests: HashMap::from_iter(self.dests.iter().enumerate().filter(|d| !d.1.is_empty()).map(|d| (d.0 as u8, d.1.dump()))),
         }
     }
 

@@ -1,6 +1,7 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 use atm0s_sdn_identity::{ConnId, NodeId};
+use serde::Serialize;
 
 use super::{Metric, Path};
 
@@ -10,6 +11,12 @@ pub enum RegistryDestDelta {
     DelServicePath(ConnId),
 }
 
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+pub struct RegisterDestDump {
+    next: Option<NodeId>,
+    paths: HashMap<NodeId, Metric>,
+}
+
 #[derive(Debug, Default)]
 pub struct RegistryDest {
     paths: Vec<Path>,
@@ -17,6 +24,13 @@ pub struct RegistryDest {
 }
 
 impl RegistryDest {
+    pub fn dump(&self) -> RegisterDestDump {
+        RegisterDestDump {
+            next: self.next(&[]).map(|p| p.1),
+            paths: self.paths.iter().map(|p| (p.1.over_node(), p.1.clone())).collect(),
+        }
+    }
+
     pub fn set_path(&mut self, over: ConnId, metric: Metric) {
         match self.index_of(over) {
             Some(index) => {
