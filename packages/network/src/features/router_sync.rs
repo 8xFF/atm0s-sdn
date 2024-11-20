@@ -26,7 +26,7 @@ pub enum Control {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
-    DumpRouter(RouterDump),
+    DumpRouter(Box<RouterDump>),
 }
 
 pub type ToWorker = ShadowRouterDelta<NetPair>;
@@ -112,7 +112,7 @@ impl<UserData> Feature<UserData, Control, Event, ToController, ToWorker> for Rou
             FeatureInput::FromWorker(_) => {}
             FeatureInput::Control(actor, control) => match control {
                 Control::DumpRouter => {
-                    self.queue.push_back(FeatureOutput::Event(actor, Event::DumpRouter(self.router.dump())));
+                    self.queue.push_back(FeatureOutput::Event(actor, Event::DumpRouter(Box::new(self.router.dump()))));
                 }
             },
             FeatureInput::Net(ctx, meta, buf) => {
