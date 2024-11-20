@@ -111,7 +111,7 @@ impl Registry {
                     }
                 }
                 Some(metric) => {
-                    if dest.is_empty() {
+                    if !dest.has_path(conn) {
                         log::info!("[Registry] added service {} from {} after sync", i, src);
                     }
                     dest.set_path(conn, metric);

@@ -48,6 +48,10 @@ impl RegistryDest {
         self.paths.sort();
     }
 
+    pub fn has_path(&self, over: ConnId) -> bool {
+        self.index_of(over).is_some()
+    }
+
     pub fn del_path(&mut self, over: ConnId) -> Option<Path> {
         match self.index_of(over) {
             Some(index) => {
