@@ -1,5 +1,6 @@
 #![allow(clippy::bool_assert_comparison)]
 
+use atm0s_sdn::features::{router_sync, FeaturesEvent};
 use atm0s_sdn::secure::StaticKeyAuthorization;
 use atm0s_sdn::services::visualization;
 use atm0s_sdn::{
@@ -14,6 +15,7 @@ use futures_util::{SinkExt, StreamExt};
 use poem::endpoint::StaticFilesEndpoint;
 #[cfg(feature = "embed")]
 use poem::endpoint::{EmbeddedFileEndpoint, EmbeddedFilesEndpoint};
+use poem::web::Json;
 use poem::{
     get, handler,
     listener::TcpListener,
@@ -37,7 +39,8 @@ use std::{
     },
     time::Duration,
 };
-use tokio::sync::Mutex;
+use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
+use tokio::sync::{oneshot, Mutex};
 
 #[cfg(feature = "embed")]
 #[derive(RustEmbed)]
@@ -238,6 +241,26 @@ fn ws(ws: WebSocket, ctx: Data<&Arc<Mutex<WebsocketCtx>>>) -> impl IntoResponse 
     })
 }
 
+#[handler]
+async fn dump_router(ctx: Data<&UnboundedSender<oneshot::Sender<serde_json::Value>>>) -> impl IntoResponse {
+    let (tx, rx) = oneshot::channel();
+    ctx.0.send(tx).expect("should send");
+    match tokio::time::timeout(Duration::from_millis(1000), rx).await {
+        Ok(Ok(v)) => Json(serde_json::json!({
+            "status": true,
+            "data": v
+        })),
+        Ok(Err(e)) => Json(serde_json::json!({
+            "status": false,
+            "error": e.to_string()
+        })),
+        Err(_e) => Json(serde_json::json!({
+            "status": false,
+            "error": "timeout"
+        })),
+    }
+}
+
 #[tokio::main]
 async fn main() {
     if std::env::var_os("RUST_LOG").is_none() {
@@ -281,13 +304,14 @@ async fn main() {
         BackendType::Polling => builder.build::<PollingBackend<SdnOwner, 128, 128>>(args.workers, node_info),
     };
 
+    let (dump_tx, mut dump_rx) = unbounded_channel::<oneshot::Sender<serde_json::Value>>();
     let ctx = Arc::new(Mutex::new(WebsocketCtx::new()));
 
     if args.collector {
         controller.service_control(visualization::SERVICE_ID.into(), (), visualization::Control::Subscribe);
         let ctx_c = ctx.clone();
         tokio::spawn(async move {
-            let route = Route::new().at("/ws", get(ws.data(ctx_c)));
+            let route = Route::new().at("/dump_router", get(dump_router).data(dump_tx)).at("/ws", get(ws.data(ctx_c)));
 
             #[cfg(not(feature = "embed"))]
             let route = route.nest("/", StaticFilesEndpoint::new("./public/").index_file("index.html"));
@@ -303,6 +327,7 @@ async fn main() {
 
     let started_at = Instant::now();
     let mut count = 0;
+    let mut wait_dump_router = vec![];
     while controller.process().is_some() {
         if term.load(Ordering::Relaxed) {
             if shutdown_wait == 200 {
@@ -322,6 +347,11 @@ async fn main() {
                 }),
             );
         }
+
+        while let Ok(v) = dump_rx.try_recv() {
+            controller.feature_control((), router_sync::Control::DumpRouter.into());
+            wait_dump_router.push(v);
+        }
         while let Some(event) = controller.pop_event() {
             match event {
                 SdnExtOut::ServicesEvent(_service, (), event) => match event {
@@ -338,7 +368,18 @@ async fn main() {
                         ctx.lock().await.del_node(node);
                     }
                 },
-                SdnExtOut::FeaturesEvent(_, _) => {}
+                SdnExtOut::FeaturesEvent(_, event) => {
+                    if let FeaturesEvent::RouterSync(event) = event {
+                        match event {
+                            router_sync::Event::DumpRouter(value) => {
+                                let json = serde_json::to_value(value).expect("should convert json");
+                                while let Some(v) = wait_dump_router.pop() {
+                                    let _ = v.send(json.clone());
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         tokio::time::sleep(Duration::from_millis(10)).await;

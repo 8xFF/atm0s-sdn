@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 mod dest;
 
-pub use self::dest::RegistryDestDelta;
+pub use self::dest::{RegisterDestDump, RegistryDestDelta};
 
 use super::{registry::dest::RegistryDest, Metric, Path, ServiceDestination};
 
@@ -20,6 +20,12 @@ pub enum RegistryDelta {
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct RegistrySync(pub Vec<(u8, Metric)>);
+
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+pub struct RegisterDump {
+    local: Vec<u8>,
+    remotes: HashMap<u8, RegisterDestDump>,
+}
 
 pub struct Registry {
     node_id: NodeId,
@@ -36,6 +42,24 @@ impl Registry {
             remote_destinations: std::array::from_fn(|_| RegistryDest::default()),
             deltas: VecDeque::new(),
         }
+    }
+
+    pub fn dump(&self) -> RegisterDump {
+        let mut local = Vec::new();
+        let mut remotes = HashMap::new();
+
+        for i in 0..=255 {
+            if self.local_destinations[i as usize] {
+                local.push(i);
+            }
+
+            let dest: &RegistryDest = &self.remote_destinations[i as usize];
+            if !dest.is_empty() {
+                remotes.insert(i, dest.dump());
+            }
+        }
+
+        RegisterDump { local, remotes }
     }
 
     pub fn add_service(&mut self, service_id: u8) {
@@ -87,7 +111,7 @@ impl Registry {
                     }
                 }
                 Some(metric) => {
-                    if dest.is_empty() {
+                    if !dest.has_path(conn) {
                         log::info!("[Registry] added service {} from {} after sync", i, src);
                     }
                     dest.set_path(conn, metric);
