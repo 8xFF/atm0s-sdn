@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-router-v0.2.2...atm0s-sdn-router-v0.2.3) - 2024-11-26
+
+### Added
+
+- add router dump ([#182](https://github.com/8xFF/atm0s-sdn/pull/182))
+
 ## [0.2.2](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-router-v0.2.1...atm0s-sdn-router-v0.2.2) - 2024-11-08
 
 ### Other
