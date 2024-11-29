@@ -254,7 +254,7 @@ mod tests {
         let (node_e, conn_e, mut router_e) = create_router(0x05);
         let (node_f, conn_f, mut router_f) = create_router(0x06);
 
-        let metric_registry_local = Metric::new(0, vec![node_a], REGISTRY_LOCAL_BW);
+        let metric_registry_local = Metric::new(0, vec![], REGISTRY_LOCAL_BW);
 
         router_a.register_service(1);
         router_a.set_direct(conn_d, Metric::new(1, vec![node_d], 1));
