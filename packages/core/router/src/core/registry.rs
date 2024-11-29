@@ -131,7 +131,7 @@ impl Registry {
         let mut res = vec![];
         for i in 0..=255 {
             if self.local_destinations[i as usize] {
-                res.push((i, Metric::new(0, vec![self.node_id], REGISTRY_LOCAL_BW)));
+                res.push((i, Metric::new(0, vec![], REGISTRY_LOCAL_BW)));
             } else {
                 let dest: &RegistryDest = &self.remote_destinations[i as usize];
                 if !dest.is_empty() {
@@ -204,7 +204,7 @@ mod tests {
         assert_eq!(registry.next(1, &[]), Some(ServiceDestination::Local));
 
         let sync = registry.sync_for(node1);
-        assert_eq!(sync.0, vec![(1, Metric::new(0, vec![0], REGISTRY_LOCAL_BW))]);
+        assert_eq!(sync.0, vec![(1, Metric::new(0, vec![], REGISTRY_LOCAL_BW))]);
     }
 
     #[test]
