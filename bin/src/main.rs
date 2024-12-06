@@ -254,6 +254,7 @@ async fn dump_router(ctx: Data<&UnboundedSender<oneshot::Sender<serde_json::Valu
     }
 }
 
+#[allow(clippy::collapsible_match)]
 #[tokio::main]
 async fn main() {
     if std::env::var_os("RUST_LOG").is_none() {
