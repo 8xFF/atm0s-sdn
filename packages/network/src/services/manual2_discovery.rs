@@ -64,7 +64,7 @@ impl<UserData, SC, SE, TC, TW> Manual2DiscoveryService<UserData, SC, SE, TC, TW>
         Self {
             node_addr,
             targets,
-            queue: VecDeque::from_iter([data_control(DataControl::DataListen(DATA_PORT))].into_iter()),
+            queue: VecDeque::from_iter([data_control(DataControl::DataListen(DATA_PORT))]),
             remote_nodes: Default::default(),
             shutdown: false,
             broadcast_seq: 0,
