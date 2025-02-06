@@ -142,12 +142,12 @@ impl<UserData, SC, SE, TC: Debug, TW: Debug> Service<UserData, FeaturesControl, 
                         crate::features::data::Event::Recv(port, meta, data) => {
                             // ignore other port
                             if port != DATA_PORT {
-                                log::warn!("[Manual2DiscoveryService] Recv from other port => ignore");
+                                log::warn!("[Manual2DiscoveryService] recv from other port => ignore");
                                 return;
                             }
                             // ignore unsecure
                             if !meta.secure {
-                                log::warn!("[Manual2DiscoveryService] Recv from unsecure node => ignore");
+                                log::warn!("[Manual2DiscoveryService] recv from unsecure node => ignore");
                                 return;
                             }
                             if let Some(source) = meta.source {
@@ -157,19 +157,19 @@ impl<UserData, SC, SE, TC: Debug, TW: Debug> Service<UserData, FeaturesControl, 
                                 }
                                 // ignore already connected
                                 if self.remote_nodes.contains_key(&source) {
-                                    log::warn!("[Manual2DiscoveryService] Recv from already connected node {source} => ignore");
+                                    log::debug!("[Manual2DiscoveryService] recv from already connected node {source} => ignore");
                                     return;
                                 }
                             } else {
                                 // ignore anonymous
-                                log::warn!("[Manual2DiscoveryService] Recv from anonymous node => ignore");
+                                log::warn!("[Manual2DiscoveryService] recv from anonymous node => ignore");
                                 return;
                             }
                             if let Some(addr) = NodeAddr::from_vec(&data) {
-                                log::info!("[Manual2DiscoveryService] Node {} advertised => try connect {addr:?}", addr.node_id());
+                                log::info!("[Manual2DiscoveryService] node {} advertised => try connect {addr:?}", addr.node_id());
                                 self.queue.push_back(neighbour_control(NeighbourControl::ConnectTo(addr, false)));
                             } else {
-                                log::warn!("[Manual2DiscoveryService] Node {:?} advertised invalid address => ignore", meta.source);
+                                log::warn!("[Manual2DiscoveryService] node {:?} advertised invalid address => ignore", meta.source);
                             }
                         }
                     }
