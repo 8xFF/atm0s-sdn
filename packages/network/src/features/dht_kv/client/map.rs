@@ -387,7 +387,7 @@ impl<UserData: Eq + Copy + Debug> LocalMap<UserData> {
                 match &mut self.sub_state {
                     SubState::Subscribing { id: sub_id, .. } => {
                         if *sub_id == id {
-                            log::info!("[ClientMap] Received SubOk with id {}, switched to Subscribed with sync_ts {}", id, now);
+                            log::debug!("[ClientMap] Received SubOk with id {}, switched to Subscribed with sync_ts {}", id, now);
                             self.sub_state = SubState::Subscribed { id, remote, sync_ts: now };
                             self.fire_event(MapEvent::OnRelaySelected(remote.0));
                         } else {
@@ -403,7 +403,7 @@ impl<UserData: Eq + Copy + Debug> LocalMap<UserData> {
                             *sync_ts = now;
 
                             if old_locked.0 != remote.0 {
-                                log::info!(
+                                log::debug!(
                                     "[ClientMap] Received SubOk with id {}, in Subscribed from new remote {} with sync_ts {} => resync all local slots now",
                                     id,
                                     remote.0,
