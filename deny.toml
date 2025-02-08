@@ -1,31 +1,27 @@
 [graph]
 
-targets = [
-]
+targets = []
 all-features = false
 no-default-features = false
 [output]
 feature-depth = 1
 
 [advisories]
-ignore = [
-]
+ignore = []
 
 [licenses]
-unlicensed = "allow"
 allow = [
     "Apache-2.0",
     "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",
     "MIT",
-    "Unicode-DFS-2016",
     "WTFPL",
     "Unicode-3.0",
+    "NCSA",
 ]
 confidence-threshold = 0.8
-exceptions = [
-]
+exceptions = []
 
 
 [licenses.private]
@@ -40,15 +36,11 @@ wildcards = "allow"
 highlight = "all"
 workspace-default-features = "allow"
 external-default-features = "allow"
-allow = [
-]
-deny = [
-]
+allow = []
+deny = []
 
-skip = [
-]
-skip-tree = [
-]
+skip = []
+skip-tree = []
 [sources]
 unknown-registry = "warn"
 unknown-git = "warn"
