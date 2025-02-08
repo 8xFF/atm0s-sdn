@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-identity-v0.3.1...atm0s-sdn-identity-v0.3.2) - 2025-02-08
+
+### Fixed
+
+- error reported by cargo deny (#191)
+- router with duplicate entry in hops (#190)
+
 ## [0.3.1](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-identity-v0.3.0...atm0s-sdn-identity-v0.3.1) - 2024-07-22
 
 ### Other
