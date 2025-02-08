@@ -3,13 +3,16 @@ name = "bin-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2021"
+license = "MIT"
 
 [package.metadata]
 cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-atm0s-sdn-network = { path = "../packages/network", version = "0.6.1", features = ["fuzz"] }
+atm0s-sdn-network = { path = "../packages/network", version = "0.6.1", features = [
+    "fuzz",
+] }
 
 [[bin]]
 name = "network_control_pkt"
