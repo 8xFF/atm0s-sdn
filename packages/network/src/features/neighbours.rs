@@ -1,4 +1,8 @@
-use std::{collections::VecDeque, fmt::Debug, hash::Hash};
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    fmt::Debug,
+    hash::Hash,
+};
 
 use atm0s_sdn_identity::{ConnId, NodeAddr, NodeId};
 use derivative::Derivative;
@@ -9,11 +13,14 @@ use crate::base::{ConnectionEvent, Feature, FeatureContext, FeatureControlActor,
 pub const FEATURE_ID: u8 = 0;
 pub const FEATURE_NAME: &str = "neighbours_api";
 
+// for avoid spamming seeds, we only request seeds if needed each 30 seconds
+pub const REQUEST_SEEDS_TIMEOUT_MS: u64 = 30000;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Control {
     Sub,
     UnSub,
-    ConnectTo(NodeAddr),
+    ConnectTo(NodeAddr, bool),
     DisconnectFrom(NodeId),
 }
 
@@ -21,6 +28,7 @@ pub enum Control {
 pub enum Event {
     Connected(NodeId, ConnId),
     Disconnected(NodeId, ConnId),
+    SeedAddressNeeded,
 }
 
 #[derive(Debug, Clone)]
@@ -37,23 +45,81 @@ pub type WorkerOutput<UserData> = FeatureWorkerOutput<UserData, Control, Event, 
 pub struct NeighboursFeature<UserData> {
     subs: Vec<FeatureControlActor<UserData>>,
     output: VecDeque<Output<UserData>>,
+    seeds: HashSet<NodeId>,
+    nodes: HashMap<NodeId, HashSet<ConnId>>,
     shutdown: bool,
+    last_requested_seeds: Option<u64>,
+}
+
+impl<UserData: Debug + Copy + Hash + Eq> NeighboursFeature<UserData> {
+    fn check_need_more_seeds(&mut self, now: u64) {
+        if self.shutdown {
+            return;
+        }
+
+        if let Some(last) = self.last_requested_seeds {
+            if now < last + REQUEST_SEEDS_TIMEOUT_MS {
+                return;
+            }
+        }
+
+        if self.seeds.is_empty() {
+            return;
+        }
+        for node in self.seeds.iter() {
+            if self.nodes.contains_key(node) {
+                return;
+            }
+        }
+
+        log::info!("[Neighbours] All seeds {:?} disconnected or connect error => need update seeds", self.seeds);
+        self.last_requested_seeds = Some(now);
+        for sub in self.subs.iter() {
+            self.output.push_back(FeatureOutput::Event(*sub, Event::SeedAddressNeeded));
+        }
+    }
 }
 
 impl<UserData: Debug + Copy + Hash + Eq> Feature<UserData, Control, Event, ToController, ToWorker> for NeighboursFeature<UserData> {
-    fn on_shared_input(&mut self, _ctx: &FeatureContext, _now: u64, input: FeatureSharedInput) {
+    fn on_shared_input(&mut self, _ctx: &FeatureContext, now: u64, input: FeatureSharedInput) {
         match input {
+            FeatureSharedInput::Tick(_) => {
+                self.check_need_more_seeds(now);
+            }
+            FeatureSharedInput::Connection(ConnectionEvent::Connecting(ctx)) => {
+                log::info!("[Neighbours] Node {} connection {} connecting", ctx.node, ctx.pair);
+                self.nodes.entry(ctx.node).or_default().insert(ctx.conn);
+            }
+            FeatureSharedInput::Connection(ConnectionEvent::ConnectError(ctx, _)) => {
+                log::info!("[Neighbours] Node {} connection {} connect error", ctx.node, ctx.pair);
+                let entry = self.nodes.entry(ctx.node).or_default();
+                entry.remove(&ctx.conn);
+                if entry.is_empty() {
+                    log::info!("[Neighbours] Node {} connect error all connections => remove", ctx.node);
+                    self.nodes.remove(&ctx.node);
+                }
+
+                self.check_need_more_seeds(now);
+            }
             FeatureSharedInput::Connection(ConnectionEvent::Connected(ctx, _)) => {
-                log::debug!("[Neighbours] Connected {}, fire event to {:?}", ctx.pair, self.subs);
+                log::info!("[Neighbours] Node {} connection {} connected", ctx.node, ctx.pair);
                 for sub in self.subs.iter() {
                     self.output.push_back(FeatureOutput::Event(*sub, Event::Connected(ctx.node, ctx.conn)));
                 }
             }
             FeatureSharedInput::Connection(ConnectionEvent::Disconnected(ctx)) => {
-                log::debug!("[Neighbours] Disconnected {}, fire event to {:?}", ctx.pair, self.subs);
+                log::info!("[Neighbours] Node {} connection {} disconnected", ctx.node, ctx.pair);
+                let entry = self.nodes.entry(ctx.node).or_default();
+                entry.remove(&ctx.conn);
+                if entry.is_empty() {
+                    log::info!("[Neighbours] Node {} disconnected all connections => remove", ctx.node);
+                    self.nodes.remove(&ctx.node);
+                }
                 for sub in self.subs.iter() {
                     self.output.push_back(FeatureOutput::Event(*sub, Event::Disconnected(ctx.node, ctx.conn)));
                 }
+
+                self.check_need_more_seeds(now);
             }
             _ => {}
         }
@@ -74,7 +140,10 @@ impl<UserData: Debug + Copy + Hash + Eq> Feature<UserData, Control, Event, ToCon
                         self.subs.swap_remove(pos);
                     }
                 }
-                Control::ConnectTo(addr) => {
+                Control::ConnectTo(addr, is_seed) => {
+                    if is_seed {
+                        self.seeds.insert(addr.node_id());
+                    }
                     self.output.push_back(FeatureOutput::NeighboursConnectTo(addr));
                 }
                 Control::DisconnectFrom(node) => {

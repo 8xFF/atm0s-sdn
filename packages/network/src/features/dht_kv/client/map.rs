@@ -415,7 +415,7 @@ impl<UserData: Eq + Copy + Debug> LocalMap<UserData> {
                                 log::debug!("[ClientMap] Received SubOk with id {} from same remote {} vs {}", id, locked.0, remote.0);
                             }
                         } else {
-                            log::debug!("[ClientMap] Received SubOk with id {} but current id is {}", id, sub_id);
+                            log::warn!("[ClientMap] Received SubOk with id {} but current id is {}", id, sub_id);
                         }
                     }
                     _ => {
@@ -427,7 +427,7 @@ impl<UserData: Eq + Copy + Debug> LocalMap<UserData> {
             ServerMapEvent::UnsubOk(id) => {
                 if let SubState::Unsubscribing { id: sub_id, remote: locked, .. } = &self.sub_state {
                     if *sub_id == id && (*locked).unwrap_or(remote) == remote {
-                        log::debug!("[ClientMap] Received UnsubOk with id {}, switched to NotSub", id);
+                        log::info!("[ClientMap] Received UnsubOk with id {}, switched to NotSub", id);
                         self.sub_state = SubState::NotSub;
                     } else {
                         log::warn!(
