@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-router-v0.2.3...atm0s-sdn-router-v0.2.4) - 2025-02-08
+
+### Added
+
+- discovery node by service broadcast (#188)
+
+### Fixed
+
+- router with duplicate entry in hops (#190)
+- avoid send wrong hops with router-sync local services (#184)
+
 ## [0.2.3](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-router-v0.2.2...atm0s-sdn-router-v0.2.3) - 2024-11-26
 
 ### Added
