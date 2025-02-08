@@ -72,14 +72,14 @@ impl Router {
         self.service_registry.next(service_id, excepts)
     }
 
-    pub fn set_direct(&mut self, over: ConnId, metric: Metric) {
-        let over_node = metric.over_node();
+    pub fn set_direct(&mut self, over: ConnId, over_node: NodeId, metric: Metric) {
+        debug_assert_eq!(metric.hops(), &[over_node], "direct metric must has a single hops");
         let eq_util_layer = self.node_id.eq_util_layer(&over_node) as usize;
         log::debug!("[Router {}] set_direct {}/{} with metric {:?}, eq_util_layer {}", self.node_id, over, over_node, metric, eq_util_layer);
         assert!(eq_util_layer <= 4);
         debug_assert!(eq_util_layer > 0, "wrong eq_layer {} {}", self.node_id, over_node);
         if eq_util_layer > 0 {
-            self.tables[eq_util_layer - 1].add_direct(over, metric.clone());
+            self.tables[eq_util_layer - 1].add_direct(over, over_node, metric.clone());
         }
     }
 
@@ -142,11 +142,12 @@ impl Router {
         )
     }
 
-    pub fn apply_sync(&mut self, conn: ConnId, metric: Metric, sync: RouterSync) {
-        self.service_registry.apply_sync(conn, metric.clone(), sync.0);
+    pub fn apply_sync(&mut self, conn: ConnId, src: NodeId, metric: Metric, sync: RouterSync) {
+        debug_assert_eq!(metric.hops(), &[src], "direct metric must has a single hops");
+        self.service_registry.apply_sync(conn, src, metric.clone(), sync.0);
         for (index, table_sync) in sync.1.into_iter().enumerate() {
             if let Some(table_sync) = table_sync {
-                self.tables[index].apply_sync(conn, metric.clone(), table_sync);
+                self.tables[index].apply_sync(conn, src, metric.clone(), table_sync);
             }
         }
     }
@@ -188,7 +189,6 @@ mod tests {
 
     use atm0s_sdn_identity::{ConnId, NodeId, NodeIdType};
 
-    use crate::core::registry::REGISTRY_LOCAL_BW;
     use crate::core::{table::TableSync, Metric, Path, Router, RouterSync};
     use crate::core::{RegistrySync, ServiceDestination};
 
@@ -208,14 +208,14 @@ mod tests {
         assert_eq!(router.node_id(), node0);
         assert_eq!(router.size(), 0);
 
-        router.set_direct(z_node1_conn, Metric::new(1, vec![z_node1], 1));
-        router.set_direct(node1_conn, Metric::new(1, vec![node1], 1));
+        router.set_direct(z_node1_conn, z_node1, Metric::new(1, vec![z_node1], 1));
+        router.set_direct(node1_conn, node1, Metric::new(1, vec![node1], 1));
 
         assert_eq!(router.size(), 2);
 
         //same zone, group
         assert_eq!(router.next(node1, &[]), Some((node1_conn, node1)));
-        assert_eq!(router.next_path(node1, &[]), Some(Path(node1_conn, Metric::new(1, vec![node1], 1))));
+        assert_eq!(router.next_path(node1, &[]), Some(Path::new(node1_conn, node1, Metric::new(1, vec![node1], 1))));
         assert_eq!(router.next(node2, &[]), None);
         assert_eq!(router.next_path(node2, &[]), None);
 
@@ -223,23 +223,32 @@ mod tests {
         assert_eq!(router.next(z_node2, &[]), Some((z_node1_conn, z_node1)));
     }
 
-    fn create_router(node_id: NodeId) -> (NodeId, ConnId, Router) {
-        (node_id, ConnId::from_out(0, node_id as u64), Router::new(node_id))
+    fn create_router(node_id: NodeId) -> (NodeId, Router) {
+        (node_id, Router::new(node_id))
+    }
+
+    fn conn(from: NodeId, to: NodeId) -> (ConnId, ConnId) {
+        (ConnId::from_in(0, ((from as u64) << 32) | to as u64), ConnId::from_out(0, ((from as u64) << 32) | to as u64))
     }
 
     #[test]
     fn simple_relay_route() {
         // 2 - 1 - 3
-        let (_node2, _conn2, mut router2) = create_router(2);
-        router2.set_direct(ConnId::from_in(0, 0), Metric::new(0, vec![1], 0));
-        assert_eq!(router2.tables[0].slots(), vec![1]);
+        let node1 = 1;
+        let node3 = 3;
+        let (node2, mut router2) = create_router(2);
+        let (_conn12, conn21) = conn(node1, node2);
+
+        router2.set_direct(conn21, node1, Metric::new(0, vec![node1], 0));
+        assert_eq!(router2.tables[0].slots(), vec![node1.layer(0)]);
 
         router2.apply_sync(
-            ConnId::from_in(0, 0),
-            Metric::new(0, vec![1], 0),
-            RouterSync(RegistrySync(vec![]), [Some(TableSync(vec![(3, Metric::new(0, vec![3], 0))])), None, None, None]),
+            conn21,
+            node1,
+            Metric::new(0, vec![node1], 0),
+            RouterSync(RegistrySync(vec![]), [Some(TableSync(vec![(node3.layer(0), Metric::new(0, vec![node3], 0))])), None, None, None]),
         );
-        assert_eq!(router2.tables[0].slots(), vec![1, 3]);
+        assert_eq!(router2.tables[0].slots(), vec![node1.layer(0), node3.layer(0)]);
     }
 
     #[test]
@@ -247,33 +256,38 @@ mod tests {
         // A -1- B -1- C -1- F
         // |1    |1
         // D -2- E
-        let (node_a, conn_a, mut router_a) = create_router(0x01);
-        let (node_b, conn_b, mut router_b) = create_router(0x02);
-        let (node_c, conn_c, mut router_c) = create_router(0x03);
-        let (node_d, conn_d, mut router_d) = create_router(0x04);
-        let (node_e, conn_e, mut router_e) = create_router(0x05);
-        let (node_f, conn_f, mut router_f) = create_router(0x06);
+        let (node_a, mut router_a) = create_router(0x01);
+        let (node_b, mut router_b) = create_router(0x02);
+        let (node_c, mut router_c) = create_router(0x03);
+        let (node_d, mut router_d) = create_router(0x04);
+        let (node_e, mut router_e) = create_router(0x05);
+        let (node_f, mut router_f) = create_router(0x06);
 
-        let metric_registry_local = Metric::new(0, vec![], REGISTRY_LOCAL_BW);
+        let (conn_ad, conn_da) = conn(node_a, node_d);
+        let (conn_ab, conn_ba) = conn(node_a, node_b);
+        let (conn_bc, conn_cb) = conn(node_b, node_c);
+        let (conn_be, conn_eb) = conn(node_b, node_e);
+        let (conn_cf, conn_fc) = conn(node_c, node_f);
+        let (conn_de, conn_ed) = conn(node_d, node_e);
 
         router_a.register_service(1);
-        router_a.set_direct(conn_d, Metric::new(1, vec![node_d], 1));
-        router_a.set_direct(conn_b, Metric::new(1, vec![node_b], 1));
+        router_a.set_direct(conn_ad, node_d, Metric::new(1, vec![node_d], 1));
+        router_a.set_direct(conn_ab, node_b, Metric::new(1, vec![node_b], 1));
 
-        router_b.set_direct(conn_a, Metric::new(1, vec![node_a], 1));
-        router_b.set_direct(conn_c, Metric::new(1, vec![node_c], 1));
-        router_b.set_direct(conn_e, Metric::new(1, vec![node_e], 1));
+        router_b.set_direct(conn_ba, node_a, Metric::new(1, vec![node_a], 1));
+        router_b.set_direct(conn_bc, node_c, Metric::new(1, vec![node_c], 1));
+        router_b.set_direct(conn_be, node_e, Metric::new(1, vec![node_e], 1));
 
-        router_c.set_direct(conn_b, Metric::new(1, vec![node_b], 1));
-        router_c.set_direct(conn_f, Metric::new(1, vec![node_f], 1));
+        router_c.set_direct(conn_cb, node_b, Metric::new(1, vec![node_b], 1));
+        router_c.set_direct(conn_cf, node_f, Metric::new(1, vec![node_f], 1));
 
-        router_d.set_direct(conn_a, Metric::new(1, vec![node_a], 1));
-        router_d.set_direct(conn_e, Metric::new(2, vec![node_e], 2));
+        router_d.set_direct(conn_da, node_a, Metric::new(1, vec![node_a], 1));
+        router_d.set_direct(conn_de, node_e, Metric::new(2, vec![node_e], 2));
 
-        router_e.set_direct(conn_d, Metric::new(2, vec![node_d], 2));
-        router_e.set_direct(conn_b, Metric::new(1, vec![node_b], 1));
+        router_e.set_direct(conn_ed, node_d, Metric::new(2, vec![node_d], 2));
+        router_e.set_direct(conn_eb, node_b, Metric::new(1, vec![node_b], 1));
 
-        router_f.set_direct(conn_c, Metric::new(1, vec![node_c], 1));
+        router_f.set_direct(conn_fc, node_c, Metric::new(1, vec![node_c], 1));
 
         let empty_sync = TableSync(Vec::new());
 
@@ -282,7 +296,7 @@ mod tests {
         assert_eq!(
             sync_a_b,
             RouterSync(
-                RegistrySync(vec![(1, metric_registry_local.clone())]),
+                RegistrySync(vec![(1, Metric::local())]),
                 [
                     Some(TableSync(vec![(4, Metric::new(1, vec![node_d], 1))])),
                     Some(empty_sync.clone()),
@@ -296,54 +310,54 @@ mod tests {
             //for node A
             let sync_a_b = router_a.create_sync(node_b);
             let sync_a_d = router_a.create_sync(node_d);
-            router_b.apply_sync(conn_a, Metric::new(1, vec![node_a], 1), sync_a_b);
-            router_d.apply_sync(conn_a, Metric::new(1, vec![node_a], 1), sync_a_d);
+            router_b.apply_sync(conn_ba, node_a, Metric::new(1, vec![node_a], 1), sync_a_b);
+            router_d.apply_sync(conn_da, node_a, Metric::new(1, vec![node_a], 1), sync_a_d);
 
             //for node B
             let sync_b_a = router_b.create_sync(node_a);
             let sync_b_c = router_b.create_sync(node_c);
             let sync_b_e = router_b.create_sync(node_e);
-            router_a.apply_sync(conn_b, Metric::new(1, vec![node_b], 1), sync_b_a);
-            router_c.apply_sync(conn_b, Metric::new(1, vec![node_b], 1), sync_b_c);
-            router_e.apply_sync(conn_b, Metric::new(1, vec![node_b], 1), sync_b_e);
+            router_a.apply_sync(conn_ab, node_b, Metric::new(1, vec![node_b], 1), sync_b_a);
+            router_c.apply_sync(conn_cb, node_b, Metric::new(1, vec![node_b], 1), sync_b_c);
+            router_e.apply_sync(conn_eb, node_b, Metric::new(1, vec![node_b], 1), sync_b_e);
 
             //for node C
             let sync_c_b = router_c.create_sync(node_b);
             let sync_c_f = router_c.create_sync(node_f);
-            router_b.apply_sync(conn_c, Metric::new(1, vec![node_c], 1), sync_c_b);
-            router_f.apply_sync(conn_c, Metric::new(1, vec![node_c], 1), sync_c_f);
+            router_b.apply_sync(conn_bc, node_c, Metric::new(1, vec![node_c], 1), sync_c_b);
+            router_f.apply_sync(conn_fc, node_c, Metric::new(1, vec![node_c], 1), sync_c_f);
 
             //for node D
             let sync_d_a = router_d.create_sync(node_a);
             let sync_d_e = router_d.create_sync(node_e);
-            router_a.apply_sync(conn_d, Metric::new(1, vec![node_d], 1), sync_d_a);
-            router_e.apply_sync(conn_d, Metric::new(2, vec![node_d], 2), sync_d_e);
+            router_a.apply_sync(conn_ad, node_d, Metric::new(1, vec![node_d], 1), sync_d_a);
+            router_e.apply_sync(conn_ed, node_d, Metric::new(2, vec![node_d], 2), sync_d_e);
 
             //for node E
             let sync_e_b = router_e.create_sync(node_b);
             let sync_e_d = router_e.create_sync(node_d);
-            router_b.apply_sync(conn_e, Metric::new(1, vec![node_e], 1), sync_e_b);
-            router_d.apply_sync(conn_e, Metric::new(2, vec![node_e], 2), sync_e_d);
+            router_b.apply_sync(conn_be, node_e, Metric::new(1, vec![node_e], 1), sync_e_b);
+            router_d.apply_sync(conn_de, node_e, Metric::new(2, vec![node_e], 2), sync_e_d);
 
             //for node F
             let sync_f_c = router_f.create_sync(node_c);
-            router_c.apply_sync(conn_f, Metric::new(1, vec![node_f], 1), sync_f_c);
+            router_c.apply_sync(conn_cf, node_f, Metric::new(1, vec![node_f], 1), sync_f_c);
         }
 
         //A -1- B -1- C -1- F
         //|1    |1
         //D -2- E
 
-        assert_eq!(router_a.next_path(node_b, &[]), Some(Path(conn_b, Metric::new(1, vec![node_b], 1))));
-        assert_eq!(router_a.next_path(node_c, &[]), Some(Path(conn_b, Metric::new(2, vec![node_c, node_b], 1))));
-        assert_eq!(router_a.next_path(node_d, &[]), Some(Path(conn_d, Metric::new(1, vec![node_d], 1))));
-        assert_eq!(router_a.next_path(node_e, &[]), Some(Path(conn_b, Metric::new(2, vec![node_e, node_b], 1))));
-        assert_eq!(router_a.next_path(node_f, &[]), Some(Path(conn_b, Metric::new(3, vec![node_f, node_c, node_b], 1))));
-        assert_eq!(router_f.service_next(1, &[]), Some(ServiceDestination::Remote(conn_c, node_c)));
-        assert_eq!(router_c.service_next(1, &[]), Some(ServiceDestination::Remote(conn_b, node_b)));
-        assert_eq!(router_b.service_next(1, &[]), Some(ServiceDestination::Remote(conn_a, node_a)));
-        assert_eq!(router_e.service_next(1, &[]), Some(ServiceDestination::Remote(conn_b, node_b)));
-        assert_eq!(router_d.service_next(1, &[]), Some(ServiceDestination::Remote(conn_a, node_a)));
+        assert_eq!(router_a.next_path(node_b, &[]), Some(Path::new(conn_ab, node_a, Metric::new(1, vec![node_b], 1))));
+        assert_eq!(router_a.next_path(node_c, &[]), Some(Path::new(conn_ab, node_c, Metric::new(2, vec![node_c, node_b], 1))));
+        assert_eq!(router_a.next_path(node_d, &[]), Some(Path::new(conn_ad, node_d, Metric::new(1, vec![node_d], 1))));
+        assert_eq!(router_a.next_path(node_e, &[]), Some(Path::new(conn_ab, node_b, Metric::new(2, vec![node_e, node_b], 1))));
+        assert_eq!(router_a.next_path(node_f, &[]), Some(Path::new(conn_ab, node_b, Metric::new(3, vec![node_f, node_c, node_b], 1))));
+        assert_eq!(router_f.service_next(1, &[]), Some(ServiceDestination::Remote(conn_fc, node_c)));
+        assert_eq!(router_c.service_next(1, &[]), Some(ServiceDestination::Remote(conn_cb, node_b)));
+        assert_eq!(router_b.service_next(1, &[]), Some(ServiceDestination::Remote(conn_ba, node_a)));
+        assert_eq!(router_e.service_next(1, &[]), Some(ServiceDestination::Remote(conn_eb, node_b)));
+        assert_eq!(router_d.service_next(1, &[]), Some(ServiceDestination::Remote(conn_da, node_a)));
 
         //remove A - B
         //
@@ -351,41 +365,41 @@ mod tests {
         //|1    |1
         //D -2- E
 
-        router_a.del_direct(conn_b);
-        router_b.del_direct(conn_a);
+        router_a.del_direct(conn_ab);
+        router_b.del_direct(conn_ba);
 
         for _i in 0..4 {
             //for node A
             let sync_a_d = router_a.create_sync(node_d);
-            router_d.apply_sync(conn_a, Metric::new(1, vec![node_a], 1), sync_a_d);
+            router_d.apply_sync(conn_da, node_a, Metric::new(1, vec![node_a], 1), sync_a_d);
 
             //for node B
             let sync_b_c = router_b.create_sync(node_c);
             let sync_b_e = router_b.create_sync(node_e);
-            router_c.apply_sync(conn_b, Metric::new(1, vec![node_b], 1), sync_b_c);
-            router_e.apply_sync(conn_b, Metric::new(1, vec![node_b], 1), sync_b_e);
+            router_c.apply_sync(conn_cb, node_b, Metric::new(1, vec![node_b], 1), sync_b_c);
+            router_e.apply_sync(conn_eb, node_b, Metric::new(1, vec![node_b], 1), sync_b_e);
 
             //for node C
             let sync_c_b = router_c.create_sync(node_b);
             let sync_c_f = router_c.create_sync(node_f);
-            router_b.apply_sync(conn_c, Metric::new(1, vec![node_c], 1), sync_c_b);
-            router_f.apply_sync(conn_c, Metric::new(1, vec![node_c], 1), sync_c_f);
+            router_b.apply_sync(conn_bc, node_c, Metric::new(1, vec![node_c], 1), sync_c_b);
+            router_f.apply_sync(conn_fc, node_c, Metric::new(1, vec![node_c], 1), sync_c_f);
 
             //for node D
             let sync_d_a = router_d.create_sync(node_a);
             let sync_d_e = router_d.create_sync(node_e);
-            router_a.apply_sync(conn_d, Metric::new(1, vec![node_d], 1), sync_d_a);
-            router_e.apply_sync(conn_d, Metric::new(2, vec![node_d], 2), sync_d_e);
+            router_a.apply_sync(conn_ad, node_d, Metric::new(1, vec![node_d], 1), sync_d_a);
+            router_e.apply_sync(conn_ed, node_d, Metric::new(2, vec![node_d], 2), sync_d_e);
 
             //for node E
             let sync_e_b = router_e.create_sync(node_b);
             let sync_e_d = router_e.create_sync(node_d);
-            router_b.apply_sync(conn_e, Metric::new(1, vec![node_e], 1), sync_e_b);
-            router_d.apply_sync(conn_e, Metric::new(2, vec![node_e], 2), sync_e_d);
+            router_b.apply_sync(conn_be, node_e, Metric::new(1, vec![node_e], 1), sync_e_b);
+            router_d.apply_sync(conn_de, node_e, Metric::new(2, vec![node_e], 2), sync_e_d);
 
             //for node F
             let sync_f_c = router_f.create_sync(node_c);
-            router_c.apply_sync(conn_f, Metric::new(1, vec![node_f], 1), sync_f_c);
+            router_c.apply_sync(conn_cf, node_f, Metric::new(1, vec![node_f], 1), sync_f_c);
         }
 
         // remove A - B
@@ -393,19 +407,31 @@ mod tests {
         // |1    |1
         // D -2- E
 
-        assert_eq!(router_a.next_path(node_b, &[node_a]), Some(Path(conn_d, Metric::new(4, vec![node_b, node_e, node_d], 1))));
-        assert_eq!(router_a.next_path(node_c, &[node_a]), Some(Path(conn_d, Metric::new(5, vec![node_c, node_b, node_e, node_d], 1))));
-        assert_eq!(router_a.next_path(node_d, &[node_a]), Some(Path(conn_d, Metric::new(1, vec![node_d], 1))));
-        assert_eq!(router_a.next_path(node_e, &[node_a]), Some(Path(conn_d, Metric::new(3, vec![node_e, node_d], 1))));
+        assert_eq!(
+            router_a.next_path(node_b, &[node_a]),
+            Some(Path::new(conn_ad, node_d, Metric::new(4, vec![node_b, node_e, node_d], 1))) //
+        );
+        assert_eq!(
+            router_a.next_path(node_c, &[node_a]),
+            Some(Path::new(conn_ad, node_d, Metric::new(5, vec![node_c, node_b, node_e, node_d], 1)))
+        );
+        assert_eq!(
+            router_a.next_path(node_d, &[node_a]),
+            Some(Path::new(conn_ad, node_d, Metric::new(1, vec![node_d], 1))) //
+        );
+        assert_eq!(
+            router_a.next_path(node_e, &[node_a]),
+            Some(Path::new(conn_ad, node_d, Metric::new(3, vec![node_e, node_d], 1))) //
+        );
         assert_eq!(
             router_a.next_path(node_f, &[node_a]),
-            Some(Path(conn_d, Metric::new(6, vec![node_f, node_c, node_b, node_e, node_d], 1)))
+            Some(Path::new(conn_ad, node_d, Metric::new(6, vec![node_f, node_c, node_b, node_e, node_d], 1)))
         );
     }
 
     #[test]
     fn closest_node() {
-        let (_node_a, _conn_a, mut router_a) = create_router(NodeId::build(0, 0, 0, 1));
+        let (_node_a, mut router_a) = create_router(NodeId::build(0, 0, 0, 1));
 
         assert_eq!(router_a.closest_node(0x01, &[]), None);
 
@@ -415,8 +441,8 @@ mod tests {
         let conn_5000 = ConnId::from_out(0, 5000);
         let conn_0500 = ConnId::from_out(0, 500);
 
-        router_a.set_direct(conn_5000, Metric::new(1, vec![node_5000], 1));
-        router_a.set_direct(conn_0500, Metric::new(1, vec![node_0500], 1));
+        router_a.set_direct(conn_5000, node_5000, Metric::new(1, vec![node_5000], 1));
+        router_a.set_direct(conn_0500, node_0500, Metric::new(1, vec![node_0500], 1));
 
         assert_eq!(router_a.closest_node(NodeId::build(1, 0, 0, 0), &[]), None);
         assert_eq!(router_a.closest_node(NodeId::build(4, 0, 0, 0), &[]), Some((conn_5000, node_5000, 3, 5)));
@@ -431,7 +457,7 @@ mod tests {
     /// This test ensure closest_node working when we have only small part of key-space
     #[test]
     fn closest_node_out_of_space() {
-        let (_node_a, _conn_a, mut router_a) = create_router(NodeId::build(1, 0, 0, 1));
+        let (_node_a, mut router_a) = create_router(NodeId::build(1, 0, 0, 1));
 
         assert_eq!(router_a.closest_node(0x01, &[]), None);
 
@@ -441,8 +467,8 @@ mod tests {
         let conn_0002 = ConnId::from_out(0, 2);
         let conn_0003 = ConnId::from_out(0, 3);
 
-        router_a.set_direct(conn_0002, Metric::new(1, vec![node_0002], 1));
-        router_a.set_direct(conn_0003, Metric::new(1, vec![node_0003], 1));
+        router_a.set_direct(conn_0002, node_0002, Metric::new(1, vec![node_0002], 1));
+        router_a.set_direct(conn_0003, node_0003, Metric::new(1, vec![node_0003], 1));
 
         assert_eq!(router_a.closest_node(NodeId::build(1, 0, 0, 0), &[]), None);
         assert_eq!(router_a.closest_node(NodeId::build(4, 0, 0, 0), &[]), None);
@@ -462,11 +488,13 @@ mod tests {
     #[test]
     fn to_key_consistency() {
         for _ in 0..100 {
-            let (node_a, _conn_a, mut router_a) = create_router(rand::random());
-            let (node_b, _conn_b, mut router_b) = create_router(rand::random());
+            let (node_a, mut router_a) = create_router(rand::random());
+            let (node_b, mut router_b) = create_router(rand::random());
 
-            router_a.set_direct(_conn_a, Metric::new(1, vec![node_b], 1));
-            router_b.set_direct(_conn_b, Metric::new(1, vec![node_a], 1));
+            let (conn_ab, conn_ba) = conn(node_a, node_b);
+
+            router_a.set_direct(conn_ab, node_b, Metric::new(1, vec![node_b], 1));
+            router_b.set_direct(conn_ba, node_a, Metric::new(1, vec![node_a], 1));
 
             for i in 0..100 {
                 let key: u32 = rand::random();

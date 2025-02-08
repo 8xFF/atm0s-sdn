@@ -6,43 +6,46 @@ use serde::Serialize;
 use super::{Metric, Path};
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum RegistryDestDelta {
+pub enum RegistryRemoteDestDelta {
     SetServicePath(ConnId, NodeId, u32),
     DelServicePath(ConnId),
 }
 
 #[derive(Debug, Serialize, Clone, PartialEq, Eq)]
-pub struct RegisterDestDump {
+pub struct RegisterRemoteDestDump {
     next: Option<NodeId>,
     paths: HashMap<NodeId, Metric>,
 }
 
 #[derive(Debug, Default)]
-pub struct RegistryDest {
+pub struct RegistryRemoteDest {
     paths: Vec<Path>,
-    deltas: VecDeque<RegistryDestDelta>,
+    deltas: VecDeque<RegistryRemoteDestDelta>,
 }
 
-impl RegistryDest {
-    pub fn dump(&self) -> RegisterDestDump {
-        RegisterDestDump {
+impl RegistryRemoteDest {
+    pub fn dump(&self) -> RegisterRemoteDestDump {
+        RegisterRemoteDestDump {
             next: self.next(&[]).map(|p| p.1),
-            paths: self.paths.iter().map(|p| (p.1.over_node(), p.1.clone())).collect(),
+            paths: self.paths.iter().map(|p| (p.over_node(), p.metric().clone())).collect(),
         }
     }
 
-    pub fn set_path(&mut self, over: ConnId, metric: Metric) {
+    /// Set or update a remote path
+    /// Note that we need a metric with atleast one node in Hops
+    pub fn set_path(&mut self, over: ConnId, over_node: NodeId, metric: Metric) {
+        let dest_node = metric.dest_node().expect("remote dest metric should have dest_node");
         match self.index_of(over) {
             Some(index) => {
                 let slot = &mut self.paths[index];
-                if slot.1.score() != metric.score() || slot.1.dest_node() != metric.dest_node() {
-                    self.deltas.push_back(RegistryDestDelta::SetServicePath(over, metric.dest_node(), metric.score()));
+                if slot.metric().score() != metric.score() || slot.metric().dest_node() != metric.dest_node() {
+                    self.deltas.push_back(RegistryRemoteDestDelta::SetServicePath(over, dest_node, metric.score()));
                 }
-                slot.1 = metric;
+                slot.update_metric(metric);
             }
             None => {
-                self.deltas.push_back(RegistryDestDelta::SetServicePath(over, metric.dest_node(), metric.score()));
-                self.paths.push(Path(over, metric));
+                self.deltas.push_back(RegistryRemoteDestDelta::SetServicePath(over, dest_node, metric.score()));
+                self.paths.push(Path::new(over, over_node, metric));
             }
         }
         self.paths.sort();
@@ -56,14 +59,14 @@ impl RegistryDest {
         match self.index_of(over) {
             Some(index) => {
                 let path: Path = self.paths.remove(index);
-                self.deltas.push_back(RegistryDestDelta::DelServicePath(over));
+                self.deltas.push_back(RegistryRemoteDestDelta::DelServicePath(over));
                 Some(path)
             }
             None => None,
         }
     }
 
-    pub fn pop_delta(&mut self) -> Option<RegistryDestDelta> {
+    pub fn pop_delta(&mut self) -> Option<RegistryRemoteDestDelta> {
         self.deltas.pop_front()
     }
 
@@ -74,8 +77,8 @@ impl RegistryDest {
     /// get next node to dest but not in excepts
     pub fn next(&self, excepts: &[NodeId]) -> Option<(ConnId, NodeId)> {
         for path in self.paths.iter() {
-            if !excepts.contains(&path.1.over_node()) {
-                return Some((path.0, path.1.over_node()));
+            if !excepts.contains(&path.over_node()) {
+                return Some((path.conn(), path.over_node()));
             }
         }
         None
@@ -83,7 +86,7 @@ impl RegistryDest {
 
     pub fn best_for(&self, neighbour_id: NodeId) -> Option<Path> {
         for path in self.paths.iter() {
-            if !path.1.contain_in_hops(neighbour_id) {
+            if !path.metric().contain_in_hops(neighbour_id) {
                 return Some(path.clone());
             }
         }
@@ -93,7 +96,7 @@ impl RegistryDest {
     #[allow(unused)]
     pub fn next_path(&self, excepts: &[NodeId]) -> Option<Path> {
         for path in self.paths.iter() {
-            if !excepts.contains(&path.1.over_node()) {
+            if !excepts.contains(&path.over_node()) {
                 return Some(path.clone());
             }
         }
@@ -105,7 +108,7 @@ impl RegistryDest {
             return None;
         }
         for (index, path) in self.paths.iter().enumerate() {
-            if path.0 == goal {
+            if path.conn() == goal {
                 return Some(index);
             }
         }
@@ -132,18 +135,18 @@ mod tests {
 
         let node4: NodeId = 0x4;
 
-        let mut dest = RegistryDest::default();
-        dest.set_path(conn1, Metric::new(1, vec![4, 1], BANDWIDTH_LIMIT)); //directed connection
-        assert_eq!(dest.pop_delta(), Some(RegistryDestDelta::SetServicePath(conn1, node4, 21)));
+        let mut dest = RegistryRemoteDest::default();
+        dest.set_path(conn1, node1, Metric::new(1, vec![4, 1], BANDWIDTH_LIMIT)); //directed connection
+        assert_eq!(dest.pop_delta(), Some(RegistryRemoteDestDelta::SetServicePath(conn1, node4, 21)));
         assert_eq!(dest.pop_delta(), None);
-        dest.set_path(conn2, Metric::new(2, vec![4, 2], BANDWIDTH_LIMIT));
-        assert_eq!(dest.pop_delta(), Some(RegistryDestDelta::SetServicePath(conn2, node4, 22)));
+        dest.set_path(conn2, node2, Metric::new(2, vec![4, 2], BANDWIDTH_LIMIT));
+        assert_eq!(dest.pop_delta(), Some(RegistryRemoteDestDelta::SetServicePath(conn2, node4, 22)));
         assert_eq!(dest.pop_delta(), None);
 
         assert_eq!(dest.next(&[]), Some((conn1, node1)));
-        assert_eq!(dest.next_path(&[node1]), Some(Path(conn2, Metric::new(2, vec![4, 2], BANDWIDTH_LIMIT))));
-        assert_eq!(dest.next_path(&[node2]), Some(Path(conn1, Metric::new(1, vec![4, 1], BANDWIDTH_LIMIT))));
-        assert_eq!(dest.next_path(&[node3]), Some(Path(conn1, Metric::new(1, vec![4, 1], BANDWIDTH_LIMIT))));
+        assert_eq!(dest.next_path(&[node1]), Some(Path::new(conn2, node2, Metric::new(2, vec![4, 2], BANDWIDTH_LIMIT))));
+        assert_eq!(dest.next_path(&[node2]), Some(Path::new(conn1, node1, Metric::new(1, vec![4, 1], BANDWIDTH_LIMIT))));
+        assert_eq!(dest.next_path(&[node3]), Some(Path::new(conn1, node1, Metric::new(1, vec![4, 1], BANDWIDTH_LIMIT))));
         assert_eq!(dest.next(&[node1, node2]), None);
         assert_eq!(dest.next_path(&[node1, node2]), None);
     }
@@ -161,22 +164,22 @@ mod tests {
 
         let node4: NodeId = 0x4;
 
-        let mut dest = RegistryDest::default();
-        dest.set_path(conn1, Metric::new(1, vec![4, 1], BANDWIDTH_LIMIT));
-        assert_eq!(dest.pop_delta(), Some(RegistryDestDelta::SetServicePath(conn1, node4, 21)));
-        dest.set_path(conn2, Metric::new(2, vec![4, 6, 2], BANDWIDTH_LIMIT));
-        assert_eq!(dest.pop_delta(), Some(RegistryDestDelta::SetServicePath(conn2, node4, 32)));
-        dest.set_path(conn3, Metric::new(3, vec![4, 6, 2, 3], BANDWIDTH_LIMIT));
-        assert_eq!(dest.pop_delta(), Some(RegistryDestDelta::SetServicePath(conn3, node4, 43)));
+        let mut dest = RegistryRemoteDest::default();
+        dest.set_path(conn1, node1, Metric::new(1, vec![4, 1], BANDWIDTH_LIMIT));
+        assert_eq!(dest.pop_delta(), Some(RegistryRemoteDestDelta::SetServicePath(conn1, node4, 21)));
+        dest.set_path(conn2, node2, Metric::new(2, vec![4, 6, 2], BANDWIDTH_LIMIT));
+        assert_eq!(dest.pop_delta(), Some(RegistryRemoteDestDelta::SetServicePath(conn2, node4, 32)));
+        dest.set_path(conn3, node3, Metric::new(3, vec![4, 6, 2, 3], BANDWIDTH_LIMIT));
+        assert_eq!(dest.pop_delta(), Some(RegistryRemoteDestDelta::SetServicePath(conn3, node4, 43)));
         assert_eq!(dest.pop_delta(), None);
 
         dest.del_path(conn1);
-        assert_eq!(dest.pop_delta(), Some(RegistryDestDelta::DelServicePath(conn1)));
+        assert_eq!(dest.pop_delta(), Some(RegistryRemoteDestDelta::DelServicePath(conn1)));
 
         assert_eq!(dest.next(&[]), Some((conn2, node2)));
-        assert_eq!(dest.next_path(&[node1]), Some(Path(conn2, Metric::new(2, vec![4, 6, 2], BANDWIDTH_LIMIT))));
-        assert_eq!(dest.next_path(&[node2]), Some(Path(conn3, Metric::new(3, vec![4, 6, 2, 3], BANDWIDTH_LIMIT))));
-        assert_eq!(dest.next_path(&[node3]), Some(Path(conn2, Metric::new(2, vec![4, 6, 2], BANDWIDTH_LIMIT))));
+        assert_eq!(dest.next_path(&[node1]), Some(Path::new(conn2, node2, Metric::new(2, vec![4, 6, 2], BANDWIDTH_LIMIT))));
+        assert_eq!(dest.next_path(&[node2]), Some(Path::new(conn3, node3, Metric::new(3, vec![4, 6, 2, 3], BANDWIDTH_LIMIT))));
+        assert_eq!(dest.next_path(&[node3]), Some(Path::new(conn2, node2, Metric::new(2, vec![4, 6, 2], BANDWIDTH_LIMIT))));
     }
 
     #[test]
@@ -193,11 +196,11 @@ mod tests {
         let _conn4: ConnId = ConnId::from_out(0, 0x4);
         let node4: NodeId = 0x4;
 
-        let mut dest = RegistryDest::default();
+        let mut dest = RegistryRemoteDest::default();
         //this path from 3 => 2 => 1
-        dest.set_path(conn1, Metric::new(1, vec![3, 2, 1], BANDWIDTH_LIMIT));
+        dest.set_path(conn1, node1, Metric::new(1, vec![3, 2, 1], BANDWIDTH_LIMIT));
 
-        assert_eq!(dest.best_for(node4), Some(Path(conn1, Metric::new(1, vec![3, 2, 1], BANDWIDTH_LIMIT))));
+        assert_eq!(dest.best_for(node4), Some(Path::new(conn1, node1, Metric::new(1, vec![3, 2, 1], BANDWIDTH_LIMIT))));
         assert_eq!(dest.best_for(node1), None);
         assert_eq!(dest.best_for(node2), None);
     }

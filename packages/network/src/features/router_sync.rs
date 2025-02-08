@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 
 use atm0s_sdn_identity::{ConnId, NodeId};
 use atm0s_sdn_router::{
-    core::{DestDelta, Metric, RegistryDelta, RegistryDestDelta, Router, RouterDelta, RouterDump, RouterSync, TableDelta},
+    core::{DestDelta, Metric, RegistryDelta, RegistryRemoteDestDelta, Router, RouterDelta, RouterDump, RouterSync, TableDelta},
     shadow::ShadowRouterDelta,
 };
 use derivative::Derivative;
@@ -86,25 +86,25 @@ impl<UserData> Feature<UserData, Control, Event, ToController, ToWorker> for Rou
                 }
             }
             FeatureSharedInput::Connection(event) => match event {
-                ConnectionEvent::Connecting(_ctx) => {}
-                ConnectionEvent::ConnectError(_ctx, _err) => {}
-                ConnectionEvent::Connected(ctx, _) => {
-                    log::info!("[RouterSync] Connection {} connected", ctx.pair);
-                    let metric = Metric::new(INIT_RTT_MS, vec![ctx.node], INIT_BW);
-                    self.conns.insert(ctx.conn, (ctx.node, ctx.pair, metric.clone()));
-                    self.router.set_direct(ctx.conn, metric);
-                    Self::send_sync_to(&self.router, &mut self.queue, ctx.conn, ctx.node);
+                ConnectionEvent::Connecting(_conn_ctx) => {}
+                ConnectionEvent::ConnectError(_conn_ctx, _err) => {}
+                ConnectionEvent::Connected(conn_ctx, _) => {
+                    log::info!("[RouterSync] Connection {} connected", conn_ctx.pair);
+                    let metric = Metric::direct(INIT_RTT_MS, conn_ctx.node, INIT_BW);
+                    self.conns.insert(conn_ctx.conn, (conn_ctx.node, conn_ctx.pair, metric.clone()));
+                    self.router.set_direct(conn_ctx.conn, conn_ctx.node, metric);
+                    Self::send_sync_to(&self.router, &mut self.queue, conn_ctx.conn, conn_ctx.node);
                 }
-                ConnectionEvent::Stats(ctx, stats) => {
-                    log::debug!("[RouterSync] Connection {} stats rtt_ms {}", ctx.pair, stats.rtt_ms);
-                    let metric = Metric::new(stats.rtt_ms as u16, vec![ctx.node], INIT_BW);
-                    self.conns.insert(ctx.conn, (ctx.node, ctx.pair, metric.clone()));
-                    self.router.set_direct(ctx.conn, metric);
+                ConnectionEvent::Stats(conn_ctx, stats) => {
+                    log::debug!("[RouterSync] Connection {} stats rtt_ms {}", conn_ctx.pair, stats.rtt_ms);
+                    let metric = Metric::direct(stats.rtt_ms as u16, conn_ctx.node, INIT_BW);
+                    self.conns.insert(conn_ctx.conn, (conn_ctx.node, conn_ctx.pair, metric.clone()));
+                    self.router.set_direct(conn_ctx.conn, conn_ctx.node, metric);
                 }
-                ConnectionEvent::Disconnected(ctx) => {
-                    log::info!("[RouterSync] Connection {} disconnected", ctx.pair);
-                    self.conns.remove(&ctx.conn);
-                    self.router.del_direct(ctx.conn);
+                ConnectionEvent::Disconnected(conn_ctx) => {
+                    log::info!("[RouterSync] Connection {} disconnected", conn_ctx.pair);
+                    self.conns.remove(&conn_ctx.conn);
+                    self.router.del_direct(conn_ctx.conn);
                 }
             },
         }
@@ -118,20 +118,20 @@ impl<UserData> Feature<UserData, Control, Event, ToController, ToWorker> for Rou
                     self.queue.push_back(FeatureOutput::Event(actor, Event::DumpRouter(Box::new(self.router.dump()))));
                 }
             },
-            FeatureInput::Net(ctx, meta, buf) => {
+            FeatureInput::Net(conn_ctx, meta, buf) => {
                 if !meta.secure {
                     log::warn!("[RouterSync] reject unsecure message");
                     return;
                 }
-                if let Some((node, remote, metric)) = self.conns.get(&ctx.conn) {
+                if let Some((node, remote, metric)) = self.conns.get(&conn_ctx.conn) {
                     if let Ok(sync) = bincode::deserialize::<RouterSync>(&buf) {
                         log::debug!("[RouterSync] Receive sync from {node} {remote:?}");
-                        self.router.apply_sync(ctx.conn, metric.clone(), sync);
+                        self.router.apply_sync(conn_ctx.conn, conn_ctx.node, metric.clone(), sync);
                     } else {
-                        log::warn!("[RouterSync] Receive invalid sync from {}", ctx.pair);
+                        log::warn!("[RouterSync] Receive invalid sync from {}", conn_ctx.pair);
                     }
                 } else {
-                    log::warn!("[RouterSync] Receive sync from unknown connection {}", ctx.pair);
+                    log::warn!("[RouterSync] Receive sync from unknown connection {}", conn_ctx.pair);
                 }
             }
             FeatureInput::Local(..) => {}
@@ -167,7 +167,7 @@ impl<UserData> TaskSwitcherChild<Output<UserData>> for RouterSyncFeature<UserDat
                 RouterDelta::Table(layer, TableDelta(index, DestDelta::DelBestPath)) => ShadowRouterDelta::DelTable { layer, index },
                 RouterDelta::Registry(RegistryDelta::SetServiceLocal(service)) => ShadowRouterDelta::SetServiceLocal { service },
                 RouterDelta::Registry(RegistryDelta::DelServiceLocal(service)) => ShadowRouterDelta::DelServiceLocal { service },
-                RouterDelta::Registry(RegistryDelta::ServiceRemote(service, RegistryDestDelta::SetServicePath(conn, dest, score))) => {
+                RouterDelta::Registry(RegistryDelta::ServiceRemote(service, RegistryRemoteDestDelta::SetServicePath(conn, dest, score))) => {
                     let conn = self.conns.get(&conn)?;
                     ShadowRouterDelta::SetServiceRemote {
                         service,
@@ -177,7 +177,7 @@ impl<UserData> TaskSwitcherChild<Output<UserData>> for RouterSyncFeature<UserDat
                         score,
                     }
                 }
-                RouterDelta::Registry(RegistryDelta::ServiceRemote(service, RegistryDestDelta::DelServicePath(conn))) => ShadowRouterDelta::DelServiceRemote {
+                RouterDelta::Registry(RegistryDelta::ServiceRemote(service, RegistryRemoteDestDelta::DelServicePath(conn))) => ShadowRouterDelta::DelServiceRemote {
                     service,
                     conn: self.conns.get(&conn)?.1,
                 },
