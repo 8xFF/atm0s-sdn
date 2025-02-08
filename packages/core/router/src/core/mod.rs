@@ -4,7 +4,7 @@ mod registry;
 mod router;
 mod table;
 
-pub use self::registry::{RegisterDestDump, RegisterDump, Registry, RegistryDelta, RegistryDestDelta, RegistrySync};
+pub use self::registry::{RegisterDump, RegisterRemoteDestDump, Registry, RegistryDelta, RegistryRemoteDestDelta, RegistrySync};
 pub use self::router::{Router, RouterDelta, RouterDump, RouterSync};
 pub use self::table::{DestDelta, DestDump, Metric, Path, TableDelta, TableDump, TableSync, BANDWIDTH_LIMIT};
 

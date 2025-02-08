@@ -90,14 +90,14 @@ impl ConnId {
 
 impl std::fmt::Display for ConnId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let str = format!("Conn({:?},{},{})", self.direction(), self.protocol(), self.session());
+        let str = format!("Conn({:?},{},0x{:x})", self.direction(), self.protocol(), self.session());
         std::fmt::Display::fmt(&str, f)
     }
 }
 
 impl Debug for ConnId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let str = format!("Conn({:?},{},{})", self.direction(), self.protocol(), self.session());
+        let str = format!("Conn({:?},{},0x{:x})", self.direction(), self.protocol(), self.session());
         Debug::fmt(&str, f)
     }
 }
@@ -158,14 +158,14 @@ mod tests {
 
     #[test]
     fn test_conn_id_display() {
-        let conn_id = ConnId::from_out(3, 789);
-        assert_eq!(format!("{}", conn_id), "Conn(Outgoing,3,789)");
+        let conn_id = ConnId::from_out(3, 0x789);
+        assert_eq!(format!("{}", conn_id), "Conn(Outgoing,3,0x789)");
     }
 
     #[test]
     fn test_conn_id_debug() {
-        let conn_id = ConnId::from_in(4, 101112);
-        assert_eq!(format!("{:?}", conn_id), "\"Conn(Incoming,4,101112)\"");
+        let conn_id = ConnId::from_in(4, 0x101112);
+        assert_eq!(format!("{:?}", conn_id), "\"Conn(Incoming,4,0x101112)\"");
     }
 
     #[test]

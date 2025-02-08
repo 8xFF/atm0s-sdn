@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 pub const BANDWIDTH_LIMIT: u32 = 10000; //10Mbps
 const BANDWIDTH_SCORE_PENALTY: u32 = 1000; //1s
 const HOP_PLUS_RTT: u16 = 10; //10ms each hops
+const LOCAL_BANDWIDTH: u32 = 1_000_000; //1Gbps
 
 /// Concatenate two hops array, with condition that the last hop of `a` is the first hop of `b`, if not return None
 pub fn concat_hops(a: &[NodeId], b: &[NodeId]) -> Vec<NodeId> {
@@ -20,14 +21,22 @@ pub fn concat_hops(a: &[NodeId], b: &[NodeId]) -> Vec<NodeId> {
 /// Example with indirect connection : A -> B -> C => hops: [C, B, B],
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Metric {
-    pub latency: u16,      //in milliseconds
-    pub hops: Vec<NodeId>, //in hops, from 1 (direct)
-    pub bandwidth: u32,    //in kbps
-                           // pub lost: f32,
-                           // pub jitter: u16,
+    latency: u16,      //in milliseconds
+    hops: Vec<NodeId>, //in hops, from 0 (direct)
+    bandwidth: u32,    //in kbps
+                       // pub lost: f32,
+                       // pub jitter: u16,
 }
 
 impl Metric {
+    pub fn local() -> Self {
+        Metric::new(0, vec![], LOCAL_BANDWIDTH)
+    }
+
+    pub fn direct(latency: u16, node: NodeId, bandwidth: u32) -> Self {
+        Metric::new(latency, vec![node], bandwidth)
+    }
+
     pub fn new(latency: u16, hops: Vec<NodeId>, bandwidth: u32) -> Self {
         Metric { latency, hops, bandwidth }
     }
@@ -53,12 +62,13 @@ impl Metric {
         }
     }
 
-    pub fn over_node(&self) -> NodeId {
-        *self.hops.last().expect("Should have at least one hop")
+    /// Get destination of this metric, in case it is localy, it will be None
+    pub fn dest_node(&self) -> Option<NodeId> {
+        self.hops.first().cloned()
     }
 
-    pub fn dest_node(&self) -> NodeId {
-        *self.hops.first().expect("Should have at least one hop")
+    pub fn hops(&self) -> &[NodeId] {
+        &self.hops
     }
 }
 

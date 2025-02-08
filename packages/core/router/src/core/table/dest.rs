@@ -22,22 +22,22 @@ pub struct Dest {
 
 impl Dest {
     pub fn dump(&self) -> DestDump {
-        DestDump(self.paths.iter().map(|p| (p.1.over_node(), p.1.clone())).collect())
+        DestDump(self.paths.iter().map(|p| (p.over_node(), p.metric().clone())).collect())
     }
 
-    pub fn set_path(&mut self, over: ConnId, metric: Metric) {
-        let pre_best_conn = self.paths.first().map(|p| p.0);
+    pub fn set_path(&mut self, over: ConnId, over_node: NodeId, metric: Metric) {
+        let pre_best_conn = self.paths.first().map(|p| p.conn());
         match self.index_of(over) {
             Some(index) => {
                 let slot = &mut self.paths[index];
-                slot.1 = metric;
+                slot.update_metric(metric);
             }
             None => {
-                self.paths.push(Path(over, metric));
+                self.paths.push(Path::new(over, over_node, metric));
             }
         }
         self.paths.sort();
-        let after_best_conn = self.paths.first().map(|p| p.0);
+        let after_best_conn = self.paths.first().map(|p| p.conn());
         if pre_best_conn != after_best_conn {
             if let Some(conn) = after_best_conn {
                 self.deltas.push_back(DestDelta::SetBestPath(conn));
@@ -52,7 +52,7 @@ impl Dest {
             Some(index) => {
                 if index == 0 {
                     //if remove first => changed best
-                    let after_best_conn = self.paths.get(1).map(|p| p.0);
+                    let after_best_conn = self.paths.get(1).map(|p| p.conn());
                     if let Some(conn) = after_best_conn {
                         self.deltas.push_back(DestDelta::SetBestPath(conn));
                     } else {
@@ -76,8 +76,8 @@ impl Dest {
     /// get next node to dest but not in excepts
     pub fn next(&self, excepts: &[NodeId]) -> Option<(ConnId, NodeId)> {
         for path in self.paths.iter() {
-            if !excepts.contains(&path.1.over_node()) {
-                return Some((path.0, path.1.over_node()));
+            if !excepts.contains(&path.over_node()) {
+                return Some((path.conn(), path.over_node()));
             }
         }
         None
@@ -85,7 +85,7 @@ impl Dest {
 
     pub fn best_for(&self, neighbour_id: NodeId) -> Option<Path> {
         for path in self.paths.iter() {
-            if !path.1.contain_in_hops(neighbour_id) {
+            if !path.metric().contain_in_hops(neighbour_id) {
                 return Some(path.clone());
             }
         }
@@ -94,7 +94,7 @@ impl Dest {
 
     pub fn next_path(&self, excepts: &[NodeId]) -> Option<Path> {
         for path in self.paths.iter() {
-            if !excepts.contains(&path.1.over_node()) {
+            if !excepts.contains(&path.over_node()) {
                 return Some(path.clone());
             }
         }
@@ -106,7 +106,7 @@ impl Dest {
             return None;
         }
         for (index, path) in self.paths.iter().enumerate() {
-            if path.0 == goal {
+            if path.conn() == goal {
                 return Some(index);
             }
         }
@@ -133,15 +133,15 @@ mod tests {
         let node3: NodeId = 0x3;
 
         let mut dest = Dest::default();
-        dest.set_path(conn1, Metric::new(1, vec![4, 1], 1)); //directed connection
+        dest.set_path(conn1, 1, Metric::new(1, vec![4, 1], 1)); //directed connection
         assert_eq!(dest.pop_delta(), Some(DestDelta::SetBestPath(conn1)));
-        dest.set_path(conn2, Metric::new(2, vec![4, 2], 1));
+        dest.set_path(conn2, 2, Metric::new(2, vec![4, 2], 1));
         assert_eq!(dest.pop_delta(), None);
 
         assert_eq!(dest.next(&[]), Some((conn1, node1)));
-        assert_eq!(dest.next_path(&[node1]), Some(Path(conn2, Metric::new(2, vec![4, 2], 1))));
-        assert_eq!(dest.next_path(&[node2]), Some(Path(conn1, Metric::new(1, vec![4, 1], 1))));
-        assert_eq!(dest.next_path(&[node3]), Some(Path(conn1, Metric::new(1, vec![4, 1], 1))));
+        assert_eq!(dest.next_path(&[node1]), Some(Path::new(conn2, 2, Metric::new(2, vec![4, 2], 1))));
+        assert_eq!(dest.next_path(&[node2]), Some(Path::new(conn1, 1, Metric::new(1, vec![4, 1], 1))));
+        assert_eq!(dest.next_path(&[node3]), Some(Path::new(conn1, 1, Metric::new(1, vec![4, 1], 1))));
         assert_eq!(dest.next(&[node1, node2]), None);
         assert_eq!(dest.next_path(&[node1, node2]), None);
     }
@@ -158,19 +158,19 @@ mod tests {
         let node3: NodeId = 0x3;
 
         let mut dest = Dest::default();
-        dest.set_path(conn1, Metric::new(1, vec![4, 1], 1));
+        dest.set_path(conn1, node1, Metric::new(1, vec![4, 1], 1));
         assert_eq!(dest.pop_delta(), Some(DestDelta::SetBestPath(conn1)));
-        dest.set_path(conn2, Metric::new(2, vec![4, 6, 2], 1));
-        dest.set_path(conn3, Metric::new(3, vec![4, 6, 2, 3], 1));
+        dest.set_path(conn2, node2, Metric::new(2, vec![4, 6, 2], 1));
+        dest.set_path(conn3, node3, Metric::new(3, vec![4, 6, 2, 3], 1));
         assert_eq!(dest.pop_delta(), None);
 
         dest.del_path(conn1);
         assert_eq!(dest.pop_delta(), Some(DestDelta::SetBestPath(conn2)));
 
         assert_eq!(dest.next(&[]), Some((conn2, node2)));
-        assert_eq!(dest.next_path(&[node1]), Some(Path(conn2, Metric::new(2, vec![4, 6, 2], 1))));
-        assert_eq!(dest.next_path(&[node2]), Some(Path(conn3, Metric::new(3, vec![4, 6, 2, 3], 1))));
-        assert_eq!(dest.next_path(&[node3]), Some(Path(conn2, Metric::new(2, vec![4, 6, 2], 1))));
+        assert_eq!(dest.next_path(&[node1]), Some(Path::new(conn2, node2, Metric::new(2, vec![4, 6, 2], 1))));
+        assert_eq!(dest.next_path(&[node2]), Some(Path::new(conn3, node3, Metric::new(3, vec![4, 6, 2, 3], 1))));
+        assert_eq!(dest.next_path(&[node3]), Some(Path::new(conn2, node2, Metric::new(2, vec![4, 6, 2], 1))));
     }
 
     #[test]
@@ -189,9 +189,9 @@ mod tests {
 
         let mut dest = Dest::default();
         //this path from 3 => 2 => 1
-        dest.set_path(conn1, Metric::new(1, vec![3, 2, 1], 1));
+        dest.set_path(conn1, node1, Metric::new(1, vec![3, 2, 1], 1));
 
-        assert_eq!(dest.best_for(node4), Some(Path(conn1, Metric::new(1, vec![3, 2, 1], 1))));
+        assert_eq!(dest.best_for(node4), Some(Path::new(conn1, node1, Metric::new(1, vec![3, 2, 1], 1))));
         assert_eq!(dest.best_for(node1), None);
         assert_eq!(dest.best_for(node2), None);
     }
