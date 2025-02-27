@@ -29,7 +29,7 @@ pub enum Event {
     DumpRouter(Box<RouterDump>),
 }
 
-pub type ToWorker = ShadowRouterDelta<NetPair>;
+pub type ToWorker = ShadowRouterDelta<ConnId, NetPair>;
 pub type ToController = ();
 
 pub type Output<UserData> = FeatureOutput<UserData, Event, ToWorker>;
@@ -162,25 +162,24 @@ impl<UserData> TaskSwitcherChild<Output<UserData>> for RouterSyncFeature<UserDat
                 RouterDelta::Table(layer, TableDelta(index, DestDelta::SetBestPath(conn))) => ShadowRouterDelta::SetTable {
                     layer,
                     index,
-                    next: self.conns.get(&conn)?.1,
+                    conn,
+                    remote: self.conns.get(&conn)?.1,
                 },
                 RouterDelta::Table(layer, TableDelta(index, DestDelta::DelBestPath)) => ShadowRouterDelta::DelTable { layer, index },
                 RouterDelta::Registry(RegistryDelta::SetServiceLocal(service)) => ShadowRouterDelta::SetServiceLocal { service },
                 RouterDelta::Registry(RegistryDelta::DelServiceLocal(service)) => ShadowRouterDelta::DelServiceLocal { service },
                 RouterDelta::Registry(RegistryDelta::ServiceRemote(service, RegistryRemoteDestDelta::SetServicePath(conn, dest, score))) => {
-                    let conn = self.conns.get(&conn)?;
+                    let conn_info = self.conns.get(&conn)?;
                     ShadowRouterDelta::SetServiceRemote {
                         service,
-                        conn: conn.1,
-                        next: conn.0,
+                        conn,
+                        remote: conn_info.1,
+                        next: conn_info.0,
                         dest,
                         score,
                     }
                 }
-                RouterDelta::Registry(RegistryDelta::ServiceRemote(service, RegistryRemoteDestDelta::DelServicePath(conn))) => ShadowRouterDelta::DelServiceRemote {
-                    service,
-                    conn: self.conns.get(&conn)?.1,
-                },
+                RouterDelta::Registry(RegistryDelta::ServiceRemote(service, RegistryRemoteDestDelta::DelServicePath(conn))) => ShadowRouterDelta::DelServiceRemote { service, conn },
             };
             return Some(FeatureOutput::ToWorker(true, rule));
         }
@@ -238,7 +237,83 @@ impl<UserData> TaskSwitcherChild<WorkerOutput<UserData>> for RouterSyncFeatureWo
 
 #[cfg(test)]
 mod tests {
+    use atm0s_sdn_identity::ConnId;
     use atm0s_sdn_router::core::{Metric, RegistrySync, RouterSync, TableSync};
+    use sans_io_runtime::TaskSwitcherChild;
+
+    use crate::{
+        base::{ConnectionCtx, ConnectionEvent, Feature, FeatureContext, FeatureInput, FeatureSharedInput, MockDecryptor, MockEncryptor, NetIncomingMeta, SecureContext, Ttl},
+        data_plane::NetPair,
+    };
+
+    use super::{Output, RouterSyncFeature, ShadowRouterDelta};
+
+    #[test]
+    fn should_send_registry_delta_after_disconnect() {
+        let service_id = 0;
+        let remote_node = 1;
+        let ctx = FeatureContext { node_id: 0, session: 0 };
+        let conn = ConnectionCtx {
+            conn: ConnId::from_in(0, 0),
+            node: remote_node,
+            pair: NetPair::new("127.0.0.1:1000".parse().unwrap(), "127.0.0.1:1001".parse().unwrap()),
+        };
+        let mut service = RouterSyncFeature::<()>::new(0, vec![]);
+        let sync = RouterSync(RegistrySync(vec![(service_id, Metric::local())]), [None, None, None, None]);
+        let sync_msg = bincode::serialize(&sync).expect("");
+
+        // fake connected
+        service.on_shared_input(
+            &ctx,
+            0,
+            FeatureSharedInput::Connection(ConnectionEvent::Connected(
+                conn.clone(),
+                SecureContext {
+                    encryptor: Box::new(MockEncryptor::new()),
+                    decryptor: Box::new(MockDecryptor::new()),
+                },
+            )),
+        );
+        assert_eq!(
+            service.pop_output(0),
+            Some(Output::ToWorker(
+                true,
+                ShadowRouterDelta::SetTable {
+                    layer: 0,
+                    index: 1,
+                    conn: conn.conn,
+                    remote: conn.pair
+                }
+            ))
+        );
+
+        // fake sync service
+        service.on_input(&ctx, 0, FeatureInput::Net(&conn, NetIncomingMeta::new(Some(1), Ttl(1), 0, true), sync_msg.into()));
+
+        assert_eq!(
+            service.pop_output(0),
+            Some(Output::ToWorker(
+                true,
+                ShadowRouterDelta::SetServiceRemote {
+                    service: service_id,
+                    conn: conn.conn,
+                    remote: conn.pair,
+                    next: remote_node,
+                    dest: remote_node,
+                    score: 1010,
+                }
+            ))
+        );
+
+        // fake disconnected
+        service.on_shared_input(&ctx, 0, FeatureSharedInput::Connection(ConnectionEvent::Disconnected(conn.clone())));
+
+        assert_eq!(
+            service.pop_output(0),
+            Some(Output::ToWorker(true, ShadowRouterDelta::DelServiceRemote { service: service_id, conn: conn.conn }))
+        );
+        assert_eq!(service.pop_output(0), Some(Output::ToWorker(true, ShadowRouterDelta::DelTable { layer: 0, index: 1 })));
+    }
 
     #[test]
     fn router_sync_should_fit_udp() {

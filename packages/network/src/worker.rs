@@ -80,7 +80,7 @@ where
     }
 
     pub fn is_empty(&self) -> bool {
-        self.shutdown && self.controller.as_ref().map_or(true, |c| c.is_empty()) && self.data.is_empty()
+        self.shutdown && self.controller.as_ref().is_none_or(|c| c.is_empty()) && self.data.is_empty()
     }
 
     pub fn on_tick(&mut self, now_ms: u64) {
@@ -213,7 +213,7 @@ where
     }
 
     fn is_empty(&self) -> bool {
-        self.shutdown && self.controller.as_ref().map_or(true, |c| c.is_empty()) && self.data.is_empty()
+        self.shutdown && self.controller.as_ref().is_none_or(|c| c.is_empty()) && self.data.is_empty()
     }
 
     fn pop_output(&mut self, now: u64) -> Option<SdnWorkerOutput<UserData, SC, SE, TC, TW>> {

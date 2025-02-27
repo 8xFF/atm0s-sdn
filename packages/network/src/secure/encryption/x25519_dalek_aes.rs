@@ -156,7 +156,7 @@ impl Decryptor for DecryptorXDA {
 
 struct BufferMut2<'a>(&'a mut BufferMut);
 
-impl<'a> Buffer for BufferMut2<'a> {
+impl Buffer for BufferMut2<'_> {
     fn extend_from_slice(&mut self, other: &[u8]) -> aes_gcm::aead::Result<()> {
         self.0.push_back(other);
         Ok(())
@@ -175,13 +175,13 @@ impl<'a> Buffer for BufferMut2<'a> {
     }
 }
 
-impl<'a> AsRef<[u8]> for BufferMut2<'a> {
+impl AsRef<[u8]> for BufferMut2<'_> {
     fn as_ref(&self) -> &[u8] {
         self.0.deref()
     }
 }
 
-impl<'a> AsMut<[u8]> for BufferMut2<'a> {
+impl AsMut<[u8]> for BufferMut2<'_> {
     fn as_mut(&mut self) -> &mut [u8] {
         self.0.deref_mut()
     }
