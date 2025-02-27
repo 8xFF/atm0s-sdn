@@ -27,7 +27,7 @@ impl DataPlaneConnection {
 
     /// This will encrypt without first byte, which is used for TransportMsgHeader meta
     pub fn encrypt_if_need(&mut self, now: u64, buf: &mut Buffer) -> Option<()> {
-        if buf.len() < 1 {
+        if buf.is_empty() {
             return None;
         }
         if !TransportMsgHeader::is_secure(buf[0]) {
@@ -42,7 +42,7 @@ impl DataPlaneConnection {
 
     /// This will encrypt without first byte, which is used for TransportMsgHeader meta
     pub fn decrypt_if_need(&mut self, now: u64, buf: &mut Buffer) -> Option<()> {
-        if buf.len() < 1 {
+        if buf.is_empty() {
             return None;
         }
         if !TransportMsgHeader::is_secure(buf[0]) {

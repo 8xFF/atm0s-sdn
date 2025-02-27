@@ -68,7 +68,6 @@ impl<UserData, FeaturesControl, FeaturesEvent, ServiceControl, ServiceEvent, ToC
 }
 
 /// Second part is Worker, which is running inside each data plane workers.
-
 pub enum ServiceWorkerInput<UserData, FeaturesEvent, ServiceControl, ToWorker> {
     Control(ServiceControlActor<UserData>, ServiceControl),
     FromController(ToWorker),
