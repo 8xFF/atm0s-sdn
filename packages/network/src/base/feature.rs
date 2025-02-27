@@ -211,7 +211,7 @@ impl<UserData, Control, Event, ToController> FeatureWorkerOutput<UserData, Contr
 
 pub struct FeatureWorkerContext {
     pub node_id: NodeId,
-    pub router: ShadowRouter<NetPair>,
+    pub router: ShadowRouter<ConnId, NetPair>,
 }
 
 pub trait FeatureWorker<UserData, SdkControl, SdkEvent, ToController, ToWorker>: TaskSwitcherChild<FeatureWorkerOutput<UserData, SdkControl, SdkEvent, ToController>> {

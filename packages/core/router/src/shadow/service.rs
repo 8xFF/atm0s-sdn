@@ -5,52 +5,53 @@ use atm0s_sdn_identity::NodeId;
 use crate::ServiceBroadcastLevel;
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct ServiceConn<Remote> {
-    pub(crate) conn: Remote,
+pub struct ServiceConn<Conn, Remote> {
+    pub(crate) conn: Conn,
+    pub(crate) remote: Remote,
     pub(crate) next: NodeId,
     pub(crate) dest: NodeId,
     pub(crate) score: u32,
 }
 
-impl<Remote: Eq + PartialEq> Ord for ServiceConn<Remote> {
+impl<Conn: Eq + PartialEq, Remote: Eq + PartialEq> Ord for ServiceConn<Conn, Remote> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.score.cmp(&other.score)
     }
 }
 
-impl<Remote: Eq + PartialEq> PartialOrd for ServiceConn<Remote> {
+impl<Conn: Eq + PartialEq, Remote: Eq + PartialEq> PartialOrd for ServiceConn<Conn, Remote> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.score.cmp(&other.score))
     }
 }
 
-pub struct Service<Remote> {
-    dests: Vec<ServiceConn<Remote>>,
+pub struct Service<Conn, Remote> {
+    dests: Vec<ServiceConn<Conn, Remote>>,
 }
 
-impl<Remote: Debug + Hash + Copy + Eq + PartialEq> Service<Remote> {
+impl<Conn: Debug + Hash + Copy + Eq + PartialEq, Remote: Debug + Hash + Copy + Eq + PartialEq> Service<Conn, Remote> {
     pub fn new() -> Self {
         Self { dests: Vec::new() }
     }
 
     /// Add a new destination to the service, if Remote already exists, it will be replaced
-    pub fn set_conn(&mut self, conn: Remote, next: NodeId, dest: NodeId, score: u32) {
+    pub fn set_conn(&mut self, conn: Conn, remote: Remote, next: NodeId, dest: NodeId, score: u32) {
         let index = self.dests.iter().position(|x| x.conn == conn);
         if let Some(index) = index {
-            self.dests[index] = ServiceConn { conn, next, dest, score };
+            self.dests[index] = ServiceConn { conn, remote, next, dest, score };
         } else {
-            self.dests.push(ServiceConn { conn, next, dest, score });
+            self.dests.push(ServiceConn { conn, remote, next, dest, score });
         }
         self.dests.sort();
     }
 
     /// Remove a destination from the service
-    pub fn del_conn(&mut self, conn: Remote) {
+    pub fn del_conn(&mut self, conn: Conn) {
         self.dests.retain(|x| x.conn != conn);
     }
 
     pub fn best_conn(&self) -> Option<Remote> {
-        self.dests.first().map(|x| x.conn)
+        self.dests.first().map(|x| x.remote)
     }
 
     /// Get all unique destinations
@@ -71,7 +72,7 @@ impl<Remote: Debug + Hash + Copy + Eq + PartialEq> Service<Remote> {
                 }
             }
             dests.insert(dest.dest, ());
-            remotes.push(dest.conn);
+            remotes.push(dest.remote);
         }
         Some(remotes)
     }

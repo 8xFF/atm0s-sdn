@@ -19,25 +19,47 @@ pub trait ShadowRouterHistory: Send + Sync {
     fn set_ts(&self, now: u64);
 }
 
-#[derive(Debug, Clone)]
-pub enum ShadowRouterDelta<Remote> {
-    SetTable { layer: u8, index: u8, next: Remote },
-    DelTable { layer: u8, index: u8 },
-    SetServiceRemote { service: u8, conn: Remote, next: NodeId, dest: NodeId, score: u32 },
-    DelServiceRemote { service: u8, conn: Remote },
-    SetServiceLocal { service: u8 },
-    DelServiceLocal { service: u8 },
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShadowRouterDelta<Conn, Remote> {
+    SetTable {
+        layer: u8,
+        index: u8,
+        conn: Conn,
+        remote: Remote,
+    },
+    DelTable {
+        layer: u8,
+        index: u8,
+    },
+    SetServiceRemote {
+        service: u8,
+        conn: Conn,
+        remote: Remote,
+        next: NodeId,
+        dest: NodeId,
+        score: u32,
+    },
+    DelServiceRemote {
+        service: u8,
+        conn: Conn,
+    },
+    SetServiceLocal {
+        service: u8,
+    },
+    DelServiceLocal {
+        service: u8,
+    },
 }
 
-pub struct ShadowRouter<Remote: Debug + Hash + Eq + Clone + Copy> {
+pub struct ShadowRouter<Conn: Debug + Hash + Eq + Clone + Copy, Remote: Debug + Hash + Eq + Clone + Copy> {
     node_id: NodeId,
     local_registries: [bool; 256],
-    remote_registry: [Service<Remote>; 256],
+    remote_registry: [Service<Conn, Remote>; 256],
     tables: [ShadowTable<Remote>; 4],
     cached: Arc<dyn ShadowRouterHistory>,
 }
 
-impl<Remote: Debug + Hash + Eq + Clone + Copy> ShadowRouter<Remote> {
+impl<Conn: Debug + Hash + Eq + Clone + Copy, Remote: Debug + Hash + Eq + Clone + Copy> ShadowRouter<Conn, Remote> {
     pub fn new(node_id: NodeId, cached: Arc<dyn ShadowRouterHistory>) -> Self {
         Self {
             node_id,
@@ -48,16 +70,23 @@ impl<Remote: Debug + Hash + Eq + Clone + Copy> ShadowRouter<Remote> {
         }
     }
 
-    pub fn apply_delta(&mut self, delta: ShadowRouterDelta<Remote>) {
+    pub fn apply_delta(&mut self, delta: ShadowRouterDelta<Conn, Remote>) {
         match delta {
-            ShadowRouterDelta::SetTable { layer, index, next: remote } => {
+            ShadowRouterDelta::SetTable { layer, index, conn: _, remote } => {
                 self.tables[layer as usize].set(index, remote);
             }
             ShadowRouterDelta::DelTable { layer, index } => {
                 self.tables[layer as usize].del(index);
             }
-            ShadowRouterDelta::SetServiceRemote { service, conn, next, dest, score } => {
-                self.remote_registry[service as usize].set_conn(conn, next, dest, score);
+            ShadowRouterDelta::SetServiceRemote {
+                service,
+                conn,
+                remote,
+                next,
+                dest,
+                score,
+            } => {
+                self.remote_registry[service as usize].set_conn(conn, remote, next, dest, score);
             }
             ShadowRouterDelta::DelServiceRemote { service, conn } => {
                 self.remote_registry[service as usize].del_conn(conn);
@@ -72,7 +101,7 @@ impl<Remote: Debug + Hash + Eq + Clone + Copy> ShadowRouter<Remote> {
     }
 }
 
-impl<Remote: Debug + Hash + Eq + Clone + Copy> RouterTable<Remote> for ShadowRouter<Remote> {
+impl<Conn: Debug + Hash + Eq + Clone + Copy, Remote: Debug + Hash + Eq + Clone + Copy> RouterTable<Remote> for ShadowRouter<Conn, Remote> {
     fn next(&self, dest: NodeId) -> Option<Remote> {
         let eq_util_layer = self.node_id.eq_util_layer(&dest) as usize;
         debug_assert!(eq_util_layer <= 4);
@@ -148,10 +177,16 @@ mod tests {
 
     use super::{ShadowRouter, ShadowRouterDelta};
 
+    #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+    struct Conn(u8);
+
+    #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+    struct Remote(u8);
+
     #[test]
     fn should_route_to_next_service_local() {
         let history = MockShadowRouterHistory::new();
-        let mut router = ShadowRouter::<u64>::new(1, Arc::new(history));
+        let mut router = ShadowRouter::<Conn, Remote>::new(1, Arc::new(history));
         router.apply_delta(ShadowRouterDelta::SetServiceLocal { service: 1 });
 
         assert_eq!(router.path_to_service(0), RouteAction::Reject);
@@ -161,24 +196,25 @@ mod tests {
     #[test]
     fn should_route_to_next_service_remote() {
         let history = MockShadowRouterHistory::new();
-        let mut router = ShadowRouter::<u64>::new(1, Arc::new(history));
+        let mut router = ShadowRouter::<Conn, Remote>::new(1, Arc::new(history));
         router.apply_delta(ShadowRouterDelta::SetServiceRemote {
             service: 1,
-            conn: 2,
+            conn: Conn(2),
+            remote: Remote(2),
             next: 2,
             dest: 3,
             score: 4,
         });
 
         assert_eq!(router.path_to_service(0), RouteAction::Reject);
-        assert_eq!(router.path_to_service(1), RouteAction::Next(2));
+        assert_eq!(router.path_to_service(1), RouteAction::Next(Remote(2)));
     }
 
     #[test]
     fn should_broadcast_to_next_service_local() {
         let mut history = MockShadowRouterHistory::new();
         history.expect_already_received_broadcast().return_const(false);
-        let mut router = ShadowRouter::<u64>::new(1, Arc::new(history));
+        let mut router = ShadowRouter::<Conn, Remote>::new(1, Arc::new(history));
         router.apply_delta(ShadowRouterDelta::SetServiceLocal { service: 1 });
 
         assert_eq!(router.path_to_services(1, 1, ServiceBroadcastLevel::Global, None, None), RouteAction::Local);
@@ -189,42 +225,55 @@ mod tests {
         let mut history = MockShadowRouterHistory::new();
         history.expect_already_received_broadcast().return_const(false);
 
-        let mut router = ShadowRouter::<u64>::new(1, Arc::new(history));
+        let mut router = ShadowRouter::<Conn, Remote>::new(1, Arc::new(history));
         router.apply_delta(ShadowRouterDelta::SetServiceRemote {
             service: 1,
-            conn: 2,
+            conn: Conn(2),
+            remote: Remote(2),
             next: 2,
             dest: 3,
             score: 4,
         });
         router.apply_delta(ShadowRouterDelta::SetServiceRemote {
             service: 1,
-            conn: 3,
+            conn: Conn(3),
+            remote: Remote(3),
             next: 3,
             dest: 6,
             score: 2,
         });
         router.apply_delta(ShadowRouterDelta::SetServiceRemote {
             service: 1,
-            conn: 4,
+            conn: Conn(4),
+            remote: Remote(4),
             next: 4,
             dest: 3,
             score: 1,
         });
 
-        assert_eq!(router.path_to_services(1, 1, ServiceBroadcastLevel::Global, None, None), RouteAction::Broadcast(false, vec![4, 3]));
+        assert_eq!(
+            router.path_to_services(1, 1, ServiceBroadcastLevel::Global, None, None),
+            RouteAction::Broadcast(false, vec![Remote(4), Remote(3)])
+        );
 
         router.apply_delta(ShadowRouterDelta::SetServiceLocal { service: 1 });
-        assert_eq!(router.path_to_services(1, 2, ServiceBroadcastLevel::Global, None, None), RouteAction::Broadcast(true, vec![4, 3]));
+        assert_eq!(
+            router.path_to_services(1, 2, ServiceBroadcastLevel::Global, None, None),
+            RouteAction::Broadcast(true, vec![Remote(4), Remote(3)])
+        );
 
         router.apply_delta(ShadowRouterDelta::SetServiceRemote {
             service: 1,
-            conn: 4,
+            conn: Conn(4),
+            remote: Remote(4),
             next: 4,
             dest: 5,
             score: 1,
         });
-        assert_eq!(router.path_to_services(1, 3, ServiceBroadcastLevel::Global, None, Some(4)), RouteAction::Broadcast(true, vec![3, 2]));
+        assert_eq!(
+            router.path_to_services(1, 3, ServiceBroadcastLevel::Global, None, Some(4)),
+            RouteAction::Broadcast(true, vec![Remote(3), Remote(2)])
+        );
     }
 
     #[test]
@@ -232,7 +281,7 @@ mod tests {
         let mut history = MockShadowRouterHistory::new();
         history.expect_already_received_broadcast().return_const(true);
 
-        let mut router = ShadowRouter::<u64>::new(1, Arc::new(history));
+        let mut router = ShadowRouter::<Conn, Remote>::new(1, Arc::new(history));
         router.apply_delta(ShadowRouterDelta::SetServiceLocal { service: 100 });
 
         // should not broadcast if already received
