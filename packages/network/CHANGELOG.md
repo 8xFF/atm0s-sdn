@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-network-v0.6.2...atm0s-sdn-network-v0.6.3) - 2025-02-27
+
+### Fixed
+
+- router don't clear service router info after node disconnect (#192)
+
 ## [0.6.2](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-network-v0.6.1...atm0s-sdn-network-v0.6.2) - 2025-02-08
 
 ### Added

@@ -14,7 +14,7 @@ signal-hook = "0.3.17"
 log.workspace = true
 clap.workspace = true
 serde.workspace = true
-atm0s-sdn = { path = "../packages/runner", version = "0.2.5", features = [
+atm0s-sdn = { path = "../packages/runner", version = "0.2.6", features = [
     "vpn",
 ] }
 tokio = { version = "1", features = ["full"] }
