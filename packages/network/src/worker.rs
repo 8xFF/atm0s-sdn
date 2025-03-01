@@ -165,9 +165,10 @@ where
     fn process_controller_out(&mut self, now_ms: u64, out: controller_plane::Output<UserData, SE, TW>) -> SdnWorkerOutput<UserData, SC, SE, TC, TW> {
         match out {
             controller_plane::Output::Ext(out) => SdnWorkerOutput::Ext(out),
-            controller_plane::Output::Event(event) => match event.dest() {
-                LogicEventDest::Broadcast | LogicEventDest::Worker(_) => SdnWorkerOutput::Bus(SdnWorkerBusEvent::Workers(event)),
-                LogicEventDest::Any => {
+            controller_plane::Output::Event(event) => match event.with_dest() {
+                LogicEventDest::Broadcast(event) => SdnWorkerOutput::Bus(SdnWorkerBusEvent::Workers(event)),
+                LogicEventDest::Worker(worker, event) => SdnWorkerOutput::Bus(SdnWorkerBusEvent::Worker(worker, event)),
+                LogicEventDest::Any(event) => {
                     self.data.input(&mut self.switcher).on_event(now_ms, data_plane::Input::Event(event));
                     SdnWorkerOutput::Continue
                 }

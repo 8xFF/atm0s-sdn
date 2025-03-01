@@ -3,7 +3,7 @@
 use atm0s_sdn_identity::{ConnId, NodeId};
 use atm0s_sdn_router::RouteRule;
 use base::{FeatureControlActor, NeighboursControl, NetIncomingMeta, NetOutgoingMeta, SecureContext, ServiceControlActor, ServiceId};
-use data_plane::NetPair;
+use data_plane::{CrossWorker, NetPair};
 use features::{Features, FeaturesControl, FeaturesEvent, FeaturesToController, FeaturesToWorker};
 use sans_io_runtime::Buffer;
 
@@ -60,25 +60,25 @@ pub enum LogicEvent<UserData, SE, TW> {
     ExtServicesEvent(u16, ServiceId, UserData, SE),
 }
 
-pub enum LogicEventDest {
-    Broadcast,
-    Any,
-    Worker(u16),
+pub enum LogicEventDest<UserData, SE, TW> {
+    Broadcast(LogicEvent<UserData, SE, TW>),
+    Worker(u16, CrossWorker<UserData, SE>),
+    Any(LogicEvent<UserData, SE, TW>),
 }
 
 impl<UserData, SE, TW> LogicEvent<UserData, SE, TW> {
-    pub fn dest(&self) -> LogicEventDest {
+    pub fn with_dest(self) -> LogicEventDest<UserData, SE, TW> {
         match self {
-            LogicEvent::Pin(..) => LogicEventDest::Broadcast,
-            LogicEvent::UnPin(..) => LogicEventDest::Broadcast,
-            LogicEvent::Service(..) => LogicEventDest::Broadcast,
-            LogicEvent::Feature(true, ..) => LogicEventDest::Broadcast,
-            LogicEvent::Feature(false, ..) => LogicEventDest::Any,
-            LogicEvent::NetNeighbour(_, _) => LogicEventDest::Any,
-            LogicEvent::NetDirect(_, _, _, _, _) => LogicEventDest::Any,
-            LogicEvent::NetRoute(_, _, _, _) => LogicEventDest::Any,
-            LogicEvent::ExtFeaturesEvent(worker, _, _) => LogicEventDest::Worker(*worker),
-            LogicEvent::ExtServicesEvent(worker, _, _, _) => LogicEventDest::Worker(*worker),
+            LogicEvent::Pin(..) => LogicEventDest::Broadcast(self),
+            LogicEvent::UnPin(..) => LogicEventDest::Broadcast(self),
+            LogicEvent::Service(..) => LogicEventDest::Broadcast(self),
+            LogicEvent::Feature(true, ..) => LogicEventDest::Broadcast(self),
+            LogicEvent::Feature(false, ..) => LogicEventDest::Any(self),
+            LogicEvent::NetNeighbour(_, _) => LogicEventDest::Any(self),
+            LogicEvent::NetDirect(_, _, _, _, _) => LogicEventDest::Any(self),
+            LogicEvent::NetRoute(_, _, _, _) => LogicEventDest::Any(self),
+            LogicEvent::ExtFeaturesEvent(worker, user_data, event) => LogicEventDest::Worker(worker, CrossWorker::Feature(user_data, event)),
+            LogicEvent::ExtServicesEvent(worker, service_id, user_data, event) => LogicEventDest::Worker(worker, CrossWorker::Service(service_id, user_data, event)),
         }
     }
 }
