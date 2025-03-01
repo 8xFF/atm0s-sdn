@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.7](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-v0.2.6...atm0s-sdn-v0.2.7) - 2025-03-01
+
+### Fixed
+
+- wrong worker event route with specific worker_id type (#194)
+
 ## [0.2.6](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-v0.2.5...atm0s-sdn-v0.2.6) - 2025-02-27
 
 ### Fixed
