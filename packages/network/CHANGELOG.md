@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-network-v0.7.0...atm0s-sdn-network-v0.7.1) - 2025-03-02
+
+### Fixed
+
+- dht-kv missed clear remote slots on unsub (#196)
+
 ## [0.7.0](https://github.com/8xFF/atm0s-sdn/compare/atm0s-sdn-network-v0.6.3...atm0s-sdn-network-v0.7.0) - 2025-03-01
 
 ### Fixed
