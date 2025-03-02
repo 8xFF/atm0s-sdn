@@ -10,5 +10,5 @@ license = "MIT"
 
 [dependencies]
 multiaddr = { version = "0.18", default-features = false }
-rand = "0.8"
+rand = "0.9"
 serde = { workspace = true }
