@@ -208,6 +208,7 @@ pub enum LocalMapOutput<UserData> {
     Local(FeatureControlActor<UserData>, MapEvent),
 }
 
+#[derive(Debug, PartialEq, Eq)]
 enum SubState {
     NotSub,
     Subscribing { id: u64, sent_ts: u64 },
@@ -255,8 +256,12 @@ impl<UserData: Eq + Copy + Debug> LocalMap<UserData> {
             }
             SubState::Unsubscribing { id, started_at, sent_ts, .. } => {
                 if now >= *started_at + UNSUB_TIMEOUT_MS {
-                    log::warn!("[ClientMap] Unsubscribing timeout after {UNSUB_TIMEOUT_MS} ms, switch to NotSub");
-                    self.sub_state = SubState::NotSub;
+                    self.switch_notsub();
+                    log::warn!(
+                        "[ClientMap] Unsubscribing timeout after {UNSUB_TIMEOUT_MS} ms, switch to NotSub, current slots {}, subscribers {}",
+                        self.slots.len(),
+                        self.subscribers.len()
+                    );
                 } else if now >= *sent_ts + RESEND_MS {
                     log::debug!("[ClientMap] Resend unsub command in Unsubscribing state after {RESEND_MS} ms");
                     self.queue.push_back(LocalMapOutput::Remote(ClientMapCommand::Unsub(*id)));
@@ -427,8 +432,13 @@ impl<UserData: Eq + Copy + Debug> LocalMap<UserData> {
             ServerMapEvent::UnsubOk(id) => {
                 if let SubState::Unsubscribing { id: sub_id, remote: locked, .. } = &self.sub_state {
                     if *sub_id == id && (*locked).unwrap_or(remote) == remote {
-                        log::info!("[ClientMap] Received UnsubOk with id {}, switched to NotSub", id);
-                        self.sub_state = SubState::NotSub;
+                        self.switch_notsub();
+                        log::info!(
+                            "[ClientMap] Received UnsubOk with id {}, switched to NotSub, current slots {}, subscribers {}",
+                            id,
+                            self.slots.len(),
+                            self.subscribers.len()
+                        );
                     } else {
                         log::warn!(
                             "[ClientMap] Received UnsubOk with id {} but current id is {} vs {}, remote is {:?} vs {:?}",
@@ -504,13 +514,15 @@ impl<UserData: Eq + Copy + Debug> LocalMap<UserData> {
     }
 
     fn restore_events(&mut self, actor: FeatureControlActor<UserData>, only_local: bool) {
+        log::debug!("[ClientMap] restore_events {actor:?}, only_local {only_local}");
         for ((key, source), slot) in self.slots.iter() {
             if only_local && self.session != *source {
+                log::debug!("[ClientMap] restore_events: Skip slot {key:?} from remote {source:?}");
                 continue;
             }
             if let Some(data) = slot.data() {
                 let event = MapEvent::OnSet(*key, source.0, data.to_vec());
-                log::debug!("[ClientMap] Fire to {:?}, key: {key}, event {:?}", actor, event);
+                log::debug!("[ClientMap] restore_events: Fire key: {key}, event {:?}", event);
                 self.queue.push_back(LocalMapOutput::Local(actor, event));
             }
         }
@@ -524,6 +536,12 @@ impl<UserData: Eq + Copy + Debug> LocalMap<UserData> {
             }
         }
     }
+
+    /// switch notsub mean no subscribes, we don't need to fire event anymore, just clear all remote slots
+    fn switch_notsub(&mut self) {
+        self.sub_state = SubState::NotSub;
+        self.slots.retain(|(_key, session), _| session == &self.session);
+    }
 }
 
 #[cfg(test)]
@@ -531,7 +549,7 @@ mod test {
     use crate::{
         base::FeatureControlActor,
         features::dht_kv::{
-            client::map::{LocalMapOutput, RESEND_MS, SYNC_MS},
+            client::map::{LocalMapOutput, SubState, RESEND_MS, SYNC_MS},
             msg::{ClientMapCommand, Key, NodeSession, ServerMapEvent, Version},
             MapControl, MapEvent,
         },
@@ -828,6 +846,46 @@ mod test {
         );
         assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(actor, MapEvent::OnDel(key, source.0))));
         assert_eq!(map.pop_action(), None);
+    }
+
+    #[test]
+    fn map_handle_unsub_should_clear_remote_keys() {
+        let session = NodeSession(1, 2);
+        let actor = FeatureControlActor::Controller(());
+        let mut map = LocalMap::new(session);
+
+        let key = Key(1);
+
+        let source = NodeSession(3, 4);
+        let relay = NodeSession(5, 6);
+        assert_eq!(map.on_control(102, actor, MapControl::Sub), Some(ClientMapCommand::Sub(102, None)));
+
+        //We need SubOk for accepting OnSet event
+        assert_eq!(map.on_server(103, relay, ServerMapEvent::SubOk(102)), None);
+        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(actor, MapEvent::OnRelaySelected(relay.0))));
+
+        assert_eq!(
+            map.on_server(
+                103,
+                relay,
+                ServerMapEvent::OnSet {
+                    key,
+                    source,
+                    version: Version(2000),
+                    data: vec![1, 2, 3, 4]
+                }
+            ),
+            Some(ClientMapCommand::OnSetAck(key, source, Version(2000)))
+        );
+        assert_eq!(map.pop_action(), Some(LocalMapOutput::Local(actor, MapEvent::OnSet(key, source.0, vec![1, 2, 3, 4]))));
+        assert_eq!(map.pop_action(), None);
+
+        // simulate unsub
+        assert_eq!(map.on_control(104, actor, MapControl::Unsub), Some(ClientMapCommand::Unsub(102)));
+        assert_eq!(map.on_server(105, relay, ServerMapEvent::UnsubOk(102)), None);
+
+        assert_eq!(map.slots.len(), 0);
+        assert_eq!(map.sub_state, SubState::NotSub);
     }
 
     #[test]

@@ -57,6 +57,7 @@ impl<UserData: Eq + Debug + Copy> LocalStorage<UserData> {
         }
 
         for key in to_remove {
+            log::info!("[DhtKvClient] remove old map: {}", key);
             self.maps.remove(&key);
         }
 
