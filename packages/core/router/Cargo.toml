@@ -17,7 +17,7 @@ mockall = { workspace = true }
 
 [dev-dependencies]
 env_logger = { workspace = true }
-criterion = { version = "0.5.1" }
+criterion = { version = "0.8.0" }
 rand = { version = "0.8.5" }
 
 [[bench]]
