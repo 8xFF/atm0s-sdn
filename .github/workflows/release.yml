@@ -146,7 +146,7 @@ jobs:
           mv ./target/${{ matrix.target }}/release/${{ env.APP_NAME }} ${{ env.APP_NAME }}-${{ matrix.target }}
 
       - name: Upload Artifact to Summary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.target }}
           path: ${{ env.APP_NAME }}-${{ matrix.target }}${{ matrix.extension }}
@@ -167,7 +167,7 @@ jobs:
     needs: build-release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
       - name: Display structure of downloaded files
         run: ls -R
       - name: create_release
@@ -191,7 +191,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
       - name: Checkout repository
         uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
       # Uses the `docker/login-action` action to log in to the Container registry registry using the account and password that will publish the packages. Once published, the packages are scoped to the account defined here.
       - name: Log in to the Container registry
         uses: docker/login-action@v3
